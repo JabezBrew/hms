@@ -93,3 +93,6 @@ local_settings.py
 # Virtual Environment
 pip-log.txt
 pip-delete-this-directory.txt
+
+.junie
+docs
