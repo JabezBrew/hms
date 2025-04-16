@@ -1,0 +1,3 @@
+"""
+Wards app for HMS.
+"""

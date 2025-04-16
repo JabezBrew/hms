@@ -1,0 +1,95 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Production builds
+dist/
+dist-ssr/
+build/
+staticfiles/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+credentials/
+credentials.json
+service-account*.json
+*_key.json
+*_credentials.json
+google_credentials.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*.sublime*
+.settings/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Database
+*.sqlite3
+*.sqlite3-journal
+*.db
+
+# Media and user uploads
+media/
+uploads/
+
+# Cache
+.cache/
+.pytest_cache/
+.coverage
+coverage/
+.nyc_output/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local development
+*.local
+local_settings.py
+
+# Virtual Environment
+pip-log.txt
+pip-delete-this-directory.txt

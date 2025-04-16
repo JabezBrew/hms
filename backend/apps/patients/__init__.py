@@ -1,0 +1,3 @@
+"""
+Patients app for HMS.
+"""

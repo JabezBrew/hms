@@ -1,0 +1,3 @@
+"""
+HMS Django project.
+"""

@@ -1,0 +1,127 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install pytest pytest-django flake8
+        
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Run tests
+      env:
+        DEBUG: True
+        SECRET_KEY: test-secret-key
+        DB_NAME: hms_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
+        GOOGLE_APPLICATION_CREDENTIALS: ""
+        GOOGLE_CLOUD_PROJECT: test-project
+        GOOGLE_HEALTHCARE_DATASET: test-dataset
+        GOOGLE_FHIR_STORE: test-fhir-store
+        GOOGLE_DICOM_STORE: test-dicom-store
+        GOOGLE_HL7V2_STORE: test-hl7v2-store
+      run: |
+        cd backend
+        pytest
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+        
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Lint
+      run: |
+        cd frontend
+        npm run lint
+        
+    - name: Run tests
+      run: |
+        cd frontend
+        npm test
+
+  build-and-deploy:
+    needs: [backend-tests, frontend-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+        
+    - name: Build backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install gunicorn
+        
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm ci
+        npm run build
+        
+    # Add deployment steps here (e.g., to Heroku, AWS, GCP, etc.)
+    # This is a placeholder for actual deployment steps
+    - name: Deploy
+      run: |
+        echo "Deployment would happen here"
