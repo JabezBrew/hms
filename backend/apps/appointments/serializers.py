@@ -1,7 +1,9 @@
+from django.db import transaction
 from rest_framework import serializers
+
 from .models import (
     AppointmentType, ScheduleTemplate, ScheduleTimeSlot,
-    AppointmentFHIRMapping, RecurringAppointmentRule
+    AppointmentFHIRMapping, RecurringAppointmentRule, ScheduleFHIRMapping
 )
 from ..users.serializers import PractitionerProfileSerializer
 
@@ -16,6 +18,15 @@ class AppointmentTypeSerializer(serializers.ModelSerializer):
                   'is_active', 'category', 'created_at', 'updated_at', 
                   'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+
+class NestedScheduleTimeSlotSerializer(serializers.ModelSerializer):
+    """
+    Serializer for time slots when nested within a schedule template.
+    """
+    class Meta:
+        model = ScheduleTimeSlot
+        fields = ['day_of_week', 'start_time', 'end_time']
 
 
 class ScheduleTimeSlotSerializer(serializers.ModelSerializer):
@@ -52,7 +63,7 @@ class ScheduleTemplateCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and updating ScheduleTemplate with nested time slots.
     """
-    time_slots = ScheduleTimeSlotSerializer(many=True)
+    time_slots = NestedScheduleTimeSlotSerializer(many=True)
 
     class Meta:
         model = ScheduleTemplate
@@ -82,17 +93,19 @@ class ScheduleTemplateCreateUpdateSerializer(serializers.ModelSerializer):
         instance.save()
 
         if time_slots_data is not None:
-            # Delete existing time slots
-            instance.time_slots.all().delete()
+            with transaction.atomic():
+                # Delete existing time slots for this template
+                instance.time_slots.all().delete()
 
-            # Create new time slots
-            for time_slot_data in time_slots_data:
-                ScheduleTimeSlot.objects.create(
-                    template=instance,
-                    created_by=validated_data.get('updated_by'),
-                    updated_by=validated_data.get('updated_by'),
-                    **time_slot_data
-                )
+                # Create new time slots with explicit template reference
+                for time_slot_data in time_slots_data:
+                    # Explicitly set the template to ensure no shared references
+                    ScheduleTimeSlot.objects.create(
+                        template=instance,  # Explicitly tie the time slot to this template
+                        created_by=validated_data.get('updated_by'),
+                        updated_by=validated_data.get('updated_by'),
+                        **time_slot_data
+                    )
 
         return instance
 
@@ -161,3 +174,28 @@ class RecurringAppointmentRuleSerializer(serializers.ModelSerializer):
             )
 
         return data
+
+# In appointments/serializers.py (add this to your existing serializers)
+
+class ScheduleFHIRMappingSerializer(serializers.ModelSerializer):
+    practitioner_name = serializers.SerializerMethodField()
+    template_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ScheduleFHIRMapping
+        fields = [
+            'id', 'template', 'template_name', 'fhir_schedule_id', 
+            'practitioner', 'practitioner_name', 'start_date', 'end_date', 
+            'status', 'slots_count', 'created_at', 'created_by'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_practitioner_name(self, obj):
+        if obj.practitioner and hasattr(obj.practitioner, 'user'):
+            return f"{obj.practitioner.user.first_name} {obj.practitioner.user.last_name}"
+        return "Unknown"
+    
+    def get_template_name(self, obj):
+        if obj.template:
+            return obj.template.name
+        return "Unknown Template"

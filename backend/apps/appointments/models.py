@@ -151,3 +151,26 @@ class RecurringAppointmentRule(models.Model):
     
     def __str__(self):
         return f"{self.get_frequency_display()} recurring rule for {self.appointment_type.name}"
+
+# In appointments/models.py (add this to your existing models)
+
+class ScheduleFHIRMapping(models.Model):
+    """
+    Maps between local schedule templates and generated FHIR Schedule resources.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template = models.ForeignKey(ScheduleTemplate, on_delete=models.SET_NULL, null=True, related_name='generated_schedules')
+    fhir_schedule_id = models.CharField(max_length=100)
+    practitioner = models.ForeignKey('users.PractitionerProfile', on_delete=models.CASCADE)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(max_length=20, default='active')
+    slots_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, related_name='created_schedule_mappings')
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Schedule {self.fhir_schedule_id} for {self.template.name if self.template else 'Unknown'}"

@@ -7,16 +7,19 @@ import { buttonVariants } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Custom caption component with month and year dropdowns
-function CustomCaption({ displayMonth, onMonthChange }) {
+function CustomCaption({ displayMonth, month, onMonthChange }) {
   const { goToMonth, nextMonth, previousMonth } = useNavigation();
 
+  // Use month prop if provided, otherwise fall back to displayMonth
+  const displayDate = month || displayMonth;
+
   // Get current year and month
-  const currentYear = displayMonth.getFullYear();
-  const currentMonth = displayMonth.getMonth();
+  const currentYear = displayDate.getFullYear();
+  const currentMonth = displayDate.getMonth();
 
   // Generate years (100 years back from current year)
-  const currentDate = new Date();
-  const endYear = currentDate.getFullYear();
+  const today = new Date();
+  const endYear = today.getFullYear();
   const startYear = endYear - 100;
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
 
@@ -28,15 +31,15 @@ function CustomCaption({ displayMonth, onMonthChange }) {
 
   // Handle year change
   const handleYearChange = (year) => {
-    const newDate = new Date(displayMonth);
+    const newDate = new Date(displayDate);
     newDate.setFullYear(parseInt(year));
     goToMonth(newDate);
   };
 
   // Handle month change
-  const handleMonthChange = (month) => {
-    const newDate = new Date(displayMonth);
-    newDate.setMonth(parseInt(month));
+  const handleMonthChange = (monthValue) => {
+    const newDate = new Date(displayDate);
+    newDate.setMonth(parseInt(monthValue));
     goToMonth(newDate);
   };
 
@@ -142,7 +145,9 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Caption: CustomCaption
+        Caption: CustomCaption,
+        // Add custom DayContent component to validate day objects
+        // We don't need a custom DayContent component as it's causing the dates to not be visible
       }}
       {...props} />
   );

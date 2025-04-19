@@ -1,4 +1,5 @@
-
+import { useNavigate } from 'react-router-dom';
+import {useState} from "react";
 import { useAuth } from "../../lib/auth.jsx"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -6,24 +7,25 @@ import { Label } from "../ui/label"
 import { notifications } from "../../lib/notifications"
 
 export function LoginForm() {
-  const [email, setEmail] = React.useState("")
-  const [password, setPassword] = React.useState("")
-  const [isLoading, setIsLoading] = React.useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setIsLoading(true)
+    e.preventDefault();
+    setIsLoading(true);
 
     try {
-      await login(email, password)
-      notifications.success("Logged in successfully")
-      // Redirect to dashboard
-      window.location.href = "/"
+      await login(email, password);
+      notifications.success("Logged in successfully");
+      // Use React Router navigation instead of window.location
+      navigate('/');
     } catch (error) {
       // Error is already handled in the auth provider
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 

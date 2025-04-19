@@ -1,46 +1,67 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { patientsApi } from '@/lib/api/patients';
-import PatientDetail from '@/components/patients/PatientDetail';
+import { staffApi } from '@/lib/api/staff';
+import StaffDetail from '@/components/staff/StaffDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 
-const PatientDetailPage = () => {
+const StaffDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [patient, setPatient] = useState(null);
+  const [staff, setStaff] = useState(null);
+  const [practitioner, setPractitioner] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchPatient = async () => {
+    const fetchStaffData = async () => {
       try {
-        const data = await patientsApi.getPatient(id);
-        setPatient(data);
+        setLoading(true);
+        const staffData = await staffApi.getStaffMember(id);
+        setStaff(staffData);
+        
+        // If the staff member is a practitioner (doctor, nurse, lab tech, pharmacist),
+        // fetch their practitioner profile
+        const userType = staffData.user_details?.user_type;
+        if (['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(userType)) {
+          try {
+            // Find practitioner profile by staff ID
+            const practitioners = await staffApi.getPractitioners();
+            const practitionerData = practitioners.find(p => p.staff === staffData.id);
+            if (practitionerData) {
+              setPractitioner(practitionerData);
+            }
+          } catch (error) {
+            console.error('Error fetching practitioner data:', error);
+            // Don't show error toast as this is optional data
+          }
+        }
       } catch (error) {
-        toast.error('Failed to load patient details');
-        console.error('Error loading patient:', error);
+        toast.error('Failed to load staff details');
+        console.error('Error loading staff:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchPatient();
+    fetchStaffData();
   }, [id]);
 
   const handleBack = () => {
-    navigate('/patients');
+    navigate('/staff');
   };
 
   const handleEdit = () => {
-    navigate(`/patients/${id}/edit`);
+    // For future implementation
+    // navigate(`/staff/${id}/edit`);
+    toast.info('Edit functionality will be implemented in a future update');
   };
 
   const handleDeleted = () => {
-    navigate('/patients');
+    navigate('/staff');
   };
 
   if (loading) {
@@ -69,14 +90,9 @@ const PatientDetailPage = () => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="overview">
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="medical">Medical Information</TabsTrigger>
-              <TabsTrigger value="encounters">Encounters</TabsTrigger>
-              <TabsTrigger value="inpatient">Inpatient</TabsTrigger>
-              <TabsTrigger value="imaging">Imaging</TabsTrigger>
-              <TabsTrigger value="billing">Billing</TabsTrigger>
-              <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="details">Details</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4 mt-4">
@@ -118,35 +134,9 @@ const PatientDetailPage = () => {
                       <Skeleton className="h-4 w-20" />
                       <Skeleton className="h-4 w-36" />
                     </div>
-                    <div className="mt-4">
-                      <Skeleton className="h-4 w-24 mb-2" />
-                      <Skeleton className="h-16 w-full" />
-                    </div>
                   </CardContent>
                 </Card>
               </div>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <Skeleton className="h-6 w-40" />
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-start">
-                    <Skeleton className="h-5 w-5 mr-2" />
-                    <div>
-                      <Skeleton className="h-5 w-24 mb-1" />
-                      <Skeleton className="h-4 w-16" />
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <Skeleton className="h-5 w-5 mr-2" />
-                    <div>
-                      <Skeleton className="h-5 w-24 mb-1" />
-                      <Skeleton className="h-4 w-48" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -155,8 +145,9 @@ const PatientDetailPage = () => {
   }
 
   return (
-    <PatientDetail
-      patient={patient}
+    <StaffDetail
+      staff={staff}
+      practitioner={practitioner}
       onBack={handleBack}
       onEdit={handleEdit}
       onDeleted={handleDeleted}
@@ -164,4 +155,4 @@ const PatientDetailPage = () => {
   );
 };
 
-export default PatientDetailPage;
+export default StaffDetailPage;

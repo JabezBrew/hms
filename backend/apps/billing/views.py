@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import Sum, F, Q
-from fhir_client.client import fhir_client
-from fhir_client.utils import generate_fhir_id, create_reference
+from ..fhir_client.client import fhir_client
+from ..fhir_client.utils import generate_fhir_id, create_reference
 
 from .models import (
     ServiceCategory, Service, InsuranceProvider, InsurancePlan,
@@ -18,7 +18,7 @@ from .serializers import (
     InvoiceItemSerializer, PaymentSerializer, ClaimSerializer, ReceiptSerializer,
     InvoiceCreateUpdateSerializer
 )
-from users.permissions import IsAdminOrOwner
+from ..users.permissions import IsAdminOrOwner
 
 
 class ServiceCategoryViewSet(viewsets.ModelViewSet):

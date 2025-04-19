@@ -11,8 +11,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  esbuild: {
-    jsx: 'automatic',
-    jsxInject: `import React from 'react'`,
-  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',  // Your Django backend URL
+        changeOrigin: true,
+      }
+    }
+  }
+
 })

@@ -28,6 +28,7 @@ The system must be designed to integrate with Google Cloud Healthcare API while 
 
 ### ✅ Native Support (FHIR):
 - **Patient Records** (`Patient`)
+- **Practitioners** (`Practitioner`)
 - **Appointments** (`Appointment`, `Schedule`, `Slot`)
 - **Clinical Encounters** (`Encounter`)
 - **Observations / Lab Results** (`Observation`, `DiagnosticReport`)
@@ -36,6 +37,9 @@ The system must be designed to integrate with Google Cloud Healthcare API while 
 - **Procedures** (`Procedure`)
 - **Imaging** (via **DICOM Store**)
 - **Messaging** (via **HL7v2 Store**)
+
+- Note: Practitioners are staff members like doctors, nurses, midwifes, pharmacists, lab techs, radiographers, dentists etc.
+so like the Patient FHIR which is linked to PatientProfile, the Practitioner FHIR will also be linked to a PractitionerProfile but also Staff 
 
 ### 🚧 Not Fully Covered (Requires Custom Implementation):
 - User authentication, permissions & roles (Doctor, Nurse, Receptionist, Admin)
@@ -54,6 +58,54 @@ The system must be designed to integrate with Google Cloud Healthcare API while 
 - Custom Django models: `User`, `Staff`, `PractitionerProfile`, `PatientProfile`
 - Role-based permissions using Django’s `groups` and `permissions`
 - React: Unified login page, role-specific dashboards
+
+#### Role-Based Access Control (RBAC) Guidelines
+
+###### 👥 Supported Roles
+
+- Admin – Full access to all data and configuration
+- Doctor – Can view and manage their patients, consultations, encounters, and prescriptions
+- Nurse – Can assist with vitals, medications, observations, and inpatient management
+- Receptionist – Can register patients, schedule appointments, view basic demographics
+- Lab Technician – Can receive lab orders, enter results, view patient identifiers
+- Pharmacist – Can fulfill prescriptions, update inventory
+- Billing Officer – Can view charges, payments, and generate invoices
+- Patient (optional) – Can view personal info, lab results, bills (if patient portal is enabled)
+
+###### 🔐 Backend Enforcement (Django)
+
+- Use Django Group and Permission models
+- Protect sensitive endpoints with @permission_classes([IsAuthenticated, HasRoleX])
+- Create custom permissions like, but not restricted to:
+- can_view_patient_profile
+- can_edit_lab_result
+- can_manage_appointments
+- Use drf-roles or custom middleware to check roles dynamically
+- Use Django signals to auto-assign roles on user creation
+
+###### 🔒 Frontend Enforcement (React)
+
+- Store user role in global state
+- Use route guards to restrict access:
+- if (user.role !== 'doctor') return <Redirect to="/unauthorized" />
+- Render UI conditionally:
+- {user.role === 'nurse' && <VitalsEntryForm />}
+- Use a layout component that wraps each page and performs access checks
+
+###### 🗂 Example Permissions Matrix
++--------------------------+--------+--------+--------+---------------+----------+-------------+---------+
+| Module                  | Admin  | Doctor | Nurse  | Receptionist  | Lab Tech | Pharmacist  | Billing |
++--------------------------+--------+--------+--------+---------------+----------+-------------+---------+
+| Create Practitioner/Staff|   ✅   |   ❌   |   ❌   |      ❌       |    ❌    |     ❌      |   ❌   |
+| View Patient Profile     |   ✅   |   ✅   |   ✅   |      ✅       |    ✅    |     ✅      |   ✅   |
+| Create/Edit Patient      |   ✅   |   ✅   |   ✅   |      ✅       |    ❌    |     ❌      |   ❌   |
+| Create Encounter         |   ✅   |   ✅   |   ✅   |      ❌       |    ❌    |     ❌      |   ❌   |
+| View Lab Results         |   ✅   |   ✅   |   ✅   |      ❌       |    ✅    |     ❌      |   ✅   |
+| Update Vitals            |   ✅   |   ✅   |   ✅   |      ❌       |    ❌    |     ❌      |   ❌   |
+| Create Prescription      |   ✅   |   ✅   |   ❌   |      ❌       |    ❌    |     ✅      |   ❌   |
+| Access Billing Page      |   ✅   |   ✅   |   ❌   |      ✅       |    ❌    |     ❌      |   ✅   |
++--------------------------+--------+--------+--------+---------------+----------+-------------+---------+
+
 
 ### 2. **Patient Management**
 - FHIR `Patient` resource (Google Cloud)

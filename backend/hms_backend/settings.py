@@ -3,6 +3,7 @@ Django settings for hms_backend project.
 """
 
 import os
+import sys
 from pathlib import Path
 import environ
 import logging.config
@@ -12,6 +13,9 @@ import logging.config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Add the apps directory to Python path
+sys.path.insert(0, str(BASE_DIR))
 
 # Load environment variables from .env file
 env = environ.Env(
@@ -33,9 +37,6 @@ DEBUG = env.bool('DEBUG', default=True)
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
 # Application definition
-import sys
-sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -51,7 +52,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
 
     # Local apps
-    'apps.users',
+    'apps.users.apps.UsersConfig',  # Use this instead of 'apps.users'
     'apps.fhir_client',
     'apps.appointments',
     'apps.patients',

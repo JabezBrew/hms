@@ -7,18 +7,21 @@ import datetime
 
 from .models import (
     AppointmentType, ScheduleTemplate, ScheduleTimeSlot,
-    AppointmentFHIRMapping, RecurringAppointmentRule
+    AppointmentFHIRMapping, RecurringAppointmentRule, ScheduleFHIRMapping
 )
 from .serializers import (
     AppointmentTypeSerializer, ScheduleTemplateSerializer,
     ScheduleTimeSlotSerializer, AppointmentFHIRMappingSerializer,
-    RecurringAppointmentRuleSerializer, ScheduleTemplateCreateUpdateSerializer
+    RecurringAppointmentRuleSerializer, ScheduleTemplateCreateUpdateSerializer, ScheduleFHIRMappingSerializer
 )
-from fhir_client.client import fhir_client
-from fhir_client.utils import (
+from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
+from .services import AvailabilityService, ConflictPreventionService, AppointmentTypeService
+from ..fhir_client.client import fhir_client
+from ..fhir_client.utils import (
     create_reference, create_period, generate_fhir_id
 )
-from users.permissions import IsAdminOrOwner
+from ..users.permissions import IsAdminOrOwner
+from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 
 
 class AppointmentTypeViewSet(viewsets.ModelViewSet):
@@ -28,10 +31,10 @@ class AppointmentTypeViewSet(viewsets.ModelViewSet):
     queryset = AppointmentType.objects.all()
     serializer_class = AppointmentTypeSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
@@ -42,113 +45,55 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
     """
     queryset = ScheduleTemplate.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return ScheduleTemplateCreateUpdateSerializer
         return ScheduleTemplateSerializer
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
-    
+
     @action(detail=True, methods=['post'])
     def generate_schedule(self, request, pk=None):
         """
         Generate FHIR Schedule and Slot resources for a date range.
         """
         template = self.get_object()
-        
+
         # Get date range from request
         start_date = request.data.get('start_date')
         end_date = request.data.get('end_date')
-        
+
         if not start_date or not end_date:
             return Response(
                 {"error": "Both start_date and end_date are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
-            start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
-            end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."},
-                status=status.HTTP_400_BAD_REQUEST
+            # Use the AvailabilityService to generate the schedule and pass the user
+            result = AvailabilityService.generate_schedule_from_template(
+                template_id=str(template.id),
+                start_date=start_date,
+                end_date=end_date,
+                user=request.user  # Pass the user here
             )
-        
-        if start_date > end_date:
-            return Response(
-                {"error": "start_date must be before end_date."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Create FHIR Schedule resource
-        practitioner = template.practitioner
-        
-        schedule_data = {
-            "resourceType": "Schedule",
-            "id": generate_fhir_id(),
-            "status": "active",
-            "actor": [
-                create_reference("Practitioner", practitioner.fhir_practitioner_id)
-            ],
-            "planningHorizon": create_period(
-                start=start_date.isoformat(),
-                end=end_date.isoformat()
-            )
-        }
-        
-        try:
-            # Create the schedule in FHIR
-            fhir_schedule = fhir_client.create_resource("Schedule", schedule_data)
-            
-            # Generate slots for each day in the range
-            current_date = start_date
-            slots_created = 0
-            
-            while current_date <= end_date:
-                # Get day of week (0=Monday, 6=Sunday)
-                day_of_week = current_date.weekday()
-                
-                # Find time slots for this day
-                time_slots = template.time_slots.filter(day_of_week=day_of_week)
-                
-                for time_slot in time_slots:
-                    # Create datetime objects for start and end times
-                    start_datetime = datetime.datetime.combine(
-                        current_date, 
-                        time_slot.start_time
-                    )
-                    end_datetime = datetime.datetime.combine(
-                        current_date, 
-                        time_slot.end_time
-                    )
-                    
-                    # Create FHIR Slot resource
-                    slot_data = {
-                        "resourceType": "Slot",
-                        "id": generate_fhir_id(),
-                        "schedule": create_reference("Schedule", fhir_schedule["id"]),
-                        "status": "free",
-                        "start": start_datetime.isoformat(),
-                        "end": end_datetime.isoformat()
-                    }
-                    
-                    fhir_client.create_resource("Slot", slot_data)
-                    slots_created += 1
-                
-                # Move to next day
-                current_date += datetime.timedelta(days=1)
-            
+
             return Response({
-                "message": f"Schedule generated successfully with {slots_created} slots.",
-                "schedule_id": fhir_schedule["id"]
+                "message": f"Schedule generated successfully with {result['slots_created']} slots.",
+                "schedule_id": result["schedule_id"],
+                "mapping_id": result.get("mapping_id")
             })
-            
+
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response(
                 {"error": f"Failed to generate schedule: {str(e)}"},
@@ -156,6 +101,7 @@ class ScheduleTemplateViewSet(viewsets.ModelViewSet):
             )
 
 
+# In your views.py file, update the ScheduleTimeSlotViewSet class
 class ScheduleTimeSlotViewSet(viewsets.ModelViewSet):
     """
     API endpoint for schedule time slots.
@@ -163,10 +109,22 @@ class ScheduleTimeSlotViewSet(viewsets.ModelViewSet):
     queryset = ScheduleTimeSlot.objects.all()
     serializer_class = ScheduleTimeSlotSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+
+    def get_queryset(self):
+        """
+        Filter time slots by template ID if provided in query parameters.
+        """
+        queryset = ScheduleTimeSlot.objects.all()
+        template_id = self.request.query_params.get('template', None)
+        
+        if template_id is not None:
+            queryset = queryset.filter(template=template_id)
+            
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
@@ -178,12 +136,445 @@ class AppointmentFHIRMappingViewSet(viewsets.ModelViewSet):
     queryset = AppointmentFHIRMapping.objects.all()
     serializer_class = AppointmentFHIRMappingSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
+class AppointmentViewSet(viewsets.ViewSet):
+    """
+    API endpoint for FHIR Appointment resources.
+    """
+    permission_classes = [
+        permissions.IsAuthenticated,
+        (IsAdmin | IsDoctor | IsNurse | IsReceptionist)  # Use the | operator instead of permissions.OR
+    ]
+
+    def list(self, request):
+        """
+        List appointments with optional filtering.
+        """
+        patient_id = request.query_params.get('patient_id')
+        practitioner_id = request.query_params.get('practitioner_id')
+        date = request.query_params.get('date')
+        status = request.query_params.get('status')
+
+        appointments = AppointmentProxy.search(
+            patient_id=patient_id,
+            practitioner_id=practitioner_id,
+            date=date,
+            status=status
+        )
+
+        return Response(appointments)
+
+    def retrieve(self, request, pk=None):
+        """
+        Get a specific appointment by ID.
+        """
+        try:
+            appointment = AppointmentProxy.get(pk)
+            return Response(appointment)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def create(self, request):
+        """
+        Create a new appointment with conflict prevention.
+        """
+        try:
+            # Extract required fields
+            patient_id = request.data.get('patient_id')
+            practitioner_id = request.data.get('practitioner_id')
+            start_time = request.data.get('start_time')
+            end_time = request.data.get('end_time')
+            appointment_type_id = request.data.get('appointment_type_id')
+            slot_id = request.data.get('slot_id')
+            description = request.data.get('description')
+            comment = request.data.get('comment')
+
+            # Validate required fields
+            if not all([patient_id, practitioner_id, start_time, end_time, appointment_type_id]):
+                return Response(
+                    {"error": "Missing required fields: patient_id, practitioner_id, start_time, end_time, appointment_type_id"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Parse datetime strings
+            try:
+                start_time = datetime.datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                end_time = datetime.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            except ValueError:
+                return Response(
+                    {"error": "Invalid datetime format. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS)."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Book the appointment with conflict prevention
+            success, result = ConflictPreventionService.book_appointment(
+                patient_id=patient_id,
+                practitioner_id=practitioner_id,
+                start_time=start_time,
+                end_time=end_time,
+                appointment_type_id=appointment_type_id,
+                slot_id=slot_id,
+                description=description,
+                comment=comment
+            )
+
+            if success:
+                return Response(result, status=status.HTTP_201_CREATED)
+            else:
+                return Response(result, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def update(self, request, pk=None):
+        """
+        Update an existing appointment.
+        """
+        try:
+            # Extract fields to update
+            start_time = request.data.get('start_time')
+            end_time = request.data.get('end_time')
+            status_value = request.data.get('status')
+            description = request.data.get('description')
+            comment = request.data.get('comment')
+
+            # Parse datetime strings if provided
+            if start_time:
+                start_time = datetime.datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            if end_time:
+                end_time = datetime.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+
+            # Update the appointment
+            appointment = AppointmentProxy.update(
+                appointment_id=pk,
+                start_time=start_time,
+                end_time=end_time,
+                status=status_value,
+                description=description,
+                comment=comment
+            )
+
+            return Response(appointment)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def destroy(self, request, pk=None):
+        """
+        Delete an appointment.
+        """
+        try:
+            AppointmentProxy.delete(pk)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'])
+    def available_slots(self, request):
+        """
+        Get available slots for scheduling.
+        """
+        practitioner_id = request.query_params.get('practitioner_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        appointment_type_id = request.query_params.get('appointment_type_id')
+
+        if not all([practitioner_id, start_date, end_date]):
+            return Response(
+                {"error": "Missing required parameters: practitioner_id, start_date, end_date"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            slots = AvailabilityService.get_available_slots(
+                practitioner_id=practitioner_id,
+                start_date=start_date,
+                end_date=end_date,
+                appointment_type_id=appointment_type_id
+            )
+
+            return Response(slots)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class SlotViewSet(viewsets.ViewSet):
+    """
+    API endpoint for FHIR Slot resources.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        """
+        List slots with optional filtering.
+        """
+        schedule_id = request.query_params.get('schedule_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        status_value = request.query_params.get('status')
+
+        slots = SlotProxy.search(
+            schedule_id=schedule_id,
+            start_date=start_date,
+            end_date=end_date,
+            status=status_value
+        )
+
+        return Response(slots)
+
+    def retrieve(self, request, pk=None):
+        """
+        Get a specific slot by ID.
+        """
+        try:
+            slot = SlotProxy.get(pk)
+            return Response(slot)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def update(self, request, pk=None):
+        """
+        Update a slot's status.
+        """
+        try:
+            status_value = request.data.get('status')
+
+            if not status_value:
+                return Response(
+                    {"error": "Missing required field: status"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            slot = SlotProxy.update(
+                slot_id=pk,
+                status=status_value
+            )
+
+            return Response(slot)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ScheduleViewSet(viewsets.ViewSet):
+    """
+    API endpoint for FHIR Schedule resources.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        """
+        List schedules with optional filtering.
+        """
+        practitioner_id = request.query_params.get('practitioner_id')
+        date = request.query_params.get('date')
+        active = request.query_params.get('active')
+
+        if active is not None:
+            active = active.lower() == 'true'
+
+        schedules = ScheduleProxy.search(
+            practitioner_id=practitioner_id,
+            date=date,
+            active=active
+        )
+
+        return Response(schedules)
+
+    def retrieve(self, request, pk=None):
+        """
+        Get a specific schedule by ID.
+        """
+        try:
+            schedule = ScheduleProxy.get(pk)
+            return Response(schedule)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def create(self, request):
+        """
+        Create a new schedule.
+        """
+        try:
+            practitioner_id = request.data.get('practitioner_id')
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            service_type = request.data.get('service_type')
+
+            if not all([practitioner_id, start_date, end_date]):
+                return Response(
+                    {"error": "Missing required fields: practitioner_id, start_date, end_date"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            schedule = ScheduleProxy.create(
+                practitioner_id=practitioner_id,
+                start_date=start_date,
+                end_date=end_date,
+                service_type=service_type
+            )
+
+            return Response(schedule, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def update(self, request, pk=None):
+        """
+        Update a schedule.
+        """
+        try:
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            active = request.data.get('active')
+
+            if active is not None:
+                active = active.lower() == 'true'
+
+            schedule = ScheduleProxy.update(
+                schedule_id=pk,
+                start_date=start_date,
+                end_date=end_date,
+                active=active
+            )
+
+            return Response(schedule)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def destroy(self, request, pk=None):
+        """
+        Delete a schedule.
+        """
+        try:
+            ScheduleProxy.delete(pk)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# In appointments/views.py (add this to your existing views)
+
+class ScheduleFHIRMappingViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing schedule FHIR mappings.
+    """
+    queryset = ScheduleFHIRMapping.objects.all()
+    serializer_class = ScheduleFHIRMappingSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+
+    def get_queryset(self):
+        """
+        Filter mappings by practitioner, template, or date range.
+        """
+        queryset = ScheduleFHIRMapping.objects.all()
+
+        practitioner_id = self.request.query_params.get('practitioner_id')
+        template_id = self.request.query_params.get('template_id')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        status = self.request.query_params.get('status')
+
+        if practitioner_id:
+            queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        if template_id:
+            queryset = queryset.filter(template_id=template_id)
+
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+
+        if status:
+            queryset = queryset.filter(status=status)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """
+        Cancel a schedule and its associated slots.
+        """
+        mapping = self.get_object()
+
+        try:
+            # Update FHIR Schedule to inactive
+            ScheduleProxy.update(
+                schedule_id=mapping.fhir_schedule_id,
+                active=False
+            )
+
+            # Find all slots for this schedule and cancel them
+            slots_response = SlotProxy.search(schedule_id=mapping.fhir_schedule_id)
+
+            if 'entry' in slots_response:
+                for entry in slots_response['entry']:
+                    slot = entry.get('resource', {})
+                    if slot.get('status') == 'free':
+                        SlotProxy.update(
+                            slot_id=slot.get('id'),
+                            status='busy-unavailable'
+                        )
+
+            # Update local mapping status
+            mapping.status = "cancelled"
+            mapping.save()
+
+            return Response({
+                "message": "Schedule cancelled successfully"
+            })
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to cancel schedule: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
@@ -193,27 +584,27 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
     queryset = RecurringAppointmentRule.objects.all()
     serializer_class = RecurringAppointmentRuleSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
-    
+
     @action(detail=True, methods=['post'])
     def generate_appointments(self, request, pk=None):
         """
         Generate recurring appointments based on the rule.
         """
         rule = self.get_object()
-        
+
         # Get the appointment type
         appointment_type = rule.appointment_type
-        
+
         # Get the start and end dates
         start_date = rule.start_date
         end_date = rule.end_date
-        
+
         if not end_date and rule.max_occurrences:
             # Calculate end date based on max occurrences
             if rule.frequency == 'daily':
@@ -223,20 +614,20 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
             elif rule.frequency == 'monthly':
                 # Approximate months as 30 days
                 end_date = start_date + datetime.timedelta(days=30 * rule.interval * rule.max_occurrences)
-        
+
         if not end_date:
             return Response(
                 {"error": "Could not determine end date for recurring appointments."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             appointments_created = 0
             current_date = start_date
-            
+
             while current_date <= end_date and (not rule.max_occurrences or appointments_created < rule.max_occurrences):
                 create_appointment = False
-                
+
                 if rule.frequency == 'daily':
                     create_appointment = True
                 elif rule.frequency == 'weekly':
@@ -252,40 +643,28 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
                         create_appointment = True
                 elif rule.frequency == 'monthly' and current_date.day == rule.day_of_month:
                     create_appointment = True
-                
+
                 if create_appointment:
-                    # Create FHIR Appointment resource
-                    appointment_data = {
-                        "resourceType": "Appointment",
-                        "id": generate_fhir_id(),
-                        "status": "proposed",
-                        "appointmentType": {
-                            "coding": [
-                                {
-                                    "system": "http://terminology.hl7.org/CodeSystem/v2-0276",
-                                    "code": "ROUTINE",
-                                    "display": appointment_type.name
-                                }
-                            ]
-                        },
-                        "description": appointment_type.description,
-                        "start": datetime.datetime.combine(
-                            current_date, 
-                            datetime.time(9, 0)  # Default to 9:00 AM
-                        ).isoformat(),
-                        "end": datetime.datetime.combine(
-                            current_date, 
-                            datetime.time(9, 0)
-                        ).replace(
-                            minute=appointment_type.duration_minutes
-                        ).isoformat(),
-                        "created": timezone.now().isoformat(),
-                        "comment": f"Recurring appointment from rule: {rule.id}"
-                    }
-                    
-                    fhir_client.create_resource("Appointment", appointment_data)
+                    # Create start and end times
+                    start_time = datetime.datetime.combine(
+                        current_date, 
+                        datetime.time(9, 0)  # Default to 9:00 AM
+                    )
+                    end_time = start_time + datetime.timedelta(minutes=appointment_type.duration_minutes)
+
+                    # Use AppointmentProxy to create the appointment
+                    AppointmentProxy.create(
+                        start_time=start_time,
+                        end_time=end_time,
+                        patient_id="placeholder",  # This will need to be updated when booking
+                        practitioner_id="placeholder",  # This will need to be updated when booking
+                        appointment_type=appointment_type.name,
+                        status="proposed",
+                        description=appointment_type.description,
+                        comment=f"Recurring appointment from rule: {rule.id}"
+                    )
                     appointments_created += 1
-                
+
                 # Increment date based on frequency and interval
                 if rule.frequency == 'daily':
                     current_date += datetime.timedelta(days=rule.interval)
@@ -302,7 +681,7 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
                     else:
                         next_month = current_date.month + 1
                         next_year = current_date.year
-                    
+
                     # Try to maintain the same day of month
                     try:
                         current_date = current_date.replace(year=next_year, month=next_month)
@@ -312,11 +691,11 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
                             current_date = current_date.replace(year=next_year, month=next_month, day=28)
                         else:
                             current_date = current_date.replace(year=next_year, month=next_month, day=30)
-            
+
             return Response({
                 "message": f"Successfully created {appointments_created} recurring appointments."
             })
-            
+
         except Exception as e:
             return Response(
                 {"error": f"Failed to generate recurring appointments: {str(e)}"},

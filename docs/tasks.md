@@ -78,17 +78,17 @@ This document outlines the implementation plan for the Hospital Management Syste
 
 ## Phase 5: Appointment Scheduling Module
 
-- [ ] Backend implementation
-  - [ ] Create Appointment, Slot, and Schedule proxies to FHIR
-  - [ ] Implement availability generation logic
-  - [ ] Create conflict prevention system
-  - [ ] Implement appointment types (walk-in, telemedicine, recurring)
-- [ ] Frontend implementation
-  - [ ] Create appointment calendar view
-  - [ ] Implement appointment creation form
-  - [ ] Create appointment list and detail views
-  - [ ] Implement appointment filtering and search
-  - [ ] Create notifications for upcoming appointments
+- [x] Backend implementation
+  - [x] Create Appointment, Slot, and Schedule proxies to FHIR
+  - [x] Implement availability generation logic
+  - [x] Create conflict prevention system
+  - [x] Implement appointment types (walk-in, telemedicine, recurring)
+- [x] Frontend implementation
+  - [x] Create appointment calendar view
+  - [x] Implement appointment creation form
+  - [x] Create appointment list and detail views
+  - [x] Implement appointment filtering and search
+  - [x] Create notifications for upcoming appointments
 
 ## Phase 6: Inpatient & Ward Management Module
 

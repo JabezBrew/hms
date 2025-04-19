@@ -59,6 +59,7 @@ class LoginView(APIView):
                 'user': {
                     'email': user.email,
                     'id': user.id,
+                    'user_type': user.user_type,
                 }
             })
 

@@ -1,0 +1,250 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { ArrowLeft, Calendar, Clock } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+
+import { fetchScheduleSlots, fetchSchedules, fetchPractitioner } from '@/lib/api.js';
+
+const ScheduleSlotsPage = () => {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const [slots, setSlots] = useState([]);
+    const [schedule, setSchedule] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [practitionerName, setPractitionerName] = useState('Unknown');
+
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                // Fetch the schedule details
+                const scheduleData = await fetchSchedules({ id });
+                const scheduleItem = Array.isArray(scheduleData) && scheduleData.length > 0
+                    ? scheduleData.find(s => s.id === id) || scheduleData[0]
+                    : null;
+
+                setSchedule(scheduleItem);
+
+                // Fetch the slots for this schedule
+                const slotsData = await fetchScheduleSlots(scheduleItem?.fhir_schedule_id);
+
+                // Process the slots data
+                let processedSlots = [];
+                if (slotsData && slotsData.entry && Array.isArray(slotsData.entry)) {
+                    processedSlots = slotsData.entry
+                        .filter(entry => entry.resource && entry.resource.resourceType === 'Slot')
+                        .map(entry => {
+                            const slot = entry.resource;
+                            return {
+                                id: slot.id,
+                                start: slot.start,
+                                end: slot.end,
+                                status: slot.status,
+                                scheduleReference: slot.schedule?.reference,
+                            };
+                        });
+                }
+
+                setSlots(processedSlots);
+            } catch (error) {
+                console.error('Error loading schedule slots:', error);
+                toast.error('Failed to load schedule slots');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (id) {
+            loadData();
+        }
+    }, [id]);
+
+    // Format date for display
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+            // eslint-disable-next-line no-unused-vars
+        } catch (error) {
+            return dateString;
+        }
+    };
+
+    // Load practitioner name when schedule changes
+    useEffect(() => {
+        const loadPractitionerName = async () => {
+            if (schedule?.practitioner) {
+                try {
+                    const practitioner = await fetchPractitioner(schedule.practitioner);
+                    if (practitioner?.staff_details?.user_details) {
+                        const { first_name, last_name } = practitioner.staff_details.user_details;
+                        setPractitionerName(`${first_name} ${last_name}`);
+                    }
+                } catch (error) {
+                    console.error('Error loading practitioner:', error);
+                    // Keep the default "Unknown" value
+                }
+            }
+        };
+
+        loadPractitionerName();
+    }, [schedule]);
+
+    // Get status badge color
+    const getStatusBadge = (status) => {
+        switch (status) {
+            case 'free':
+                return <Badge className="bg-green-100 text-green-800">Free</Badge>;
+            case 'busy':
+                return <Badge className="bg-red-100 text-red-800">Busy</Badge>;
+            case 'busy-unavailable':
+                return <Badge className="bg-gray-100 text-gray-800">Unavailable</Badge>;
+            case 'busy-tentative':
+                return <Badge className="bg-yellow-100 text-yellow-800">Tentative</Badge>;
+            default:
+                return <Badge className="bg-blue-100 text-blue-800">{status}</Badge>;
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="container mx-auto py-6 space-y-6">
+                <div className="flex items-center space-x-4">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-2">
+                        <Skeleton className="h-4 w-[250px]" />
+                        <Skeleton className="h-4 w-[200px]" />
+                    </div>
+                </div>
+                <Skeleton className="h-[500px] w-full" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="container mx-auto py-6 space-y-6">
+            <div className="flex justify-between items-center">
+                <div className="flex items-center space-x-4">
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => navigate('/practitioner-availability')}
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight">Schedule Slots</h1>
+                        {schedule && (
+                            <p className="text-muted-foreground">
+                                {schedule.template_name} ({schedule.start_date} to {schedule.end_date})
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Schedule Details</CardTitle>
+                    <CardDescription>
+                        Details about the schedule and its slots
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {schedule ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <h3 className="font-medium">Template</h3>
+                                <p>{schedule.template_name}</p>
+                            </div>
+                            <div>
+                                <h3 className="font-medium">Practitioner</h3>
+                                <p>{practitionerName}</p>
+                            </div>
+                            <div>
+                                <h3 className="font-medium">Status</h3>
+                                <p>{schedule.status}</p>
+                            </div>
+                            <div>
+                                <h3 className="font-medium">Start Date</h3>
+                                <p>{schedule.start_date}</p>
+                            </div>
+                            <div>
+                                <h3 className="font-medium">End Date</h3>
+                                <p>{schedule.end_date}</p>
+                            </div>
+                            <div>
+                                <h3 className="font-medium">Total Slots</h3>
+                                <p>{schedule.slots_count || 0}</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <p>No schedule details available</p>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Slots</CardTitle>
+                    <CardDescription>
+                        All slots for this schedule
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {slots.length === 0 ? (
+                        <div className="text-center py-6">
+                            <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
+                            <h3 className="mt-4 text-lg font-medium">No Slots Found</h3>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                There are no slots available for this schedule.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="rounded-md border">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Start Time</TableHead>
+                                        <TableHead>End Time</TableHead>
+                                        <TableHead>Status</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {slots.map((slot) => (
+                                        <TableRow key={slot.id}>
+                                            <TableCell>
+                                                <div className="flex items-center">
+                                                    <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                                                    {formatDate(slot.start)}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>{formatDate(slot.end)}</TableCell>
+                                            <TableCell>{getStatusBadge(slot.status)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+};
+
+export default ScheduleSlotsPage;

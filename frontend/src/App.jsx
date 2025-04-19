@@ -1,18 +1,30 @@
-import { useState, useEffect } from 'react'
 import './App.css'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
+import { HelmetProvider } from 'react-helmet-async'
 import { Layout } from './components/layout/layout'
 import { Toaster } from './components/ui/sonner'
 import { Skeleton } from './components/ui/skeleton'
 import { LoginForm } from './components/auth/login-form'
 import { RegisterForm } from './components/auth/register-form'
 import { ResetPasswordForm } from './components/auth/reset-password-form'
+import { RoleBasedRoute } from './components/auth/RoleBasedRoute'
 import PatientDashboard from './components/patients/PatientDashboard'
 import PatientDetailPage from './pages/PatientDetailPage'
 import PatientEditPage from './pages/PatientEditPage'
 import PatientCreatePage from './pages/PatientCreatePage'
+import AppointmentsPage from './pages/AppointmentsPage'
+import AppointmentDetailPage from './pages/AppointmentDetailPage'
+import AppointmentCreatePage from './pages/AppointmentCreatePage'
+import AppointmentEditPage from './pages/AppointmentEditPage'
+import StaffListPage from './pages/StaffListPage'
+import StaffCreatePage from './pages/StaffCreatePage'
+import StaffDetailPage from './pages/StaffDetailPage'
+import UnauthorizedPage from './pages/UnauthorizedPage'
+import PractitionerAvailabilityPage from './pages/PractitionerAvailabilityPage'
+import PractitionerAvailabilityDetailPage from './pages/PractitionerAvailabilityDetailPage'
+import ScheduleSlotsPage from './pages/ScheduleSlotsPage';
 
 // Main app content with routes
 function AppContent() {
@@ -84,6 +96,7 @@ function AppContent() {
 
   return (
     <Routes>
+      {/* Dashboard - accessible to all authenticated users */}
       <Route path="/" element={
         <Layout>
           <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -92,26 +105,131 @@ function AppContent() {
           </div>
         </Layout>
       } />
+
+      {/* Unauthorized page */}
+      <Route path="/unauthorized" element={
+        <Layout>
+          <UnauthorizedPage />
+        </Layout>
+      } />
+
+      {/* Patient routes */}
       <Route path="/patients" element={
-        <Layout>
-          <PatientDashboard />
-        </Layout>
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
+          <Layout>
+            <PatientDashboard />
+          </Layout>
+        </RoleBasedRoute>
       } />
+
       <Route path="/patients/create" element={
-        <Layout>
-          <PatientCreatePage />
-        </Layout>
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <PatientCreatePage />
+          </Layout>
+        </RoleBasedRoute>
       } />
+
       <Route path="/patients/:id" element={
-        <Layout>
-          <PatientDetailPage />
-        </Layout>
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
+          <Layout>
+            <PatientDetailPage />
+          </Layout>
+        </RoleBasedRoute>
       } />
+
       <Route path="/patients/:id/edit" element={
-        <Layout>
-          <PatientEditPage />
-        </Layout>
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <PatientEditPage />
+          </Layout>
+        </RoleBasedRoute>
       } />
+
+      {/* Appointment routes */}
+      <Route path="/appointments" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AppointmentsPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/appointments/create" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AppointmentCreatePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/appointments/:id" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AppointmentDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/appointments/:id/edit" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AppointmentEditPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Staff routes */}
+      <Route path="/staff" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <StaffListPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/staff/create" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <StaffCreatePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/staff/:id" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <StaffDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Practitioner Availability routes */}
+      <Route path="/practitioner-availability" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <PractitionerAvailabilityPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/practitioner-availability/:id" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <PractitionerAvailabilityDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+        {/* Schedule Slots route */}
+        <Route path="/schedules/:id/slots" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+                <Layout>
+                    <ScheduleSlotsPage />
+                </Layout>
+            </RoleBasedRoute>
+        } />
+
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   )
@@ -121,10 +239,12 @@ function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <AuthProvider>
-          <AppContent />
-          <Toaster />
-        </AuthProvider>
+        <HelmetProvider>
+          <AuthProvider>
+            <AppContent />
+            <Toaster />
+          </AuthProvider>
+        </HelmetProvider>
       </BrowserRouter>
     </ThemeProvider>
   )

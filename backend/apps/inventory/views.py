@@ -14,7 +14,7 @@ from .serializers import (
     StockMovementSerializer, ExpiryTrackerSerializer, InventoryAuditSerializer,
     InventoryAuditItemSerializer, InventoryAuditCreateSerializer
 )
-from users.permissions import IsAdminOrOwner
+from ..users.permissions import IsAdminOrOwner
 
 
 class InventoryCategoryViewSet(viewsets.ModelViewSet):

@@ -10,9 +10,9 @@ from .serializers import (
     BedAllocationLogSerializer, WardTransferSerializer,
     AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer
 )
-from users.permissions import IsAdminOrOwner
-from fhir_client.client import fhir_client
-from fhir_client.utils import create_reference, create_period, generate_fhir_id
+from ..users.permissions import IsAdminOrOwner
+from ..fhir_client.client import fhir_client
+from ..fhir_client.utils import create_reference, create_period, generate_fhir_id
 
 
 class WardViewSet(viewsets.ModelViewSet):

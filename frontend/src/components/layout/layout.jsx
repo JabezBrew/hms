@@ -15,8 +15,8 @@ export function Layout({ children }) {
           <Sidebar>
             <AppSidebar />
           </Sidebar>
-          <SidebarInset className="p-4">
-            <div className="container mx-auto">
+          <SidebarInset className="p-4 flex-1 min-w-0">
+            <div className="w-full">
               {children}
             </div>
           </SidebarInset>
