@@ -14,6 +14,7 @@ from .serializers import (
 from ..users.permissions import IsAdminOrOwner
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import create_reference, create_period, generate_fhir_id
+from .proxies import EncounterProxy
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -230,59 +231,21 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             # Create FHIR Encounter if fhir_encounter_id is not provided
             if not admission.fhir_encounter_id:
                 try:
-                    # Create FHIR Encounter
-                    encounter_data = {
-                        "resourceType": "Encounter",
-                        "id": generate_fhir_id(),
-                        "status": "in-progress",
-                        "class": {
-                            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-                            "code": "IMP",
-                            "display": "inpatient encounter"
-                        },
-                        "subject": create_reference(
-                            "Patient", 
-                            admission.patient.fhir_patient_id
-                        ),
-                        "period": create_period(
-                            start=admission.admission_date.isoformat()
-                        ),
-                        "serviceType": {
-                            "coding": [
-                                {
-                                    "system": "http://terminology.hl7.org/CodeSystem/service-type",
-                                    "code": "124",
-                                    "display": "General Practice"
-                                }
-                            ],
-                            "text": f"Admission to {admission.bed.ward.name}"
-                        }
-                    }
-
-                    # Add practitioner if available
+                    # Get practitioner ID if available
+                    practitioner_id = None
                     if admission.admitting_doctor and admission.admitting_doctor.practitioner_profile.fhir_practitioner_id:
-                        encounter_data["participant"] = [
-                            {
-                                "type": [
-                                    {
-                                        "coding": [
-                                            {
-                                                "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
-                                                "code": "ATND",
-                                                "display": "attender"
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "individual": create_reference(
-                                    "Practitioner",
-                                    admission.admitting_doctor.practitioner_profile.fhir_practitioner_id
-                                )
-                            }
-                        ]
+                        practitioner_id = admission.admitting_doctor.practitioner_profile.fhir_practitioner_id
 
-                    # Create the encounter in FHIR
-                    fhir_encounter = fhir_client.create_resource("Encounter", encounter_data)
+                    # Create FHIR Encounter using EncounterProxy
+                    fhir_encounter = EncounterProxy.create(
+                        patient_id=admission.patient.fhir_patient_id,
+                        practitioner_id=practitioner_id,
+                        encounter_type="inpatient",
+                        status="in-progress",
+                        start_time=admission.admission_date,
+                        service_type=f"Admission to {admission.bed.ward.name}",
+                        location=admission.bed.ward.name
+                    )
 
                     # Update the admission with the FHIR encounter ID
                     admission.fhir_encounter_id = fhir_encounter["id"]
@@ -326,18 +289,12 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 # Update FHIR Encounter if available
                 if admission.fhir_encounter_id:
                     try:
-                        # Get the current encounter
-                        encounter = fhir_client.get_resource("Encounter", admission.fhir_encounter_id)
-
-                        # Update the status and end date
-                        encounter["status"] = "finished"
-                        if "period" not in encounter:
-                            encounter["period"] = {}
-                        encounter["period"]["end"] = admission.actual_discharge_date.isoformat()
-
-                        # Update the encounter in FHIR
-                        fhir_client.update_resource("Encounter", admission.fhir_encounter_id, encounter)
-
+                        # Update the encounter using EncounterProxy
+                        EncounterProxy.update(
+                            encounter_id=admission.fhir_encounter_id,
+                            status="finished",
+                            end_time=admission.actual_discharge_date
+                        )
                     except Exception as e:
                         # Log the error but continue
                         print(f"Failed to update FHIR Encounter: {str(e)}")

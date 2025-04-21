@@ -29,8 +29,10 @@ import ScheduleSlotsPage from './pages/ScheduleSlotsPage';
 import WardsPage from './pages/wards/WardsPage'
 import WardDetailPage from './pages/wards/WardDetailPage'
 import NewWardPage from './pages/wards/NewWardPage'
-import AdmissionCreatePage from './pages/admissions/AdmissionCreatePage'
-import AdmissionDetailPage from './pages/admissions/AdmissionDetailPage'
+import EncountersPage from './pages/encounters/EncountersPage'
+import EncounterCreatePage from './pages/encounters/EncounterCreatePage'
+import EncounterDetailPage from './pages/encounters/EncounterDetailPage'
+import EncounterEditPage from './pages/encounters/EncounterEditPage'
 
 // Main app content with routes
 function AppContent() {
@@ -261,19 +263,35 @@ function AppContent() {
         </RoleBasedRoute>
       } />
 
-      {/* Admission routes */}
-      <Route path="/admissions/new" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+      {/* Encounter routes */}
+      <Route path="/encounters" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
           <Layout>
-            <AdmissionCreatePage />
+            <EncountersPage />
           </Layout>
         </RoleBasedRoute>
       } />
 
-      <Route path="/admissions/:admissionId" element={
+      <Route path="/encounters/new" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <EncounterCreatePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/encounters/:id" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <EncounterDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/encounters/:id/edit" element={
         <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
           <Layout>
-            <AdmissionDetailPage />
+            <EncounterEditPage />
           </Layout>
         </RoleBasedRoute>
       } />

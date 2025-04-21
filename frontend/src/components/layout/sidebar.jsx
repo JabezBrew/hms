@@ -8,6 +8,7 @@ import {
   FlaskConicalIcon,
   PillIcon,
   ShieldIcon,
+  ClipboardIcon,
 } from "lucide-react"
 
 import {
@@ -41,6 +42,7 @@ export function AppSidebar() {
       overview: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient'],
       patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing'],
       appointments: ['admin', 'doctor', 'nurse', 'receptionist'],
+      encounters: ['admin', 'doctor', 'nurse', 'receptionist'],
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],
@@ -83,6 +85,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Appointments" href="/appointments">
                   <CalendarIcon />
                   <span>Appointments</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.dashboard.encounters) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Encounters" href="/encounters">
+                  <ClipboardIcon />
+                  <span>Encounters</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
