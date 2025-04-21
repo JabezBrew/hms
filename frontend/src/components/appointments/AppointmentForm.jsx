@@ -6,6 +6,7 @@ import { format, addMinutes, parseISO } from 'date-fns';
 import { CalendarIcon, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {toast} from 'sonner';
+import { useDebounce } from '@/hooks/use-debounce';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -32,14 +33,18 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { 
   fetchAppointmentTypes, 
   fetchAvailableSlots, 
   createAppointment,
-  fetchPatients,
-  fetchPractitioners
-} from '@/lib/api';
+  fetchPatient,
+  searchPatients,
+  searchPractitioners
+} from '@/lib/api.js';
+import { SearchBar } from "@/components/ui/search-bar";
+import DoctorAvailability from './DoctorAvailability';
 
 // Form validation schema
 const formSchema = z.object({
@@ -64,9 +69,16 @@ const formSchema = z.object({
 
 const AppointmentForm = ({ initialData = {}, onSuccess }) => {
   const [appointmentTypes, setAppointmentTypes] = useState([]);
+  const [patientSearchQuery, setPatientSearchQuery] = useState("");
   const [patients, setPatients] = useState([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const debouncedPatientQuery = useDebounce(patientSearchQuery, 300);
+
+  const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
   const [practitioners, setPractitioners] = useState([]);
-  const [availableSlots, setAvailableSlots] = useState([]);
+  const [isLoadingPractitioners, setIsLoadingPractitioners] = useState(false);
+  const debouncedPractitionerQuery = useDebounce(practitionerSearchQuery, 300);
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -91,6 +103,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
   const watchPractitionerId = form.watch("practitionerId");
   const watchDate = form.watch("date");
   const watchAppointmentTypeId = form.watch("appointmentTypeId");
+  const watchSlotId = form.watch("slotId");
 
   // Load appointment types
   useEffect(() => {
@@ -107,60 +120,97 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
     loadAppointmentTypes();
   }, [toast]);
 
-  // Load patients and practitioners
+  // Load initial data
   useEffect(() => {
-    const loadData = async () => {
+    const loadInitialData = async () => {
       setLoading(true);
       try {
-        const [patientsData, practitionersData] = await Promise.all([
-          fetchPatients(),
-          fetchPractitioners()
-        ]);
+        // If we have initialData with patientId or practitionerId, fetch those
+        if (initialData.patientId) {
+          try {
+            const patientData = await fetchPatient(initialData.patientId);
+            setPatients([patientData]);
+          } catch (error) {
+            console.error('Error loading initial patient:', error);
+          }
+        }
 
-        setPatients(patientsData);
-        setPractitioners(practitionersData);
+        if (initialData.practitionerId) {
+          try {
+            // Search for the practitioner by ID to get their details
+            // Using doctorsOnly=true since appointments are only with doctors
+            const result = await searchPractitioners(initialData.practitionerId, true);
+            if (Array.isArray(result) && result.length > 0) {
+              setPractitioners(result);
+            }
+          } catch (error) {
+            console.error('Error loading initial practitioner:', error);
+          }
+        }
       } catch (error) {
-        console.error('Error loading data:', error);
-        toast.error('Failed to load required data');
+        console.error('Error loading initial data:', error);
+        toast.error('Failed to load initial data');
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
-  }, [toast]);
+    loadInitialData();
+  }, [initialData.patientId, initialData.practitionerId]);
 
-  // Load available slots when practitioner, date, or appointment type changes
+  // Search for patients when query changes
   useEffect(() => {
-    const loadAvailableSlots = async () => {
-      if (!watchPractitionerId || !watchDate) return;
+    const searchForPatients = async () => {
+      if (!debouncedPatientQuery || debouncedPatientQuery.length < 2) {
+        setPatients([]);
+        return;
+      }
 
+      setIsLoadingPatients(true);
       try {
-        const formattedDate = format(watchDate, 'yyyy-MM-dd');
-        const params = new URLSearchParams({
-          practitioner_id: watchPractitionerId,
-          start_date: formattedDate,
-          end_date: formattedDate,
-        });
-
-        if (watchAppointmentTypeId) {
-          params.append('appointment_type_id', watchAppointmentTypeId);
-        }
-
-        const slots = await fetchAvailableSlots(params);
-        setAvailableSlots(slots);
+        const response = await searchPatients(debouncedPatientQuery);
+        const patientsData = response.patients || [];
+        setPatients(Array.isArray(patientsData) ? patientsData : []);
       } catch (error) {
-        console.error('Error loading available slots:', error);
-        toast.error('Failed to load available slots');
+        console.error('Error searching patients:', error);
+        toast.error('Failed to search patients');
+        setPatients([]);
+      } finally {
+        setIsLoadingPatients(false);
       }
     };
 
-    if (watchPractitionerId && watchDate) {
-      loadAvailableSlots();
-    } else {
-      setAvailableSlots([]);
-    }
-  }, [watchPractitionerId, watchDate, watchAppointmentTypeId, toast]);
+    searchForPatients();
+  }, [debouncedPatientQuery]);
+
+  // Search for practitioners (doctors only) when query changes
+  useEffect(() => {
+    const searchForPractitioners = async () => {
+      if (!debouncedPractitionerQuery || debouncedPractitionerQuery.length < 2) {
+        return;
+      }
+
+      setIsLoadingPractitioners(true);
+      try {
+        // Using doctorsOnly=true since appointments are only with doctors
+        const results = await searchPractitioners(debouncedPractitionerQuery, true);
+        setPractitioners(Array.isArray(results) ? results : []);
+      } catch (error) {
+        console.error('Error searching practitioners:', error);
+        toast.error('Failed to search practitioners');
+      } finally {
+        setIsLoadingPractitioners(false);
+      }
+    };
+
+    searchForPractitioners();
+  }, [debouncedPractitionerQuery]);
+
+  // We no longer need to load available slots here as the DoctorAvailability component handles this
+  // This effect is kept for reference but is now empty
+  useEffect(() => {
+    // The slot loading is now handled by the DoctorAvailability component
+  }, [watchPractitionerId, watchDate, watchAppointmentTypeId]);
 
   // Handle form submission
   const onSubmit = async (data) => {
@@ -179,12 +229,9 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
       if (data.slotId) {
         appointmentData.slot_id = data.slotId;
 
-        // Find the selected slot to get its start and end times
-        const selectedSlot = availableSlots.find(slot => slot.id === data.slotId);
-        if (selectedSlot) {
-          appointmentData.start_time = selectedSlot.start;
-          appointmentData.end_time = selectedSlot.end;
-        }
+        // We don't need to find the selected slot here as we're using the date from the form
+        // which is set when a slot is selected in the DoctorAvailability component
+        // The backend will handle getting the start and end times from the slot
       } else if (data.startTime) {
         // If no slot but start time is provided, construct the datetime
         const [hours, minutes] = data.startTime.split(':').map(Number);
@@ -251,24 +298,44 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Patient</FormLabel>
-              <Select 
-                onValueChange={field.onChange} 
-                defaultValue={field.value}
-                disabled={submitting}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a patient" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {Array.isArray(patients) ? patients.map((patient) => (
-                    <SelectItem key={patient.id} value={patient.id}>
-                      {patient.name?.[0]?.family}, {patient.name?.[0]?.given?.join(' ')}
-                    </SelectItem>
-                  )) : <SelectItem value="no_patients">No patients available</SelectItem>}
-                </SelectContent>
-              </Select>
+              <FormControl>
+                <SearchBar
+                    options={Array.isArray(patients) ? patients.map((patient) => {
+                      let name = "Unknown Patient";
+                      let id = "";
+
+                      // Check for FHIR resource format
+                      if (patient?.fhir_resource?.name?.[0]) {
+                        const given = patient.fhir_resource.name[0].given?.join(' ') || "";
+                        const family = patient.fhir_resource.name[0].family || "";
+                        name = `${family}, ${given}`.trim() || "Unknown Patient";
+                        id = patient.fhir_resource.id;
+                      }
+                      // Then check for local_data
+                      else if (patient?.local_data?.user_details) {
+                        name = `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim() || "Unknown Patient";
+                        id = patient.local_data.id;
+                      }
+
+                      return {
+                        label: name,
+                        value: id
+                      };
+                    }) : []}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onInputChange={setPatientSearchQuery}
+                  placeholder="Search for a patient"
+                  emptyMessage={isLoadingPatients ? "Searching..." : "No patients found."}
+                  searchPlaceholder="Search by name, MRN, or NHIS ID..."
+                  disabled={submitting}
+                  maxHeight="20rem"
+                  isLoading={isLoadingPatients}
+                />
+              </FormControl>
+              <FormDescription>
+                Search for a patient by name, medical record number (MRN), or NHIS ID.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -276,32 +343,50 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
 
         {/* Practitioner Selection */}
         <FormField
-          control={form.control}
-          name="practitionerId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Practitioner</FormLabel>
-              <Select 
-                onValueChange={field.onChange} 
-                defaultValue={field.value}
-                disabled={submitting}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a practitioner" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {Array.isArray(practitioners) ? practitioners.map((practitioner) => (
-                    <SelectItem key={practitioner.id} value={practitioner.id}>
-                      {practitioner.name?.[0]?.family}, {practitioner.name?.[0]?.given?.join(' ')}
-                    </SelectItem>
-                  )) : <SelectItem value="no_practitioners">No practitioners available</SelectItem>}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+            control={form.control}
+            name="practitionerId"
+            render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Practitioner</FormLabel>
+                  <FormControl>
+                    <SearchBar
+                        options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
+                          // Handle both old and new response structures
+                          if (practitioner.fhir_resource) {
+                            // New structure with FHIR resource
+                            const name = practitioner.fhir_resource.name?.[0];
+                            const given = name?.given?.join(' ') || '';
+                            const family = name?.family || '';
+                            const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
+                            return {
+                              label: displayName,
+                              value: practitioner.fhir_resource.id
+                            };
+                          } else {
+                            // Old structure with staff_details
+                            return {
+                              label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type === 'doctor' ? 'Doctor' : practitioner.staff_details?.user_details?.user_type}`.replace(/\s+/g, ' ').trim(),
+                              value: practitioner.id
+                            };
+                          }
+                        }) : []}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onInputChange={setPractitionerSearchQuery}
+                        placeholder="Search for a doctor"
+                        emptyMessage={isLoadingPractitioners ? "Searching..." : "No doctors found."}
+                        searchPlaceholder="Search by name, employee ID, or license number..."
+                        disabled={submitting}
+                        maxHeight="20rem"
+                        isLoading={isLoadingPractitioners}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Search for a doctor by name, employee ID, or license number. Only doctors can be selected for appointments.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+            )}
         />
 
         {/* Appointment Type Selection */}
@@ -334,141 +419,38 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
           )}
         />
 
-        {/* Date Selection */}
-        <FormField
-          control={form.control}
-          name="date"
-          render={({ field }) => (
-            <FormItem className="flex flex-col">
-              <FormLabel>Date</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-full pl-3 text-left font-normal",
-                        !field.value && "text-muted-foreground"
-                      )}
-                      disabled={submitting}
-                    >
-                      {field.value ? (
-                        format(field.value, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={(date) => date < new Date()}
-                    initialFocus={true}
-                  />
-                </PopoverContent>
-              </Popover>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Available Slots */}
-        {watchPractitionerId && watchDate && availableSlots.length > 0 && (
+        {/* Doctor Availability Calendar and Time Slots */}
+        {watchPractitionerId && (
           <FormField
             control={form.control}
             name="slotId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Available Time Slots</FormLabel>
-                <Select 
-                  onValueChange={field.onChange} 
-                  defaultValue={field.value}
-                  disabled={submitting}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a time slot" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {availableSlots.map((slot) => {
-                      const start = parseISO(slot.start);
-                      const end = parseISO(slot.end);
-                      return (
-                        <SelectItem key={slot.id} value={slot.id}>
-                          {format(start, 'h:mm a')} - {format(end, 'h:mm a')}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                <FormDescription>
-                  Select from available time slots or specify a custom time below
-                </FormDescription>
+                <FormControl>
+                  <DoctorAvailability
+                    practitionerId={watchPractitionerId}
+                    appointmentTypeId={watchAppointmentTypeId}
+                    selectedSlotId={field.value}
+                    onSlotSelect={(slot) => {
+                      field.onChange(slot.id);
+                      // Update the date field to match the slot's date
+                      if (slot.start) {
+                        const slotDate = new Date(slot.start);
+                        form.setValue('date', slotDate);
+
+                        // Also update the start and end time fields for backward compatibility
+                        if (slot.start) form.setValue('startTime', format(new Date(slot.start), 'HH:mm'));
+                        if (slot.end) form.setValue('endTime', format(new Date(slot.end), 'HH:mm'));
+                      }
+                    }}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
         )}
 
-        {/* Custom Time (if no slots available or for more flexibility) */}
-        {watchPractitionerId && watchDate && (
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="startTime"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Start Time</FormLabel>
-                  <div className="flex items-center">
-                    <FormControl>
-                      <input
-                        type="time"
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        {...field}
-                        disabled={submitting}
-                      />
-                    </FormControl>
-                    <Clock className="ml-2 h-4 w-4 opacity-50" />
-                  </div>
-                  <FormDescription>
-                    Specify a custom start time
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="endTime"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>End Time</FormLabel>
-                  <div className="flex items-center">
-                    <FormControl>
-                      <input
-                        type="time"
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        {...field}
-                        disabled={submitting}
-                      />
-                    </FormControl>
-                    <Clock className="ml-2 h-4 w-4 opacity-50" />
-                  </div>
-                  <FormDescription>
-                    Optional: Will default to appointment type duration
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        )}
 
         {/* Description */}
         <FormField

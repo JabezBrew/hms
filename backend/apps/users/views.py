@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
+from django.db.models import Q
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping
 from .serializers import (
     UserSerializer, StaffSerializer, PractitionerProfileSerializer, 
@@ -192,7 +193,7 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             # Only admins can create practitioner profiles
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
-        elif self.action == 'list':
+        elif self.action in ['list', 'search']:
             # Admins, doctors, and nurses can view practitioner list
             permission_classes = [
                 permissions.IsAuthenticated,
@@ -230,6 +231,114 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Search for practitioners by name, employee number, or license number.
+        Optional parameter 'doctors_only=true' to filter for doctors only.
+        """
+        query = request.query_params.get('q', '')
+        doctors_only = request.query_params.get('doctors_only', '').lower() == 'true'
+
+        if not query or len(query) < 2:
+            return Response({"detail": "Search query must be at least 2 characters long."}, 
+                           status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # First, try to search in local database
+            local_practitioners = []
+            queryset = self.get_queryset()
+
+            # Filter for doctors only if requested
+            if doctors_only:
+                queryset = queryset.filter(staff__user__user_type='doctor')
+
+            # Search by name (first name or last name)
+            name_results = queryset.filter(
+                Q(staff__user__first_name__icontains=query) | 
+                Q(staff__user__last_name__icontains=query)
+            )
+
+            # Search by employee number
+            employee_results = queryset.filter(staff__employee_id__icontains=query)
+
+            # Search by license number
+            license_results = queryset.filter(license_number__icontains=query)
+
+            # Combine results (avoiding duplicates)
+            combined_results = name_results.union(employee_results, license_results)
+
+            # Format local results
+            for practitioner in combined_results:
+                local_practitioners.append({
+                    "fhir_resource": fhir_client.get_resource("Practitioner", practitioner.fhir_practitioner_id) if practitioner.fhir_practitioner_id else None,
+                    "local_data": self.get_serializer(practitioner).data
+                })
+
+            # If we found local practitioners, return them
+            if local_practitioners:
+                return Response({
+                    "query": query,
+                    "total": len(local_practitioners),
+                    "practitioners": local_practitioners
+                })
+
+            # If no local practitioners found, search in FHIR
+            search_params = {
+                "name": query,
+                "_sort": "family",
+                "_count": 10
+            }
+
+            # Also search by identifier (employee ID or license number)
+            identifier_search_params = {
+                "identifier": query,
+                "_sort": "family",
+                "_count": 10
+            }
+
+            # Try name search first
+            fhir_results = fhir_client.search_resources("Practitioner", search_params)
+
+            # If no results, try identifier search
+            if "entry" not in fhir_results or len(fhir_results.get("entry", [])) == 0:
+                fhir_results = fhir_client.search_resources("Practitioner", identifier_search_params)
+
+            # Process results
+            practitioners = []
+
+            if "entry" in fhir_results:
+                for entry in fhir_results["entry"]:
+                    resource = entry.get("resource", {})
+
+                    # Try to find the local mapping
+                    try:
+                        mapping = PractitionerFHIRMapping.objects.get(fhir_practitioner_id=resource.get("id"))
+
+                        # Include local data
+                        practitioners.append({
+                            "fhir_resource": resource,
+                            "local_data": self.get_serializer(mapping.practitioner_profile).data
+                        })
+                    except PractitionerFHIRMapping.DoesNotExist:
+                        # Just include FHIR data
+                        practitioners.append({
+                            "fhir_resource": resource,
+                            "local_data": None
+                        })
+
+            return Response({
+                "query": query,
+                "total": fhir_results.get("total", 0),
+                "practitioners": practitioners
+            })
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to search practitioners: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):

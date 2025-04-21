@@ -314,3 +314,23 @@ LOGGING = {
         },
     },
 }
+
+# Celery Configuration
+CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Celery Beat Schedule
+CELERY_BEAT_SCHEDULE = {
+    'generate-slots-weekly': {
+        'task': 'apps.appointments.tasks.generate_slots_weekly',
+        'schedule': timedelta(days=7),  # Run once a week
+        'args': (14,),  # Generate slots for the next 14 days
+        'options': {
+            'expires': 3600,  # Task expires after 1 hour
+        },
+    },
+}

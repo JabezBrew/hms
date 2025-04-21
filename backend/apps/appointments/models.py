@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.fields import ArrayField
 from ..users.models import PractitionerProfile
 
 User = get_user_model()
@@ -16,7 +17,7 @@ class AppointmentType(models.Model):
     duration_minutes = models.IntegerField(default=30)
     color = models.CharField(max_length=20, default="#1976D2")  # Default blue color
     is_active = models.BooleanField(default=True)
-    
+
     # Appointment type categories
     CATEGORY_CHOICES = (
         ('in_person', 'In Person'),
@@ -25,69 +26,17 @@ class AppointmentType(models.Model):
         ('recurring', 'Recurring'),
     )
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='in_person')
-    
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_appointment_types')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_appointment_types')
-    
+
     def __str__(self):
         return self.name
 
 
-class ScheduleTemplate(models.Model):
-    """
-    Template for generating practitioner schedules.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100)
-    practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='schedule_templates')
-    is_active = models.BooleanField(default=True)
-    
-    # Audit fields
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_schedule_templates')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_schedule_templates')
-    
-    def __str__(self):
-        return f"{self.name} - {self.practitioner}"
-
-
-class ScheduleTimeSlot(models.Model):
-    """
-    Time slots for schedule templates.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    template = models.ForeignKey(ScheduleTemplate, on_delete=models.CASCADE, related_name='time_slots')
-    
-    # Day of week (0=Monday, 6=Sunday)
-    DAY_CHOICES = (
-        (0, 'Monday'),
-        (1, 'Tuesday'),
-        (2, 'Wednesday'),
-        (3, 'Thursday'),
-        (4, 'Friday'),
-        (5, 'Saturday'),
-        (6, 'Sunday'),
-    )
-    day_of_week = models.IntegerField(choices=DAY_CHOICES)
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    
-    # Audit fields
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_schedule_time_slots')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_schedule_time_slots')
-    
-    class Meta:
-        ordering = ['day_of_week', 'start_time']
-    
-    def __str__(self):
-        day_name = dict(self.DAY_CHOICES)[self.day_of_week]
-        return f"{day_name} {self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
 
 
 class AppointmentFHIRMapping(models.Model):
@@ -96,18 +45,18 @@ class AppointmentFHIRMapping(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     appointment_type = models.ForeignKey(AppointmentType, on_delete=models.CASCADE, related_name='fhir_mappings')
-    
+
     # FHIR resource references
     fhir_appointment_id = models.CharField(max_length=100, blank=True, null=True)
     fhir_schedule_id = models.CharField(max_length=100, blank=True, null=True)
     fhir_slot_id = models.CharField(max_length=100, blank=True, null=True)
-    
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_appointment_mappings')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_appointment_mappings')
-    
+
     def __str__(self):
         return f"Mapping for {self.appointment_type.name}"
 
@@ -118,7 +67,7 @@ class RecurringAppointmentRule(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     appointment_type = models.ForeignKey(AppointmentType, on_delete=models.CASCADE, related_name='recurring_rules')
-    
+
     # Recurrence pattern
     FREQUENCY_CHOICES = (
         ('daily', 'Daily'),
@@ -130,7 +79,7 @@ class RecurringAppointmentRule(models.Model):
     start_date = models.DateField()
     end_date = models.DateField(blank=True, null=True)
     max_occurrences = models.IntegerField(blank=True, null=True)
-    
+
     # For weekly recurrence
     monday = models.BooleanField(default=False)
     tuesday = models.BooleanField(default=False)
@@ -139,16 +88,16 @@ class RecurringAppointmentRule(models.Model):
     friday = models.BooleanField(default=False)
     saturday = models.BooleanField(default=False)
     sunday = models.BooleanField(default=False)
-    
+
     # For monthly recurrence
     day_of_month = models.IntegerField(blank=True, null=True)
-    
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_recurring_rules')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_recurring_rules')
-    
+
     def __str__(self):
         return f"{self.get_frequency_display()} recurring rule for {self.appointment_type.name}"
 
@@ -156,10 +105,9 @@ class RecurringAppointmentRule(models.Model):
 
 class ScheduleFHIRMapping(models.Model):
     """
-    Maps between local schedule templates and generated FHIR Schedule resources.
+    Maps between generated FHIR Schedule resources and local data.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    template = models.ForeignKey(ScheduleTemplate, on_delete=models.SET_NULL, null=True, related_name='generated_schedules')
     fhir_schedule_id = models.CharField(max_length=100)
     practitioner = models.ForeignKey('users.PractitionerProfile', on_delete=models.CASCADE)
     start_date = models.DateField()
@@ -168,9 +116,37 @@ class ScheduleFHIRMapping(models.Model):
     slots_count = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, related_name='created_schedule_mappings')
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+
     def __str__(self):
-        return f"Schedule {self.fhir_schedule_id} for {self.template.name if self.template else 'Unknown'}"
+        return f"Schedule {self.fhir_schedule_id} for {self.practitioner}"
+
+
+class RecurringSchedule(models.Model):
+    """
+    Model for defining recurring practitioner availability schedules.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='recurring_schedules')
+    days_of_week = ArrayField(models.IntegerField(), help_text="List of days (0=Monday, 6=Sunday)")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    slot_duration = models.IntegerField(help_text="Duration in minutes")
+    active_from = models.DateField()
+    active_to = models.DateField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_recurring_schedules')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_recurring_schedules')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} - {self.practitioner}"

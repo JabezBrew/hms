@@ -10,3 +10,5 @@ google-auth==2.27.0
 google-api-python-client==2.115.0
 gunicorn==21.2.0
 whitenoise==6.6.0
+celery>=5.3.0
+redis>=4.5.0

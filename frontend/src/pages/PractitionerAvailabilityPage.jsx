@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Plus, Calendar, Trash2, Edit, RefreshCw, AlertCircle } from 'lucide-react';
+import { Plus, Calendar, Trash2, Edit, RefreshCw, AlertCircle, CalendarDays } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,25 +36,42 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-import { fetchScheduleTemplates, fetchPractitioners, deleteScheduleTemplate, fetchSchedules, cancelSchedule } from '@/lib/api.js';
-import ScheduleTemplateForm from '@/components/appointments/ScheduleTemplateForm';
-import GenerateScheduleForm from '@/components/appointments/GenerateScheduleForm';
+import { 
+  fetchPractitioners,
+  fetchSchedules,
+  cancelSchedule,
+  fetchRecurringSchedules,
+  deleteRecurringSchedule,
+  batchGenerateSlots
+} from '@/lib/api.js';
+import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
+import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 
 
 const PractitionerAvailabilityPage = () => {
-  const [templates, setTemplates] = useState([]);
+  // Removed template state
+
+  // Recurring schedule state
+  const [recurringSchedules, setRecurringSchedules] = useState([]);
+  const [selectedRecurringSchedule, setSelectedRecurringSchedule] = useState(null);
+  const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
+  const [isEditRecurringDialogOpen, setIsEditRecurringDialogOpen] = useState(false);
+  const [isDeleteRecurringDialogOpen, setIsDeleteRecurringDialogOpen] = useState(false);
+  const [recurringToDelete, setRecurringToDelete] = useState(null);
+  const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
+
+  // Schedule state
   const [schedules, setSchedules] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [schedulesLoading, setSchedulesLoading] = useState(true);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [templateToDelete, setTemplateToDelete] = useState(null);
+
+  // Loading state
+  const [recurringLoading, setRecurringLoading] = useState(true);
+  const [schedulesLoading, setSchedulesLoading] = useState(true);
+
+  // Other state
   const [practitioners, setPractitioners] = useState([]);
+  const [selectedPractitioner, setSelectedPractitioner] = useState(null);
   const navigate = useNavigate();
 
   const getUserTypeBadgeColor = (userType) => {
@@ -87,22 +104,24 @@ const PractitionerAvailabilityPage = () => {
         .join(' ');
   };
 
-  // Load schedule templates
+  // Removed template loading useEffect
+
+  // Load recurring schedules
   useEffect(() => {
-    const loadTemplates = async () => {
-      setLoading(true);
+    const loadRecurringSchedules = async () => {
+      setRecurringLoading(true);
       try {
-        const data = await fetchScheduleTemplates();
-        setTemplates(Array.isArray(data) ? data : []);
+        const data = await fetchRecurringSchedules();
+        setRecurringSchedules(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Error loading schedule templates:', error);
-        toast.error('Failed to load schedule templates');
+        console.error('Error loading recurring schedules:', error);
+        toast.error('Failed to load recurring schedules');
       } finally {
-        setLoading(false);
+        setRecurringLoading(false);
       }
     };
 
-    loadTemplates();
+    loadRecurringSchedules();
   }, []);
 
   // Load practitioners
@@ -138,51 +157,65 @@ const PractitionerAvailabilityPage = () => {
     loadSchedules();
   }, []);
 
-  // Handle template creation success
-  const handleCreateSuccess = (newTemplate) => {
-    setTemplates([...templates, newTemplate]);
-    setIsCreateDialogOpen(false);
-    toast.success('Schedule template created successfully');
+  // Removed template handler functions
+
+  // Handle recurring schedule creation success
+  const handleCreateRecurringSuccess = (newSchedule) => {
+    setRecurringSchedules([...recurringSchedules, newSchedule]);
+    setIsCreateRecurringDialogOpen(false);
+    toast.success('Recurring schedule created successfully');
   };
 
-  // Handle template update success
-  const handleUpdateSuccess = (updatedTemplate) => {
-    setTemplates(templates.map(template =>
-        template.id === updatedTemplate.id ? updatedTemplate : template
+  // Handle recurring schedule update success
+  const handleUpdateRecurringSuccess = (updatedSchedule) => {
+    setRecurringSchedules(recurringSchedules.map(schedule =>
+        schedule.id === updatedSchedule.id ? updatedSchedule : schedule
     ));
-    setIsEditDialogOpen(false);
-    toast.success('Schedule template updated successfully');
+    setIsEditRecurringDialogOpen(false);
+    toast.success('Recurring schedule updated successfully');
   };
 
-  // Handle template deletion
-  const handleDelete = async (templateId) => {
-    if (!templateToDelete) return;
+  // Handle recurring schedule deletion
+  const handleDeleteRecurring = async (scheduleId) => {
+    if (!recurringToDelete) return;
 
     try {
-      await deleteScheduleTemplate(templateId);
-      setTemplates(templates.filter(template => template.id !== templateId));
-      toast.success('Schedule template deleted successfully');
+      await deleteRecurringSchedule(scheduleId);
+      setRecurringSchedules(recurringSchedules.filter(schedule => schedule.id !== scheduleId));
+      setIsDeleteRecurringDialogOpen(false);
+      toast.success('Recurring schedule deleted successfully');
     } catch (error) {
-      console.error('Error deleting schedule template:', error);
-      toast.error('Failed to delete schedule template');
+      console.error('Error deleting recurring schedule:', error);
+      toast.error('Failed to delete recurring schedule');
     }
   };
 
-  // Handle generate schedule success
-  const handleGenerateSuccess = () => {
-    setIsGenerateDialogOpen(false);
-    // Reload schedules after successful generation
-    const loadSchedules = async () => {
-      try {
-        const data = await fetchSchedules();
-        setSchedules(Array.isArray(data) ? data : []);
-        toast.success('Schedule generated successfully');
-      } catch (error) {
-        console.error('Error reloading schedules:', error);
+  // Handle batch generate slots
+  const handleBatchGenerateSlots = async () => {
+    setIsGeneratingBatch(true);
+    try {
+      const result = await batchGenerateSlots();
+
+      if (result.total_slots_created === 0 && result.total_practitioners > 0) {
+        // If no slots were created but practitioners were found, slots likely already exist
+        toast.info(`No new slots generated. Slots have already been created for ${result.total_practitioners} practitioners.`);
+      } else {
+        // Original success message for when slots are created
+        toast.success(`Generated ${result.total_slots_created} slots for ${result.total_practitioners} practitioners`);
       }
-    };
-    loadSchedules();
+
+      // Reload schedules after successful generation
+      const data = await fetchSchedules();
+      setSchedules(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error batch generating slots:', error);
+      toast.error('Failed to generate slots');
+    } finally {
+      setIsGeneratingBatch(false);
+    }
   };
+
+  // Removed generate schedule handler function
 
   // Handle cancel schedule
   const handleCancelSchedule = async () => {
@@ -221,14 +254,10 @@ const PractitionerAvailabilityPage = () => {
     </Badge>
   }
 
-  // Get template name by ID
-  const getTemplateName = (templateId) => {
-    const template = templates.find(t => t.id === templateId);
-    return template ? template.name : 'Unknown Template';
-  };
+  // Removed getTemplateName function
 
-  // Render loading state
-  if (loading) {
+  // Render loading state for all tabs
+  if (recurringLoading && schedulesLoading) {
     return (
         <div className="container mx-auto py-6 space-y-6">
           <div className="flex justify-between items-center">
@@ -244,118 +273,136 @@ const PractitionerAvailabilityPage = () => {
       <div className="container mx-auto py-6 space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold tracking-tight">Practitioner Availability</h1>
-          <Button onClick={() => setIsCreateDialogOpen(true)} className="ml-25">
-            <Plus className="mr-2 h-4 w-4" />
-            New Template
-          </Button>
+          <div className="flex space-x-2">
+            <Button
+              onClick={handleBatchGenerateSlots}
+              variant="outline"
+              disabled={isGeneratingBatch}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isGeneratingBatch ? 'animate-spin' : ''}`} />
+              {isGeneratingBatch ? 'Generating...' : 'Generate Slots'}
+            </Button>
+            <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Recurring Schedule
+            </Button>
+          </div>
         </div>
 
-        <Tabs defaultValue="templates" className="w-full">
+        <Tabs defaultValue="recurring" className="w-full">
           <TabsList>
-            <TabsTrigger value="templates">Schedule Templates</TabsTrigger>
+            <TabsTrigger value="recurring">Recurring Schedules</TabsTrigger>
             <TabsTrigger value="schedules">Generated Schedules</TabsTrigger>
+            <TabsTrigger value="calendar">Calendar View</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="templates" className="space-y-4">
-            {templates.length === 0 ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>No Schedule Templates</CardTitle>
-                    <CardDescription>
-                      Create a schedule template to define when practitioners are available for appointments.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardFooter>
-                    <Button onClick={() => setIsCreateDialogOpen(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create Template
-                    </Button>
-                  </CardFooter>
-                </Card>
+          <TabsContent value="recurring" className="space-y-4">
+            {recurringLoading ? (
+              <Skeleton className="h-[400px] w-full" />
+            ) : recurringSchedules.length === 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>No Recurring Schedules</CardTitle>
+                  <CardDescription>
+                    Create a recurring schedule to define when practitioners are available for appointments.
+                  </CardDescription>
+                </CardHeader>
+                <CardFooter>
+                  <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Recurring Schedule
+                  </Button>
+                </CardFooter>
+              </Card>
             ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Practitioner</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {templates.map((template) => (
-                          <TableRow key={template.id}>
-                            <TableCell className="font-medium">{template.name}</TableCell>
-                            <TableCell>{getPractitionerName(template.practitioner)}</TableCell>
-                            <TableCell>{getPractitionerType(template.practitioner)}</TableCell>
-                            <TableCell>
-                              <Badge variant={template.is_active ? "success" : "secondary"}>
-                                {template.is_active ? "Active" : "Inactive"}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Practitioner</TableHead>
+                      <TableHead>Days</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Active Period</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recurringSchedules.map((schedule) => (
+                      <TableRow key={schedule.id}>
+                        <TableCell className="font-medium">{schedule.name}</TableCell>
+                        <TableCell>{getPractitionerName(schedule.practitioner)}</TableCell>
+                        <TableCell>
+                          {schedule.days_of_week.map(day => {
+                            const dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day];
+                            return (
+                              <Badge key={day} variant="outline" className="mr-1">
+                                {dayName}
                               </Badge>
-                            </TableCell>
-                            <TableCell>{new Date(template.created_at).toLocaleDateString()}</TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <span className="sr-only">Open menu</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                                      <circle cx="12" cy="12" r="1"></circle>
-                                      <circle cx="12" cy="5" r="1"></circle>
-                                      <circle cx="12" cy="19" r="1"></circle>
-                                    </svg>
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem
-                                      onClick={() => {
-                                        setSelectedTemplate(template);
-                                        setIsEditDialogOpen(true);
-                                      }}
-                                  >
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                      onClick={() => {
-                                        setSelectedTemplate(template);
-                                        setIsGenerateDialogOpen(true);
-                                      }}
-                                  >
-                                    <Calendar className="mr-2 h-4 w-4" />
-                                    Generate Schedule
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                      onClick={() => navigate(`/practitioner-availability/${template.id}`)}
-                                  >
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Manage Time Slots
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={() => {
-                                        setTemplateToDelete(template);
-                                        setIsDeleteDialogOpen(true);
-                                      }}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                            );
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          {schedule.start_time} - {schedule.end_time}
+                        </TableCell>
+                        <TableCell>{schedule.slot_duration} min</TableCell>
+                        <TableCell>
+                          {new Date(schedule.active_from).toLocaleDateString()}
+                          {schedule.active_to ? ` - ${new Date(schedule.active_to).toLocaleDateString()}` : ' - ∞'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={schedule.is_active ? "success" : "secondary"}>
+                            {schedule.is_active ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                  <circle cx="12" cy="12" r="1"></circle>
+                                  <circle cx="12" cy="5" r="1"></circle>
+                                  <circle cx="12" cy="19" r="1"></circle>
+                                </svg>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedRecurringSchedule(schedule);
+                                  setIsEditRecurringDialogOpen(true);
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => {
+                                  setRecurringToDelete(schedule);
+                                  setIsDeleteRecurringDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </TabsContent>
+
+          {/* Removed templates tab content */}
 
           <TabsContent value="schedules" className="space-y-4">
             {schedulesLoading ? (
@@ -365,12 +412,12 @@ const PractitionerAvailabilityPage = () => {
                   <CardHeader>
                     <CardTitle>No Generated Schedules</CardTitle>
                     <CardDescription>
-                      Generate a schedule from a template to make slots available for appointments.
+                      No schedules have been generated yet. Schedules are automatically generated from recurring schedules.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      To generate a schedule, select a template from the "Schedule Templates" tab and click "Generate Schedule".
+                      Create a recurring schedule and click "Generate Slots" to generate schedules.
                     </p>
                   </CardContent>
                 </Card>
@@ -380,7 +427,6 @@ const PractitionerAvailabilityPage = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>ID</TableHead>
-                        <TableHead>Template</TableHead>
                         <TableHead>Practitioner</TableHead>
                         <TableHead>Date Range</TableHead>
                         <TableHead>Status</TableHead>
@@ -392,7 +438,6 @@ const PractitionerAvailabilityPage = () => {
                       {schedules.map((schedule) => (
                           <TableRow key={schedule.id}>
                             <TableCell className="font-mono text-xs">{schedule.id.substring(0, 8)}...</TableCell>
-                            <TableCell>{schedule.template_name}</TableCell>
                             <TableCell>{getPractitionerName(schedule.practitioner)}</TableCell>
                             <TableCell>
                               {new Date(schedule.start_date).toLocaleDateString()} - {new Date(schedule.end_date).toLocaleDateString()}
@@ -454,44 +499,86 @@ const PractitionerAvailabilityPage = () => {
                 </div>
             )}
           </TabsContent>
+
+          <TabsContent value="calendar" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Practitioner Availability Calendar</CardTitle>
+                  <div className="flex space-x-2">
+                    <select
+                      className="px-3 py-2 rounded-md border border-input bg-background text-sm"
+                      value={selectedPractitioner || ''}
+                      onChange={(e) => setSelectedPractitioner(e.target.value)}
+                    >
+                      <option value="">Select a practitioner</option>
+                      {practitioners.map((practitioner) => (
+                        <option key={practitioner.id} value={practitioner.id}>
+                          {practitioner.staff_details?.user_details?.first_name} {practitioner.staff_details?.user_details?.last_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <CardDescription>
+                  View practitioner availability in a calendar format. Select a practitioner to see their available days and time slots.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!selectedPractitioner ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <CalendarDays className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">Please select a practitioner to view their availability.</p>
+                  </div>
+                ) : (
+                  <DoctorAvailabilityCalendar
+                    practitionerId={selectedPractitioner}
+                    onSlotSelect={(slot) => {
+                      toast.info(`Selected slot: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
-        {/* Create Template Dialog */}
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        {/* Removed template-related dialogs */}
+
+        {/* Create Recurring Schedule Dialog */}
+        <Dialog open={isCreateRecurringDialogOpen} onOpenChange={setIsCreateRecurringDialogOpen}>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Create Schedule Template</DialogTitle>
+              <DialogTitle>Create Recurring Schedule</DialogTitle>
               <DialogDescription>
-                Create a new schedule template for a practitioner.
+                Create a new recurring schedule for a practitioner.
               </DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[60vh]">
               <div className="p-1">
-                <ScheduleTemplateForm
-                    onSuccess={handleCreateSuccess}
-                    practitioners={practitioners}
+                <RecurringScheduleForm
+                    onSuccess={handleCreateRecurringSuccess}
                 />
               </div>
             </ScrollArea>
           </DialogContent>
         </Dialog>
 
-        {/* Edit Template Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        {/* Edit Recurring Schedule Dialog */}
+        <Dialog open={isEditRecurringDialogOpen} onOpenChange={setIsEditRecurringDialogOpen}>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Edit Schedule Template</DialogTitle>
+              <DialogTitle>Edit Recurring Schedule</DialogTitle>
               <DialogDescription>
-                Update the schedule template details.
+                Update the recurring schedule details.
               </DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[60vh]">
               <div className="p-1">
-                {selectedTemplate && (
-                    <ScheduleTemplateForm
-                        initialData={selectedTemplate}
-                        onSuccess={handleUpdateSuccess}
-                        practitioners={practitioners}
+                {selectedRecurringSchedule && (
+                    <RecurringScheduleForm
+                        initialData={selectedRecurringSchedule}
+                        onSuccess={handleUpdateRecurringSuccess}
                     />
                 )}
               </div>
@@ -499,41 +586,22 @@ const PractitionerAvailabilityPage = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Generate Schedule Dialog */}
-        <Dialog open={isGenerateDialogOpen} onOpenChange={setIsGenerateDialogOpen}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Generate Schedule</DialogTitle>
-              <DialogDescription>
-                Generate a schedule from this template for a specific date range.
-              </DialogDescription>
-            </DialogHeader>
-            {selectedTemplate && (
-                <GenerateScheduleForm
-                    templateId={selectedTemplate.id}
-                    templateName={selectedTemplate.name}
-                    onSuccess={handleGenerateSuccess}
-                />
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Delete Template Alert Dialog */}
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        {/* Delete Recurring Schedule Alert Dialog */}
+        <AlertDialog open={isDeleteRecurringDialogOpen} onOpenChange={setIsDeleteRecurringDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Schedule Template</AlertDialogTitle>
+              <AlertDialogTitle>Delete Recurring Schedule</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete this template? This action cannot be undone.
+                Are you sure you want to delete this recurring schedule? This action cannot be undone.
               </AlertDialogDescription>
-              {templateToDelete && (
-                  <div className="mt-2 font-medium">{templateToDelete.name}</div>
+              {recurringToDelete && (
+                  <div className="mt-2 font-medium">{recurringToDelete.name}</div>
               )}
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                  onClick={handleDelete}
+                  onClick={() => handleDeleteRecurring(recurringToDelete?.id)}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 Delete

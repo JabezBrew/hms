@@ -2,8 +2,8 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import (
-    AppointmentType, ScheduleTemplate, ScheduleTimeSlot,
-    AppointmentFHIRMapping, RecurringAppointmentRule, ScheduleFHIRMapping
+    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule, 
+    ScheduleFHIRMapping, RecurringSchedule
 )
 from ..users.serializers import PractitionerProfileSerializer
 
@@ -20,94 +20,6 @@ class AppointmentTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
-class NestedScheduleTimeSlotSerializer(serializers.ModelSerializer):
-    """
-    Serializer for time slots when nested within a schedule template.
-    """
-    class Meta:
-        model = ScheduleTimeSlot
-        fields = ['day_of_week', 'start_time', 'end_time']
-
-
-class ScheduleTimeSlotSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the ScheduleTimeSlot model.
-    """
-    day_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ScheduleTimeSlot
-        fields = ['id', 'template', 'day_of_week', 'day_name', 'start_time', 
-                  'end_time', 'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
-
-    def get_day_name(self, obj):
-        return dict(ScheduleTimeSlot.DAY_CHOICES)[obj.day_of_week]
-
-
-class ScheduleTemplateSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the ScheduleTemplate model.
-    """
-    time_slots = ScheduleTimeSlotSerializer(many=True, read_only=True)
-    practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
-
-    class Meta:
-        model = ScheduleTemplate
-        fields = ['id', 'name', 'practitioner', 'practitioner_details', 'is_active', 
-                  'time_slots', 'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
-
-
-class ScheduleTemplateCreateUpdateSerializer(serializers.ModelSerializer):
-    """
-    Serializer for creating and updating ScheduleTemplate with nested time slots.
-    """
-    time_slots = NestedScheduleTimeSlotSerializer(many=True)
-
-    class Meta:
-        model = ScheduleTemplate
-        fields = ['id', 'name', 'practitioner', 'is_active', 'time_slots']
-        read_only_fields = ['id']
-
-    def create(self, validated_data):
-        time_slots_data = validated_data.pop('time_slots')
-        template = ScheduleTemplate.objects.create(**validated_data)
-
-        for time_slot_data in time_slots_data:
-            ScheduleTimeSlot.objects.create(
-                template=template,
-                created_by=validated_data.get('created_by'),
-                updated_by=validated_data.get('updated_by'),
-                **time_slot_data
-            )
-
-        return template
-
-    def update(self, instance, validated_data):
-        time_slots_data = validated_data.pop('time_slots', None)
-
-        # Update template fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        if time_slots_data is not None:
-            with transaction.atomic():
-                # Delete existing time slots for this template
-                instance.time_slots.all().delete()
-
-                # Create new time slots with explicit template reference
-                for time_slot_data in time_slots_data:
-                    # Explicitly set the template to ensure no shared references
-                    ScheduleTimeSlot.objects.create(
-                        template=instance,  # Explicitly tie the time slot to this template
-                        created_by=validated_data.get('updated_by'),
-                        updated_by=validated_data.get('updated_by'),
-                        **time_slot_data
-                    )
-
-        return instance
 
 
 class AppointmentFHIRMappingSerializer(serializers.ModelSerializer):
@@ -179,23 +91,37 @@ class RecurringAppointmentRuleSerializer(serializers.ModelSerializer):
 
 class ScheduleFHIRMappingSerializer(serializers.ModelSerializer):
     practitioner_name = serializers.SerializerMethodField()
-    template_name = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ScheduleFHIRMapping
         fields = [
-            'id', 'template', 'template_name', 'fhir_schedule_id', 
-            'practitioner', 'practitioner_name', 'start_date', 'end_date', 
-            'status', 'slots_count', 'created_at', 'created_by'
+            'id', 'fhir_schedule_id', 'practitioner', 'practitioner_name', 
+            'start_date', 'end_date', 'status', 'slots_count', 'created_at', 'created_by'
         ]
         read_only_fields = ['created_at', 'created_by']
-    
+
     def get_practitioner_name(self, obj):
         if obj.practitioner and hasattr(obj.practitioner, 'user'):
             return f"{obj.practitioner.user.first_name} {obj.practitioner.user.last_name}"
         return "Unknown"
-    
-    def get_template_name(self, obj):
-        if obj.template:
-            return obj.template.name
-        return "Unknown Template"
+
+
+class RecurringScheduleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the RecurringSchedule model.
+    """
+    practitioner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecurringSchedule
+        fields = [
+            'id', 'name', 'practitioner', 'practitioner_name', 'days_of_week',
+            'start_time', 'end_time', 'slot_duration', 'active_from', 'active_to',
+            'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def get_practitioner_name(self, obj):
+        if obj.practitioner and hasattr(obj.practitioner, 'user'):
+            return f"{obj.practitioner.user.first_name} {obj.practitioner.user.last_name}"
+        return "Unknown"

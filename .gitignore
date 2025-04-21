@@ -52,6 +52,10 @@ google_credentials.json
 *.sublime*
 .settings/
 
+# Docs
+.junie/
+docs/
+
 # Logs
 logs/
 *.log
@@ -93,6 +97,3 @@ local_settings.py
 # Virtual Environment
 pip-log.txt
 pip-delete-this-directory.txt
-
-.junie
-docs

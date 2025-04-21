@@ -1,18 +1,16 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db import transaction
-from django.utils import timezone
 import datetime
 
 from .models import (
-    AppointmentType, ScheduleTemplate, ScheduleTimeSlot,
-    AppointmentFHIRMapping, RecurringAppointmentRule, ScheduleFHIRMapping
+    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule, 
+    ScheduleFHIRMapping, RecurringSchedule
 )
 from .serializers import (
-    AppointmentTypeSerializer, ScheduleTemplateSerializer,
-    ScheduleTimeSlotSerializer, AppointmentFHIRMappingSerializer,
-    RecurringAppointmentRuleSerializer, ScheduleTemplateCreateUpdateSerializer, ScheduleFHIRMappingSerializer
+    AppointmentTypeSerializer, AppointmentFHIRMappingSerializer,
+    RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer, 
+    RecurringScheduleSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
 from .services import AvailabilityService, ConflictPreventionService, AppointmentTypeService
@@ -39,94 +37,8 @@ class AppointmentTypeViewSet(viewsets.ModelViewSet):
         serializer.save(updated_by=self.request.user)
 
 
-class ScheduleTemplateViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for schedule templates.
-    """
-    queryset = ScheduleTemplate.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            return ScheduleTemplateCreateUpdateSerializer
-        return ScheduleTemplateSerializer
-
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
-
-    def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
-
-    @action(detail=True, methods=['post'])
-    def generate_schedule(self, request, pk=None):
-        """
-        Generate FHIR Schedule and Slot resources for a date range.
-        """
-        template = self.get_object()
-
-        # Get date range from request
-        start_date = request.data.get('start_date')
-        end_date = request.data.get('end_date')
-
-        if not start_date or not end_date:
-            return Response(
-                {"error": "Both start_date and end_date are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            # Use the AvailabilityService to generate the schedule and pass the user
-            result = AvailabilityService.generate_schedule_from_template(
-                template_id=str(template.id),
-                start_date=start_date,
-                end_date=end_date,
-                user=request.user  # Pass the user here
-            )
-
-            return Response({
-                "message": f"Schedule generated successfully with {result['slots_created']} slots.",
-                "schedule_id": result["schedule_id"],
-                "mapping_id": result.get("mapping_id")
-            })
-
-        except ValueError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"Failed to generate schedule: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
 
 
-# In your views.py file, update the ScheduleTimeSlotViewSet class
-class ScheduleTimeSlotViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for schedule time slots.
-    """
-    queryset = ScheduleTimeSlot.objects.all()
-    serializer_class = ScheduleTimeSlotSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-
-    def get_queryset(self):
-        """
-        Filter time slots by template ID if provided in query parameters.
-        """
-        queryset = ScheduleTimeSlot.objects.all()
-        template_id = self.request.query_params.get('template', None)
-        
-        if template_id is not None:
-            queryset = queryset.filter(template=template_id)
-            
-        return queryset
-
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
-
-    def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
 
 
 class AppointmentFHIRMappingViewSet(viewsets.ModelViewSet):
@@ -156,11 +68,28 @@ class AppointmentViewSet(viewsets.ViewSet):
     def list(self, request):
         """
         List appointments with optional filtering.
+        If the user is a practitioner and no practitioner_id is provided,
+        automatically filter by the user's practitioner profile.
         """
         patient_id = request.query_params.get('patient_id')
         practitioner_id = request.query_params.get('practitioner_id')
         date = request.query_params.get('date')
         status = request.query_params.get('status')
+
+        # If user is a doctor or nurse and no practitioner_id is provided,
+        # automatically filter by the user's practitioner profile
+        if not practitioner_id and request.user.user_type in ['doctor', 'nurse']:
+            try:
+                # Get the user's practitioner profile
+                practitioner_profile = request.user.staff_profile.practitioner_profile
+                if practitioner_profile and practitioner_profile.fhir_practitioner_id:
+                    practitioner_id = practitioner_profile.fhir_practitioner_id
+            except (AttributeError, Exception) as e:
+                # If there's an error getting the practitioner profile, log it but continue
+                # This allows admins and other users to still see all appointments
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error getting practitioner profile for user {request.user.id}: {str(e)}")
 
         appointments = AppointmentProxy.search(
             patient_id=patient_id,
@@ -198,6 +127,20 @@ class AppointmentViewSet(viewsets.ViewSet):
             slot_id = request.data.get('slot_id')
             description = request.data.get('description')
             comment = request.data.get('comment')
+
+            # If slot_id is provided but start_time or end_time is missing
+            if slot_id and (not start_time or not end_time):
+                try:
+                    slot = SlotProxy.get(slot_id)
+                    if not start_time:
+                        start_time = slot.get('start')
+                    if not end_time:
+                        end_time = slot.get('end')
+                except Exception as e:
+                    return Response(
+                        {"error": f"Could not retrieve slot details: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
             # Validate required fields
             if not all([patient_id, practitioner_id, start_time, end_time, appointment_type_id]):
@@ -394,17 +337,35 @@ class ScheduleViewSet(viewsets.ViewSet):
     def list(self, request):
         """
         List schedules with optional filtering.
+        If the user is a practitioner and no practitioner_id is provided,
+        automatically filter by the user's practitioner profile.
         """
         practitioner_id = request.query_params.get('practitioner_id')
-        date = request.query_params.get('date')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
         active = request.query_params.get('active')
 
         if active is not None:
             active = active.lower() == 'true'
 
+        # If user is a doctor or nurse and no practitioner_id is provided,
+        # automatically filter by the user's practitioner profile
+        if not practitioner_id and request.user.user_type in ['doctor', 'nurse']:
+            try:
+                # Get the user's practitioner profile
+                practitioner_profile = request.user.staff_profile.practitioner_profile
+                if practitioner_profile and practitioner_profile.fhir_practitioner_id:
+                    practitioner_id = practitioner_profile.fhir_practitioner_id
+            except (AttributeError, Exception) as e:
+                # If there's an error getting the practitioner profile, log it but continue
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error getting practitioner profile for user {request.user.id}: {str(e)}")
+
         schedules = ScheduleProxy.search(
             practitioner_id=practitioner_id,
-            date=date,
+            start_date=start_date,
+            end_date=end_date,
             active=active
         )
 
@@ -699,5 +660,63 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {"error": f"Failed to generate recurring appointments: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class RecurringScheduleViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing recurring schedules.
+    """
+    queryset = RecurringSchedule.objects.all()
+    serializer_class = RecurringScheduleSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+
+class BatchGenerationViewSet(viewsets.ViewSet):
+    """
+    ViewSet for batch generation of slots.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+
+    @action(detail=False, methods=['post'])
+    def generate_slots(self, request):
+        """
+        Generate slots for all practitioners with active recurring schedules.
+        """
+        try:
+            days = request.data.get('days', 14)
+
+            # Validate days parameter
+            try:
+                days = int(days)
+                if days <= 0:
+                    return Response(
+                        {"error": "Days parameter must be a positive integer"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "Days parameter must be a valid integer"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Call the service to generate slots
+            result = AvailabilityService.batch_generate_slots_for_next_n_days(
+                days=days,
+                user=request.user
+            )
+
+            return Response(result)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to batch generate slots: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

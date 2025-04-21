@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import AppointmentList from '@/components/appointments/AppointmentList';
-import AppointmentCalendar from '@/components/appointments/AppointmentCalendar';
+import AppointmentTypeManager from '@/components/appointments/AppointmentTypeManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CalendarDays, List } from 'lucide-react';
+import { List, Settings } from 'lucide-react';
 
 const AppointmentsPage = () => {
   const [view, setView] = useState('list');
@@ -13,33 +13,33 @@ const AppointmentsPage = () => {
       <Helmet>
         <title>Appointments | Hospital Management System</title>
       </Helmet>
-      
+
       <div className="flex flex-col space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Appointments</h1>
           <p className="text-muted-foreground">
-            View and manage patient appointments
+            View and manage patient appointments and appointment types
           </p>
         </div>
-        
+
         <Tabs defaultValue={view} onValueChange={setView} className="w-full">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="list" className="flex items-center">
               <List className="mr-2 h-4 w-4" />
               List View
             </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center">
-              <CalendarDays className="mr-2 h-4 w-4" />
-              Calendar View
+            <TabsTrigger value="types" className="flex items-center">
+              <Settings className="mr-2 h-4 w-4" />
+              Appointment Types
             </TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="list" className="mt-6">
             <AppointmentList />
           </TabsContent>
-          
-          <TabsContent value="calendar" className="mt-6">
-            <AppointmentCalendar />
+
+          <TabsContent value="types" className="mt-6">
+            <AppointmentTypeManager />
           </TabsContent>
         </Tabs>
       </div>
