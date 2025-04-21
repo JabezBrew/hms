@@ -1,0 +1,227 @@
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { fetchWardsRoot, fetchAdmissions } from '@/lib/api';
+import { Search, AlertCircle, Activity, Droplet, Pill } from 'lucide-react';
+import { PatientList } from './PatientList';
+import { VitalSignsRecorder } from './VitalSignsRecorder';
+import { MedicationAdministration } from './MedicationAdministration';
+import { FluidBalanceTracker } from './FluidBalanceTracker';
+
+export function NursingDashboard() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [wards, setWards] = useState([]);
+  const [selectedWard, setSelectedWard] = useState('');
+  const [patients, setPatients] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [activeTab, setActiveTab] = useState('patients');
+
+  // Fetch wards
+  useEffect(() => {
+    const fetchWards = async () => {
+      try {
+        const data = await fetchWardsRoot();
+        setWards(data);
+        if (data.length > 0) {
+          setSelectedWard(data[0].id);
+        }
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching wards:', err);
+        setError('Failed to load wards. Please try again.');
+        setLoading(false);
+      }
+    };
+
+    fetchWards();
+  }, []);
+
+  // Fetch patients when ward changes
+  useEffect(() => {
+    if (!selectedWard) return;
+
+    const fetchPatients = async () => {
+      try {
+        setLoading(true);
+        // Get all admissions for the selected ward
+        const admissionsData = await fetchAdmissions({ ward: selectedWard, status: 'admitted' });
+
+        // Extract patient information from admissions
+        const patientData = admissionsData.map(admission => ({
+          ...admission.patient,
+          admission: admission,
+          bed: admission.bed
+        }));
+
+        setPatients(patientData);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching patients:', err);
+        setError('Failed to load patients. Please try again.');
+        setLoading(false);
+      }
+    };
+
+    fetchPatients();
+  }, [selectedWard]);
+
+  // Filter patients based on search term
+  const filteredPatients = patients.filter(patient => 
+    patient.user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    patient.bed.bed_number.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Handle ward change
+  const handleWardChange = (wardId) => {
+    setSelectedWard(wardId);
+    setSelectedPatient(null);
+  };
+
+  // Handle patient selection
+  const handlePatientSelect = (patient) => {
+    setSelectedPatient(patient);
+    setActiveTab('vitals');
+  };
+
+  // Handle tab change
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+  };
+
+  if (loading && !selectedPatient) {
+    return (
+      <div className="space-y-4 p-4">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (error && !selectedPatient) {
+    return (
+      <Card className="m-4">
+        <CardHeader>
+          <CardTitle className="text-red-500">Error</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>{error}</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h1 className="text-2xl font-bold">Nursing Care Dashboard</h1>
+
+        {/* Ward selector */}
+        <div className="w-full md:w-64">
+          <Select
+            value={selectedWard}
+            onValueChange={handleWardChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select ward" />
+            </SelectTrigger>
+            <SelectContent>
+              {wards.map(ward => (
+                <SelectItem key={ward.id} value={ward.id}>
+                  {ward.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {selectedPatient ? (
+        <div className="space-y-6">
+          {/* Patient header */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle>{selectedPatient.user.full_name}</CardTitle>
+                  <CardDescription>
+                    {selectedPatient.bed.ward.name} - Bed {selectedPatient.bed.bed_number}
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setSelectedPatient(null)}
+                >
+                  Back to Patient List
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* Patient care tabs */}
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
+            <TabsList className="grid grid-cols-3">
+              <TabsTrigger value="vitals">
+                <Activity className="h-4 w-4 mr-2" />
+                Vital Signs
+              </TabsTrigger>
+              <TabsTrigger value="medications">
+                <Pill className="h-4 w-4 mr-2" />
+                Medications
+              </TabsTrigger>
+              <TabsTrigger value="fluids">
+                <Droplet className="h-4 w-4 mr-2" />
+                Fluid Balance
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="vitals" className="mt-4">
+              <VitalSignsRecorder patient={selectedPatient} />
+            </TabsContent>
+
+            <TabsContent value="medications" className="mt-4">
+              <MedicationAdministration patient={selectedPatient} />
+            </TabsContent>
+
+            <TabsContent value="fluids" className="mt-4">
+              <FluidBalanceTracker patient={selectedPatient} />
+            </TabsContent>
+          </Tabs>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Search bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search patients by name or bed number..."
+              className="pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          {/* Patient list */}
+          <PatientList 
+            patients={filteredPatients} 
+            onPatientSelect={handlePatientSelect} 
+          />
+        </div>
+      )}
+    </div>
+  );
+}

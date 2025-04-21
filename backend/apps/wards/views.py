@@ -1,8 +1,9 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db import transaction
+from django.db import transaction, models
 from django.utils import timezone
+from rest_framework.pagination import PageNumberPagination
 
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer
 from .serializers import (
@@ -15,6 +16,12 @@ from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import create_reference, create_period, generate_fhir_id
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
+
+
 class WardViewSet(viewsets.ModelViewSet):
     """
     API endpoint for wards.
@@ -22,47 +29,119 @@ class WardViewSet(viewsets.ModelViewSet):
     queryset = Ward.objects.all()
     serializer_class = WardSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
-    
+    filterset_fields = ['ward_type', 'is_active']
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        """
+        Override get_queryset to add search functionality.
+        """
+        queryset = super().get_queryset()
+        search_query = self.request.query_params.get('search', None)
+
+        if search_query:
+            queryset = queryset.filter(
+                models.Q(name__icontains=search_query) |
+                models.Q(description__icontains=search_query) |
+                models.Q(ward_type__icontains=search_query)
+            )
+
+        return queryset
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+        # Get values from validated_data before saving
+        auto_create_beds = serializer.validated_data.pop('auto_create_beds', True)
+        total_beds = serializer.validated_data.get('total_beds', 0)
+
+        # Save the ward first
+        ward = serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+        # Check if beds should be automatically created
+        if auto_create_beds and total_beds > 0:
+            # Determine default bed type based on ward type
+            ward_type = ward.ward_type
+            default_bed_type = 'standard'
+
+            if ward_type == 'icu':
+                default_bed_type = 'icu'
+            elif ward_type == 'maternity':
+                default_bed_type = 'maternity'
+            elif ward_type == 'pediatric':
+                default_bed_type = 'pediatric'
+
+            # Create beds automatically
+            with transaction.atomic():
+                # Calculate grid size (square root of total beds, rounded up)
+                import math
+                grid_size = math.ceil(math.sqrt(total_beds))
+
+                for i in range(1, total_beds + 1):
+                    # Calculate x,y coordinates in a square grid
+                    # i-1 gives us 0-based index, then we calculate row and column
+                    row = (i-1) // grid_size
+                    col = (i-1) % grid_size
+
+                    Bed.objects.create(
+                        ward=ward,
+                        bed_number=f"{i:03d}",  # Format: 001, 002, etc.
+                        bed_type=default_bed_type,
+                        status='available',
+                        additional_rate=0.00,
+                        location_x=col,  # Column in the grid
+                        location_y=row,  # Row in the grid
+                        created_by=self.request.user,
+                        updated_by=self.request.user
+                    )
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
-    
+
     @action(detail=True, methods=['get'])
     def beds(self, request, pk=None):
         """
         Get all beds in a ward.
         """
         ward = self.get_object()
-        beds = ward.beds.all()
-        
+        beds = ward.beds.all().order_by('bed_number')  # Add ordering for consistency
+
+        # Get all results without pagination
+        page_size = request.query_params.get('page_size', None)
+        if page_size == 'all':
+            serializer = BedSerializer(beds, many=True)
+            return Response(serializer.data)
+
         # Filter by status if provided
         status_filter = request.query_params.get('status', None)
         if status_filter:
             beds = beds.filter(status=status_filter)
-        
+
+        # Use pagination if page_size is not 'all'
+        page = self.paginate_queryset(beds)
+        if page is not None:
+            serializer = BedSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
         serializer = BedSerializer(beds, many=True)
         return Response(serializer.data)
-    
+
     @action(detail=True, methods=['get'])
     def admissions(self, request, pk=None):
         """
         Get all admissions in a ward.
         """
         ward = self.get_object()
-        
+
         # Get all beds in the ward
         beds = ward.beds.all()
-        
+
         # Get all admissions for these beds
         admissions = Admission.objects.filter(bed__in=beds)
-        
+
         # Filter by status if provided
         status_filter = request.query_params.get('status', None)
         if status_filter:
             admissions = admissions.filter(status=status_filter)
-        
+
         serializer = AdmissionSerializer(admissions, many=True)
         return Response(serializer.data)
 
@@ -75,19 +154,19 @@ class BedViewSet(viewsets.ModelViewSet):
     serializer_class = BedSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward', 'status', 'bed_type']
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
-    
+
     def perform_update(self, serializer):
         # Get the old status before saving
         if self.get_object():
             old_status = self.get_object().status
             new_status = serializer.validated_data.get('status', old_status)
-            
+
             # Save the bed
             bed = serializer.save(updated_by=self.request.user)
-            
+
             # If status changed, create a log entry
             if old_status != new_status:
                 BedAllocationLog.objects.create(
@@ -98,7 +177,7 @@ class BedViewSet(viewsets.ModelViewSet):
                 )
         else:
             serializer.save(updated_by=self.request.user)
-    
+
     @action(detail=True, methods=['get'])
     def admissions(self, request, pk=None):
         """
@@ -106,15 +185,15 @@ class BedViewSet(viewsets.ModelViewSet):
         """
         bed = self.get_object()
         admissions = bed.admissions.all()
-        
+
         # Filter by status if provided
         status_filter = request.query_params.get('status', None)
         if status_filter:
             admissions = admissions.filter(status=status_filter)
-        
+
         serializer = AdmissionSerializer(admissions, many=True)
         return Response(serializer.data)
-    
+
     @action(detail=True, methods=['get'])
     def allocation_logs(self, request, pk=None):
         """
@@ -133,12 +212,12 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     queryset = Admission.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['patient', 'bed', 'status', 'admission_type', 'is_billed']
-    
+
     def get_serializer_class(self):
         if self.action == 'create':
             return AdmissionCreateSerializer
         return AdmissionSerializer
-    
+
     def perform_create(self, serializer):
         with transaction.atomic():
             # Create the admission
@@ -147,7 +226,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 updated_by=self.request.user,
                 status='admitted'
             )
-            
+
             # Create FHIR Encounter if fhir_encounter_id is not provided
             if not admission.fhir_encounter_id:
                 try:
@@ -179,7 +258,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                             "text": f"Admission to {admission.bed.ward.name}"
                         }
                     }
-                    
+
                     # Add practitioner if available
                     if admission.admitting_doctor and admission.admitting_doctor.practitioner_profile.fhir_practitioner_id:
                         encounter_data["participant"] = [
@@ -201,18 +280,18 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                                 )
                             }
                         ]
-                    
+
                     # Create the encounter in FHIR
                     fhir_encounter = fhir_client.create_resource("Encounter", encounter_data)
-                    
+
                     # Update the admission with the FHIR encounter ID
                     admission.fhir_encounter_id = fhir_encounter["id"]
                     admission.save()
-                    
+
                 except Exception as e:
                     # Log the error but continue (we don't want to roll back the admission)
                     print(f"Failed to create FHIR Encounter: {str(e)}")
-            
+
             # Create a bed allocation log
             BedAllocationLog.objects.create(
                 bed=admission.bed,
@@ -221,48 +300,48 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 admission=admission,
                 created_by=self.request.user
             )
-    
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
-    
+
     @action(detail=True, methods=['post'])
     def discharge(self, request, pk=None):
         """
         Discharge a patient.
         """
         admission = self.get_object()
-        
+
         # Validate the discharge
         serializer = DischargeSerializer(
             data=request.data, 
             context={'admission': admission}
         )
-        
+
         if serializer.is_valid():
             with transaction.atomic():
                 # Discharge the patient
                 discharge_notes = serializer.validated_data.get('discharge_notes', '')
                 admission.discharge_patient(discharge_notes)
-                
+
                 # Update FHIR Encounter if available
                 if admission.fhir_encounter_id:
                     try:
                         # Get the current encounter
                         encounter = fhir_client.get_resource("Encounter", admission.fhir_encounter_id)
-                        
+
                         # Update the status and end date
                         encounter["status"] = "finished"
                         if "period" not in encounter:
                             encounter["period"] = {}
                         encounter["period"]["end"] = admission.actual_discharge_date.isoformat()
-                        
+
                         # Update the encounter in FHIR
                         fhir_client.update_resource("Encounter", admission.fhir_encounter_id, encounter)
-                        
+
                     except Exception as e:
                         # Log the error but continue
                         print(f"Failed to update FHIR Encounter: {str(e)}")
-                
+
                 # Create a bed allocation log
                 BedAllocationLog.objects.create(
                     bed=admission.bed,
@@ -272,12 +351,12 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                     notes=f"Patient discharged: {discharge_notes}",
                     created_by=request.user
                 )
-                
+
                 return Response({
                     "message": "Patient discharged successfully.",
                     "admission": AdmissionSerializer(admission).data
                 })
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -299,24 +378,24 @@ class WardTransferViewSet(viewsets.ModelViewSet):
     serializer_class = WardTransferSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['patient', 'from_admission', 'to_admission', 'created_by']
-    
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-    
+
     @action(detail=False, methods=['post'])
     def request_transfer(self, request):
         """
         Request a patient transfer between wards.
         """
         serializer = TransferRequestSerializer(data=request.data)
-        
+
         if serializer.is_valid():
             with transaction.atomic():
                 # Get validated data
                 from_admission = serializer.validated_data['from_admission']
                 to_bed = serializer.validated_data['to_bed']
                 reason = serializer.validated_data['reason']
-                
+
                 # Create a new admission for the destination bed
                 to_admission = Admission.objects.create(
                     patient=from_admission.patient,
@@ -332,7 +411,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     created_by=request.user,
                     updated_by=request.user
                 )
-                
+
                 # Create the transfer record
                 transfer = WardTransfer.objects.create(
                     patient=from_admission.patient,
@@ -341,7 +420,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     reason=reason,
                     created_by=request.user
                 )
-                
+
                 # Create bed allocation logs
                 BedAllocationLog.objects.create(
                     bed=from_admission.bed,
@@ -351,7 +430,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     notes=f"Patient transferred to {to_bed.ward.name}",
                     created_by=request.user
                 )
-                
+
                 BedAllocationLog.objects.create(
                     bed=to_bed,
                     previous_status='available',
@@ -360,10 +439,10 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     notes=f"Patient transferred from {from_admission.bed.ward.name}",
                     created_by=request.user
                 )
-                
+
                 return Response({
                     "message": "Patient transferred successfully.",
                     "transfer": WardTransferSerializer(transfer).data
                 })
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

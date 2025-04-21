@@ -95,7 +95,6 @@ const SearchBar = ({
                   selectedOption && "bg-muted text-muted-foreground"
                 )}
                 disabled={disabled}
-                onFocus={() => setOpen(true)}
               />
               {(selectedOption || searchQuery) && (
                 <Button

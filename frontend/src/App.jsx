@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { HelmetProvider } from 'react-helmet-async'
 import { Layout } from './components/layout/layout'
 import { Toaster } from './components/ui/sonner'
+import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { LoginForm } from './components/auth/login-form'
 import { RegisterForm } from './components/auth/register-form'
@@ -25,6 +26,11 @@ import UnauthorizedPage from './pages/UnauthorizedPage'
 import PractitionerAvailabilityPage from './pages/PractitionerAvailabilityPage'
 import PractitionerAvailabilityDetailPage from './pages/PractitionerAvailabilityDetailPage'
 import ScheduleSlotsPage from './pages/ScheduleSlotsPage';
+import WardsPage from './pages/wards/WardsPage'
+import WardDetailPage from './pages/wards/WardDetailPage'
+import NewWardPage from './pages/wards/NewWardPage'
+import AdmissionCreatePage from './pages/admissions/AdmissionCreatePage'
+import AdmissionDetailPage from './pages/admissions/AdmissionDetailPage'
 
 // Main app content with routes
 function AppContent() {
@@ -230,6 +236,48 @@ function AppContent() {
             </RoleBasedRoute>
         } />
 
+      {/* Ward management routes */}
+      <Route path="/wards" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <WardsPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/wards/new" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <NewWardPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/wards/:wardId" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <WardDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Admission routes */}
+      <Route path="/admissions/new" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <AdmissionCreatePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/admissions/:admissionId" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <AdmissionDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   )
@@ -241,8 +289,10 @@ function App() {
       <BrowserRouter>
         <HelmetProvider>
           <AuthProvider>
-            <AppContent />
-            <Toaster />
+            <BreadcrumbProvider>
+              <AppContent />
+              <Toaster />
+            </BreadcrumbProvider>
           </AuthProvider>
         </HelmetProvider>
       </BrowserRouter>

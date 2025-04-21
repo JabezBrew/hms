@@ -1,5 +1,6 @@
 import { Header } from "./header"
 import { AppSidebar } from "./sidebar"
+import { PageBreadcrumb } from "./PageBreadcrumb"
 import {
   Sidebar,
   SidebarProvider,
@@ -17,6 +18,7 @@ export function Layout({ children }) {
           </Sidebar>
           <SidebarInset className="p-4 flex-1 min-w-0">
             <div className="w-full">
+              <PageBreadcrumb />
               {children}
             </div>
           </SidebarInset>

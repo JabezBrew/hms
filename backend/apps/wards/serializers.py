@@ -10,14 +10,26 @@ class WardSerializer(serializers.ModelSerializer):
     available_beds_count = serializers.ReadOnlyField()
     occupancy_rate = serializers.ReadOnlyField()
     head_nurse_details = StaffSerializer(source='head_nurse', read_only=True)
+    auto_create_beds = serializers.BooleanField(default=True, write_only=True, required=False,
+                                               help_text="Automatically create beds when ward is created")
 
     class Meta:
         model = Ward
         fields = ['id', 'name', 'description', 'ward_type', 'is_active', 
                   'total_beds', 'base_rate_per_night', 'head_nurse', 
                   'head_nurse_details', 'available_beds_count', 'occupancy_rate',
-                  'created_at', 'updated_at', 'created_by', 'updated_by']
+                  'auto_create_beds', 'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def validate_total_beds(self, value):
+        """
+        Validate that total_beds is a reasonable number.
+        """
+        if value < 0:
+            raise serializers.ValidationError("Total beds cannot be negative.")
+        if value > 100:  # Assuming 100 is a reasonable upper limit for beds in a ward
+            raise serializers.ValidationError("Total beds cannot exceed 100.")
+        return value
 
 
 class BedSerializer(serializers.ModelSerializer):
