@@ -1,0 +1,183 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { staffApi } from '@/lib/api/staff';
+import { useSearchQuery } from './useSearchQuery';
+
+// Query keys
+export const staffKeys = {
+  all: ['staff'],
+  lists: () => [...staffKeys.all, 'list'],
+  list: (filters) => [...staffKeys.lists(), { filters }],
+  details: () => [...staffKeys.all, 'detail'],
+  detail: (id) => [...staffKeys.details(), id],
+  practitioners: () => [...staffKeys.all, 'practitioners'],
+  practitionersList: (filters) => [...staffKeys.practitioners(), 'list', { filters }],
+  practitioner: (id) => [...staffKeys.practitioners(), id],
+};
+
+/**
+ * Get staff list with optional filtering
+ * @param {Object} filters - Query parameters for filtering
+ * @returns {Object} Query result
+ */
+export function useStaff(filters = {}) {
+  return useQuery({
+    queryKey: staffKeys.list(filters),
+    queryFn: () => staffApi.getStaff(filters),
+  });
+}
+
+/**
+ * Get a single staff member by ID
+ * @param {string} id - Staff ID
+ * @returns {Object} Query result
+ */
+export function useStaffMember(id) {
+  return useQuery({
+    queryKey: staffKeys.detail(id),
+    queryFn: () => staffApi.getStaffMember(id),
+    enabled: !!id, // Only run the query if we have an ID
+  });
+}
+
+/**
+ * Create a new staff member
+ * @returns {Object} Mutation result
+ */
+export function useCreateStaff() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data) => staffApi.createStaff(data),
+    onSuccess: () => {
+      // Invalidate the staff list query to refetch
+      queryClient.invalidateQueries({ queryKey: staffKeys.lists() });
+      
+      // Also invalidate practitioners list if the new staff member might be a practitioner
+      queryClient.invalidateQueries({ queryKey: staffKeys.practitioners() });
+    },
+  });
+}
+
+/**
+ * Update an existing staff member
+ * @returns {Object} Mutation result
+ */
+export function useUpdateStaff() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, data }) => staffApi.updateStaff(id, data),
+    onSuccess: (data, variables) => {
+      // Update the cache for this specific staff member
+      queryClient.invalidateQueries({ 
+        queryKey: staffKeys.detail(variables.id) 
+      });
+      // Also invalidate the list to reflect changes
+      queryClient.invalidateQueries({ 
+        queryKey: staffKeys.lists() 
+      });
+      
+      // If the staff member is a practitioner, also invalidate practitioner queries
+      if (data && (data.role === 'doctor' || data.role === 'nurse')) {
+        queryClient.invalidateQueries({ 
+          queryKey: staffKeys.practitioners() 
+        });
+        
+        // If we know the practitioner ID, invalidate that specific practitioner
+        if (data.practitioner_id) {
+          queryClient.invalidateQueries({ 
+            queryKey: staffKeys.practitioner(data.practitioner_id) 
+          });
+        }
+      }
+    },
+  });
+}
+
+/**
+ * Delete a staff member
+ * @returns {Object} Mutation result
+ */
+export function useDeleteStaff() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id) => staffApi.deleteStaff(id),
+    onSuccess: (data, variables) => {
+      // Invalidate the staff detail query
+      queryClient.invalidateQueries({ 
+        queryKey: staffKeys.detail(variables) 
+      });
+      // Also invalidate the list to reflect changes
+      queryClient.invalidateQueries({ 
+        queryKey: staffKeys.lists() 
+      });
+      
+      // Also invalidate practitioners list since the deleted staff might be a practitioner
+      queryClient.invalidateQueries({ 
+        queryKey: staffKeys.practitioners() 
+      });
+    },
+  });
+}
+
+/**
+ * Register a new staff member
+ * @returns {Object} Mutation result
+ */
+export function useRegisterStaff() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data) => staffApi.registerStaff(data),
+    onSuccess: () => {
+      // Invalidate the staff list query to refetch
+      queryClient.invalidateQueries({ queryKey: staffKeys.lists() });
+      
+      // Also invalidate practitioners list if the new staff member might be a practitioner
+      queryClient.invalidateQueries({ queryKey: staffKeys.practitioners() });
+    },
+  });
+}
+
+/**
+ * Get practitioners list with optional filtering
+ * @param {Object} filters - Query parameters for filtering
+ * @returns {Object} Query result
+ */
+export function usePractitioners(filters = {}) {
+  return useQuery({
+    queryKey: staffKeys.practitionersList(filters),
+    queryFn: () => staffApi.getPractitioners(filters),
+  });
+}
+
+/**
+ * Get a single practitioner by ID
+ * @param {string} id - Practitioner ID
+ * @returns {Object} Query result
+ */
+export function usePractitioner(id) {
+  return useQuery({
+    queryKey: staffKeys.practitioner(id),
+    queryFn: () => staffApi.getPractitioner(id),
+    enabled: !!id,
+  });
+}
+
+/**
+ * Search practitioners
+ * @param {boolean} doctorsOnly - Whether to filter for doctors only
+ * @param {Object} options - Search options
+ * @returns {Object} Search query result
+ */
+export function useSearchPractitioners(doctorsOnly = false, options = {}) {
+  return useSearchQuery(
+    [...staffKeys.practitioners(), 'search', { doctorsOnly }],
+    (query) => staffApi.searchPractitioners(query, doctorsOnly),
+    {
+      staleTime: 5 * 60 * 1000, // 5 minutes - practitioners list changes less frequently
+      ...options,
+    }
+  );
+}

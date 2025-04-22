@@ -3,6 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { HelmetProvider } from 'react-helmet-async'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { queryClient } from './lib/react-query'
 import { Layout } from './components/layout/layout'
 import { Toaster } from './components/ui/sonner'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
@@ -303,18 +306,22 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
         <HelmetProvider>
           <AuthProvider>
-            <BreadcrumbProvider>
-              <AppContent />
-              <Toaster />
-            </BreadcrumbProvider>
+            <BrowserRouter>
+              <BreadcrumbProvider>
+                <AppContent />
+                <Toaster />
+              </BreadcrumbProvider>
+            </BrowserRouter>
           </AuthProvider>
         </HelmetProvider>
-      </BrowserRouter>
-    </ThemeProvider>
+      </ThemeProvider>
+      {/* Add React Query Devtools - only in development */}
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
   )
 }
 

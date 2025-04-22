@@ -37,7 +37,13 @@ import {
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 
-import { createRecurringSchedule, updateRecurringSchedule, searchPractitioners } from '@/lib/api';
+import { 
+  useCreateRecurringSchedule, 
+  useUpdateRecurringSchedule 
+} from '@/hooks/useAppointmentQueries';
+import { 
+  useSearchPractitioners 
+} from '@/hooks/useStaffQueries';
 
 // Form validation schema
 const formSchema = z.object({
@@ -71,51 +77,39 @@ const formSchema = z.object({
 const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [practitioners, setPractitioners] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const isEditing = !!initialData;
 
-  // If editing, fetch the current practitioner to display
+  // Use React Query hooks for data fetching
+  const { 
+    data: practitioners = [], 
+    isLoading, 
+    isError: isPractitionersError,
+    error: practitionersError
+  } = useSearchPractitioners(false, {
+    enabled: debouncedSearchQuery.length >= 2 || (isEditing && !!initialData?.practitioner),
+    minLength: 2
+  });
+
+  // Create and update mutations
+  const createRecurringScheduleMutation = useCreateRecurringSchedule();
+  const updateRecurringScheduleMutation = useUpdateRecurringSchedule();
+
+  // Show error toast if query fails
+  useEffect(() => {
+    if (isPractitionersError) {
+      toast.error(practitionersError?.message || 'Failed to search practitioners');
+      console.error('Error searching practitioners:', practitionersError);
+    }
+  }, [isPractitionersError, practitionersError]);
+
+  // Set search query when editing to load the current practitioner
   useEffect(() => {
     if (isEditing && initialData?.practitioner) {
-      const fetchPractitioner = async () => {
-        try {
-          // Search for the practitioner by ID to get their details
-          const result = await searchPractitioners(initialData.practitioner);
-          if (Array.isArray(result) && result.length > 0) {
-            setPractitioners(result);
-          }
-        } catch (error) {
-          console.error('Error fetching practitioner:', error);
-        }
-      };
-
-      fetchPractitioner();
+      // Set the search query to the practitioner ID to trigger a search
+      setSearchQuery(initialData.practitioner);
     }
   }, [isEditing, initialData]);
-
-  // Search practitioners when query changes
-  useEffect(() => {
-    const searchForPractitioners = async () => {
-      if (!debouncedSearchQuery || debouncedSearchQuery.length < 2) {
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const results = await searchPractitioners(debouncedSearchQuery);
-        setPractitioners(Array.isArray(results) ? results : []);
-      } catch (error) {
-        console.error('Error searching practitioners:', error);
-        toast.error('Failed to search practitioners');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    searchForPractitioners();
-  }, [debouncedSearchQuery]);
 
   // Days of week options
   const daysOfWeek = [
@@ -155,25 +149,50 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         active_to: data.active_to ? format(data.active_to, 'yyyy-MM-dd') : null,
       };
 
-      let result;
-
       if (isEditing) {
-        // Update existing schedule
-        result = await updateRecurringSchedule(initialData.id, formattedData);
-        toast.success("Recurring schedule updated successfully");
+        // Update existing schedule using mutation
+        updateRecurringScheduleMutation.mutate(
+          { id: initialData.id, data: formattedData },
+          {
+            onSuccess: (result) => {
+              toast.success("Recurring schedule updated successfully");
+              if (onSuccess) {
+                onSuccess(result);
+              }
+            },
+            onError: (error) => {
+              console.error('Error updating recurring schedule:', error);
+              toast.error(error.message || 'Failed to update recurring schedule');
+            },
+            onSettled: () => {
+              setSubmitting(false);
+            }
+          }
+        );
       } else {
-        // Create new schedule
-        result = await createRecurringSchedule(formattedData);
-        toast.success("Recurring schedule created successfully");
-      }
-
-      if (onSuccess) {
-        onSuccess(result);
+        // Create new schedule using mutation
+        createRecurringScheduleMutation.mutate(
+          formattedData,
+          {
+            onSuccess: (result) => {
+              toast.success("Recurring schedule created successfully");
+              if (onSuccess) {
+                onSuccess(result);
+              }
+            },
+            onError: (error) => {
+              console.error('Error creating recurring schedule:', error);
+              toast.error(error.message || 'Failed to create recurring schedule');
+            },
+            onSettled: () => {
+              setSubmitting(false);
+            }
+          }
+        );
       }
     } catch (error) {
-      console.error('Error saving recurring schedule:', error);
-      toast.error(error.message || 'Failed to save recurring schedule');
-    } finally {
+      console.error('Error preparing recurring schedule data:', error);
+      toast.error(error.message || 'Failed to prepare recurring schedule data');
       setSubmitting(false);
     }
   };

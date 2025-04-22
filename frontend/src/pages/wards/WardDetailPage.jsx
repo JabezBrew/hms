@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WardDashboard } from '@/components/wards/WardDashboard';
-import { fetchWard, deleteWard } from '@/lib/api';
+import { useWard, useDeleteWard } from '@/hooks/useWardQueries';
 import { ChevronLeft, Edit, Trash2 } from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,33 +22,24 @@ import {
 export default function WardDetailPage() {
   const { wardId } = useParams();
   const navigate = useNavigate();
-  const [ward, setWard] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { 
+    data: ward, 
+    isLoading, 
+    isError, 
+    error 
+  } = useWard(wardId);
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Fetch ward details
+  // Show error toast if query fails
   useEffect(() => {
-    const fetchWardDetails = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchWard(wardId);
-        setWard(data);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching ward details:', err);
-        setError('Failed to load ward details. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    if (wardId) {
-      fetchWardDetails();
+    if (isError) {
+      toast.error(error?.message || 'Failed to load ward details');
+      console.error('Error loading ward:', error);
     }
-  }, [wardId]);
+  }, [isError, error]);
 
   // Handle edit ward
   const handleEditWard = () => {
@@ -59,18 +51,24 @@ export default function WardDetailPage() {
     setShowDeleteDialog(true);
   };
 
+  // Use the delete ward mutation
+  const deleteMutation = useDeleteWard();
+
   // Handle actual ward deletion
-  const handleConfirmDelete = async () => {
-    try {
-      await deleteWard(wardId);
-      setShowDeleteDialog(false);
-      navigate('/wards');
-    } catch (err) {
-      console.error('Error deleting ward:', err);
-      setShowDeleteDialog(false);
-      setErrorMessage('Failed to delete ward. Please try again.');
-      setShowErrorDialog(true);
-    }
+  const handleConfirmDelete = () => {
+    deleteMutation.mutate(wardId, {
+      onSuccess: () => {
+        setShowDeleteDialog(false);
+        toast.success('Ward deleted successfully');
+        navigate('/wards');
+      },
+      onError: (err) => {
+        console.error('Error deleting ward:', err);
+        setShowDeleteDialog(false);
+        setErrorMessage(err.message || 'Failed to delete ward. Please try again.');
+        setShowErrorDialog(true);
+      }
+    });
   };
 
   // Set breadcrumb when ward data is loaded
@@ -83,7 +81,7 @@ export default function WardDetailPage() {
     }
   }, [ward, wardId]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="container mx-auto py-6 space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -92,7 +90,7 @@ export default function WardDetailPage() {
     );
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="container mx-auto py-6">
         <Card>
@@ -100,7 +98,7 @@ export default function WardDetailPage() {
             <CardTitle className="text-red-500">Error</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>{error}</p>
+            <p>{error?.message || 'Failed to load ward details. Please try again.'}</p>
             <Button 
               variant="outline" 
               className="mt-4"

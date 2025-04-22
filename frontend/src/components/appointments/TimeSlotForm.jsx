@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { createTimeSlot, updateTimeSlot } from '@/lib/api';
+import { useCreateTimeSlot, useUpdateTimeSlot } from '@/hooks/useAppointmentQueries';
 
 // Day of week options
 const DAYS_OF_WEEK = [
@@ -75,35 +75,65 @@ const TimeSlotForm = ({ initialData = null, templateId, onSuccess }) => {
     },
   });
 
+  // Use React Query mutation hooks
+  const createTimeSlotMutation = useCreateTimeSlot();
+  const updateTimeSlotMutation = useUpdateTimeSlot();
+
   // Handle form submission
   const onSubmit = async (data) => {
     setSubmitting(true);
+
+    // Add template ID to data
+    const timeSlotData = {
+      ...data,
+      template: templateId,
+    };
+
     try {
-      let result;
-
-      // Add template ID to data
-      const timeSlotData = {
-        ...data,
-        template: templateId,
-      };
-
       if (isEditing) {
-        // Update existing time slot
-        result = await updateTimeSlot(initialData.id, timeSlotData);
-        toast.success("Time slot updated successfully");
+        // Update existing time slot using mutation
+        updateTimeSlotMutation.mutate(
+          { id: initialData.id, data: timeSlotData },
+          {
+            onSuccess: (result) => {
+              toast.success("Time slot updated successfully");
+              if (onSuccess) {
+                onSuccess(result);
+              }
+            },
+            onError: (error) => {
+              console.error('Error updating time slot:', error);
+              toast.error(error.message || 'Failed to update time slot');
+            },
+            onSettled: () => {
+              setSubmitting(false);
+            }
+          }
+        );
       } else {
-        // Create new time slot
-        result = await createTimeSlot(timeSlotData);
-        toast.success("Time slot created successfully");
-      }
-
-      if (onSuccess) {
-        onSuccess(result);
+        // Create new time slot using mutation
+        createTimeSlotMutation.mutate(
+          timeSlotData,
+          {
+            onSuccess: (result) => {
+              toast.success("Time slot created successfully");
+              if (onSuccess) {
+                onSuccess(result);
+              }
+            },
+            onError: (error) => {
+              console.error('Error creating time slot:', error);
+              toast.error(error.message || 'Failed to create time slot');
+            },
+            onSettled: () => {
+              setSubmitting(false);
+            }
+          }
+        );
       }
     } catch (error) {
-      console.error('Error saving time slot:', error);
-      toast.error(error.message || 'Failed to save time slot');
-    } finally {
+      console.error('Error preparing time slot data:', error);
+      toast.error(error.message || 'Failed to prepare time slot data');
       setSubmitting(false);
     }
   };

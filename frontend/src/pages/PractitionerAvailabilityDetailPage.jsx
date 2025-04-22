@@ -34,7 +34,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 
-import { fetchScheduleTemplate, fetchTimeSlots, deleteTimeSlot } from '@/lib/api';
+import {useScheduleSlots, useScheduleTemplate} from '@/hooks/useAppointmentQueries';
+import { deleteTimeSlot } from '@/lib/api';
 import TimeSlotForm from '@/components/appointments/TimeSlotForm';
 
 // Day of week mapping
@@ -51,52 +52,53 @@ const DAYS_OF_WEEK = {
 const PractitionerAvailabilityDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [template, setTemplate] = useState(null);
-  const [timeSlots, setTimeSlots] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [timeSlotToDelete, setTimeSlotToDelete] = useState(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
 
-  // Load template and time slots
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [templateData, timeSlotsData] = await Promise.all([
-          fetchScheduleTemplate(id),
-          fetchTimeSlots(id)
-        ]);
-        
-        setTemplate(templateData);
-        setTimeSlots(Array.isArray(timeSlotsData) ? timeSlotsData : []);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        toast.error('Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Use React Query hooks for data fetching
+  const { 
+    data: template, 
+    isLoading: isTemplateLoading, 
+    isError: isTemplateError,
+    error: templateError
+  } = useScheduleTemplate(id);
 
-    if (id) {
-      loadData();
+  const { 
+    data: timeSlots = [], 
+    isLoading: isTimeSlotsLoading, 
+    isError: isTimeSlotsError,
+    error: timeSlotsError,
+    refetch: refetchTimeSlots
+  } = useScheduleSlots(id);
+
+  // Show error toasts if queries fail
+  useEffect(() => {
+    if (isTemplateError) {
+      toast.error(templateError?.message || 'Failed to load template');
+      console.error('Error loading template:', templateError);
     }
-  }, [id]);
+
+    if (isTimeSlotsError) {
+      toast.error(timeSlotsError?.message || 'Failed to load time slots');
+      console.error('Error loading time slots:', timeSlotsError);
+    }
+  }, [isTemplateError, templateError, isTimeSlotsError, timeSlotsError]);
 
   // Handle time slot creation success
   const handleCreateSuccess = (newTimeSlot) => {
-    setTimeSlots([...timeSlots, newTimeSlot]);
+    // No need to manually update the state as React Query will automatically refetch
+    refetchTimeSlots();
     setIsCreateDialogOpen(false);
     toast.success('Time slot created successfully');
   };
 
   // Handle time slot update success
   const handleUpdateSuccess = (updatedTimeSlot) => {
-    setTimeSlots(timeSlots.map(slot => 
-      slot.id === updatedTimeSlot.id ? updatedTimeSlot : slot
-    ));
+    // No need to manually update the state as React Query will automatically refetch
+    refetchTimeSlots();
     setIsEditDialogOpen(false);
     toast.success('Time slot updated successfully');
   };
@@ -107,7 +109,8 @@ const PractitionerAvailabilityDetailPage = () => {
 
     try {
       await deleteTimeSlot(timeSlotToDelete.id);
-      setTimeSlots(timeSlots.filter(slot => slot.id !== timeSlotToDelete.id));
+      // Refetch time slots after successful deletion
+      refetchTimeSlots();
       setIsDeleteDialogOpen(false);
       toast.success('Time slot deleted successfully');
     } catch (error) {
@@ -123,7 +126,7 @@ const PractitionerAvailabilityDetailPage = () => {
       const date = new Date();
       date.setHours(parseInt(hours, 10));
       date.setMinutes(parseInt(minutes, 10));
-      
+
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } catch (error) {
       return timeString;
@@ -131,7 +134,7 @@ const PractitionerAvailabilityDetailPage = () => {
   };
 
   // Render loading state
-  if (loading) {
+  if (isTemplateLoading || isTimeSlotsLoading) {
     return (
       <div className="container mx-auto py-6 space-y-6">
         <div className="flex items-center space-x-2">
@@ -230,7 +233,7 @@ const PractitionerAvailabilityDetailPage = () => {
                       const hours = Math.floor(durationMinutes / 60);
                       const minutes = durationMinutes % 60;
                       const durationText = `${hours > 0 ? `${hours}h ` : ''}${minutes > 0 ? `${minutes}m` : ''}`;
-                      
+
                       return (
                         <TableRow key={slot.id}>
                           <TableCell className="font-medium">{DAYS_OF_WEEK[slot.day_of_week]}</TableCell>

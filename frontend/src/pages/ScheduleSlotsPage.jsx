@@ -16,61 +16,79 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 
-import { fetchScheduleSlots, fetchSchedules, fetchPractitioner } from '@/lib/api.js';
+import { useScheduleMappings, useScheduleSlots } from '@/hooks/useAppointmentQueries';
+import { usePractitioner } from '@/hooks/useStaffQueries';
 
 const ScheduleSlotsPage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const [slots, setSlots] = useState([]);
-    const [schedule, setSchedule] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [practitionerName, setPractitionerName] = useState('Unknown');
 
+    // Use React Query to fetch schedule mappings
+    const { 
+        data: scheduleMappings = [], 
+        isLoading: isScheduleLoading,
+        isError: isScheduleError,
+        error: scheduleError
+    } = useScheduleMappings({ id });
+
+    // Find the specific schedule mapping by ID
+    const schedule = Array.isArray(scheduleMappings) && scheduleMappings.length > 0
+        ? scheduleMappings.find(s => s.id === id) || scheduleMappings[0]
+        : null;
+
+    // Use React Query to fetch slots for the schedule
+    const { 
+        data: slotsData = [], 
+        isLoading: isSlotsLoading,
+        isError: isSlotsError,
+        error: slotsError
+    } = useScheduleSlots(schedule?.fhir_schedule_id, {}, {
+        enabled: !!schedule?.fhir_schedule_id
+    });
+
+    // Process the slots data
+    const slots = slotsData && slotsData.entry && Array.isArray(slotsData.entry)
+        ? slotsData.entry
+            .filter(entry => entry.resource && entry.resource.resourceType === 'Slot')
+            .map(entry => {
+                const slot = entry.resource;
+                return {
+                    id: slot.id,
+                    start: slot.start,
+                    end: slot.end,
+                    status: slot.status,
+                    scheduleReference: slot.schedule?.reference,
+                };
+            })
+        : [];
+
+    // Use React Query to fetch practitioner details
+    const { 
+        data: practitioner,
+        isLoading: isPractitionerLoading
+    } = usePractitioner(schedule?.practitioner, {
+        enabled: !!schedule?.practitioner
+    });
+
+    // Determine practitioner name
+    const practitionerName = practitioner?.staff_details?.user_details
+        ? `${practitioner.staff_details.user_details.first_name} ${practitioner.staff_details.user_details.last_name}`
+        : 'Unknown';
+
+    // Show error toast if queries fail
     useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                // Fetch the schedule details
-                const scheduleData = await fetchSchedules({ id });
-                const scheduleItem = Array.isArray(scheduleData) && scheduleData.length > 0
-                    ? scheduleData.find(s => s.id === id) || scheduleData[0]
-                    : null;
-
-                setSchedule(scheduleItem);
-
-                // Fetch the slots for this schedule
-                const slotsData = await fetchScheduleSlots(scheduleItem?.fhir_schedule_id);
-
-                // Process the slots data
-                let processedSlots = [];
-                if (slotsData && slotsData.entry && Array.isArray(slotsData.entry)) {
-                    processedSlots = slotsData.entry
-                        .filter(entry => entry.resource && entry.resource.resourceType === 'Slot')
-                        .map(entry => {
-                            const slot = entry.resource;
-                            return {
-                                id: slot.id,
-                                start: slot.start,
-                                end: slot.end,
-                                status: slot.status,
-                                scheduleReference: slot.schedule?.reference,
-                            };
-                        });
-                }
-
-                setSlots(processedSlots);
-            } catch (error) {
-                console.error('Error loading schedule slots:', error);
-                toast.error('Failed to load schedule slots');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (id) {
-            loadData();
+        if (isScheduleError) {
+            console.error('Error loading schedule:', scheduleError);
+            toast.error(scheduleError?.message || 'Failed to load schedule');
         }
-    }, [id]);
+        if (isSlotsError) {
+            console.error('Error loading slots:', slotsError);
+            toast.error(slotsError?.message || 'Failed to load slots');
+        }
+    }, [isScheduleError, scheduleError, isSlotsError, slotsError]);
+
+    // Determine overall loading state
+    const loading = isScheduleLoading || isSlotsLoading || isPractitionerLoading;
 
     // Format date for display
     const formatDate = (dateString) => {
@@ -84,25 +102,6 @@ const ScheduleSlotsPage = () => {
         }
     };
 
-    // Load practitioner name when schedule changes
-    useEffect(() => {
-        const loadPractitionerName = async () => {
-            if (schedule?.practitioner) {
-                try {
-                    const practitioner = await fetchPractitioner(schedule.practitioner);
-                    if (practitioner?.staff_details?.user_details) {
-                        const { first_name, last_name } = practitioner.staff_details.user_details;
-                        setPractitionerName(`${first_name} ${last_name}`);
-                    }
-                } catch (error) {
-                    console.error('Error loading practitioner:', error);
-                    // Keep the default "Unknown" value
-                }
-            }
-        };
-
-        loadPractitionerName();
-    }, [schedule]);
 
     // Get status badge color
     const getStatusBadge = (status) => {

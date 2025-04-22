@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { 
@@ -48,7 +48,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {toast} from 'sonner';
-import { fetchAppointments } from '@/lib/api';
+import { useAppointments } from '@/hooks/useAppointmentQueries';
 
 // Status badge colors
 const statusColors = {
@@ -62,86 +62,85 @@ const statusColors = {
 };
 
 const AppointmentList = () => {
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [pageSize] = useState(10);
 
   const navigate = useNavigate();
 
-  // Load appointments
-  useEffect(() => {
-    const loadAppointments = async () => {
-      setLoading(true);
-      try {
-        // Build query parameters
-        const params = new URLSearchParams();
+  // Build query parameters
+  const queryParams = {};
 
-        // Add filters if set
-        if (statusFilter && statusFilter !== 'all') {
-          params.append('status', statusFilter);
-        }
+  if (statusFilter && statusFilter !== 'all') {
+    queryParams.status = statusFilter;
+  }
 
-        if (dateFilter) {
-          params.append('date', dateFilter);
-        }
+  if (dateFilter) {
+    queryParams.date = dateFilter;
+  }
 
-        // Add pagination
-        params.append('_page', currentPage.toString());
-        params.append('_limit', pageSize.toString());
+  // Add pagination
+  queryParams.page = currentPage;
+  queryParams.limit = pageSize;
 
-        const response = await fetchAppointments(params);
+  // Use React Query to fetch appointments
+  const { 
+    data: appointmentsData, 
+    isLoading, 
+    isError, 
+    error 
+  } = useAppointments(queryParams);
 
-        // Process appointments
-        let appointmentData = [];
-        if (response && response.entry) {
-          appointmentData = response.entry
-            .filter(entry => entry.resource && entry.resource.resourceType === 'Appointment')
-            .map(entry => entry.resource);
-        }
+  // Process appointments data
+  let appointments = [];
+  let totalPages = 1;
 
-        // Apply client-side search if needed
-        if (searchTerm) {
-          appointmentData = appointmentData.filter(appointment => {
-            // Search in patient and practitioner names
-            const patientName = appointment.participant?.find(p => 
-              p.actor?.reference?.startsWith('Patient/'))?.actor?.display || '';
+  if (appointmentsData) {
+    // Extract appointments from response
+    if (appointmentsData.entry) {
+      appointments = appointmentsData.entry
+        .filter(entry => entry.resource && entry.resource.resourceType === 'Appointment')
+        .map(entry => entry.resource);
+    } else if (Array.isArray(appointmentsData)) {
+      appointments = appointmentsData;
+    } else if (appointmentsData.results) {
+      appointments = appointmentsData.results;
+    }
 
-            const practitionerName = appointment.participant?.find(p => 
-              p.actor?.reference?.startsWith('Practitioner/'))?.actor?.display || '';
+    // Apply client-side search if needed
+    if (searchTerm) {
+      appointments = appointments.filter(appointment => {
+        // Search in patient and practitioner names
+        const patientName = appointment.participant?.find(p => 
+          p.actor?.reference?.startsWith('Patient/'))?.actor?.display || '';
 
-            // Search in description and comment
-            const description = appointment.description || '';
-            const comment = appointment.comment || '';
+        const practitionerName = appointment.participant?.find(p => 
+          p.actor?.reference?.startsWith('Practitioner/'))?.actor?.display || '';
 
-            return (
-              patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              practitionerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              comment.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-          });
-        }
+        // Search in description and comment
+        const description = appointment.description || '';
+        const comment = appointment.comment || '';
 
-        setAppointments(appointmentData);
+        return (
+          patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          practitionerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          comment.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      });
+    }
 
-        // Set total pages based on total count header or response
-        const totalCount = response.total || appointmentData.length;
-        setTotalPages(Math.ceil(totalCount / pageSize));
-      } catch (error) {
-        console.error('Error loading appointments:', error);
-        toast.error('Failed to load appointments. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Calculate total pages
+    const totalCount = appointmentsData.total || appointments.length;
+    totalPages = Math.ceil(totalCount / pageSize);
+  }
 
-    loadAppointments();
-  }, [currentPage, pageSize, statusFilter, dateFilter, toast]);
+  // Show error toast if query fails
+  if (isError) {
+    toast.error(error?.message || 'Failed to load appointments. Please try again.');
+  }
 
   // Handle search
   const handleSearch = (e) => {
@@ -207,7 +206,7 @@ const AppointmentList = () => {
   };
 
   // Render loading skeleton
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">

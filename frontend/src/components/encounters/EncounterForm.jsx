@@ -30,12 +30,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  createEncounter,
-  updateEncounter,
-  fetchEncounter,
-  searchPatientsForEncounter,
-  searchPractitionersForEncounter
-} from '@/lib/api.js';
+  useCreateEncounter,
+  useUpdateEncounter,
+  useEncounter,
+  useSearchPatientsForEncounter,
+  useSearchPractitioners
+} from '@/hooks/useEncounterQueries';
 
 // Form validation schema
 const encounterFormSchema = z.object({
@@ -65,20 +65,38 @@ const encounterFormSchema = z.object({
 export function EncounterForm({ isEditing = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [loading, setLoading] = useState(isEditing);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [patients, setPatients] = useState([]);
-  const [practitioners, setPractitioners] = useState([]);
 
-  // Search state
+  // Use React Query hooks
+  const { 
+    data: encounterData, 
+    isLoading: isEncounterLoading, 
+    isError: isEncounterError,
+    error: encounterError
+  } = useEncounter(isEditing ? id : null);
+
+  // Create and update mutations
+  const createEncounterMutation = useCreateEncounter();
+  const updateEncounterMutation = useUpdateEncounter();
+
+  // Search state for patients
   const [patientSearchQuery, setPatientSearchQuery] = useState("");
-  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
-  const debouncedPatientQuery = useDebounce(patientSearchQuery, 300);
+  const { 
+    data: patients = [], 
+    isLoading: isLoadingPatients,
+    searchTerm: patientSearchTerm,
+    setSearchTerm: setPatientSearchTerm
+  } = useSearchPatientsForEncounter();
 
+  // Search state for practitioners
   const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
-  const [isLoadingPractitioners, setIsLoadingPractitioners] = useState(false);
-  const debouncedPractitionerQuery = useDebounce(practitionerSearchQuery, 300);
+  const { 
+    data: practitioners = [], 
+    isLoading: isLoadingPractitioners,
+    searchTerm: practitionerSearchTerm,
+    setSearchTerm: setPractitionerSearchTerm
+  } = useSearchPractitioners();
 
   // Initialize form with React Hook Form
   const form = useForm({
@@ -99,124 +117,98 @@ export function EncounterForm({ isEditing = false }) {
 
   // Load encounter data if editing
   useEffect(() => {
-    if (isEditing && id) {
-      const loadEncounter = async () => {
-        try {
-          setLoading(true);
-          const data = await fetchEncounter(id);
+    if (isEditing && encounterData) {
+      // Format dates
+      const startTime = encounterData.start_time ? new Date(encounterData.start_time) : new Date();
+      const endTime = encounterData.end_time ? new Date(encounterData.end_time) : null;
 
-          // Format dates
-          const startTime = data.start_time ? new Date(data.start_time) : new Date();
-          const endTime = data.end_time ? new Date(data.end_time) : null;
+      // Set form values
+      form.reset({
+        patient_id: encounterData.patient_id || '',
+        practitioner_id: encounterData.practitioner_id || '',
+        encounter_type: encounterData.encounter_type || 'outpatient',
+        status: encounterData.status || 'planned',
+        reason: encounterData.reason || '',
+        service_type: encounterData.service_type || '',
+        start_time: startTime,
+        end_time: endTime,
+        location: encounterData.location || '',
+        admission_source: encounterData.admission_source || '',
+      });
 
-          // Set form values
-          form.reset({
-            patient_id: data.patient_id || '',
-            practitioner_id: data.practitioner_id || '',
-            encounter_type: data.encounter_type || 'outpatient',
-            status: data.status || 'planned',
-            reason: data.reason || '',
-            service_type: data.service_type || '',
-            start_time: startTime,
-            end_time: endTime,
-            location: data.location || '',
-            admission_source: data.admission_source || '',
-          });
+      // Set patient and practitioner search queries to display names
+      if (encounterData.patient_name) {
+        setPatientSearchQuery(encounterData.patient_name);
+      }
 
-          // Set patient and practitioner search queries to display names
-          if (data.patient_name) {
-            setPatientSearchQuery(data.patient_name);
-          }
-
-          if (data.practitioner_name) {
-            setPractitionerSearchQuery(data.practitioner_name);
-          }
-        } catch (err) {
-          console.error('Error loading encounter:', err);
-          setError('Failed to load encounter data');
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadEncounter();
+      if (encounterData.practitioner_name) {
+        setPractitionerSearchQuery(encounterData.practitioner_name);
+      }
     }
-  }, [isEditing, id, form]);
+  }, [isEditing, encounterData, form]);
 
-  // Search for patients when query changes
+  // Set error state if encounter query fails
   useEffect(() => {
-    const searchForPatients = async () => {
-      if (!debouncedPatientQuery || debouncedPatientQuery.length < 2) {
-        setPatients([]);
-        return;
-      }
+    if (isEncounterError) {
+      setError(encounterError?.message || 'Failed to load encounter data');
+      console.error('Error loading encounter:', encounterError);
+    }
+  }, [isEncounterError, encounterError]);
 
-      setIsLoadingPatients(true);
-      try {
-        const response = await searchPatientsForEncounter(debouncedPatientQuery);
-        const patientsData = response.patients || [];
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
-      } catch (err) {
-        console.error('Error searching patients:', err);
-        setError('Failed to search patients');
-        setPatients([]);
-      } finally {
-        setIsLoadingPatients(false);
-      }
-    };
-
-    searchForPatients();
-  }, [debouncedPatientQuery]);
-
-  // Search for practitioners when query changes
+  // Update search terms when search queries change
   useEffect(() => {
-    const searchForPractitioners = async () => {
-      if (!debouncedPractitionerQuery || debouncedPractitionerQuery.length < 2) {
-        setPractitioners([]);
-        return;
-      }
+    if (patientSearchQuery && patientSearchQuery.length >= 2) {
+      setPatientSearchTerm(patientSearchQuery);
+    }
+  }, [patientSearchQuery, setPatientSearchTerm]);
 
-      setIsLoadingPractitioners(true);
-      try {
-        const results = await searchPractitionersForEncounter(debouncedPractitionerQuery, false);
-        setPractitioners(Array.isArray(results) ? results : []);
-      } catch (err) {
-        console.error('Error searching practitioners:', err);
-        setError('Failed to search practitioners');
-        setPractitioners([]);
-      } finally {
-        setIsLoadingPractitioners(false);
-      }
-    };
-
-    searchForPractitioners();
-  }, [debouncedPractitionerQuery]);
+  useEffect(() => {
+    if (practitionerSearchQuery && practitionerSearchQuery.length >= 2) {
+      setPractitionerSearchTerm(practitionerSearchQuery);
+    }
+  }, [practitionerSearchQuery, setPractitionerSearchTerm]);
 
   // Handle form submission
-  const onSubmit = async (data) => {
-    try {
-      setSubmitting(true);
+  const onSubmit = (data) => {
+    // Format dates for API
+    const formattedData = {
+      ...data,
+      start_time: data.start_time.toISOString(),
+      end_time: data.end_time ? data.end_time.toISOString() : null,
+    };
 
-      // Format dates for API
-      const formattedData = {
-        ...data,
-        start_time: data.start_time.toISOString(),
-        end_time: data.end_time ? data.end_time.toISOString() : null,
-      };
+    setSubmitting(true);
 
-      let response;
-      if (isEditing) {
-        response = await updateEncounter(id, formattedData);
-      } else {
-        response = await createEncounter(formattedData);
-      }
-
-      // Navigate to the encounter detail page
-      navigate(`/encounters/${response.id || id}`);
-    } catch (err) {
-      console.error('Error saving encounter:', err);
-      setError('Failed to save encounter. Please try again.');
-      setSubmitting(false);
+    if (isEditing) {
+      updateEncounterMutation.mutate(
+        { id, data: formattedData },
+        {
+          onSuccess: (response) => {
+            // Navigate to the encounter detail page
+            navigate(`/encounters/${id}`);
+          },
+          onError: (err) => {
+            console.error('Error updating encounter:', err);
+            setError('Failed to update encounter. Please try again.');
+            setSubmitting(false);
+          }
+        }
+      );
+    } else {
+      createEncounterMutation.mutate(
+        formattedData,
+        {
+          onSuccess: (response) => {
+            // Navigate to the encounter detail page
+            navigate(`/encounters/${response.id}`);
+          },
+          onError: (err) => {
+            console.error('Error creating encounter:', err);
+            setError('Failed to create encounter. Please try again.');
+            setSubmitting(false);
+          }
+        }
+      );
     }
   };
 
@@ -277,7 +269,8 @@ export function EncounterForm({ isEditing = false }) {
     }
   }) : [];
 
-  if (loading) {
+  // Show loading state when fetching encounter data
+  if (isEditing && isEncounterLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-10 w-full" />

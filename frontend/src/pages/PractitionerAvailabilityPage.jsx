@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Plus, Calendar, Trash2, Edit, RefreshCw, AlertCircle, CalendarDays } from 'lucide-react';
@@ -37,13 +37,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 import { 
-  fetchPractitioners,
-  fetchSchedules,
-  cancelSchedule,
-  fetchRecurringSchedules,
-  deleteRecurringSchedule,
-  batchGenerateSlots
-} from '@/lib/api.js';
+  useRecurringSchedules, 
+  useDeleteRecurringSchedule 
+} from '@/hooks/useAppointmentQueries';
+import { 
+  useScheduleMappings 
+} from '@/hooks/useAppointmentQueries';
+import { 
+  usePractitioners 
+} from '@/hooks/useStaffQueries';
+import { batchGenerateSlots, cancelSchedule } from '@/lib/api.js';
 import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 
@@ -52,7 +55,6 @@ const PractitionerAvailabilityPage = () => {
   // Removed template state
 
   // Recurring schedule state
-  const [recurringSchedules, setRecurringSchedules] = useState([]);
   const [selectedRecurringSchedule, setSelectedRecurringSchedule] = useState(null);
   const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
   const [isEditRecurringDialogOpen, setIsEditRecurringDialogOpen] = useState(false);
@@ -61,18 +63,38 @@ const PractitionerAvailabilityPage = () => {
   const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
 
   // Schedule state
-  const [schedules, setSchedules] = useState([]);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
 
-  // Loading state
-  const [recurringLoading, setRecurringLoading] = useState(true);
-  const [schedulesLoading, setSchedulesLoading] = useState(true);
-
   // Other state
-  const [practitioners, setPractitioners] = useState([]);
   const [selectedPractitioner, setSelectedPractitioner] = useState(null);
   const navigate = useNavigate();
+
+  // Use React Query hooks for data fetching
+  const { 
+    data: recurringSchedules = [], 
+    isLoading: recurringLoading, 
+    isError: isRecurringError,
+    error: recurringError
+  } = useRecurringSchedules();
+
+  const { 
+    data: schedules = [], 
+    isLoading: schedulesLoading, 
+    isError: isSchedulesError,
+    error: schedulesError,
+    refetch: refetchSchedules
+  } = useScheduleMappings();
+
+  const { 
+    data: practitioners = [], 
+    isLoading: practitionersLoading, 
+    isError: isPractitionersError,
+    error: practitionersError
+  } = usePractitioners();
+
+  // Use mutation hook for deleting recurring schedules
+  const deleteRecurringScheduleMutation = useDeleteRecurringSchedule();
 
   const getUserTypeBadgeColor = (userType) => {
     switch (userType) {
@@ -106,71 +128,34 @@ const PractitionerAvailabilityPage = () => {
 
   // Removed template loading useEffect
 
-  // Load recurring schedules
-  useEffect(() => {
-    const loadRecurringSchedules = async () => {
-      setRecurringLoading(true);
-      try {
-        const data = await fetchRecurringSchedules();
-        setRecurringSchedules(Array.isArray(data) ? data : []);
-      } catch (error) {
-        console.error('Error loading recurring schedules:', error);
-        toast.error('Failed to load recurring schedules');
-      } finally {
-        setRecurringLoading(false);
-      }
-    };
+  // Show error toasts if queries fail
+  if (isRecurringError) {
+    toast.error(recurringError?.message || 'Failed to load recurring schedules');
+    console.error('Error loading recurring schedules:', recurringError);
+  }
 
-    loadRecurringSchedules();
-  }, []);
+  if (isSchedulesError) {
+    toast.error(schedulesError?.message || 'Failed to load schedules');
+    console.error('Error loading schedules:', schedulesError);
+  }
 
-  // Load practitioners
-  useEffect(() => {
-    const loadPractitioners = async () => {
-      try {
-        const data = await fetchPractitioners();
-        setPractitioners(Array.isArray(data) ? data : []);
-      } catch (error) {
-        console.error('Error loading practitioners:', error);
-        toast.error('Failed to load practitioners');
-      }
-    };
-
-    loadPractitioners();
-  }, []);
-
-  // Load schedules
-  useEffect(() => {
-    const loadSchedules = async () => {
-      setSchedulesLoading(true);
-      try {
-        const data = await fetchSchedules();
-        setSchedules(Array.isArray(data) ? data : []);
-      } catch (error) {
-        console.error('Error loading schedules:', error);
-        toast.error('Failed to load schedules');
-      } finally {
-        setSchedulesLoading(false);
-      }
-    };
-
-    loadSchedules();
-  }, []);
+  if (isPractitionersError) {
+    toast.error(practitionersError?.message || 'Failed to load practitioners');
+    console.error('Error loading practitioners:', practitionersError);
+  }
 
   // Removed template handler functions
 
   // Handle recurring schedule creation success
   const handleCreateRecurringSuccess = (newSchedule) => {
-    setRecurringSchedules([...recurringSchedules, newSchedule]);
+    // No need to manually update the state as React Query will automatically refetch
     setIsCreateRecurringDialogOpen(false);
     toast.success('Recurring schedule created successfully');
   };
 
   // Handle recurring schedule update success
   const handleUpdateRecurringSuccess = (updatedSchedule) => {
-    setRecurringSchedules(recurringSchedules.map(schedule =>
-        schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-    ));
+    // No need to manually update the state as React Query will automatically refetch
     setIsEditRecurringDialogOpen(false);
     toast.success('Recurring schedule updated successfully');
   };
@@ -179,15 +164,17 @@ const PractitionerAvailabilityPage = () => {
   const handleDeleteRecurring = async (scheduleId) => {
     if (!recurringToDelete) return;
 
-    try {
-      await deleteRecurringSchedule(scheduleId);
-      setRecurringSchedules(recurringSchedules.filter(schedule => schedule.id !== scheduleId));
-      setIsDeleteRecurringDialogOpen(false);
-      toast.success('Recurring schedule deleted successfully');
-    } catch (error) {
-      console.error('Error deleting recurring schedule:', error);
-      toast.error('Failed to delete recurring schedule');
-    }
+    deleteRecurringScheduleMutation.mutate(scheduleId, {
+      onSuccess: () => {
+        // No need to manually update the state as React Query will automatically refetch
+        setIsDeleteRecurringDialogOpen(false);
+        toast.success('Recurring schedule deleted successfully');
+      },
+      onError: (error) => {
+        console.error('Error deleting recurring schedule:', error);
+        toast.error('Failed to delete recurring schedule');
+      }
+    });
   };
 
   // Handle batch generate slots
@@ -204,9 +191,8 @@ const PractitionerAvailabilityPage = () => {
         toast.success(`Generated ${result.total_slots_created} slots for ${result.total_practitioners} practitioners`);
       }
 
-      // Reload schedules after successful generation
-      const data = await fetchSchedules();
-      setSchedules(Array.isArray(data) ? data : []);
+      // Refetch schedules after successful generation
+      refetchSchedules();
     } catch (error) {
       console.error('Error batch generating slots:', error);
       toast.error('Failed to generate slots');
@@ -223,12 +209,8 @@ const PractitionerAvailabilityPage = () => {
 
     try {
       await cancelSchedule(selectedSchedule.id);
-      // Update the schedule status locally
-      setSchedules(schedules.map(schedule =>
-          schedule.id === selectedSchedule.id
-              ? { ...schedule, status: 'cancelled' }
-              : schedule
-      ));
+      // Refetch schedules after successful cancellation
+      refetchSchedules();
       setIsCancelDialogOpen(false);
       toast.success('Schedule cancelled successfully');
     } catch (error) {
@@ -257,7 +239,7 @@ const PractitionerAvailabilityPage = () => {
   // Removed getTemplateName function
 
   // Render loading state for all tabs
-  if (recurringLoading && schedulesLoading) {
+  if (recurringLoading && schedulesLoading && practitionersLoading) {
     return (
         <div className="container mx-auto py-6 space-y-6">
           <div className="flex justify-between items-center">

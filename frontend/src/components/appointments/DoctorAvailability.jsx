@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { format, addDays, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { format, addDays, startOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchAvailableSlots } from '@/lib/api.js';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useAvailableSlots } from '@/hooks/useAppointmentQueries';
 
 import DoctorAvailabilityCalendarView from './DoctorAvailabilityCalendar';
 import TimeSlotsGrid from './TimeSlotsGrid';
@@ -30,123 +30,110 @@ const DoctorAvailability = ({
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date())); // Track displayed month
   const [selectedDate, setSelectedDate] = useState(null); // Default to null, select on click
   const [availabilityData, setAvailabilityData] = useState({}); // Availability summary for calendar
-  const [slots, setSlots] = useState([]); // Slots for the selected date
-  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
-  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-  const [error, setError] = useState(null);
 
   // Debounce practitioner and appointment type changes
   const debouncedPractitionerId = useDebounce(practitionerId, 300);
   const debouncedAppointmentTypeId = useDebounce(appointmentTypeId, 300);
 
-  // Fetch availability data for the calendar (for the currently viewed month +/- buffer)
-  const fetchAvailabilityData = useCallback(async (monthToFetch) => {
-    if (!debouncedPractitionerId) {
-       setAvailabilityData({}); // Clear data if no practitioner
-       return;
+  // Prepare params for calendar view (month +/- buffer)
+  const getCalendarParams = () => {
+    if (!debouncedPractitionerId) return null;
+
+    const firstDay = startOfMonth(currentMonth);
+    const lastDay = endOfMonth(currentMonth);
+    const startDate = format(addDays(firstDay, -7), 'yyyy-MM-dd');
+    const endDate = format(addDays(lastDay, 7), 'yyyy-MM-dd');
+
+    const params = {
+      practitioner_id: debouncedPractitionerId,
+      start_date: startDate,
+      end_date: endDate,
+      status: 'free'
+    };
+
+    if (debouncedAppointmentTypeId) {
+      params.appointment_type_id = debouncedAppointmentTypeId;
     }
 
-    setIsLoadingCalendar(true);
-    setError(null); // Clear previous errors
+    return params;
+  };
 
-    try {
-      // Fetch for the month +/- some buffer days for calendar view continuity
-      const firstDay = startOfMonth(monthToFetch);
-      const lastDay = endOfMonth(monthToFetch);
-      const startDate = format(addDays(firstDay, -7), 'yyyy-MM-dd');
-      const endDate = format(addDays(lastDay, 7), 'yyyy-MM-dd');
+  // Prepare params for selected date
+  const getDateParams = () => {
+    if (!debouncedPractitionerId || !selectedDate) return null;
 
-      const params = new URLSearchParams({
-        practitioner_id: debouncedPractitionerId,
-        start_date: startDate,
-        end_date: endDate,
-        status: 'free', // Only need to know if *any* slot is available for the day
+    const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+
+    const params = {
+      practitioner_id: debouncedPractitionerId,
+      start_date: formattedDate,
+      end_date: formattedDate,
+      status: 'free'
+    };
+
+    if (debouncedAppointmentTypeId) {
+      params.appointment_type_id = debouncedAppointmentTypeId;
+    }
+
+    return params;
+  };
+
+  // Use React Query to fetch calendar data
+  const calendarParams = getCalendarParams();
+  const {
+    data: calendarData,
+    isLoading: isLoadingCalendar,
+    error: calendarError
+  } = useAvailableSlots(calendarParams || {}, {
+    enabled: !!calendarParams
+  });
+
+  // Use React Query to fetch slots for selected date
+  const dateParams = getDateParams();
+  const {
+    data: slotsData,
+    isLoading: isLoadingSlots,
+    error: slotsError
+  } = useAvailableSlots(dateParams || {}, {
+    enabled: !!dateParams
+  });
+
+  // Process calendar data to create availability map
+  useEffect(() => {
+    if (!calendarData) {
+      setAvailabilityData({});
+      return;
+    }
+
+    const availabilityMap = {};
+    if (Array.isArray(calendarData)) {
+      calendarData.forEach(slot => {
+        // Use startOfDay to ensure consistency regardless of slot time
+        const slotDateStr = format(startOfDay(new Date(slot.start)), 'yyyy-MM-dd');
+        if (!availabilityMap[slotDateStr]) {
+          availabilityMap[slotDateStr] = { hasSlots: false };
+        }
+        if (slot.status === 'free') { // Double check status if API might return others
+          availabilityMap[slotDateStr].hasSlots = true;
+        }
       });
+    }
 
-      if (debouncedAppointmentTypeId) {
-        params.append('appointment_type_id', debouncedAppointmentTypeId);
-      }
+    setAvailabilityData(availabilityMap);
+  }, [calendarData]);
 
-      const slotsData = await fetchAvailableSlots(params);
-
-      // Process slots data to create availability map by date
-      const availabilityMap = {};
-      if (Array.isArray(slotsData)) {
-        slotsData.forEach(slot => {
-          // Use startOfDay to ensure consistency regardless of slot time
-          const slotDateStr = format(startOfDay(new Date(slot.start)), 'yyyy-MM-dd');
-          if (!availabilityMap[slotDateStr]) {
-            availabilityMap[slotDateStr] = { hasSlots: false };
-          }
-          if (slot.status === 'free') { // Double check status if API might return others
-             availabilityMap[slotDateStr].hasSlots = true;
-          }
-        });
-      }
-      // Merge with existing data if needed, or replace entirely for the new month view
-      // For simplicity, let's replace entirely when the month changes
-      setAvailabilityData(availabilityMap);
-
-    } catch (error) {
-      console.error('Error fetching availability data:', error);
-      setError('Failed to load availability data. Please try again.');
+  // Show error toast if queries fail
+  useEffect(() => {
+    if (calendarError) {
+      console.error('Error fetching availability data:', calendarError);
       toast.error('Failed to load availability data');
-      setAvailabilityData({}); // Clear data on error
-    } finally {
-      setIsLoadingCalendar(false);
-    }
-  }, [debouncedPractitionerId, debouncedAppointmentTypeId]);
-
-  // Fetch slots for the specifically selected date
-  const fetchSlotsForDate = useCallback(async (dateToFetch) => {
-    // No need to fetch if no date is selected
-    if (!debouncedPractitionerId || !dateToFetch) {
-       setSlots([]); // Clear slots if no date/practitioner
-       return;
     }
 
-    setIsLoadingSlots(true);
-    setError(null); // Clear previous errors
-
-    try {
-      const formattedDate = format(dateToFetch, 'yyyy-MM-dd');
-      const params = new URLSearchParams({
-        practitioner_id: debouncedPractitionerId,
-        start_date: formattedDate,
-        end_date: formattedDate,
-        status: 'free', // Only fetch available slots
-      });
-
-      if (debouncedAppointmentTypeId) {
-        params.append('appointment_type_id', debouncedAppointmentTypeId);
-      }
-
-      const slotsData = await fetchAvailableSlots(params);
-      setSlots(Array.isArray(slotsData) ? slotsData : []);
-    } catch (error) {
-      console.error('Error fetching slots for date:', error);
-      setError('Failed to load time slots. Please try again.');
+    if (slotsError) {
+      console.error('Error fetching slots for date:', slotsError);
       toast.error('Failed to load time slots');
-      setSlots([]); // Clear slots on error
-    } finally {
-      setIsLoadingSlots(false);
     }
-  }, [debouncedPractitionerId, debouncedAppointmentTypeId]);
-
-  // Effect for fetching calendar availability when practitioner, appt type, or month changes
-  useEffect(() => {
-    fetchAvailabilityData(currentMonth);
-  }, [debouncedPractitionerId, debouncedAppointmentTypeId, currentMonth, fetchAvailabilityData]);
-
-  // Effect for fetching slots when the selected date changes
-  useEffect(() => {
-    // Trigger fetch only if selectedDate is not null
-    if (selectedDate) {
-        fetchSlotsForDate(selectedDate);
-    } else {
-        setSlots([]); // Clear slots if date is deselected
-    }
-  }, [selectedDate, fetchSlotsForDate]); // Depends only on selectedDate and the fetch function itself
+  }, [calendarError, slotsError]);
 
   // Handler for date selection from the calendar component
   const handleDateChange = (date) => {
@@ -162,7 +149,6 @@ const DoctorAvailability = ({
   const handleMonthChange = (newMonth) => {
     setCurrentMonth(startOfMonth(newMonth)); // Ensure it's the start of the month
     setSelectedDate(null); // Deselect date when changing month
-    setSlots([]); // Clear slots when changing month
   };
 
   // Handler for slot selection (passed to TimeSlotsGrid)
@@ -186,6 +172,9 @@ const DoctorAvailability = ({
     );
   }
 
+  // Determine if there's an error to display
+  const error = calendarError || slotsError;
+
   // Main render logic
   return (
     <Card>
@@ -193,7 +182,7 @@ const DoctorAvailability = ({
         <CardTitle>Doctor Availability</CardTitle>
         {error && (
           <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm mt-2">
-            {error}
+            {error.message || 'An error occurred while loading availability data.'}
           </div>
         )}
       </CardHeader>
@@ -215,7 +204,7 @@ const DoctorAvailability = ({
                 Available Time Slots for {format(selectedDate, 'EEEE, MMMM d, yyyy')}
              </h3>
              <TimeSlotsGrid
-               slots={slots}
+               slots={Array.isArray(slotsData) ? slotsData : []}
                selectedSlotId={selectedSlotId}
                onSlotSelect={handleSlotSelect}
                isLoading={isLoadingSlots}

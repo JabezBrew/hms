@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { staffApi } from '@/lib/api/staff';
+import { useStaffMember, usePractitioners } from '@/hooks/useStaffQueries';
 import StaffDetail from '@/components/staff/StaffDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,43 +12,34 @@ import { ArrowLeft } from 'lucide-react';
 const StaffDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [staff, setStaff] = useState(null);
-  const [practitioner, setPractitioner] = useState(null);
-  const [loading, setLoading] = useState(true);
 
+  // Use React Query hooks for data fetching
+  const { 
+    data: staff, 
+    isLoading: isStaffLoading, 
+    isError: isStaffError, 
+    error: staffError 
+  } = useStaffMember(id);
+
+  // Get practitioners list to find the practitioner profile for this staff member
+  const { 
+    data: practitioners, 
+    isLoading: isPractitionersLoading 
+  } = usePractitioners();
+
+  // Find the practitioner profile for this staff member
+  const practitioner = practitioners?.find(p => p.staff === id);
+
+  // Determine overall loading state
+  const loading = isStaffLoading || isPractitionersLoading;
+
+  // Show error toast if staff query fails
   useEffect(() => {
-    const fetchStaffData = async () => {
-      try {
-        setLoading(true);
-        const staffData = await staffApi.getStaffMember(id);
-        setStaff(staffData);
-        
-        // If the staff member is a practitioner (doctor, nurse, lab tech, pharmacist),
-        // fetch their practitioner profile
-        const userType = staffData.user_details?.user_type;
-        if (['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(userType)) {
-          try {
-            // Find practitioner profile by staff ID
-            const practitioners = await staffApi.getPractitioners();
-            const practitionerData = practitioners.find(p => p.staff === staffData.id);
-            if (practitionerData) {
-              setPractitioner(practitionerData);
-            }
-          } catch (error) {
-            console.error('Error fetching practitioner data:', error);
-            // Don't show error toast as this is optional data
-          }
-        }
-      } catch (error) {
-        toast.error('Failed to load staff details');
-        console.error('Error loading staff:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStaffData();
-  }, [id]);
+    if (isStaffError) {
+      toast.error(staffError?.message || 'Failed to load staff details');
+      console.error('Error loading staff:', staffError);
+    }
+  }, [isStaffError, staffError]);
 
   const handleBack = () => {
     navigate('/staff');

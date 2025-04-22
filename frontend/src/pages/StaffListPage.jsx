@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { staffApi } from '@/lib/api/staff';
+import { useStaff } from '@/hooks/useStaffQueries';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,29 +12,31 @@ import { toast } from 'sonner';
 
 const StaffListPage = () => {
   const navigate = useNavigate();
-  const [staff, setStaff] = useState([]);
-  const [filteredStaff, setFilteredStaff] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
 
+  // Use React Query hook for fetching staff data
+  const { 
+    data: staff = [], 
+    isLoading, 
+    isError, 
+    error 
+  } = useStaff();
+
+  // Filtered staff based on search query
+  const [filteredStaff, setFilteredStaff] = useState([]);
+
+  // Show error toast if query fails
   useEffect(() => {
-    const fetchStaff = async () => {
-      try {
-        setIsLoading(true);
-        // The API client now automatically handles paginated responses
-        const staffData = await staffApi.getStaff();
-        setStaff(staffData);
-        setFilteredStaff(staffData);
-      } catch (error) {
-        toast.error('Failed to fetch staff members');
-        console.error('Error fetching staff:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (isError) {
+      toast.error(error?.message || 'Failed to fetch staff members');
+      console.error('Error fetching staff:', error);
+    }
+  }, [isError, error]);
 
-    fetchStaff();
-  }, []);
+  // Update filtered staff when staff data changes
+  useEffect(() => {
+    setFilteredStaff(staff);
+  }, [staff]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {

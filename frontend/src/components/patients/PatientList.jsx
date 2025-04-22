@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDebounce } from "@/hooks/use-debounce";
 import { toast } from "sonner";
-import { patientsApi } from "@/lib/api/patients";
+import { usePatients, useRecentPatients, useSearchPatients } from "@/hooks/usePatientQueries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,14 +29,22 @@ import { format } from "date-fns";
 const PatientList = ({ onPatientSelect, onAddPatient }) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [patients, setPatients] = useState([]);
-  const [totalPatients, setTotalPatients] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [recentPatients, setRecentPatients] = useState([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const patientsPerPage = 10;
+
+  // Use React Query hooks for data fetching
+  const { 
+    data: searchResults,
+    isLoading: isSearchLoading,
+    searchTerm,
+    setSearchTerm,
+    debouncedSearchTerm
+  } = useSearchPatients();
+
+  const {
+    data: recentPatientsData,
+    isLoading: isRecentLoading
+  } = useRecentPatients();
 
   const getPatientId = (patient) => {
     // First check for patient profile ID (for recent patients)
@@ -129,57 +136,11 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     return "P";
   };
 
-  // Function to search patients
-  const searchPatients = useCallback(async (query) => {
-    if (!query || query.length < 2) {
-      setPatients([]);
-      setTotalPatients(0);
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await patientsApi.searchPatients(query);
-      // Ensure patients is always an array
-      const patientsData = response.results || response.patients || [];
-      setPatients(Array.isArray(patientsData) ? patientsData : []);
-      setTotalPatients(response.total || 0);
-    } catch (error) {
-      console.error("Error searching patients:", error);
-      toast.error("Failed to search patients");
-      setPatients([]);
-      setTotalPatients(0);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Function to fetch recent patients
-  const fetchRecentPatients = useCallback(async () => {
-    setIsLoadingRecent(true);
-    try {
-      const response = await patientsApi.getRecentPatients();
-      // Extract patients array from response, similar to searchPatients
-      const patientsData = response.results || response.patients || response;
-      // Ensure recentPatients is always an array
-      setRecentPatients(Array.isArray(patientsData) ? patientsData : []);
-    } catch (error) {
-      console.error("Error fetching recent patients:", error);
-      toast.error("Failed to load recent patients");
-      setRecentPatients([]);
-    } finally {
-      setIsLoadingRecent(false);
-    }
-  }, []);
-
-  // Effect to search patients when query changes
-  useEffect(() => {
-    if (debouncedSearchQuery) {
-      searchPatients(debouncedSearchQuery);
-    } else {
-      fetchRecentPatients();
-    }
-  }, [debouncedSearchQuery, searchPatients, fetchRecentPatients]);
+  // Synchronize the local search input with the React Query hook
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+    setSearchTerm(e.target.value);
+  };
 
   // Handle patient selection
   const handleSelectPatient = (patient) => {
@@ -203,12 +164,17 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     }
   };
 
-  // Calculate pagination
+  // Calculate pagination and prepare data for display
+  const totalPatients = searchResults?.total || 0;
   const totalPages = Math.ceil(totalPatients / patientsPerPage);
+
+  // Determine which data to display based on search state
+  const displayedPatients = debouncedSearchTerm 
+    ? (searchResults?.results || searchResults?.patients || []) 
+    : (recentPatientsData?.results || recentPatientsData?.patients || recentPatientsData || []);
+
   // Ensure displayedPatients is always an array
-  const displayedPatients = debouncedSearchQuery 
-    ? (Array.isArray(patients) ? patients : []) 
-    : (Array.isArray(recentPatients) ? recentPatients : []);
+  const safeDisplayedPatients = Array.isArray(displayedPatients) ? displayedPatients : [];
 
   return (
     <Card className="w-full">
@@ -225,12 +191,12 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
           <Input
             placeholder="Search patients by name, MRN, or NHIS ID..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             className="pl-10"
           />
         </div>
 
-        {isLoading || isLoadingRecent ? (
+        {isSearchLoading || isRecentLoading ? (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -264,9 +230,9 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
               </TableBody>
             </Table>
           </div>
-        ) : !Array.isArray(displayedPatients) || displayedPatients.length === 0 ? (
+        ) : safeDisplayedPatients.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            {debouncedSearchQuery 
+            {debouncedSearchTerm 
               ? "No patients found matching your search criteria" 
               : "No recent patients. Search to find patients."}
           </div>
@@ -283,7 +249,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(Array.isArray(displayedPatients) ? displayedPatients : []).map((patient) => {
+                  {safeDisplayedPatients.map((patient) => {
                     const patientId = getPatientId(patient);
                     const displayName = getDisplayName(patient);
                     const initials = getInitials(patient);
@@ -318,7 +284,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
               </Table>
             </div>
 
-            {debouncedSearchQuery && Array.isArray(displayedPatients) && totalPages > 1 && (
+            {debouncedSearchTerm && totalPages > 1 && (
               <Pagination className="mt-4">
                 <PaginationContent>
                   <PaginationItem>

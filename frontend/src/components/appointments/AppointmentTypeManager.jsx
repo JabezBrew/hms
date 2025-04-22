@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,18 +41,25 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { 
-  fetchAppointmentTypes, 
-  createAppointmentType, 
-  updateAppointmentType, 
-  deleteAppointmentType 
-} from '@/lib/api';
+  useAppointmentTypes,
+  useCreateAppointmentType,
+  useUpdateAppointmentType,
+  useDeleteAppointmentType
+} from '@/hooks/useAppointmentQueries';
 
 /**
  * Component for managing appointment types
  */
 const AppointmentTypeManager = () => {
-  const [appointmentTypes, setAppointmentTypes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Use React Query hooks
+  const { 
+    data: appointmentTypes = [], 
+    isLoading: loading 
+  } = useAppointmentTypes();
+  const createAppointmentTypeMutation = useCreateAppointmentType();
+  const updateAppointmentTypeMutation = useUpdateAppointmentType();
+  const deleteAppointmentTypeMutation = useDeleteAppointmentType();
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -89,23 +96,7 @@ const AppointmentTypeManager = () => {
     category: 'in_person',
   });
 
-  // Load appointment types
-  const loadAppointmentTypes = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchAppointmentTypes();
-      setAppointmentTypes(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error loading appointment types:', error);
-      toast.error('Failed to load appointment types');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadAppointmentTypes();
-  }, []);
+  // No need for loadAppointmentTypes function or useEffect as React Query handles this
 
   // Handle form input changes
   const handleInputChange = (e) => {
@@ -178,24 +169,41 @@ const AppointmentTypeManager = () => {
       return;
     }
 
-    try {
-      if (isEditing) {
-        // Update existing appointment type
-        await updateAppointmentType(currentAppointmentType.id, currentAppointmentType);
-        toast.success('Appointment type updated successfully');
-      } else {
-        // Create new appointment type
-        await createAppointmentType(currentAppointmentType);
-        toast.success('Appointment type created successfully');
-      }
-
-      // Reload appointment types and close dialog
-      await loadAppointmentTypes();
-      setIsDialogOpen(false);
-      resetForm();
-    } catch (error) {
-      console.error('Error saving appointment type:', error);
-      toast.error(error.message || 'Failed to save appointment type');
+    if (isEditing) {
+      // Update existing appointment type
+      updateAppointmentTypeMutation.mutate(
+        { 
+          id: currentAppointmentType.id, 
+          data: currentAppointmentType 
+        },
+        {
+          onSuccess: () => {
+            toast.success('Appointment type updated successfully');
+            setIsDialogOpen(false);
+            resetForm();
+          },
+          onError: (error) => {
+            console.error('Error updating appointment type:', error);
+            toast.error(error.message || 'Failed to update appointment type');
+          }
+        }
+      );
+    } else {
+      // Create new appointment type
+      createAppointmentTypeMutation.mutate(
+        currentAppointmentType,
+        {
+          onSuccess: () => {
+            toast.success('Appointment type created successfully');
+            setIsDialogOpen(false);
+            resetForm();
+          },
+          onError: (error) => {
+            console.error('Error creating appointment type:', error);
+            toast.error(error.message || 'Failed to create appointment type');
+          }
+        }
+      );
     }
   };
 
@@ -206,19 +214,23 @@ const AppointmentTypeManager = () => {
   };
 
   // Confirm deletion of an appointment type
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!appointmentTypeToDelete) return;
 
-    try {
-      await deleteAppointmentType(appointmentTypeToDelete);
-      toast.success('Appointment type deleted successfully');
-      await loadAppointmentTypes();
-      setIsDeleteDialogOpen(false);
-      setAppointmentTypeToDelete(null);
-    } catch (error) {
-      console.error('Error deleting appointment type:', error);
-      toast.error(error.message || 'Failed to delete appointment type');
-    }
+    deleteAppointmentTypeMutation.mutate(
+      appointmentTypeToDelete,
+      {
+        onSuccess: () => {
+          toast.success('Appointment type deleted successfully');
+          setIsDeleteDialogOpen(false);
+          setAppointmentTypeToDelete(null);
+        },
+        onError: (error) => {
+          console.error('Error deleting appointment type:', error);
+          toast.error(error.message || 'Failed to delete appointment type');
+        }
+      }
+    );
   };
 
   return (

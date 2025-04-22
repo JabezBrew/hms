@@ -3,7 +3,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { patientsApi } from "@/lib/api/patients";
+import { 
+  useUpdatePatientWithFHIR, 
+  useRegisterPatient, 
+  usePatientValidationRules 
+} from "@/hooks/usePatientQueries";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -75,8 +79,16 @@ const patientFormSchema = z.object({
 
 const PatientForm = ({ patient, onSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [validationRules, setValidationRules] = useState([]);
   const isEditMode = !!patient;
+
+  // Use React Query hooks
+  const { 
+    data: validationRules = [], 
+    isLoading: isValidationRulesLoading 
+  } = usePatientValidationRules();
+
+  const updatePatientMutation = useUpdatePatientWithFHIR();
+  const registerPatientMutation = useRegisterPatient();
 
   // Initialize form with default values or patient data
   const form = useForm({
@@ -129,106 +141,112 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
   });
 
-  // Fetch validation rules on component mount
-  useEffect(() => {
-    const fetchValidationRules = async () => {
-      try {
-        const response = await patientsApi.getValidationRules();
-        setValidationRules(response);
-      } catch (error) {
-        console.error('Failed to fetch validation rules:', error);
-        toast.error("Failed to load validation rules");
-      }
-    };
+  // No need to fetch validation rules as React Query handles this
 
-    fetchValidationRules();
-  }, []);
-
-  const onSubmit = async (data) => {
+  const onSubmit = (data) => {
     setIsLoading(true);
-    try {
-      let response;
 
-      if (isEditMode) {
-        // Prepare data for update
-        const updateData = {
-          local_data: {
-            user: {
-              email: data.email,
-              first_name: data.first_name,
-              last_name: data.last_name,
-              phone_number: data.phone_number,
-              date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd'),
-            },
-            medical_record_number: data.medical_record_number,
-            nhis_id: data.nhis_id,
-            blood_group: data.blood_group,
-            allergies: data.allergies,
-            emergency_contact_name: data.emergency_contact_name,
-            emergency_contact_phone: data.emergency_contact_phone,
-            emergency_contact_relationship: data.emergency_contact_relationship,
+    if (isEditMode) {
+      // Prepare data for update
+      const updateData = {
+        local_data: {
+          user: {
+            email: data.email,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            phone_number: data.phone_number,
+            date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd'),
           },
-          fhir_data: {
-            ...patient.fhir_data,
-            name: [
-              {
-                family: data.last_name,
-                given: [data.first_name],
-              }
-            ],
-            telecom: [
-              {
-                system: "phone",
-                value: data.phone_number,
-                use: "home"
-              }
-            ],
-            birthDate: format(data.date_of_birth, 'yyyy-MM-dd'),
-            address: [
-              {
-                line: [
-                  data.address_line1,
-                  data.address_line2
-                ].filter(Boolean),
-                city: data.city,
-                state: data.state,
-                postalCode: data.postal_code,
-                country: data.country
-              }
-            ]
+          medical_record_number: data.medical_record_number,
+          nhis_id: data.nhis_id,
+          blood_group: data.blood_group,
+          allergies: data.allergies,
+          emergency_contact_name: data.emergency_contact_name,
+          emergency_contact_phone: data.emergency_contact_phone,
+          emergency_contact_relationship: data.emergency_contact_relationship,
+        },
+        fhir_data: {
+          ...patient.fhir_data,
+          name: [
+            {
+              family: data.last_name,
+              given: [data.first_name],
+            }
+          ],
+          telecom: [
+            {
+              system: "phone",
+              value: data.phone_number,
+              use: "home"
+            }
+          ],
+          birthDate: format(data.date_of_birth, 'yyyy-MM-dd'),
+          address: [
+            {
+              line: [
+                data.address_line1,
+                data.address_line2
+              ].filter(Boolean),
+              city: data.city,
+              state: data.state,
+              postalCode: data.postal_code,
+              country: data.country
+            }
+          ]
+        }
+      };
+
+      // Update patient using mutation
+      updatePatientMutation.mutate(
+        { id: patient.local_data.id, data: updateData },
+        {
+          onSuccess: (response) => {
+            toast.success("Patient updated successfully");
+
+            if (onSuccess) {
+              // Check if response.data exists, otherwise use response directly
+              const patientData = response.data !== undefined ? response.data : response;
+              onSuccess(patientData);
+            }
+
+            setIsLoading(false);
+          },
+          onError: (error) => {
+            console.error('Failed to update patient:', error);
+            toast.error(error.message || "Failed to update patient");
+            setIsLoading(false);
           }
-        };
+        }
+      );
+    } else {
+      // Format data for registration
+      const formattedData = {
+        ...data,
+        date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd')
+      };
 
-        // Update patient
-        response = await patientsApi.updatePatientWithFHIR(patient.local_data.id, updateData);
-        toast.success("Patient updated successfully");
-      } else {
-        // Format data for registration
-        const formattedData = {
-          ...data,
-          date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd')
-        };
+      // Register new patient using mutation
+      registerPatientMutation.mutate(
+        formattedData,
+        {
+          onSuccess: (response) => {
+            toast.success("Patient registered successfully");
 
-        // Register new patient
-        response = await patientsApi.registerPatient(formattedData);
-        toast.success("Patient registered successfully");
-      }
+            if (onSuccess) {
+              // Check if response.data exists, otherwise use response directly
+              const patientData = response.data !== undefined ? response.data : response;
+              onSuccess(patientData);
+            }
 
-      if (onSuccess) {
-        // Check if response.data exists, otherwise use response directly
-        const patientData = response.data !== undefined ? response.data : response;
-
-        // Log the response structure for debugging
-        console.log('Patient creation/update response:', response);
-        console.log('Patient data passed to onSuccess:', patientData);
-
-        onSuccess(patientData);
-      }
-    } catch (error) {
-      console.error('Failed to save patient:', error);
-      toast.error(error.response?.data?.error || "Failed to save patient");
-    } finally {
-      setIsLoading(false);
+            setIsLoading(false);
+          },
+          onError: (error) => {
+            console.error('Failed to register patient:', error);
+            toast.error(error.message || "Failed to register patient");
+            setIsLoading(false);
+          }
+        }
+      );
     }
   };
 

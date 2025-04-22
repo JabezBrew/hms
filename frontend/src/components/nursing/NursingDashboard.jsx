@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,71 +6,65 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchWardsRoot, fetchAdmissions } from '@/lib/api';
 import { Search, AlertCircle, Activity, Droplet, Pill } from 'lucide-react';
 import { PatientList } from './PatientList';
 import { VitalSignsRecorder } from './VitalSignsRecorder';
 import { MedicationAdministration } from './MedicationAdministration';
 import { FluidBalanceTracker } from './FluidBalanceTracker';
+import { useWards, useAdmissions } from '@/hooks/useWardQueries';
+import { toast } from 'sonner';
 
 export function NursingDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [wards, setWards] = useState([]);
   const [selectedWard, setSelectedWard] = useState('');
-  const [patients, setPatients] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [activeTab, setActiveTab] = useState('patients');
 
-  // Fetch wards
-  useEffect(() => {
-    const fetchWards = async () => {
-      try {
-        const data = await fetchWardsRoot();
-        setWards(data);
-        if (data.length > 0) {
-          setSelectedWard(data[0].id);
-        }
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching wards:', err);
-        setError('Failed to load wards. Please try again.');
-        setLoading(false);
-      }
-    };
+  // Use React Query to fetch wards
+  const { 
+    data: wardsData, 
+    isLoading: isWardsLoading, 
+    isError: isWardsError,
+    error: wardsError
+  } = useWards();
 
-    fetchWards();
-  }, []);
+  // Set initial selected ward when data is loaded
+  if (wardsData && wardsData.length > 0 && !selectedWard) {
+    setSelectedWard(wardsData[0].id);
+  }
 
-  // Fetch patients when ward changes
-  useEffect(() => {
-    if (!selectedWard) return;
+  // Show error toast if wards query fails
+  if (isWardsError) {
+    toast.error(wardsError?.message || 'Failed to load wards. Please try again.');
+  }
 
-    const fetchPatients = async () => {
-      try {
-        setLoading(true);
-        // Get all admissions for the selected ward
-        const admissionsData = await fetchAdmissions({ ward: selectedWard, status: 'admitted' });
+  // Use React Query to fetch admissions for the selected ward
+  const {
+    data: admissionsData,
+    isLoading: isAdmissionsLoading,
+    isError: isAdmissionsError,
+    error: admissionsError
+  } = useAdmissions({ ward: selectedWard, status: 'admitted' }, { enabled: !!selectedWard });
 
-        // Extract patient information from admissions
-        const patientData = admissionsData.map(admission => ({
+  // Show error toast if admissions query fails
+  if (isAdmissionsError) {
+    toast.error(admissionsError?.message || 'Failed to load patients. Please try again.');
+  }
+
+  // Process admissions data to get patient information
+  const patients = [];
+  if (admissionsData) {
+    // Extract patient information from admissions
+    admissionsData.forEach(admission => {
+      if (admission.patient) {
+        patients.push({
           ...admission.patient,
           admission: admission,
           bed: admission.bed
-        }));
-
-        setPatients(patientData);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching patients:', err);
-        setError('Failed to load patients. Please try again.');
-        setLoading(false);
+        });
       }
-    };
-
-    fetchPatients();
-  }, [selectedWard]);
+    });
+  }
 
   // Filter patients based on search term
   const filteredPatients = patients.filter(patient => 
@@ -95,7 +89,8 @@ export function NursingDashboard() {
     setActiveTab(value);
   };
 
-  if (loading && !selectedPatient) {
+  // Show loading state if either wards or admissions are loading
+  if ((isWardsLoading || (isAdmissionsLoading && selectedWard)) && !selectedPatient) {
     return (
       <div className="space-y-4 p-4">
         <Skeleton className="h-12 w-full" />
@@ -104,14 +99,18 @@ export function NursingDashboard() {
     );
   }
 
-  if (error && !selectedPatient) {
+  // Show error state if either wards or admissions have an error
+  if ((isWardsError || isAdmissionsError) && !selectedPatient) {
     return (
       <Card className="m-4">
         <CardHeader>
           <CardTitle className="text-red-500">Error</CardTitle>
         </CardHeader>
         <CardContent>
-          <p>{error}</p>
+          <p>{isWardsError 
+            ? (wardsError?.message || 'Failed to load wards. Please try again.') 
+            : (admissionsError?.message || 'Failed to load patients. Please try again.')}
+          </p>
           <Button 
             variant="outline" 
             className="mt-4"
@@ -139,7 +138,7 @@ export function NursingDashboard() {
               <SelectValue placeholder="Select ward" />
             </SelectTrigger>
             <SelectContent>
-              {wards.map(ward => (
+              {wardsData && wardsData.map(ward => (
                 <SelectItem key={ward.id} value={ward.id}>
                   {ward.name}
                 </SelectItem>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,14 +11,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DatePicker } from '@/components/ui/date-picker';
 import { format, parseISO, isValid } from 'date-fns';
-import { fetchEncounters } from '@/lib/api';
+import { useEncounters } from '@/hooks/useEncounterQueries';
 import { PlusCircle, Search, Filter, Clock, Calendar, User, Building2, Activity } from 'lucide-react';
 
 export function EncounterList() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [encounters, setEncounters] = useState([]);
-  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
 
   // Filter state
@@ -30,55 +27,44 @@ export function EncounterList() {
     type: 'all'
   });
 
-  // Load encounters
-  useEffect(() => {
-    const loadEncounters = async () => {
-      try {
-        setLoading(true);
+  // Build query parameters based on active tab and filters
+  const queryParams = {};
 
-        // Build query parameters based on active tab and filters
-        const params = {};
+  if (activeTab === 'inpatient') {
+    queryParams.encounter_type = 'inpatient';
+  } else if (activeTab === 'outpatient') {
+    queryParams.encounter_type = 'outpatient';
+  } else if (activeTab === 'emergency') {
+    queryParams.encounter_type = 'emergency';
+  }
 
-        if (activeTab === 'inpatient') {
-          params.encounter_type = 'inpatient';
-        } else if (activeTab === 'outpatient') {
-          params.encounter_type = 'outpatient';
-        } else if (activeTab === 'emergency') {
-          params.encounter_type = 'emergency';
-        }
+  if (filters.patient) {
+    queryParams.patient_id = filters.patient;
+  }
 
-        if (filters.patient) {
-          params.patient_id = filters.patient;
-        }
+  if (filters.practitioner) {
+    queryParams.practitioner_id = filters.practitioner;
+  }
 
-        if (filters.practitioner) {
-          params.practitioner_id = filters.practitioner;
-        }
+  if (filters.date) {
+    queryParams.date = format(filters.date, 'yyyy-MM-dd');
+  }
 
-        if (filters.date) {
-          params.date = format(filters.date, 'yyyy-MM-dd');
-        }
+  if (filters.status && filters.status !== 'all') {
+    queryParams.status = filters.status;
+  }
 
-        if (filters.status && filters.status !== 'all') {
-          params.status = filters.status;
-        }
+  if (filters.type && filters.type !== 'all' && activeTab === 'all') {
+    queryParams.encounter_type = filters.type;
+  }
 
-        if (filters.type && filters.type !== 'all' && activeTab === 'all') {
-          params.encounter_type = filters.type;
-        }
-
-        const data = await fetchEncounters(params);
-        setEncounters(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error('Error loading encounters:', err);
-        setError('Failed to load encounters. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadEncounters();
-  }, [activeTab, filters]);
+  // Use React Query to fetch encounters
+  const { 
+    data: encountersData, 
+    isLoading, 
+    isError, 
+    error 
+  } = useEncounters(queryParams);
 
   // Handle filter changes
   const handleFilterChange = (name, value) => {
@@ -138,14 +124,18 @@ export function EncounterList() {
     }
   };
 
-  if (error) {
+  // Prepare encounters data
+  const encounters = encountersData?.results || encountersData || [];
+
+  // Handle error state
+  if (isError) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="text-red-500">Error</CardTitle>
         </CardHeader>
         <CardContent>
-          <p>{error}</p>
+          <p>{error?.message || 'Failed to load encounters. Please try again.'}</p>
           <Button 
             variant="outline" 
             className="mt-4"
@@ -272,7 +262,7 @@ export function EncounterList() {
         <TabsContent value="all" className="mt-6">
           <EncounterTable 
             encounters={encounters} 
-            loading={loading} 
+            loading={isLoading} 
             formatDate={formatDate}
             getStatusBadge={getStatusBadge}
             getTypeBadge={getTypeBadge}
@@ -283,7 +273,7 @@ export function EncounterList() {
         <TabsContent value="inpatient" className="mt-6">
           <EncounterTable 
             encounters={encounters} 
-            loading={loading} 
+            loading={isLoading} 
             formatDate={formatDate}
             getStatusBadge={getStatusBadge}
             getTypeBadge={getTypeBadge}
@@ -294,7 +284,7 @@ export function EncounterList() {
         <TabsContent value="outpatient" className="mt-6">
           <EncounterTable 
             encounters={encounters} 
-            loading={loading} 
+            loading={isLoading} 
             formatDate={formatDate}
             getStatusBadge={getStatusBadge}
             getTypeBadge={getTypeBadge}
@@ -305,7 +295,7 @@ export function EncounterList() {
         <TabsContent value="emergency" className="mt-6">
           <EncounterTable 
             encounters={encounters} 
-            loading={loading} 
+            loading={isLoading} 
             formatDate={formatDate}
             getStatusBadge={getStatusBadge}
             getTypeBadge={getTypeBadge}

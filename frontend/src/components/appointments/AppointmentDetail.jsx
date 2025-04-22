@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { 
@@ -50,10 +50,10 @@ import {
 import { Separator } from '@/components/ui/separator';
 import {toast} from 'sonner';
 import { 
-  fetchAppointment, 
-  updateAppointmentStatus, 
-  deleteAppointment 
-} from '@/lib/api';
+  useAppointment, 
+  useUpdateAppointmentStatus, 
+  useDeleteAppointment 
+} from '@/hooks/useAppointmentQueries';
 
 // Status badge colors
 const statusColors = {
@@ -67,32 +67,23 @@ const statusColors = {
 };
 
 const AppointmentDetail = ({ appointmentId, onBack }) => {
-  const [appointment, setAppointment] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
   const navigate = useNavigate();
 
-  // Load appointment details
+  // Use React Query hooks for data fetching
+  const { 
+    data: appointment, 
+    isLoading, 
+    isError, 
+    error 
+  } = useAppointment(appointmentId);
+
+  // Show error toast if query fails
   useEffect(() => {
-    const loadAppointment = async () => {
-      if (!appointmentId) return;
-
-      setLoading(true);
-      try {
-        const data = await fetchAppointment(appointmentId);
-        setAppointment(data);
-      } catch (error) {
-        console.error('Error loading appointment:', error);
-        toast.error('Failed to load appointment details');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAppointment();
-  }, [appointmentId, toast]);
+    if (isError) {
+      toast.error(error?.message || 'Failed to load appointment details');
+      console.error('Error loading appointment:', error);
+    }
+  }, [isError, error]);
 
   // Format date and time
   const formatDateTime = (dateTimeString) => {
@@ -160,47 +151,46 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
     }
   };
 
+  // Use the update appointment status mutation
+  const updateStatusMutation = useUpdateAppointmentStatus();
+
   // Handle status update
-  const handleStatusUpdate = async (newStatus) => {
-    setUpdating(true);
-    try {
-      await updateAppointmentStatus(appointmentId, newStatus);
-
-      // Update local state
-      setAppointment(prev => ({
-        ...prev,
-        status: newStatus
-      }));
-
-      toast.success(`Appointment status updated to ${newStatus}`);
-    } catch (error) {
-      console.error('Error updating appointment status:', error);
-      toast.error('Failed to update appointment status');
-    } finally {
-      setUpdating(false);
-    }
+  const handleStatusUpdate = (newStatus) => {
+    updateStatusMutation.mutate(
+      { id: appointmentId, status: newStatus },
+      {
+        onSuccess: () => {
+          toast.success(`Appointment status updated to ${newStatus}`);
+        },
+        onError: (error) => {
+          console.error('Error updating appointment status:', error);
+          toast.error(error.message || 'Failed to update appointment status');
+        }
+      }
+    );
   };
 
+  // Use the delete appointment mutation
+  const deleteMutation = useDeleteAppointment();
+
   // Handle appointment deletion
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await deleteAppointment(appointmentId);
+  const handleDelete = () => {
+    deleteMutation.mutate(appointmentId, {
+      onSuccess: () => {
+        toast.success('Appointment deleted successfully');
 
-      toast.success('Appointment deleted successfully');
-
-      // Navigate back to appointments list
-      if (onBack) {
-        onBack();
-      } else {
-        navigate('/appointments');
+        // Navigate back to appointments list
+        if (onBack) {
+          onBack();
+        } else {
+          navigate('/appointments');
+        }
+      },
+      onError: (error) => {
+        console.error('Error deleting appointment:', error);
+        toast.error(error.message || 'Failed to delete appointment');
       }
-    } catch (error) {
-      console.error('Error deleting appointment:', error);
-      toast.error('Failed to delete appointment');
-    } finally {
-      setDeleting(false);
-    }
+    });
   };
 
   // Handle edit appointment
@@ -218,7 +208,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   };
 
   // Render loading skeleton
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="flex items-center">
@@ -296,7 +286,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" disabled={updating}>
+              <Button variant="outline" size="sm" disabled={updateStatusMutation.isPending}>
                 Change Status
               </Button>
             </DialogTrigger>
@@ -312,7 +302,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('proposed')}
-                  disabled={appointment.status === 'proposed' || updating}
+                  disabled={appointment.status === 'proposed' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
@@ -323,7 +313,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('pending')}
-                  disabled={appointment.status === 'pending' || updating}
+                  disabled={appointment.status === 'pending' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2"></div>
@@ -334,7 +324,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('booked')}
-                  disabled={appointment.status === 'booked' || updating}
+                  disabled={appointment.status === 'booked' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
@@ -345,7 +335,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('arrived')}
-                  disabled={appointment.status === 'arrived' || updating}
+                  disabled={appointment.status === 'arrived' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-purple-500 mr-2"></div>
@@ -356,7 +346,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('fulfilled')}
-                  disabled={appointment.status === 'fulfilled' || updating}
+                  disabled={appointment.status === 'fulfilled' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2"></div>
@@ -367,7 +357,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('cancelled')}
-                  disabled={appointment.status === 'cancelled' || updating}
+                  disabled={appointment.status === 'cancelled' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-red-500 mr-2"></div>
@@ -378,7 +368,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   variant="outline"
                   className="justify-start"
                   onClick={() => handleStatusUpdate('noshow')}
-                  disabled={appointment.status === 'noshow' || updating}
+                  disabled={appointment.status === 'noshow' || updateStatusMutation.isPending}
                 >
                   <div className="flex items-center">
                     <div className="w-2 h-2 rounded-full bg-gray-500 mr-2"></div>
@@ -387,7 +377,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                 </Button>
               </div>
               <DialogFooter>
-                <Button variant="outline" disabled={updating}>
+                <Button variant="outline" disabled={updateStatusMutation.isPending}>
                   Cancel
                 </Button>
               </DialogFooter>
@@ -508,9 +498,9 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
       <div className="flex justify-between">
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive" disabled={deleting}>
+            <Button variant="destructive" disabled={deleteMutation.isPending}>
               <Trash2 className="mr-2 h-4 w-4" />
-              {deleting ? 'Deleting...' : 'Delete Appointment'}
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>

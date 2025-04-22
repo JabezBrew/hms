@@ -5,17 +5,25 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchWards } from '@/lib/api';
 import { Search, Plus, Hospital } from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
+import { useWards } from '@/hooks/useWardQueries';
 
 export default function WardsPage() {
   const navigate = useNavigate();
-  const [wards, setWards] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Use React Query hook for fetching wards
+  const { 
+    data: wards = [], 
+    isLoading: loading, 
+    isError,
+    error: queryError
+  } = useWards();
+
+  // Extract error message from query error
+  const error = isError ? (queryError?.message || 'Failed to load wards. Please try again.') : null;
 
   // Define breadcrumbs for this page
   const breadcrumbs = [
@@ -29,25 +37,6 @@ export default function WardsPage() {
       const user = JSON.parse(userJson);
       setIsAdmin(user.role === 'admin');
     }
-  }, []);
-
-  // Fetch wards
-  useEffect(() => {
-    const getWards = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchWards();
-        // Ensure data is an array before setting it to state
-        setWards(Array.isArray(data) ? data : []);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching wards:', err);
-        setError('Failed to load wards. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    getWards();
   }, []);
 
   // Filter wards based on search term

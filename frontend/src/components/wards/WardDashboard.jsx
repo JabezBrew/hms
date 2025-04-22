@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchWard, fetchBeds, fetchAdmissions } from '@/lib/api.js';
+import { useWard, useWardBeds, useAdmissions } from '@/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 import { WardOccupancyStats } from './WardOccupancyStats';
 import { WardFilterBar } from './WardFilterBar';
@@ -13,10 +13,6 @@ import { WardFilterBar } from './WardFilterBar';
 export function WardDashboard() {
   const { wardId } = useParams();
   const navigate = useNavigate();
-  const [ward, setWard] = useState(null);
-  const [beds, setBeds] = useState([]);
-  const [admissions, setAdmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({
     status: '',
@@ -24,34 +20,46 @@ export function WardDashboard() {
     searchTerm: '',
   });
 
-  // Fetch ward details
+  // Use React Query hooks for fetching data
+  const { 
+    data: ward, 
+    isLoading: isWardLoading, 
+    isError: isWardError,
+    error: wardError
+  } = useWard(wardId);
+
+  const { 
+    data: beds = [], 
+    isLoading: isBedsLoading, 
+    isError: isBedsError,
+    error: bedsError
+  } = useWardBeds(wardId);
+
+  const { 
+    data: admissions = [], 
+    isLoading: isAdmissionsLoading, 
+    isError: isAdmissionsError,
+    error: admissionsError
+  } = useAdmissions({ ward: wardId });
+
+  // Determine overall loading and error states
+  const loading = isWardLoading || isBedsLoading || isAdmissionsLoading;
+
+  // Set error state if any query fails
   useEffect(() => {
-    const fetchWardDetails = async () => {
-      try {
-        setLoading(true);
-        const wardData = await fetchWard(wardId);
-        setWard(wardData);
-
-        // Fetch beds in the ward
-        const bedsData = await fetchBeds({ ward: wardId, page_size: 1000 });
-        setBeds(bedsData);
-
-        // Fetch admissions in the ward
-        const admissionsData = await fetchAdmissions({ ward: wardId, page_size: 1000 });
-        setAdmissions(admissionsData);
-
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching ward details:', err);
-        setError('Failed to load ward details. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    if (wardId) {
-      fetchWardDetails();
+    if (isWardError) {
+      setError(wardError?.message || 'Failed to load ward details');
+      console.error('Error loading ward:', wardError);
+    } else if (isBedsError) {
+      setError(bedsError?.message || 'Failed to load beds');
+      console.error('Error loading beds:', bedsError);
+    } else if (isAdmissionsError) {
+      setError(admissionsError?.message || 'Failed to load admissions');
+      console.error('Error loading admissions:', admissionsError);
+    } else {
+      setError(null);
     }
-  }, [wardId]);
+  }, [isWardError, wardError, isBedsError, bedsError, isAdmissionsError, admissionsError]);
 
   // Filter beds based on filters
   const filteredBeds = beds.filter(bed => {
