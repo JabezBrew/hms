@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, login
 from rest_framework.permissions import AllowAny
@@ -20,7 +21,15 @@ class CookieTokenRefreshView(TokenRefreshView):
             )
 
         request.data['refresh'] = refresh_token
-        response = super().post(request, *args, **kwargs)
+        try:
+            response = super().post(request, *args, **kwargs)
+        except (InvalidToken, TokenError):
+            response = Response(
+                {"detail": "Token is invalid or expired"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            response.delete_cookie(settings.JWT_AUTH_REFRESH_COOKIE)
+            return response
 
         if response.status_code == status.HTTP_400_BAD_REQUEST:
             response.status_code = status.HTTP_401_UNAUTHORIZED
