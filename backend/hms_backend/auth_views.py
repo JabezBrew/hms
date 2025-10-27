@@ -13,9 +13,18 @@ from django.utils.decorators import method_decorator
 class CookieTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
-        if refresh_token:
-            request.data['refresh'] = refresh_token
+        if not refresh_token:
+            return Response(
+                {"detail": "Refresh token not found."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        request.data['refresh'] = refresh_token
         response = super().post(request, *args, **kwargs)
+
+        if response.status_code == status.HTTP_400_BAD_REQUEST:
+            response.status_code = status.HTTP_401_UNAUTHORIZED
+            response.delete_cookie(settings.JWT_AUTH_REFRESH_COOKIE)
 
         # If the response contains a new refresh token, update the cookie
         if response.status_code == 200 and 'refresh' in response.data:
