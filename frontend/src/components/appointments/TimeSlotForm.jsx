@@ -148,9 +148,9 @@ const TimeSlotForm = ({ initialData = null, templateId, onSuccess }) => {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Day of Week</FormLabel>
-              <Select 
-                onValueChange={(value) => field.onChange(parseInt(value, 10))} 
-                defaultValue={field.value.toString()}
+              <Select
+                onValueChange={(value) => field.onChange(parseInt(value, 10))}
+                value={field.value.toString()}
                 disabled={submitting}
               >
                 <FormControl>

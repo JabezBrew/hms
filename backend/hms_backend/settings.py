@@ -32,7 +32,7 @@ if env_file.exists():
 SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool('DEBUG', default=True)
+DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
@@ -59,6 +59,8 @@ INSTALLED_APPS = [
     'apps.wards',
     'apps.inventory',
     'apps.billing',
+    'apps.clinical_notes.apps.ClinicalNotesConfig',
+    'apps.nursing.apps.NursingConfig',
 ]
 
 MIDDLEWARE = [
@@ -69,6 +71,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'hms_backend.middleware.JWTUserTypeValidationMiddleware',  # Validate JWT claims
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'hms_backend.middleware.RequestLoggingMiddleware',
@@ -156,6 +159,25 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom user model
 AUTH_USER_MODEL = 'users.User'
 
+# Cache configuration
+if DEBUG:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'hms-local',
+            'TIMEOUT': 300,  # 5 minutes default
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+            'KEY_PREFIX': 'hms',
+            'TIMEOUT': 300,  # 5 minutes default
+        }
+    }
+
 # Django Rest Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -166,7 +188,16 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 50,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+        'login': '5/minute',
+    }
 }
 
 # CORS settings
@@ -175,6 +206,17 @@ CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+
+# Security Headers
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000 if not DEBUG else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True if not DEBUG else False)
+SECURE_HSTS_PRELOAD = env.bool('SECURE_HSTS_PRELOAD', default=True if not DEBUG else False)
+SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
+SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
+CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
 
 # Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -196,12 +238,26 @@ GOOGLE_HL7V2_STORE = env('GOOGLE_HL7V2_STORE')
 # JWT Authentication settings
 from datetime import timedelta
 
+# JWT Token Configuration
+# Healthcare-grade security settings with strict session management
 SIMPLE_JWT = {
+    # Short-lived access tokens (15 minutes)
+    # Users will need to refresh frequently, but tokens are rotated automatically
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+
+    # Refresh token lifetime reduced to 7 days (from 30) for healthcare compliance
+    # Combined with 8-hour absolute session timeout on frontend
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+
+    # Rotate refresh tokens on each refresh for enhanced security
     'ROTATE_REFRESH_TOKENS': True,
+
+    # Blacklist old refresh tokens after rotation to prevent reuse
     'BLACKLIST_AFTER_ROTATION': True,
+
+    # Update last login timestamp on token refresh
     'UPDATE_LAST_LOGIN': True,
+
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
@@ -217,9 +273,9 @@ SIMPLE_JWT = {
 REST_USE_JWT = True
 JWT_AUTH_COOKIE = None  # Don't store access token in cookie
 JWT_AUTH_REFRESH_COOKIE = 'refresh_token'  # Store refresh token in cookie
-JWT_AUTH_SECURE = True  # Use secure cookie for refresh token
+JWT_AUTH_SECURE = env.bool('JWT_AUTH_SECURE', default=False if DEBUG else True)  # Secure cookie in prod, not in local dev
 JWT_AUTH_HTTPONLY = True  # Use HttpOnly cookie for refresh token
-JWT_AUTH_SAMESITE = 'Lax'  # SameSite cookie setting
+JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='Lax')  # SameSite cookie setting
 
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')

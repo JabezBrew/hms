@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, parseISO, isValid } from 'date-fns';
 import { fetchEncounter, dischargeEncounter, cancelEncounter } from '@/lib/api';
+import { useNoteEntriesForEncounter } from '@/hooks/useClinicalNotesQueries';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +46,12 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
 
+  // Fetch clinical notes for this encounter
+  const { 
+    data: clinicalNotes, 
+    isLoading: isLoadingNotes 
+  } = useNoteEntriesForEncounter(id);
+
   // Update state when props change
   useEffect(() => {
     setLoading(initialLoading ?? false);
@@ -54,7 +61,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    
+
     try {
       const date = parseISO(dateString);
       return isValid(date) ? format(date, 'MMM d, yyyy h:mm a') : 'Invalid date';
@@ -101,11 +108,11 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
         discharge_disposition: 'home',
         destination: 'Home'
       });
-      
+
       // Reload encounter data
       const updatedEncounter = await fetchEncounter(id);
       setEncounter(updatedEncounter);
-      
+
       setShowDischargeDialog(false);
     } catch (err) {
       console.error('Error discharging patient:', err);
@@ -120,11 +127,11 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
     try {
       setActionInProgress(true);
       await cancelEncounter(id);
-      
+
       // Reload encounter data
       const updatedEncounter = await fetchEncounter(id);
       setEncounter(updatedEncounter);
-      
+
       setShowCancelDialog(false);
     } catch (err) {
       console.error('Error cancelling encounter:', err);
@@ -409,8 +416,53 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
               <CardTitle>Clinical Notes</CardTitle>
               <CardDescription>Notes and observations for this encounter</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">No notes have been added to this encounter.</p>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between items-center">
+                <p className="text-muted-foreground">Clinical notes for this encounter.</p>
+                <Button onClick={() => navigate(`/encounters/${id}/clinical-notes`)}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Add Clinical Note
+                </Button>
+              </div>
+              <div>
+                {isLoadingNotes ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-24 w-full" />
+                  </div>
+                ) : !clinicalNotes || clinicalNotes.length === 0 ? (
+                  <p className="text-muted-foreground">No notes have been added to this encounter yet.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {clinicalNotes.map(note => (
+                      <Card key={note.id} className="border border-muted">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">{note.template_title}</CardTitle>
+                          <CardDescription>
+                            Created {new Date(note.created_at).toLocaleString()} by {note.practitioner_name || 'Unknown'}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {Object.entries(note.data).map(([section, data]) => (
+                              <div key={section}>
+                                <h4 className="font-medium text-sm">{section}</h4>
+                                {typeof data === 'string' ? (
+                                  <p className="text-sm text-muted-foreground">{data}</p>
+                                ) : (
+                                  <pre className="text-xs bg-muted p-2 rounded">
+                                    {JSON.stringify(data, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -520,7 +572,7 @@ function getAdmissionSourceText(code) {
     'rehab': 'From rehabilitation facility',
     'other': 'Other'
   };
-  
+
   return sources[code] || code;
 }
 
@@ -539,6 +591,6 @@ function getDischargeDispositionText(code) {
     'snf': 'Skilled nursing facility',
     'other': 'Other'
   };
-  
+
   return dispositions[code] || code;
 }

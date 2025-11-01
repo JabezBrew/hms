@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Plus, Hospital } from 'lucide-react';
+import { Search, Plus, Hospital, BarChart3 } from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { useWards } from '@/hooks/useWardQueries';
 
@@ -130,12 +130,21 @@ export default function WardsPage() {
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-3xl font-bold">Wards</h1>
-        {isAdmin && (
-          <Button onClick={handleNewWard}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Ward
+        <div className="flex gap-2">
+          <Button
+            onClick={() => navigate('/wards/reports')}
+            variant="outline"
+          >
+            <BarChart3 className="h-4 w-4 mr-2" />
+            View Reports
           </Button>
-        )}
+          {isAdmin && (
+            <Button onClick={handleNewWard}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Ward
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="relative">

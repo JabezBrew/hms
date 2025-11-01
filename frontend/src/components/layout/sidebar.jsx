@@ -9,6 +9,8 @@ import {
   PillIcon,
   ShieldIcon,
   ClipboardIcon,
+  FileTextIcon,
+  ActivityIcon,
 } from "lucide-react"
 
 import {
@@ -43,6 +45,7 @@ export function AppSidebar() {
       patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing'],
       appointments: ['admin', 'doctor', 'nurse', 'receptionist'],
       encounters: ['admin', 'doctor', 'nurse', 'receptionist'],
+      nursing: ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'],
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],
@@ -52,6 +55,7 @@ export function AppSidebar() {
       pharmacy: ['admin', 'pharmacist', 'doctor'],
       staff: ['admin'],
       practitionerAvailability: ['admin'],
+      clinicalNoteTemplates: ['admin', 'doctor', 'nurse'],
     }
   }
 
@@ -97,6 +101,15 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
+
+            {hasAccess(userRole, menuItems.dashboard.nursing) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Nursing Dashboard" href="/nursing/dashboard">
+                  <ActivityIcon />
+                  <span>Nursing Dashboard</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
@@ -109,7 +122,8 @@ export function AppSidebar() {
         hasAccess(userRole, menuItems.management.billing) ||
         hasAccess(userRole, menuItems.management.laboratory) ||
         hasAccess(userRole, menuItems.management.pharmacy) ||
-        hasAccess(userRole, menuItems.management.staff)) && (
+        hasAccess(userRole, menuItems.management.staff) ||
+        hasAccess(userRole, menuItems.management.clinicalNoteTemplates)) && (
         <SidebarGroup>
           <SidebarGroupLabel>Management</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -173,6 +187,15 @@ export function AppSidebar() {
                   <SidebarMenuButton tooltip="Practitioner Availability" href="/practitioner-availability">
                     <CalendarIcon />
                     <span>Availability</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {hasAccess(userRole, menuItems.management.clinicalNoteTemplates) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Clinical Note Templates" href="/clinical-notes/templates">
+                    <FileTextIcon />
+                    <span>Note Templates</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}

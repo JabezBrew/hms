@@ -159,14 +159,20 @@ export function EncounterForm({ isEditing = false }) {
   useEffect(() => {
     if (patientSearchQuery && patientSearchQuery.length >= 2) {
       setPatientSearchTerm(patientSearchQuery);
+    } else if (isEditing && encounterData?.patient_name && patientSearchQuery === encounterData.patient_name) {
+      // In edit mode, trigger search with patient name to populate options
+      setPatientSearchTerm(encounterData.patient_name);
     }
-  }, [patientSearchQuery, setPatientSearchTerm]);
+  }, [patientSearchQuery, setPatientSearchTerm, isEditing, encounterData?.patient_name]);
 
   useEffect(() => {
     if (practitionerSearchQuery && practitionerSearchQuery.length >= 2) {
       setPractitionerSearchTerm(practitionerSearchQuery);
+    } else if (isEditing && encounterData?.practitioner_name && practitionerSearchQuery === encounterData.practitioner_name) {
+      // In edit mode, trigger search with practitioner name to populate options
+      setPractitionerSearchTerm(encounterData.practitioner_name);
     }
-  }, [practitionerSearchQuery, setPractitionerSearchTerm]);
+  }, [practitionerSearchQuery, setPractitionerSearchTerm, isEditing, encounterData?.practitioner_name]);
 
   // Handle form submission
   const onSubmit = (data) => {

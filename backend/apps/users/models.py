@@ -134,3 +134,11 @@ class PatientProfile(models.Model):
 
     def __str__(self):
         return f"{self.medical_record_number} - {self.user.get_full_name()}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['medical_record_number']),
+            models.Index(fields=['nhis_id']),
+            models.Index(fields=['fhir_patient_id']),
+            models.Index(fields=['created_at']),
+        ]

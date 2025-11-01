@@ -16,8 +16,8 @@ export function Layout({ children }) {
           <Sidebar>
             <AppSidebar />
           </Sidebar>
-          <SidebarInset className="p-4 flex-1 min-w-0">
-            <div className="w-full">
+          <SidebarInset className="p-4 flex-1 min-w-0 flex flex-col">
+            <div className="w-full mx-auto flex-1">
               <PageBreadcrumb />
               {children}
             </div>

@@ -43,8 +43,6 @@ import { cn } from "@/lib/utils";
 const patientFormSchema = z.object({
   // User fields
   email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }).optional(),
-  confirm_password: z.string().optional(),
   first_name: z.string().min(1, { message: "First name is required" }),
   last_name: z.string().min(1, { message: "Last name is required" }),
   phone_number: z.string().optional(),
@@ -66,15 +64,6 @@ const patientFormSchema = z.object({
   state: z.string().optional(),
   postal_code: z.string().optional(),
   country: z.string().optional(),
-}).refine((data) => {
-  // Only validate password match if password is provided (for updates)
-  if (data.password || data.confirm_password) {
-    return data.password === data.confirm_password;
-  }
-  return true;
-}, {
-  message: "Passwords do not match",
-  path: ["confirm_password"],
 });
 
 const PatientForm = ({ patient, onSuccess }) => {
@@ -90,37 +79,11 @@ const PatientForm = ({ patient, onSuccess }) => {
   const updatePatientMutation = useUpdatePatientWithFHIR();
   const registerPatientMutation = useRegisterPatient();
 
-  // Initialize form with default values or patient data
+  // Initialize form with default values
   const form = useForm({
     resolver: zodResolver(patientFormSchema),
-    defaultValues: patient ? {
-      // User fields
-      email: patient.local_data?.user?.email || "",
-      first_name: patient.local_data?.user?.first_name || "",
-      last_name: patient.local_data?.user?.last_name || "",
-      phone_number: patient.local_data?.user?.phone_number || "",
-      date_of_birth: patient.local_data?.user?.date_of_birth ? new Date(patient.local_data.user.date_of_birth) : undefined,
-
-      // PatientProfile fields
-      medical_record_number: patient.local_data?.medical_record_number || "",
-      nhis_id: patient.local_data?.nhis_id || "",
-      blood_group: patient.local_data?.blood_group || "",
-      allergies: patient.local_data?.allergies || "",
-      emergency_contact_name: patient.local_data?.emergency_contact_name || "",
-      emergency_contact_phone: patient.local_data?.emergency_contact_phone || "",
-      emergency_contact_relationship: patient.local_data?.emergency_contact_relationship || "",
-
-      // Address fields - extract from FHIR data if available
-      address_line1: patient.fhir_data?.address?.[0]?.line?.[0] || "",
-      address_line2: patient.fhir_data?.address?.[0]?.line?.[1] || "",
-      city: patient.fhir_data?.address?.[0]?.city || "",
-      state: patient.fhir_data?.address?.[0]?.state || "",
-      postal_code: patient.fhir_data?.address?.[0]?.postalCode || "",
-      country: patient.fhir_data?.address?.[0]?.country || "",
-    } : {
+    defaultValues: {
       email: "",
-      password: "",
-      confirm_password: "",
       first_name: "",
       last_name: "",
       phone_number: "",
@@ -140,6 +103,40 @@ const PatientForm = ({ patient, onSuccess }) => {
       country: "",
     }
   });
+
+  // Load patient data into form when in edit mode
+  useEffect(() => {
+    if (isEditMode && patient) {
+      // Extract phone from FHIR telecom if not in local_data
+      const phoneFromFhir = patient.fhir_data?.telecom?.find(t => t.system === 'phone')?.value || "";
+
+      form.reset({
+        // User fields - use user_details instead of user
+        email: patient.local_data?.user_details?.email || "",
+        first_name: patient.local_data?.user_details?.first_name || "",
+        last_name: patient.local_data?.user_details?.last_name || "",
+        phone_number: patient.local_data?.user_details?.phone_number || phoneFromFhir || "",
+        date_of_birth: patient.local_data?.user_details?.date_of_birth ? new Date(patient.local_data.user_details.date_of_birth) : undefined,
+
+        // PatientProfile fields
+        medical_record_number: patient.local_data?.medical_record_number || "",
+        nhis_id: patient.local_data?.nhis_id || "",
+        blood_group: patient.local_data?.blood_group || "",
+        allergies: patient.local_data?.allergies || "",
+        emergency_contact_name: patient.local_data?.emergency_contact_name || "",
+        emergency_contact_phone: patient.local_data?.emergency_contact_phone || "",
+        emergency_contact_relationship: patient.local_data?.emergency_contact_relationship || "",
+
+        // Address fields - extract from FHIR data if available
+        address_line1: patient.fhir_data?.address?.[0]?.line?.[0] || "",
+        address_line2: patient.fhir_data?.address?.[0]?.line?.[1] || "",
+        city: patient.fhir_data?.address?.[0]?.city || "",
+        state: patient.fhir_data?.address?.[0]?.state || "",
+        postal_code: patient.fhir_data?.address?.[0]?.postalCode || "",
+        country: patient.fhir_data?.address?.[0]?.country || "",
+      });
+    }
+  }, [isEditMode, patient, form]);
 
   // No need to fetch validation rules as React Query handles this
 
@@ -352,37 +349,6 @@ const PatientForm = ({ patient, onSuccess }) => {
                   )}
                 />
 
-                {!isEditMode && (
-                  <>
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="Password" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="confirm_password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Confirm Password</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="Confirm password" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </>
-                )}
               </TabsContent>
 
               <TabsContent value="medical" className="space-y-4 mt-4">
@@ -422,7 +388,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Blood Group</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select blood group" />

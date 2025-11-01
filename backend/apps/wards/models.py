@@ -100,7 +100,6 @@ class Bed(models.Model):
         ('occupied', 'Occupied'),
         ('reserved', 'Reserved'),
         ('maintenance', 'Under Maintenance'),
-        ('cleaning', 'Being Cleaned'),
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
 
@@ -123,6 +122,11 @@ class Bed(models.Model):
     class Meta:
         unique_together = ('ward', 'bed_number')
         ordering = ['ward', 'bed_number']
+        indexes = [
+            models.Index(fields=['ward', 'status']),
+            models.Index(fields=['status']),
+            models.Index(fields=['bed_type']),
+        ]
 
     def __str__(self):
         return f"{self.ward.name} - Bed {self.bed_number} ({self.get_status_display()})"
@@ -193,6 +197,13 @@ class Admission(models.Model):
 
     class Meta:
         ordering = ['-admission_date']
+        indexes = [
+            models.Index(fields=['status', 'admission_date']),
+            models.Index(fields=['bed', 'status']),
+            models.Index(fields=['patient', 'status']),
+            models.Index(fields=['admission_date']),
+            models.Index(fields=['fhir_encounter_id']),
+        ]
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.bed.ward.name} - {self.get_status_display()}"
@@ -218,8 +229,8 @@ class Admission(models.Model):
                 if not self.actual_discharge_date:
                     self.actual_discharge_date = timezone.now()
 
-                # Set the bed status to cleaning
-                self.bed.status = 'cleaning'
+                # Set the bed status to available
+                self.bed.status = 'available'
                 self.bed.save()
 
         super().save(*args, **kwargs)
@@ -250,32 +261,9 @@ class Admission(models.Model):
             self.discharge_notes = discharge_notes
         self.save()
 
-        # Schedule bed cleaning (in a real system, this would create a task)
-        # For now, we'll just set a timer to change the bed status after 30 minutes
-        from django.db import transaction
-        transaction.on_commit(lambda: self._schedule_bed_cleaning())
-
-    def _schedule_bed_cleaning(self):
-        """
-        Schedule the bed to be cleaned and then marked as available.
-        In a real system, this would create a task in a queue.
-        """
-        # This is a placeholder for a real task scheduling system
-        # In a production environment, you would use Celery or similar
-        from django.db import transaction
-        from django.utils import timezone
-
-        def mark_bed_available():
-            try:
-                bed = Bed.objects.get(pk=self.bed.pk)
-                if bed.status == 'cleaning':
-                    bed.status = 'available'
-                    bed.save()
-            except Bed.DoesNotExist:
-                pass
-
-        # In a real system, this would be a scheduled task
-        # For now, we'll just note that this would happen
+        # Update bed status to available
+        self.bed.status = 'available'
+        self.bed.save()
 
 
 class BedAllocationLog(models.Model):

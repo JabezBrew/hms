@@ -1,12 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import AppointmentList from '@/components/appointments/AppointmentList';
 import AppointmentTypeManager from '@/components/appointments/AppointmentTypeManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { List, Settings } from 'lucide-react';
+import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 
 const AppointmentsPage = () => {
   const [view, setView] = useState('list');
+  const { updateBreadcrumbs } = useBreadcrumb();
+
+  // Set breadcrumbs
+  useEffect(() => {
+    updateBreadcrumbs([
+      { label: 'Appointments', path: '/appointments' }
+    ]);
+  }, [updateBreadcrumbs]);
 
   return (
     <>

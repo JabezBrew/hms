@@ -85,12 +85,21 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         Change the user's password.
         """
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
         user = request.user
         old_password = request.data.get('old_password')
         new_password = request.data.get('new_password')
 
         if not user.check_password(old_password):
             return Response({'detail': 'Wrong password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate the new password
+        try:
+            validate_password(new_password, user)
+        except DjangoValidationError as e:
+            return Response({'detail': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save()

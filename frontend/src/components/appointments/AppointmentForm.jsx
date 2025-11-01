@@ -87,17 +87,34 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      patientId: initialData.patientId || "",
-      practitionerId: initialData.practitionerId || "",
-      appointmentTypeId: initialData.appointmentTypeId || "",
-      date: initialData.date ? parseISO(initialData.date) : new Date(),
-      slotId: initialData.slotId || "",
-      startTime: initialData.startTime || "",
-      endTime: initialData.endTime || "",
-      description: initialData.description || "",
-      comment: initialData.comment || "",
+      patientId: "",
+      practitionerId: "",
+      appointmentTypeId: "",
+      date: new Date(),
+      slotId: "",
+      startTime: "",
+      endTime: "",
+      description: "",
+      comment: "",
     },
   });
+
+  // Reset form with initialData when it changes (for edit mode)
+  useEffect(() => {
+    if (initialData && Object.keys(initialData).length > 0) {
+      form.reset({
+        patientId: initialData.patientId || "",
+        practitionerId: initialData.practitionerId || "",
+        appointmentTypeId: initialData.appointmentTypeId || "",
+        date: initialData.date ? parseISO(initialData.date) : new Date(),
+        slotId: initialData.slotId || "",
+        startTime: initialData.startTime || "",
+        endTime: initialData.endTime || "",
+        description: initialData.description || "",
+        comment: initialData.comment || "",
+      });
+    }
+  }, [initialData, form]);
 
   // Watch form values for dependent fields
   const watchPractitionerId = form.watch("practitionerId");
@@ -396,9 +413,9 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Appointment Type</FormLabel>
-              <Select 
-                onValueChange={field.onChange} 
-                defaultValue={field.value}
+              <Select
+                onValueChange={field.onChange}
+                value={field.value}
                 disabled={submitting}
               >
                 <FormControl>

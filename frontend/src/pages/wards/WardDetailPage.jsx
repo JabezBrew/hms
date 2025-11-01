@@ -32,6 +32,16 @@ export default function WardDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check if user is admin
+  useEffect(() => {
+    const userJson = localStorage.getItem('user');
+    if (userJson) {
+      const user = JSON.parse(userJson);
+      setIsAdmin(user.role === 'admin');
+    }
+  }, []);
 
   // Show error toast if query fails
   useEffect(() => {
@@ -150,24 +160,26 @@ export default function WardDetailPage() {
           <ChevronLeft className="h-4 w-4 mr-2" />
           Back to Wards
         </Button>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleEditWard}
-          >
-            <Edit className="h-4 w-4 mr-2" />
-            Edit Ward
-          </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={handleDeleteWardClick}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete Ward
-          </Button>
-        </div>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleEditWard}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Ward
+            </Button>
+            <Button 
+              variant="destructive" 
+              size="sm"
+              onClick={handleDeleteWardClick}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Ward
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Ward Dashboard */}

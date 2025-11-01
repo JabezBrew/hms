@@ -56,44 +56,105 @@ export function useCreatePatient() {
 }
 
 /**
- * Update an existing patient
+ * Update an existing patient with optimistic updates
  * @returns {Object} Mutation result
  */
 export function useUpdatePatient() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ id, data }) => patientsApi.updatePatient(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific patient
-      queryClient.invalidateQueries({ 
-        queryKey: patientKeys.detail(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: patientKeys.detail(id) });
+
+      // Snapshot the previous value
+      const previousPatient = queryClient.getQueryData(patientKeys.detail(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(patientKeys.detail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousPatient, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousPatient) {
+        queryClient.setQueryData(
+          patientKeys.detail(context.id),
+          context.previousPatient
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: patientKeys.detail(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: patientKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: patientKeys.lists()
       });
     },
   });
 }
 
 /**
- * Delete a patient
+ * Delete a patient with optimistic updates
  * @returns {Object} Mutation result
  */
 export function useDeletePatient() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id) => patientsApi.deletePatient(id),
-    onSuccess: (data, variables) => {
-      // Invalidate the patient detail query
-      queryClient.invalidateQueries({ 
-        queryKey: patientKeys.detail(variables) 
+
+    // Optimistic update - remove from list immediately
+    onMutate: async (id) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: patientKeys.lists() });
+
+      // Snapshot the previous value
+      const previousLists = queryClient.getQueriesData({
+        queryKey: patientKeys.lists()
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: patientKeys.lists() 
+
+      // Optimistically remove from all list queries
+      queryClient.setQueriesData(
+        { queryKey: patientKeys.lists() },
+        (old) => {
+          if (Array.isArray(old)) {
+            return old.filter((patient) => patient.id !== id);
+          }
+          return old;
+        }
+      );
+
+      return { previousLists, id };
+    },
+
+    // Rollback on error
+    onError: (err, variables, context) => {
+      if (context?.previousLists) {
+        context.previousLists.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+    },
+
+    // Refetch to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: patientKeys.detail(variables)
+      });
+      queryClient.invalidateQueries({
+        queryKey: patientKeys.lists()
       });
     },
   });

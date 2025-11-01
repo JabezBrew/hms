@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api';
+import { Label } from '@/components/ui/label';
+import { wardsApi } from '@/lib/api/wards';
 import { format, subDays, differenceInDays, addDays } from 'date-fns';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { Download, Calendar, TrendingUp, Clock, Users, Bed, FileText } from 'lucide-react';
@@ -32,19 +33,16 @@ export function WardOccupancyReports() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
+
         // Fetch wards
-        const wardsData = await apiClient.get('/wards/');
+        const wardsResponse = await wardsApi.getWards();
+        const wardsData = Array.isArray(wardsResponse) ? wardsResponse : wardsResponse.results || [];
         setWards(wardsData);
-        
-        // In a real application, we would fetch actual data from the API
-        // For demo purposes, we'll generate sample data
-        generateSampleData(wardsData);
-        
+
         setLoading(false);
       } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Failed to load report data. Please try again.');
+        console.error('Error fetching wards:', err);
+        setError('Failed to load wards data. Please try again.');
         setLoading(false);
       }
     };
@@ -52,98 +50,41 @@ export function WardOccupancyReports() {
     fetchData();
   }, []);
 
-  // Generate sample data for demo purposes
-  const generateSampleData = (wardsData) => {
-    // Generate occupancy data (daily occupancy rates for the past 30 days)
-    const occupancyRates = [];
-    const now = new Date();
-    
-    for (let i = 30; i >= 0; i--) {
-      const date = subDays(now, i);
-      const dateStr = format(date, 'MMM d');
-      
-      const dayData = {
-        date: dateStr,
-        fullDate: date,
-      };
-      
-      // Add occupancy rate for each ward
-      wardsData.forEach(ward => {
-        // Generate a random occupancy rate between 50% and 95%
-        // With some day-to-day variation but a general trend
-        const baseRate = 70 + Math.sin(i / 5) * 15;
-        const randomVariation = Math.random() * 10 - 5;
-        const rate = Math.min(Math.max(baseRate + randomVariation, 50), 95);
-        
-        dayData[`${ward.name}`] = parseFloat(rate.toFixed(1));
-      });
-      
-      // Add overall occupancy rate
-      const overallRate = Object.keys(dayData)
-        .filter(key => key !== 'date' && key !== 'fullDate')
-        .reduce((sum, key) => sum + dayData[key], 0) / wardsData.length;
-      
-      dayData['Overall'] = parseFloat(overallRate.toFixed(1));
-      
-      occupancyRates.push(dayData);
-    }
-    
-    setOccupancyData(occupancyRates);
-    
-    // Generate length of stay data
-    const losData = [
-      { range: '1-3 days', count: 45, percentage: 45 },
-      { range: '4-7 days', count: 30, percentage: 30 },
-      { range: '8-14 days', count: 15, percentage: 15 },
-      { range: '15-30 days', count: 8, percentage: 8 },
-      { range: '31+ days', count: 2, percentage: 2 }
-    ];
-    
-    setLengthOfStayData(losData);
-    
-    // Generate utilization data
-    const utilizationByWard = wardsData.map(ward => {
-      // Generate random utilization metrics
-      const occupancyRate = 50 + Math.random() * 45;
-      const turnoverRate = 0.1 + Math.random() * 0.3;
-      const avgLOS = 3 + Math.random() * 7;
-      
-      return {
-        ward: ward.name,
-        occupancyRate: parseFloat(occupancyRate.toFixed(1)),
-        turnoverRate: parseFloat(turnoverRate.toFixed(2)),
-        avgLOS: parseFloat(avgLOS.toFixed(1)),
-        bedDays: Math.floor(ward.total_beds * 30 * (occupancyRate / 100)),
-        revenue: Math.floor(ward.total_beds * 30 * (occupancyRate / 100) * (ward.base_rate_per_night || 100))
-      };
-    });
-    
-    setUtilizationData(utilizationByWard);
-    
-    // Generate admissions by ward
-    const admissionsByWardData = wardsData.map(ward => ({
-      ward: ward.name,
-      admissions: Math.floor(20 + Math.random() * 50),
-      discharges: Math.floor(15 + Math.random() * 45),
-      transfers: Math.floor(Math.random() * 10)
-    }));
-    
-    setAdmissionsByWard(admissionsByWardData);
-  };
+  // Fetch analytics data whenever filters change
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      if (wards.length === 0) return;
 
-  // Filter data based on selected ward and date range
-  const getFilteredData = (data, dateField = 'fullDate') => {
-    if (!data || data.length === 0) return [];
-    
-    return data.filter(item => {
-      // Filter by date if the item has a date field
-      if (item[dateField]) {
-        const itemDate = new Date(item[dateField]);
-        return itemDate >= dateRange.start && itemDate <= dateRange.end;
+      try {
+        setLoading(true);
+
+        // Build query parameters
+        const params = {
+          ward_id: selectedWard,
+          start_date: dateRange.start.toISOString(),
+          end_date: dateRange.end.toISOString()
+        };
+
+        // Fetch analytics data from API
+        const analyticsData = await wardsApi.getAnalytics(params);
+
+        // Update state with real data
+        setOccupancyData(analyticsData.occupancy_trends || []);
+        setLengthOfStayData(analyticsData.length_of_stay || []);
+        setUtilizationData(analyticsData.ward_utilization || []);
+        setAdmissionsByWard(analyticsData.admissions_by_ward || []);
+
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+        setError('Failed to load analytics data. Please try again.');
+        setLoading(false);
       }
-      return true;
-    });
-  };
+    };
+
+    fetchAnalytics();
+  }, [wards, selectedWard, dateRange]);
+
 
   // Handle ward selection change
   const handleWardChange = (value) => {
@@ -157,9 +98,69 @@ export function WardOccupancyReports() {
 
   // Export report as CSV
   const exportReport = () => {
-    // In a real application, this would generate a CSV file
-    // For demo purposes, we'll just show an alert
-    alert('Report exported successfully');
+    try {
+      // Prepare CSV content
+      let csvContent = 'Ward Occupancy Report\n';
+      csvContent += `Date Range: ${format(dateRange.start, 'MMM dd, yyyy')} - ${format(dateRange.end, 'MMM dd, yyyy')}\n\n`;
+
+      // Add occupancy trends section
+      csvContent += 'Occupancy Trends\n';
+      csvContent += 'Date,';
+      if (selectedWard === 'all') {
+        wards.forEach(ward => {
+          csvContent += `${ward.name},`;
+        });
+        csvContent += 'Overall\n';
+      } else {
+        const ward = wards.find(w => w.id === selectedWard);
+        csvContent += `${ward?.name || 'Ward'}\n`;
+      }
+
+      occupancyData.forEach(day => {
+        csvContent += `${day.date},`;
+        if (selectedWard === 'all') {
+          wards.forEach(ward => {
+            csvContent += `${day[ward.name] || 0},`;
+          });
+          csvContent += `${day.Overall || 0}\n`;
+        } else {
+          const ward = wards.find(w => w.id === selectedWard);
+          csvContent += `${day[ward?.name] || 0}\n`;
+        }
+      });
+
+      csvContent += '\n';
+
+      // Add utilization metrics section
+      csvContent += 'Ward Utilization\n';
+      csvContent += 'Ward,Occupancy Rate (%),Turnover Rate,Avg LOS (days),Bed Days,Revenue\n';
+      utilizationData.forEach(ward => {
+        csvContent += `${ward.ward},${ward.occupancy_rate || 0},${ward.turnover_rate || 0},${ward.avg_los || 0},${ward.bed_days || 0},${ward.revenue || 0}\n`;
+      });
+
+      csvContent += '\n';
+
+      // Add admissions section
+      csvContent += 'Admissions, Discharges, and Transfers\n';
+      csvContent += 'Ward,Admissions,Discharges,Transfers\n';
+      admissionsByWard.forEach(ward => {
+        csvContent += `${ward.ward},${ward.admissions},${ward.discharges},${ward.transfers}\n`;
+      });
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `ward_occupancy_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error exporting report:', err);
+      alert('Failed to export report. Please try again.');
+    }
   };
 
   // Format currency
@@ -204,9 +205,6 @@ export function WardOccupancyReports() {
       </Card>
     );
   }
-
-  // Filter occupancy data based on selected ward and date range
-  const filteredOccupancyData = getFilteredData(occupancyData, 'fullDate');
 
   return (
     <div className="space-y-6 p-4">
@@ -298,7 +296,7 @@ export function WardOccupancyReports() {
               <CardContent>
                 <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={filteredOccupancyData}>
+                    <LineChart data={occupancyData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
@@ -355,7 +353,7 @@ export function WardOccupancyReports() {
                         <XAxis dataKey="ward" />
                         <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                         <Tooltip formatter={(value) => [`${value}%`, 'Occupancy Rate']} />
-                        <Bar dataKey="occupancyRate" fill="#1976D2" name="Occupancy Rate">
+                        <Bar dataKey="occupancy_rate" fill="#1976D2" name="Occupancy Rate">
                           {utilizationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
                           ))}
@@ -384,11 +382,11 @@ export function WardOccupancyReports() {
                       <TableBody>
                         {wards.map(ward => {
                           // Calculate min, max, and average occupancy for each ward
-                          const wardData = filteredOccupancyData.map(d => d[ward.name]).filter(Boolean);
-                          const min = Math.min(...wardData);
-                          const max = Math.max(...wardData);
-                          const avg = wardData.reduce((sum, val) => sum + val, 0) / wardData.length;
-                          
+                          const wardData = occupancyData.map(d => d[ward.name]).filter(Boolean);
+                          const min = wardData.length > 0 ? Math.min(...wardData) : 0;
+                          const max = wardData.length > 0 ? Math.max(...wardData) : 0;
+                          const avg = wardData.length > 0 ? wardData.reduce((sum, val) => sum + val, 0) / wardData.length : 0;
+
                           return (
                             <TableRow key={ward.id}>
                               <TableCell>{ward.name}</TableCell>
@@ -401,13 +399,13 @@ export function WardOccupancyReports() {
                         <TableRow>
                           <TableCell className="font-medium">Overall</TableCell>
                           <TableCell>
-                            {Math.min(...filteredOccupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1)}%
+                            {occupancyData.length > 0 ? Math.min(...occupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1) : '0.0'}%
                           </TableCell>
                           <TableCell>
-                            {Math.max(...filteredOccupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1)}%
+                            {occupancyData.length > 0 ? Math.max(...occupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1) : '0.0'}%
                           </TableCell>
                           <TableCell>
-                            {(filteredOccupancyData.reduce((sum, d) => sum + (d['Overall'] || 0), 0) / filteredOccupancyData.length).toFixed(1)}%
+                            {occupancyData.length > 0 ? (occupancyData.reduce((sum, d) => sum + (d['Overall'] || 0), 0) / occupancyData.length).toFixed(1) : '0.0'}%
                           </TableCell>
                         </TableRow>
                       </TableBody>
@@ -460,7 +458,7 @@ export function WardOccupancyReports() {
                         <XAxis dataKey="ward" />
                         <YAxis />
                         <Tooltip formatter={(value) => [`${value} days`, 'Average LOS']} />
-                        <Bar dataKey="avgLOS" fill="#00ACC1" name="Average Length of Stay (days)">
+                        <Bar dataKey="avg_los" fill="#00ACC1" name="Average Length of Stay (days)">
                           {utilizationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
                           ))}
@@ -490,16 +488,19 @@ export function WardOccupancyReports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {utilizationData.map(ward => (
-                        <TableRow key={ward.ward}>
-                          <TableCell>{ward.ward}</TableCell>
-                          <TableCell>{ward.avgLOS.toFixed(1)}</TableCell>
-                          <TableCell>{(ward.avgLOS * 0.8).toFixed(1)}</TableCell>
-                          <TableCell>{Math.max(1, Math.floor(ward.avgLOS * 0.3))}</TableCell>
-                          <TableCell>{Math.ceil(ward.avgLOS * 2.5)}</TableCell>
-                          <TableCell>{ward.bedDays}</TableCell>
-                        </TableRow>
-                      ))}
+                      {utilizationData.map(ward => {
+                        const avgLOS = ward.avg_los || 0;
+                        return (
+                          <TableRow key={ward.ward}>
+                            <TableCell>{ward.ward}</TableCell>
+                            <TableCell>{avgLOS.toFixed(1)}</TableCell>
+                            <TableCell>{(avgLOS * 0.8).toFixed(1)}</TableCell>
+                            <TableCell>{Math.max(1, Math.floor(avgLOS * 0.3))}</TableCell>
+                            <TableCell>{Math.ceil(avgLOS * 2.5)}</TableCell>
+                            <TableCell>{ward.bed_days || 0}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </ScrollArea>
@@ -532,11 +533,11 @@ export function WardOccupancyReports() {
                       {utilizationData.map(ward => (
                         <TableRow key={ward.ward}>
                           <TableCell>{ward.ward}</TableCell>
-                          <TableCell>{ward.occupancyRate}%</TableCell>
-                          <TableCell>{ward.turnoverRate.toFixed(2)}</TableCell>
-                          <TableCell>{ward.avgLOS.toFixed(1)}</TableCell>
-                          <TableCell>{ward.bedDays}</TableCell>
-                          <TableCell>{formatCurrency(ward.revenue)}</TableCell>
+                          <TableCell>{ward.occupancy_rate || 0}%</TableCell>
+                          <TableCell>{(ward.turnover_rate || 0).toFixed(2)}</TableCell>
+                          <TableCell>{(ward.avg_los || 0).toFixed(1)}</TableCell>
+                          <TableCell>{ward.bed_days || 0}</TableCell>
+                          <TableCell>{formatCurrency(ward.revenue || 0)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -584,7 +585,7 @@ export function WardOccupancyReports() {
                         <XAxis dataKey="ward" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="turnoverRate" fill="#FFA000" name="Turnover Rate">
+                        <Bar dataKey="turnover_rate" fill="#FFA000" name="Turnover Rate">
                           {utilizationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
                           ))}

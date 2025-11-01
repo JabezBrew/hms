@@ -43,8 +43,6 @@ export function WardBedLayout({ beds, admissions, onBedClick, wardId }) {
         return 'bg-yellow-100 border-yellow-500 text-yellow-700';
       case 'maintenance':
         return 'bg-gray-100 border-gray-500 text-gray-700';
-      case 'cleaning':
-        return 'bg-blue-100 border-blue-500 text-blue-700';
       default:
         return 'bg-gray-100 border-gray-500 text-gray-700';
     }
@@ -150,10 +148,6 @@ export function WardBedLayout({ beds, admissions, onBedClick, wardId }) {
               <div className="flex items-center">
                 <div className="w-4 h-4 bg-gray-100 border border-gray-500 rounded mr-2"></div>
                 <span className="text-sm">Maintenance</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-blue-100 border border-blue-500 rounded mr-2"></div>
-                <span className="text-sm">Cleaning</span>
               </div>
             </div>
           </div>

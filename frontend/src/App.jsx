@@ -1,4 +1,5 @@
 import './App.css'
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
@@ -14,28 +15,50 @@ import { LoginForm } from './components/auth/login-form'
 import { RegisterForm } from './components/auth/register-form'
 import { ResetPasswordForm } from './components/auth/reset-password-form'
 import { RoleBasedRoute } from './components/auth/RoleBasedRoute'
-import PatientDashboard from './components/patients/PatientDashboard'
-import PatientDetailPage from './pages/PatientDetailPage'
-import PatientEditPage from './pages/PatientEditPage'
-import PatientCreatePage from './pages/PatientCreatePage'
-import AppointmentsPage from './pages/AppointmentsPage'
-import AppointmentDetailPage from './pages/AppointmentDetailPage'
-import AppointmentCreatePage from './pages/AppointmentCreatePage'
-import AppointmentEditPage from './pages/AppointmentEditPage'
-import StaffListPage from './pages/StaffListPage'
-import StaffCreatePage from './pages/StaffCreatePage'
-import StaffDetailPage from './pages/StaffDetailPage'
-import UnauthorizedPage from './pages/UnauthorizedPage'
-import PractitionerAvailabilityPage from './pages/PractitionerAvailabilityPage'
-import PractitionerAvailabilityDetailPage from './pages/PractitionerAvailabilityDetailPage'
-import ScheduleSlotsPage from './pages/ScheduleSlotsPage';
-import WardsPage from './pages/wards/WardsPage'
-import WardDetailPage from './pages/wards/WardDetailPage'
-import NewWardPage from './pages/wards/NewWardPage'
-import EncountersPage from './pages/encounters/EncountersPage'
-import EncounterCreatePage from './pages/encounters/EncounterCreatePage'
-import EncounterDetailPage from './pages/encounters/EncounterDetailPage'
-import EncounterEditPage from './pages/encounters/EncounterEditPage'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { OfflineIndicator } from './components/OfflineIndicator'
+import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
+
+// Lazy load page components for code splitting
+const PatientDashboard = lazy(() => import('./components/patients/PatientDashboard'))
+const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
+const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
+const PatientCreatePage = lazy(() => import('./pages/PatientCreatePage'))
+const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage'))
+const AppointmentDetailPage = lazy(() => import('./pages/AppointmentDetailPage'))
+const AppointmentCreatePage = lazy(() => import('./pages/AppointmentCreatePage'))
+const AppointmentEditPage = lazy(() => import('./pages/AppointmentEditPage'))
+const StaffListPage = lazy(() => import('./pages/StaffListPage'))
+const StaffCreatePage = lazy(() => import('./pages/StaffCreatePage'))
+const StaffDetailPage = lazy(() => import('./pages/StaffDetailPage'))
+const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'))
+const PractitionerAvailabilityPage = lazy(() => import('./pages/PractitionerAvailabilityPage'))
+const PractitionerAvailabilityDetailPage = lazy(() => import('./pages/PractitionerAvailabilityDetailPage'))
+const ScheduleSlotsPage = lazy(() => import('./pages/ScheduleSlotsPage'))
+const WardsPage = lazy(() => import('./pages/wards/WardsPage'))
+const WardDetailPage = lazy(() => import('./pages/wards/WardDetailPage'))
+const NewWardPage = lazy(() => import('./pages/wards/NewWardPage'))
+const EditWardPage = lazy(() => import('./pages/wards/EditWardPage'))
+const WardReportsPage = lazy(() => import('./pages/wards/WardReportsPage'))
+const AdmissionCreatePage = lazy(() => import('./pages/admissions/AdmissionCreatePage'))
+const AdmissionDetailPage = lazy(() => import('./pages/admissions/AdmissionDetailPage'))
+const EncountersPage = lazy(() => import('./pages/encounters/EncountersPage'))
+const EncounterCreatePage = lazy(() => import('./pages/encounters/EncounterCreatePage'))
+const EncounterDetailPage = lazy(() => import('./pages/encounters/EncounterDetailPage'))
+const EncounterEditPage = lazy(() => import('./pages/encounters/EncounterEditPage'))
+const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateClinicalNotePage'))
+const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
+const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="space-y-4">
+      <Skeleton className="h-12 w-64" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  </div>
+)
 
 // Main app content with routes
 function AppContent() {
@@ -106,23 +129,25 @@ function AppContent() {
   }
 
   return (
-    <Routes>
-      {/* Dashboard - accessible to all authenticated users */}
-      <Route path="/" element={
-        <Layout>
-          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-            <h1 className="text-3xl font-bold">Hospital Management System</h1>
-            <p className="text-muted-foreground">Welcome to the HMS Dashboard</p>
-          </div>
-        </Layout>
-      } />
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+        {/* Dashboard - accessible to all authenticated users */}
+        <Route path="/" element={
+          <Layout>
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <h1 className="text-3xl font-bold">Hospital Management System</h1>
+              <p className="text-muted-foreground">Welcome to the HMS Dashboard</p>
+            </div>
+          </Layout>
+        } />
 
-      {/* Unauthorized page */}
-      <Route path="/unauthorized" element={
-        <Layout>
-          <UnauthorizedPage />
-        </Layout>
-      } />
+        {/* Unauthorized page */}
+        <Route path="/unauthorized" element={
+          <Layout>
+            <UnauthorizedPage />
+          </Layout>
+        } />
 
       {/* Patient routes */}
       <Route path="/patients" element={
@@ -258,10 +283,43 @@ function AppContent() {
         </RoleBasedRoute>
       } />
 
+      <Route path="/wards/reports" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <WardReportsPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/wards/:wardId/edit" element={
+        <RoleBasedRoute allowedRoles={['admin']}>
+          <Layout>
+            <EditWardPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
       <Route path="/wards/:wardId" element={
         <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
           <Layout>
             <WardDetailPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Admission routes */}
+      <Route path="/admissions/new" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AdmissionCreatePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      <Route path="/admissions/:admissionId" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+          <Layout>
+            <AdmissionDetailPage />
           </Layout>
         </RoleBasedRoute>
       } />
@@ -299,8 +357,34 @@ function AppContent() {
         </RoleBasedRoute>
       } />
 
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+      <Route path="/encounters/:id/clinical-notes" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <CreateClinicalNotePage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Clinical Notes Template Management */}
+      <Route path="/clinical-notes/templates" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+          <Layout>
+            <TemplateListPage />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Nursing routes */}
+      <Route path="/nursing/dashboard" element={
+        <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+          <NursingDashboardPage />
+        </RoleBasedRoute>
+      } />
+
+        <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 
@@ -314,6 +398,8 @@ function App() {
               <BreadcrumbProvider>
                 <AppContent />
                 <Toaster />
+                <OfflineIndicator />
+                <SessionTimeoutWarning />
               </BreadcrumbProvider>
             </BrowserRouter>
           </AuthProvider>

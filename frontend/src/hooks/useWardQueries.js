@@ -83,14 +83,42 @@ export function useUpdateWard() {
 
   return useMutation({
     mutationFn: ({ id, data }) => wardsApi.updateWard(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific ward
-      queryClient.invalidateQueries({ 
-        queryKey: wardKeys.detail(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: wardKeys.detail(id) });
+
+      // Snapshot the previous value
+      const previousWard = queryClient.getQueryData(wardKeys.detail(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(wardKeys.detail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousWard, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousWard) {
+        queryClient.setQueryData(
+          wardKeys.detail(context.id),
+          context.previousWard
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.detail(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: wardKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.lists()
       });
     },
   });

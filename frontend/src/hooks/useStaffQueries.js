@@ -64,29 +64,57 @@ export function useCreateStaff() {
  */
 export function useUpdateStaff() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ id, data }) => staffApi.updateStaff(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific staff member
-      queryClient.invalidateQueries({ 
-        queryKey: staffKeys.detail(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: staffKeys.detail(id) });
+
+      // Snapshot the previous value
+      const previousStaff = queryClient.getQueryData(staffKeys.detail(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(staffKeys.detail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousStaff, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousStaff) {
+        queryClient.setQueryData(
+          staffKeys.detail(context.id),
+          context.previousStaff
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: staffKeys.detail(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: staffKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: staffKeys.lists()
       });
-      
+
       // If the staff member is a practitioner, also invalidate practitioner queries
       if (data && (data.role === 'doctor' || data.role === 'nurse')) {
-        queryClient.invalidateQueries({ 
-          queryKey: staffKeys.practitioners() 
+        queryClient.invalidateQueries({
+          queryKey: staffKeys.practitioners()
         });
-        
+
         // If we know the practitioner ID, invalidate that specific practitioner
         if (data.practitioner_id) {
-          queryClient.invalidateQueries({ 
-            queryKey: staffKeys.practitioner(data.practitioner_id) 
+          queryClient.invalidateQueries({
+            queryKey: staffKeys.practitioner(data.practitioner_id)
           });
         }
       }

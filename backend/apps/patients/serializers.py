@@ -7,7 +7,7 @@ from .models import (
     PatientRegistrationValidation, PatientNote
 )
 from ..users.models import PatientProfile, User
-from ..users.serializers import PatientProfileSerializer, UserSerializer
+from ..users.serializers import PatientProfileSerializer, UserSerializer, generate_secure_password
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
@@ -110,8 +110,6 @@ class PatientRegistrationSerializer(serializers.Serializer):
     """
     # User fields
     email = serializers.EmailField()
-    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
-    confirm_password = serializers.CharField(write_only=True, style={'input_type': 'password'})
     first_name = serializers.CharField()
     last_name = serializers.CharField()
     phone_number = serializers.CharField(required=False, allow_blank=True)
@@ -138,10 +136,6 @@ class PatientRegistrationSerializer(serializers.Serializer):
         """
         Validate the data according to the registration rules.
         """
-        # Check if passwords match
-        if data['password'] != data.pop('confirm_password'):
-            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
-
         # Check if email is already in use
         if User.objects.filter(email=data['email']).exists():
             raise serializers.ValidationError({"email": "This email is already in use."})
@@ -177,11 +171,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
             'country': validated_data.pop('country', '')
         }
 
+        # Generate a secure password for the patient (not provided during registration)
+        generated_password = generate_secure_password()
+
         # Create User
         user = User.objects.create_user(
             email=validated_data['email'],
             username=validated_data['email'],  # Use email as username
-            password=validated_data.pop('password'),
+            password=generated_password,
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
             phone_number=validated_data.get('phone_number', ''),

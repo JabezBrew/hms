@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,6 +25,7 @@ import {
 
 export function AdmissionForm({ wardId = null }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -140,25 +142,56 @@ export function AdmissionForm({ wardId = null }) {
 
     try {
       setSubmitting(true);
+      setError(null);
 
       // Format dates for API
       const formattedData = {
-        ...formData,
+        patient: formData.patient,
         bed: selectedBed.id,
-        admission_date: format(formData.admission_date, 'yyyy-MM-dd'),
-        expected_discharge_date: formData.expected_discharge_date 
+        // Send full datetime with current time to preserve the actual admission time
+        admission_date: formData.admission_date.toISOString(),
+        expected_discharge_date: formData.expected_discharge_date
           ? format(formData.expected_discharge_date, 'yyyy-MM-dd')
           : null,
+        admission_type: formData.admission_type,
+        admission_notes: formData.admission_notes || '',
       };
+
+      // Only include admitting_doctor if it's set
+      if (formData.admitting_doctor) {
+        formattedData.admitting_doctor = formData.admitting_doctor;
+      }
+
+      console.log('Submitting admission data:', formattedData);
 
       // Create admission using the dedicated API function
       const response = await createAdmission(formattedData);
 
-      // Navigate to the new admission
-      navigate(`/admissions/${response.id}`);
+      console.log('Admission created successfully:', response);
+
+      // Invalidate all ward-related queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['wards'] });
+      queryClient.invalidateQueries({ queryKey: ['beds'] });
+      queryClient.invalidateQueries({ queryKey: ['admissions'] });
+
+      // Navigate to the ward detail page or admission detail
+      if (wardId) {
+        navigate(`/wards/${wardId}`);
+      } else {
+        navigate(`/admissions/${response.id}`);
+      }
     } catch (err) {
       console.error('Error creating admission:', err);
-      setError('Failed to create admission. Please try again.');
+      console.error('Error details:', {
+        message: err.message,
+        status: err.status,
+        data: err.data
+      });
+
+      // Use the error message from the API client (which now includes field errors)
+      let errorMessage = err.message || 'Failed to create admission. Please try again.';
+
+      setError(errorMessage);
       setSubmitting(false);
     }
   };
@@ -168,57 +201,78 @@ export function AdmissionForm({ wardId = null }) {
     let name = "Unknown Patient";
     let id = "";
 
-    // Check for FHIR resource format
+    // Use the local database ID, not the FHIR ID
+    // The backend expects the PatientProfile ID
+    if (patient?.id) {
+      id = patient.id;
+    } else if (patient?.local_data?.id) {
+      id = patient.local_data.id;
+    }
+
+    // Get the display name from FHIR resource if available
     if (patient?.fhir_resource?.name?.[0]) {
       const given = patient.fhir_resource.name[0].given?.join(' ') || "";
       const family = patient.fhir_resource.name[0].family || "";
       name = `${family}, ${given}`.trim() || "Unknown Patient";
-      id = patient.fhir_resource.id;
     }
     // Then check for local_data
     else if (patient?.local_data?.user_details) {
       name = `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim() || "Unknown Patient";
-      id = patient.local_data.id;
     }
     // Fallback to old format
     else if (patient?.user?.full_name) {
       name = patient.user.full_name;
-      id = patient.id;
     }
 
-    return {
+    // Only return options with valid IDs (check for null, undefined, empty string, or 0)
+    return (id && id !== '' && id !== 0) ? {
       label: name,
       value: id
-    };
-  }) : [];
+    } : null;
+  }).filter(Boolean) : []; // Filter out null values
 
   // Format practitioner options for SearchBar
   const practitionerOptions = Array.isArray(practitioners) ? practitioners.map(practitioner => {
-    // Handle both old and new response structures
-    if (practitioner.fhir_resource) {
+    let displayName = 'Unknown Practitioner';
+    let id = null;
+
+    // Get the local database ID from the correct location
+    if (practitioner?.local_data?.id) {
+      id = practitioner.local_data.id;
+    } else if (practitioner?.id) {
+      id = practitioner.id;
+    }
+
+    // Skip if no valid ID (check for null, undefined, empty string, or 0)
+    if (!id || id === '' || id === 0) return null;
+
+    // Get display name from various possible structures
+    if (practitioner.fhir_resource?.name?.[0]) {
       // New structure with FHIR resource
-      const name = practitioner.fhir_resource.name?.[0];
+      const name = practitioner.fhir_resource.name[0];
       const given = name?.given?.join(' ') || '';
       const family = name?.family || '';
-      const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
-      return {
-        label: displayName,
-        value: practitioner.fhir_resource.id
-      };
+      const specialization = practitioner.local_data?.specialization || 'Doctor';
+      displayName = `${given} ${family} - ${specialization}`.trim();
+    } else if (practitioner.local_data?.staff_details) {
+      // Structure with local_data.staff_details
+      const firstName = practitioner.local_data.staff_details?.user_details?.first_name || '';
+      const lastName = practitioner.local_data.staff_details?.user_details?.last_name || '';
+      const specialization = practitioner.local_data?.specialization || 'Doctor';
+      displayName = `${firstName} ${lastName} - ${specialization}`.replace(/\s+/g, ' ').trim();
     } else if (practitioner.staff_details) {
-      // Structure with staff_details
-      return {
-        label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.specialization || 'Doctor'}`.replace(/\s+/g, ' ').trim(),
-        value: practitioner.id
-      };
-    } else {
+      // Structure with staff_details at top level
+      displayName = `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.specialization || 'Doctor'}`.replace(/\s+/g, ' ').trim();
+    } else if (practitioner.user?.full_name) {
       // Fallback to old format
-      return {
-        label: `${practitioner.user?.full_name || 'Unknown'} - ${practitioner.specialization || 'Doctor'}`,
-        value: practitioner.id
-      };
+      displayName = `${practitioner.user.full_name} - ${practitioner.specialization || 'Doctor'}`;
     }
-  }) : [];
+
+    return {
+      label: displayName,
+      value: id
+    };
+  }).filter(Boolean) : []; // Filter out null values
 
   if (loading) {
     return (
@@ -232,29 +286,36 @@ export function AdmissionForm({ wardId = null }) {
     );
   }
 
-  if (error) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-red-500">Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>{error}</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => window.location.reload()}
-          >
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit}>
       <div className="space-y-6">
+        {error && (
+          <Card className="border-red-500 bg-red-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-red-800">Error creating admission</h3>
+                  <p className="mt-1 text-sm text-red-700">{error}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="flex-shrink-0 text-red-500 hover:text-red-700"
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Patient Admission</CardTitle>

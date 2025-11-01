@@ -1,0 +1,58 @@
+from celery import shared_task
+from django.core.cache import cache
+from apps.fhir_client.client import fhir_client
+from .models import PatientFHIRMapping
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@shared_task(bind=True, max_retries=3)
+def sync_patient_with_fhir(self, mapping_id):
+    """
+    Background task to sync patient data with FHIR server.
+    """
+    try:
+        mapping = PatientFHIRMapping.objects.select_related('patient_profile__user').get(id=mapping_id)
+
+        # Get the FHIR resource
+        fhir_patient = fhir_client.get_resource("Patient", mapping.fhir_patient_id)
+
+        # Update the mapping with the latest version
+        mapping.fhir_resource_version = fhir_patient.get("meta", {}).get("versionId")
+        mapping.is_synced = True
+        mapping.last_synced = fhir_patient.get("meta", {}).get("lastUpdated")
+        mapping.save()
+
+        # Invalidate cache
+        cache_key = f'patient_fhir_{mapping.patient_profile.id}'
+        cache.delete(cache_key)
+
+        logger.info(f"Successfully synced patient {mapping.patient_profile.id} with FHIR")
+        return {"status": "success", "patient_id": str(mapping.patient_profile.id)}
+
+    except PatientFHIRMapping.DoesNotExist:
+        logger.error(f"Patient FHIR mapping {mapping_id} not found")
+        return {"status": "error", "message": "Mapping not found"}
+
+    except Exception as e:
+        logger.error(f"Error syncing patient with FHIR: {str(e)}")
+        # Retry the task
+        raise self.retry(exc=e, countdown=60)
+
+
+@shared_task
+def bulk_sync_patients_with_fhir(patient_ids):
+    """
+    Background task to sync multiple patients with FHIR server.
+    """
+    results = []
+    for patient_id in patient_ids:
+        try:
+            mapping = PatientFHIRMapping.objects.get(patient_profile_id=patient_id)
+            result = sync_patient_with_fhir.delay(str(mapping.id))
+            results.append({"patient_id": patient_id, "task_id": result.id})
+        except PatientFHIRMapping.DoesNotExist:
+            results.append({"patient_id": patient_id, "status": "no_mapping"})
+
+    return results

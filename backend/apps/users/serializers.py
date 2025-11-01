@@ -277,7 +277,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
             updated_by=self.context['request'].user
         )
 
-        # Log the message that would be sent to the staff
+        # Send credentials via email (password should not be logged)
         message = f"""
         Dear {user.first_name} {user.last_name},
 
@@ -294,7 +294,10 @@ class StaffRegistrationSerializer(serializers.Serializer):
         Hospital Management Team
         """
 
-        logger.info(f"Staff account created for {user.email}. Message to be sent:\n{message}")
+        # TODO: Send email to user with credentials
+        # send_mail(subject, message, from_email, [user.email])
+
+        logger.info(f"Staff account created for {user.email} with employee ID: {employee_id}")
 
         # Create PractitionerProfile if user_type is doctor or nurse
         practitioner_profile = None

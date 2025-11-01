@@ -60,17 +60,45 @@ export function useCreateEncounter() {
  */
 export function useUpdateEncounter() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ id, data }) => encountersApi.updateEncounter(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific encounter
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.detail(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: encounterKeys.detail(id) });
+
+      // Snapshot the previous value
+      const previousEncounter = queryClient.getQueryData(encounterKeys.detail(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(encounterKeys.detail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousEncounter, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousEncounter) {
+        queryClient.setQueryData(
+          encounterKeys.detail(context.id),
+          context.previousEncounter
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: encounterKeys.detail(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: encounterKeys.lists()
       });
     },
   });

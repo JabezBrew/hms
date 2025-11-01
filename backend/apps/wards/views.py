@@ -3,7 +3,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction, models
 from django.utils import timezone
+from django.db.models import Count, Avg, Sum, F, Q
+from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
+from datetime import timedelta, datetime
 
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer
 from .serializers import (
@@ -27,7 +30,7 @@ class WardViewSet(viewsets.ModelViewSet):
     """
     API endpoint for wards.
     """
-    queryset = Ward.objects.all()
+    queryset = Ward.objects.prefetch_related('beds').all()
     serializer_class = WardSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward_type', 'is_active']
@@ -146,12 +149,199 @@ class WardViewSet(viewsets.ModelViewSet):
         serializer = AdmissionSerializer(admissions, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def analytics(self, request):
+        """
+        Get ward analytics and reports data.
+        Supports filtering by ward_id, start_date, and end_date.
+        """
+        # Get query parameters
+        ward_id = request.query_params.get('ward_id', None)
+        start_date_str = request.query_params.get('start_date', None)
+        end_date_str = request.query_params.get('end_date', None)
+
+        # Parse dates
+        if start_date_str:
+            start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+        else:
+            start_date = timezone.now() - timedelta(days=30)
+
+        if end_date_str:
+            end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+        else:
+            end_date = timezone.now()
+
+        # Build base queryset
+        wards = Ward.objects.all()
+        if ward_id and ward_id != 'all':
+            wards = wards.filter(id=ward_id)
+
+        # Initialize response data
+        analytics_data = {
+            'occupancy_trends': [],
+            'length_of_stay': [],
+            'ward_utilization': [],
+            'admissions_by_ward': []
+        }
+
+        # Generate daily occupancy trends
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+
+        while current_date <= end_date_only:
+            date_data = {
+                'date': current_date.strftime('%b %d'),
+                'full_date': current_date.isoformat()
+            }
+
+            # Calculate occupancy for each ward on this date
+            for ward in wards:
+                total_beds = ward.total_beds
+                if total_beds > 0:
+                    # Count occupied beds on this date
+                    occupied = Admission.objects.filter(
+                        bed__ward=ward,
+                        admission_date__lte=current_date,
+                        status__in=['admitted', 'transferred']
+                    ).filter(
+                        Q(actual_discharge_date__isnull=True) |
+                        Q(actual_discharge_date__gt=current_date)
+                    ).count()
+
+                    occupancy_rate = round((occupied / total_beds) * 100, 1)
+                    date_data[ward.name] = occupancy_rate
+
+            # Calculate overall occupancy
+            if len(wards) > 0:
+                ward_rates = [date_data.get(w.name, 0) for w in wards]
+                date_data['Overall'] = round(sum(ward_rates) / len(ward_rates), 1)
+
+            analytics_data['occupancy_trends'].append(date_data)
+            current_date += timedelta(days=1)
+
+        # Calculate length of stay distribution
+        admissions = Admission.objects.filter(
+            actual_discharge_date__gte=start_date,
+            actual_discharge_date__lte=end_date
+        )
+
+        if ward_id and ward_id != 'all':
+            admissions = admissions.filter(bed__ward_id=ward_id)
+
+        los_ranges = [
+            (1, 3, '1-3 days'),
+            (4, 7, '4-7 days'),
+            (8, 14, '8-14 days'),
+            (15, 30, '15-30 days'),
+            (31, 999, '31+ days')
+        ]
+
+        total_admissions = admissions.count()
+
+        for min_days, max_days, range_label in los_ranges:
+            count = sum(
+                1 for admission in admissions
+                if min_days <= admission.length_of_stay <= max_days
+            )
+            percentage = round((count / total_admissions * 100), 1) if total_admissions > 0 else 0
+
+            analytics_data['length_of_stay'].append({
+                'range': range_label,
+                'count': count,
+                'percentage': percentage
+            })
+
+        # Calculate ward utilization metrics
+        for ward in wards:
+            ward_admissions = Admission.objects.filter(
+                bed__ward=ward,
+                admission_date__gte=start_date,
+                admission_date__lte=end_date
+            )
+
+            total_beds = ward.total_beds
+            if total_beds > 0:
+                # Calculate average occupancy
+                days_in_range = (end_date.date() - start_date.date()).days + 1
+                occupied_bed_days = 0
+                for admission in ward_admissions:
+                    discharge_date = (admission.actual_discharge_date or end_date).date()
+                    admission_start = max(admission.admission_date.date(), start_date.date())
+                    admission_end = min(discharge_date, end_date.date())
+                    if admission_end >= admission_start:
+                        occupied_bed_days += (admission_end - admission_start).days + 1
+
+                total_bed_days = total_beds * days_in_range
+                occupancy_rate = round((occupied_bed_days / total_bed_days) * 100, 1) if total_bed_days > 0 else 0
+
+                # Calculate average length of stay
+                avg_los = ward_admissions.aggregate(
+                    avg_los=Avg(
+                        F('actual_discharge_date') - F('admission_date')
+                    )
+                )['avg_los']
+
+                avg_los_days = round(avg_los.total_seconds() / 86400, 1) if avg_los else 0
+
+                # Calculate turnover rate (admissions per bed per period)
+                turnover_rate = round(ward_admissions.count() / total_beds, 2) if total_beds > 0 else 0
+
+                # Calculate revenue
+                revenue = sum(admission.total_cost for admission in ward_admissions)
+
+                analytics_data['ward_utilization'].append({
+                    'ward': ward.name,
+                    'occupancy_rate': occupancy_rate,
+                    'turnover_rate': turnover_rate,
+                    'avg_los': avg_los_days,
+                    'bed_days': occupied_bed_days,
+                    'revenue': float(revenue)
+                })
+
+        # Calculate admissions, discharges, and transfers by ward
+        for ward in wards:
+            ward_beds = Bed.objects.filter(ward=ward)
+
+            admissions_count = Admission.objects.filter(
+                bed__in=ward_beds,
+                admission_date__gte=start_date,
+                admission_date__lte=end_date
+            ).count()
+
+            discharges_count = Admission.objects.filter(
+                bed__in=ward_beds,
+                actual_discharge_date__gte=start_date,
+                actual_discharge_date__lte=end_date,
+                status='discharged'
+            ).count()
+
+            transfers_in = WardTransfer.objects.filter(
+                to_admission__bed__ward=ward,
+                transfer_time__gte=start_date,
+                transfer_time__lte=end_date
+            ).count()
+
+            transfers_out = WardTransfer.objects.filter(
+                from_admission__bed__ward=ward,
+                transfer_time__gte=start_date,
+                transfer_time__lte=end_date
+            ).count()
+
+            analytics_data['admissions_by_ward'].append({
+                'ward': ward.name,
+                'admissions': admissions_count,
+                'discharges': discharges_count,
+                'transfers': transfers_out + transfers_in
+            })
+
+        return Response(analytics_data)
+
 
 class BedViewSet(viewsets.ModelViewSet):
     """
     API endpoint for beds.
     """
-    queryset = Bed.objects.all()
+    queryset = Bed.objects.select_related('ward').prefetch_related('admissions').all()
     serializer_class = BedSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward', 'status', 'bed_type']
@@ -210,7 +400,15 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     """
     API endpoint for admissions.
     """
-    queryset = Admission.objects.all()
+    queryset = Admission.objects.select_related(
+        'patient',
+        'patient__user',
+        'bed',
+        'bed__ward',
+        'admitting_doctor',
+        'admitting_doctor__staff',
+        'admitting_doctor__staff__user'
+    ).all()
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['patient', 'bed', 'status', 'admission_type', 'is_billed']
 
@@ -221,20 +419,25 @@ class AdmissionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         with transaction.atomic():
-            # Create the admission
+            # Get the bed from validated data
+            bed = serializer.validated_data.get('bed')
+
+            # Create the admission with daily_rate set from the bed
             admission = serializer.save(
-                created_by=self.request.user, 
+                created_by=self.request.user,
                 updated_by=self.request.user,
-                status='admitted'
+                status='admitted',
+                daily_rate=bed.total_rate if bed else 0
             )
 
             # Create FHIR Encounter if fhir_encounter_id is not provided
             if not admission.fhir_encounter_id:
                 try:
                     # Get practitioner ID if available
+                    # Note: admitting_doctor is a PractitionerProfile, not StaffProfile
                     practitioner_id = None
-                    if admission.admitting_doctor and admission.admitting_doctor.practitioner_profile.fhir_practitioner_id:
-                        practitioner_id = admission.admitting_doctor.practitioner_profile.fhir_practitioner_id
+                    if admission.admitting_doctor and admission.admitting_doctor.fhir_practitioner_id:
+                        practitioner_id = admission.admitting_doctor.fhir_practitioner_id
 
                     # Create FHIR Encounter using EncounterProxy
                     fhir_encounter = EncounterProxy.create(
@@ -253,12 +456,23 @@ class AdmissionViewSet(viewsets.ModelViewSet):
 
                 except Exception as e:
                     # Log the error but continue (we don't want to roll back the admission)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to create FHIR Encounter for admission {admission.id}: {str(e)}", exc_info=True)
                     print(f"Failed to create FHIR Encounter: {str(e)}")
+
+            # Store the previous bed status before updating
+            previous_status = bed.status
+
+            # Update the bed status to occupied
+            bed.status = 'occupied'
+            bed.updated_by = self.request.user
+            bed.save()
 
             # Create a bed allocation log
             BedAllocationLog.objects.create(
                 bed=admission.bed,
-                previous_status='available',
+                previous_status=previous_status,
                 new_status='occupied',
                 admission=admission,
                 created_by=self.request.user
@@ -303,7 +517,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 BedAllocationLog.objects.create(
                     bed=admission.bed,
                     previous_status='occupied',
-                    new_status='cleaning',
+                    new_status='available',
                     admission=admission,
                     notes=f"Patient discharged: {discharge_notes}",
                     created_by=request.user
@@ -382,7 +596,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 BedAllocationLog.objects.create(
                     bed=from_admission.bed,
                     previous_status='occupied',
-                    new_status='cleaning',
+                    new_status='available',
                     admission=from_admission,
                     notes=f"Patient transferred to {to_bed.ward.name}",
                     created_by=request.user

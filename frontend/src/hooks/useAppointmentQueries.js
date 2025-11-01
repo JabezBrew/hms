@@ -70,14 +70,42 @@ export function useUpdateAppointment() {
 
   return useMutation({
     mutationFn: ({ id, data }) => appointmentsApi.updateAppointment(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific appointment
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.detail(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: appointmentKeys.detail(id) });
+
+      // Snapshot the previous value
+      const previousAppointment = queryClient.getQueryData(appointmentKeys.detail(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(appointmentKeys.detail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousAppointment, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousAppointment) {
+        queryClient.setQueryData(
+          appointmentKeys.detail(context.id),
+          context.previousAppointment
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.detail(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.lists()
       });
     },
   });
@@ -325,14 +353,42 @@ export function useUpdateAppointmentType() {
 
   return useMutation({
     mutationFn: ({ id, data }) => appointmentsApi.updateAppointmentType(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific appointment type
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.type(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: appointmentKeys.type(id) });
+
+      // Snapshot the previous value
+      const previousAppointmentType = queryClient.getQueryData(appointmentKeys.type(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(appointmentKeys.type(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousAppointmentType, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousAppointmentType) {
+        queryClient.setQueryData(
+          appointmentKeys.type(context.id),
+          context.previousAppointmentType
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.type(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.types() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.types()
       });
     },
   });
@@ -389,11 +445,44 @@ export function useUpdateTimeSlot() {
 
   return useMutation({
     mutationFn: ({ id, data }) => appointmentsApi.updateTimeSlot(id, data),
-    onSuccess: (data, variables) => {
-      // Invalidate the time slots query for the template
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // We need the template ID to update the cache
+      const templateId = data.template;
+      if (!templateId) return;
+
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: appointmentKeys.timeSlots(templateId) });
+
+      // Snapshot the previous value
+      const previousTimeSlots = queryClient.getQueryData(appointmentKeys.timeSlots(templateId));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(appointmentKeys.timeSlots(templateId), (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(slot => slot.id === id ? { ...slot, ...data } : slot);
+      });
+
+      // Return context with the previous value for potential rollback
+      return { previousTimeSlots, templateId };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousTimeSlots && context?.templateId) {
+        queryClient.setQueryData(
+          appointmentKeys.timeSlots(context.templateId),
+          context.previousTimeSlots
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data) => {
       if (data && data.template) {
-        queryClient.invalidateQueries({ 
-          queryKey: appointmentKeys.timeSlots(data.template) 
+        queryClient.invalidateQueries({
+          queryKey: appointmentKeys.timeSlots(data.template)
         });
       }
     },
@@ -425,14 +514,42 @@ export function useUpdateRecurringSchedule() {
 
   return useMutation({
     mutationFn: ({ id, data }) => appointmentsApi.updateRecurringSchedule(id, data),
-    onSuccess: (data, variables) => {
-      // Update the cache for this specific recurring schedule
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.recurringSchedule(variables.id) 
+
+    // Optimistic update - immediately update UI before server responds
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: appointmentKeys.recurringSchedule(id) });
+
+      // Snapshot the previous value
+      const previousRecurringSchedule = queryClient.getQueryData(appointmentKeys.recurringSchedule(id));
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(appointmentKeys.recurringSchedule(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+
+      // Return context with the previous value for potential rollback
+      return { previousRecurringSchedule, id };
+    },
+
+    // If mutation fails, rollback to the previous value
+    onError: (err, variables, context) => {
+      if (context?.previousRecurringSchedule) {
+        queryClient.setQueryData(
+          appointmentKeys.recurringSchedule(context.id),
+          context.previousRecurringSchedule
+        );
+      }
+    },
+
+    // Always refetch after error or success to ensure consistency
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.recurringSchedule(variables.id)
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.recurringSchedules() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.recurringSchedules()
       });
     },
   });

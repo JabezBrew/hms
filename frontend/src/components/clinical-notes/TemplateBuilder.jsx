@@ -1,0 +1,387 @@
+import { useForm, useFieldArray } from 'react-hook-form';
+import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/hooks/useClinicalNotesQueries';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+import { PlusCircle, Trash2, MoveUp, MoveDown } from 'lucide-react';
+
+/**
+ * Component for building and saving note templates
+ */
+const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
+  const { register, control, handleSubmit, setValue, watch, formState: { errors } } = useForm({
+    defaultValues: {
+      title: initialTemplate?.title || '',
+      description: initialTemplate?.description || '',
+      is_active: initialTemplate?.is_active ?? true,
+      is_public: initialTemplate?.is_public ?? false,
+      structure: initialTemplate?.structure || []
+    }
+  });
+
+  const { fields, append, remove, move } = useFieldArray({
+    control,
+    name: 'structure'
+  });
+
+  const createNoteTemplate = useCreateNoteTemplate();
+  const updateNoteTemplate = useUpdateNoteTemplate();
+
+  // Add a new section to the template
+  const addSection = () => {
+    append({ 
+      section: '', 
+      type: 'text'
+    });
+  };
+
+  // Remove a section from the template
+  const removeSection = (index) => {
+    remove(index);
+  };
+
+  // Move a section up in the template
+  const moveUp = (index) => {
+    if (index > 0) {
+      move(index, index - 1);
+    }
+  };
+
+  // Move a section down in the template
+  const moveDown = (index) => {
+    if (index < fields.length - 1) {
+      move(index, index + 1);
+    }
+  };
+
+  // Handle form submission
+  const onSubmit = async (data) => {
+    try {
+      // Validate that all sections have names
+      const invalidSections = data.structure.filter(section => !section.section.trim());
+      if (invalidSections.length > 0) {
+        toast.error('All sections must have a name');
+        return;
+      }
+
+      if (initialTemplate) {
+        // Update existing template
+        await updateNoteTemplate.mutateAsync({
+          id: initialTemplate.id,
+          data: data
+        });
+
+        // Show success message
+        toast.success('Template updated successfully');
+      } else {
+        // Create new template
+        await createNoteTemplate.mutateAsync(data);
+
+        // Show success message
+        toast.success('Template created successfully');
+      }
+
+      // Call onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (error) {
+      toast.error(initialTemplate ? 'Failed to update template' : 'Failed to create template');
+      console.error('Error with template:', error);
+    }
+  };
+
+  // Add predefined template structure
+  const addPredefinedTemplate = (templateType) => {
+    let templateStructure = [];
+
+    if (templateType === 'soap') {
+      templateStructure = [
+        { section: 'Subjective', type: 'text' },
+        { section: 'Objective', type: 'observation', observation_type: 'vitals' },
+        { section: 'Assessment', type: 'condition' },
+        { section: 'Plan', type: 'text' }
+      ];
+    } else if (templateType === 'hpi') {
+      templateStructure = [
+        { section: 'Presenting Complaint(s)', type: 'text' },
+        { section: 'History of Presenting Complaints (HPC)', type: 'text' },
+        { section: 'Review of Systems - CVS', type: 'text' },
+        { section: 'Review of Systems - Respiratory', type: 'text' },
+        { section: 'Review of Systems - Gastro', type: 'text' },
+        { section: 'Review of Systems - Genitourinary', type: 'text' },
+        { section: 'Review of Systems - MSK', type: 'text' },
+        { section: 'Review of Systems - Neuro', type: 'text' },
+        { section: 'Past Medical History', type: 'text' },
+        { section: 'Drug History', type: 'text' },
+        { section: 'Drug and Food Allergies', type: 'observation', observation_type: 'allergy' },
+        { section: 'Family History', type: 'text' },
+        { section: 'Social History', type: 'text' },
+        { section: 'Physical Examination - General', type: 'text' },
+        { section: 'Physical Examination - CVS', type: 'text' },
+        { section: 'Physical Examination - Respiratory', type: 'text' },
+        { section: 'Physical Examination - Gastrointestinal', type: 'text' },
+        { section: 'Physical Examination - Neurological', type: 'text' },
+        { section: 'Plan - Investigations', type: 'text' },
+        { section: 'Plan - Management', type: 'text' }
+      ];
+    } else if (templateType === 'nursing_vitals') {
+      templateStructure = [
+        { section: 'Vitals', type: 'observation', observation_type: 'vitals' },
+        { section: 'Notes', type: 'text' }
+      ];
+    } else if (templateType === 'nursing_io') {
+      templateStructure = [
+        { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance' },
+        { section: 'Notes', type: 'text' }
+      ];
+    } else if (templateType === 'nursing_meds') {
+      templateStructure = [
+        { section: 'Medication Given', type: 'medication_administration' },
+        { section: 'Notes', type: 'text' }
+      ];
+    } else if (templateType === 'nursing_note') {
+      templateStructure = [
+        { section: 'Nurse Note', type: 'text' }
+      ];
+    }
+
+    // Clear existing structure and add the predefined template
+    setValue('structure', templateStructure);
+  };
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>{initialTemplate ? 'Edit Template' : 'Create Template'}</CardTitle>
+      </CardHeader>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="title">Template Title</Label>
+            <Input
+              id="title"
+              {...register('title', { required: true })}
+              placeholder="e.g., SOAP Note, Nursing Note"
+            />
+            {errors.title && (
+              <p className="text-red-500 text-sm">Title is required</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              {...register('description')}
+              placeholder="Describe the purpose of this template"
+            />
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_active"
+                {...register('is_active')}
+                defaultChecked={watch('is_active')}
+              />
+              <Label htmlFor="is_active">Active</Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_public"
+                {...register('is_public')}
+                defaultChecked={watch('is_public')}
+              />
+              <Label htmlFor="is_public">Public</Label>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label>Predefined Templates</Label>
+              <div className="flex space-x-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('soap')}
+                >
+                  SOAP
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('hpi')}
+                >
+                  HPI
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('nursing_vitals')}
+                >
+                  Nursing Vitals
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('nursing_io')}
+                >
+                  Nursing I/O
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('nursing_meds')}
+                >
+                  Nursing Meds
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => addPredefinedTemplate('nursing_note')}
+                >
+                  Nursing Note
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label>Template Structure</Label>
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                onClick={addSection}
+              >
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Add Section
+              </Button>
+            </div>
+
+            {fields.length === 0 && (
+              <p className="text-muted-foreground text-center py-4">
+                No sections added yet. Add sections to build your template.
+              </p>
+            )}
+
+            {fields.map((field, index) => (
+              <Card key={field.id} className="relative">
+                <CardContent className="pt-6 pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={`structure.${index}.section`}>Section Name</Label>
+                      <Input
+                        id={`structure.${index}.section`}
+                        {...register(`structure.${index}.section`, { required: true })}
+                        placeholder="e.g., Chief Complaint, Vitals"
+                      />
+                      {errors.structure?.[index]?.section && (
+                        <p className="text-red-500 text-sm">Section name is required</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor={`structure.${index}.type`}>Section Type</Label>
+                      <Select
+                        defaultValue={field.type}
+                        onValueChange={(value) => setValue(`structure.${index}.type`, value)}
+                      >
+                        <SelectTrigger id={`structure.${index}.type`}>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="text">Text</SelectItem>
+                          <SelectItem value="observation">Observation</SelectItem>
+                          <SelectItem value="condition">Condition</SelectItem>
+                          <SelectItem value="medication_administration">Medication Administration</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {watch(`structure.${index}.type`) === 'observation' && (
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor={`structure.${index}.observation_type`}>Observation Type</Label>
+                        <Select
+                          defaultValue={field.observation_type}
+                          onValueChange={(value) => setValue(`structure.${index}.observation_type`, value)}
+                        >
+                          <SelectTrigger id={`structure.${index}.observation_type`}>
+                            <SelectValue placeholder="Select observation type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="vitals">Vitals</SelectItem>
+                            <SelectItem value="subjective_symptoms">Subjective Symptoms</SelectItem>
+                            <SelectItem value="allergy">Allergy</SelectItem>
+                            <SelectItem value="fluid_balance">Fluid Balance</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="absolute top-2 right-2 flex space-x-1">
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => moveUp(index)}
+                      disabled={index === 0}
+                    >
+                      <MoveUp className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => moveDown(index)}
+                      disabled={index === fields.length - 1}
+                    >
+                      <MoveDown className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => removeSection(index)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button 
+            type="submit" 
+            disabled={(initialTemplate ? updateNoteTemplate.isPending : createNoteTemplate.isPending) || fields.length === 0}
+            className="w-full md:w-auto"
+          >
+            {(initialTemplate ? updateNoteTemplate.isPending : createNoteTemplate.isPending) ? 'Saving...' : 'Save Template'}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+};
+
+export default TemplateBuilder;

@@ -9,7 +9,6 @@ export default function EncounterCreatePage() {
   
   useEffect(() => {
     updateBreadcrumbs([
-      { label: 'Home', path: '/' },
       { label: 'Encounters', path: '/encounters' },
       { label: 'New Encounter', path: '/encounters/new' }
     ]);

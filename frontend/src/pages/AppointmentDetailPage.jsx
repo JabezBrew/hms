@@ -5,11 +5,21 @@ import AppointmentDetail from '@/components/appointments/AppointmentDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 
 const AppointmentDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const { updateBreadcrumbs } = useBreadcrumb();
+
+  // Set breadcrumbs
+  useEffect(() => {
+    updateBreadcrumbs([
+      { label: 'Appointments', path: '/appointments' },
+      { label: 'Appointment Details', path: `/appointments/${id}` }
+    ]);
+  }, [id, updateBreadcrumbs]);
 
   // Simulate loading effect
   useEffect(() => {

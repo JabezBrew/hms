@@ -68,7 +68,6 @@ export function WardFilterBar({ filters, onFilterChange }) {
                 <SelectItem value="occupied">Occupied</SelectItem>
                 <SelectItem value="reserved">Reserved</SelectItem>
                 <SelectItem value="maintenance">Maintenance</SelectItem>
-                <SelectItem value="cleaning">Cleaning</SelectItem>
               </SelectContent>
             </Select>
           </div>

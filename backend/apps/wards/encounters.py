@@ -373,35 +373,52 @@ class EncounterViewSet(viewsets.ViewSet):
     def discharge(self, request, pk=None):
         """
         Discharge a patient (for inpatient encounters).
+        This will also discharge the associated admission and free the bed.
         """
         try:
-            # Get the existing encounter
-            existing_encounter = EncounterProxy.get(pk)
-            
-            # Check if this is an inpatient encounter
-            encounter_type = "unknown"
-            if 'class' in existing_encounter and 'code' in existing_encounter['class']:
-                code = existing_encounter['class']['code']
-                if code == 'IMP':
-                    encounter_type = 'inpatient'
-            
-            if encounter_type != 'inpatient':
-                return Response(
-                    {"error": "Only inpatient encounters can be discharged"},
-                    status=status.HTTP_400_BAD_REQUEST
+            with transaction.atomic():
+                # Get the existing encounter
+                existing_encounter = EncounterProxy.get(pk)
+
+                # Check if this is an inpatient encounter
+                encounter_type = "unknown"
+                if 'class' in existing_encounter and 'code' in existing_encounter['class']:
+                    code = existing_encounter['class']['code']
+                    if code == 'IMP':
+                        encounter_type = 'inpatient'
+
+                if encounter_type != 'inpatient':
+                    return Response(
+                        {"error": "Only inpatient encounters can be discharged"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Find the related admission by fhir_encounter_id
+                from .models import Admission
+                try:
+                    admission = Admission.objects.get(fhir_encounter_id=pk)
+
+                    # Discharge the patient (this will update bed status to 'cleaning')
+                    discharge_notes = request.data.get('discharge_notes', '')
+                    admission.discharge_patient(discharge_notes)
+
+                except Admission.DoesNotExist:
+                    # If no admission found, log a warning but continue with encounter update
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"No admission found for encounter {pk}, proceeding with encounter update only")
+
+                # Update the encounter
+                updated_encounter = EncounterProxy.update(
+                    encounter_id=pk,
+                    status="finished",
+                    end_time=timezone.now(),
+                    discharge_disposition=request.data.get('discharge_disposition'),
+                    destination=request.data.get('destination')
                 )
-            
-            # Update the encounter
-            updated_encounter = EncounterProxy.update(
-                encounter_id=pk,
-                status="finished",
-                end_time=timezone.now(),
-                discharge_disposition=request.data.get('discharge_disposition'),
-                destination=request.data.get('destination')
-            )
-            
-            return Response(updated_encounter)
-        
+
+                return Response(updated_encounter)
+
         except Exception as e:
             return Response(
                 {"error": f"Failed to discharge patient: {str(e)}"},

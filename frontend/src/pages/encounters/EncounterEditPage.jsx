@@ -22,13 +22,12 @@ export default function EncounterEditPage() {
         
         // Update breadcrumb with patient name if available
         updateBreadcrumbs([
-          { label: 'Home', path: '/' },
           { label: 'Encounters', path: '/encounters' },
-          { 
-            label: data.patient_name 
-              ? `Encounter for ${data.patient_name}` 
-              : `Encounter ${id}`, 
-            path: `/encounters/${id}` 
+          {
+            label: data.patient_name
+              ? `Encounter for ${data.patient_name}`
+              : `Encounter ${id}`,
+            path: `/encounters/${id}`
           },
           { label: 'Edit', path: `/encounters/${id}/edit` }
         ]);
@@ -46,7 +45,6 @@ export default function EncounterEditPage() {
   useEffect(() => {
     if (loading) {
       updateBreadcrumbs([
-        { label: 'Home', path: '/' },
         { label: 'Encounters', path: '/encounters' },
         { label: 'Encounter Details', path: `/encounters/${id}` },
         { label: 'Edit', path: `/encounters/${id}/edit` }

@@ -15,17 +15,18 @@ from .serializers import (
 )
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer
-from apps.users.permissions import IsAdminOrOwner
+from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
 from apps.fhir_client.client import fhir_client
+from .tasks import sync_patient_with_fhir
 
 
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     API endpoint for patient FHIR mappings.
     """
-    queryset = PatientFHIRMapping.objects.all()
+    queryset = PatientFHIRMapping.objects.select_related('patient_profile', 'patient_profile__user').all()
     serializer_class = PatientFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, CanAccessPatient]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -36,32 +37,18 @@ class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def sync_with_fhir(self, request, pk=None):
         """
-        Sync the local patient data with the FHIR resource.
+        Queue a background task to sync the local patient data with the FHIR resource.
         """
         mapping = self.get_object()
 
-        try:
-            # Get the FHIR resource
-            fhir_patient = fhir_client.get_resource("Patient", mapping.fhir_patient_id)
+        # Queue the sync task
+        task = sync_patient_with_fhir.delay(str(mapping.id))
 
-            # Update the mapping with the latest version
-            mapping.fhir_resource_version = fhir_patient.get("meta", {}).get("versionId")
-            mapping.is_synced = True
-            mapping.save()
-
-            return Response({
-                "message": "Successfully synced with FHIR resource.",
-                "fhir_patient": fhir_patient
-            })
-
-        except Exception as e:
-            mapping.is_synced = False
-            mapping.save()
-
-            return Response(
-                {"error": f"Failed to sync with FHIR resource: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({
+            "message": "FHIR sync has been queued for background processing.",
+            "task_id": task.id,
+            "patient_id": str(mapping.patient_profile.id)
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class PatientSearchViewSet(viewsets.ModelViewSet):

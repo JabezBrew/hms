@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer
-from ..users.serializers import PatientProfileSerializer, StaffSerializer, UserSerializer
+from ..users.serializers import PatientProfileSerializer, StaffSerializer, UserSerializer, PractitionerProfileSerializer
 
 
 class WardSerializer(serializers.ModelSerializer):
@@ -68,7 +68,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
     """
     patient_details = PatientProfileSerializer(source='patient', read_only=True)
     bed_details = BedSerializer(source='bed', read_only=True)
-    admitting_doctor_details = StaffSerializer(source='admitting_doctor', read_only=True)
+    admitting_doctor_details = PractitionerProfileSerializer(source='admitting_doctor', read_only=True)
     length_of_stay = serializers.ReadOnlyField()
     total_cost = serializers.ReadOnlyField()
 
