@@ -8,6 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, parseISO, isValid } from 'date-fns';
 import { fetchEncounter, dischargeEncounter, cancelEncounter } from '@/lib/api';
 import { useNoteEntriesForEncounter } from '@/hooks/useClinicalNotesQueries';
+import { useViewMode, VIEW_MODES } from '@/contexts/ViewModeContext';
+import { ViewModeSwitcher } from './ViewModeSwitcher';
+import { DocumentationModeLayout } from './layouts/DocumentationModeLayout';
+import { ReviewModeLayout } from './layouts/ReviewModeLayout';
+import { MonitoringModeLayout } from './layouts/MonitoringModeLayout';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +44,7 @@ import {
 export function EncounterDetail({ encounter: initialEncounter, loading: initialLoading }) {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { viewMode } = useViewMode();
   const [loading, setLoading] = useState(initialLoading ?? true);
   const [encounter, setEncounter] = useState(initialEncounter ?? null);
   const [error, setError] = useState(null);
@@ -47,9 +53,9 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const [actionInProgress, setActionInProgress] = useState(false);
 
   // Fetch clinical notes for this encounter
-  const { 
-    data: clinicalNotes, 
-    isLoading: isLoadingNotes 
+  const {
+    data: clinicalNotes,
+    isLoading: isLoadingNotes
   } = useNoteEntriesForEncounter(id);
 
   // Update state when props change
@@ -198,6 +204,28 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                       !encounter.end_time;
   const canCancel = encounter.status === 'planned' || encounter.status === 'in-progress';
 
+  // Render the appropriate layout based on view mode
+  const renderLayout = () => {
+    const layoutProps = {
+      encounter,
+      formatDate,
+      getStatusBadge,
+      getTypeBadge,
+      clinicalNotes,
+      isLoadingNotes,
+    };
+
+    switch (viewMode) {
+      case VIEW_MODES.REVIEW:
+        return <ReviewModeLayout {...layoutProps} />;
+      case VIEW_MODES.MONITORING:
+        return <MonitoringModeLayout {...layoutProps} />;
+      case VIEW_MODES.DOCUMENTATION:
+      default:
+        return <DocumentationModeLayout {...layoutProps} />;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -207,7 +235,10 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
           </Button>
           <h1 className="text-3xl font-bold tracking-tight">Encounter Details</h1>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex items-center space-x-2">
+          {/* View Mode Switcher */}
+          <ViewModeSwitcher />
+
           {canEdit && (
             <Button onClick={() => navigate(`/encounters/${id}/edit`)}>
               <Edit className="h-4 w-4 mr-2" />
@@ -229,288 +260,8 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="flex items-center">
-                <User className="h-5 w-5 mr-2 text-primary" />
-                {encounter.patient_name || 'Unknown Patient'}
-              </CardTitle>
-              <CardDescription>
-                Encounter ID: {encounter.id}
-              </CardDescription>
-            </div>
-            <div className="flex space-x-2">
-              {getTypeBadge(encounter.encounter_type)}
-              {getStatusBadge(encounter.status)}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium mb-1">Practitioner</h3>
-                <div className="flex items-center">
-                  <Stethoscope className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span>{encounter.practitioner_name || 'No practitioner assigned'}</span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-1">Start Time</h3>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span>{formatDate(encounter.start_time)}</span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-1">End Time</h3>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span>{encounter.end_time ? formatDate(encounter.end_time) : 'Not ended'}</span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-1">Location</h3>
-                <div className="flex items-center">
-                  <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span>{encounter.location || 'No location specified'}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium mb-1">Service Type</h3>
-                <div className="flex items-center">
-                  <Activity className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span>{encounter.service_type || 'No service type specified'}</span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-1">Reason for Visit</h3>
-                <div className="flex items-start">
-                  <FileText className="h-4 w-4 mr-2 mt-0.5 text-muted-foreground" />
-                  <span>{encounter.reason || 'No reason specified'}</span>
-                </div>
-              </div>
-
-              {encounter.encounter_type === 'inpatient' && (
-                <div>
-                  <h3 className="text-sm font-medium mb-1">Admission Source</h3>
-                  <div className="flex items-center">
-                    <Clipboard className="h-4 w-4 mr-2 text-muted-foreground" />
-                    <span>{encounter.admission_source ? getAdmissionSourceText(encounter.admission_source) : 'Not specified'}</span>
-                  </div>
-                </div>
-              )}
-
-              {encounter.status === 'finished' && encounter.encounter_type === 'inpatient' && (
-                <div>
-                  <h3 className="text-sm font-medium mb-1">Discharge Disposition</h3>
-                  <div className="flex items-center">
-                    <ClipboardList className="h-4 w-4 mr-2 text-muted-foreground" />
-                    <span>{encounter.discharge_disposition ? getDischargeDispositionText(encounter.discharge_disposition) : 'Not specified'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="border-t pt-6">
-          <div className="flex items-center text-sm text-muted-foreground">
-            <CalendarClock className="h-4 w-4 mr-2" />
-            <span>Created: {formatDate(encounter.created_at)}</span>
-            {encounter.updated_at && encounter.updated_at !== encounter.created_at && (
-              <>
-                <span className="mx-2">•</span>
-                <span>Last updated: {formatDate(encounter.updated_at)}</span>
-              </>
-            )}
-          </div>
-        </CardFooter>
-      </Card>
-
-      <Tabs defaultValue="timeline" className="mt-6">
-        <TabsList>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
-          <TabsTrigger value="vitals">Vitals</TabsTrigger>
-          <TabsTrigger value="diagnoses">Diagnoses</TabsTrigger>
-          <TabsTrigger value="medications">Medications</TabsTrigger>
-          <TabsTrigger value="procedures">Procedures</TabsTrigger>
-        </TabsList>
-        <TabsContent value="timeline" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Encounter Timeline</CardTitle>
-              <CardDescription>History of events for this encounter</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start">
-                  <div className="mr-4 mt-1">
-                    <div className="h-2 w-2 rounded-full bg-primary" />
-                  </div>
-                  <div>
-                    <div className="font-medium">Encounter Created</div>
-                    <div className="text-sm text-muted-foreground">{formatDate(encounter.created_at)}</div>
-                  </div>
-                </div>
-                {encounter.status === 'in-progress' && (
-                  <div className="flex items-start">
-                    <div className="mr-4 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-primary" />
-                    </div>
-                    <div>
-                      <div className="font-medium">Encounter Started</div>
-                      <div className="text-sm text-muted-foreground">{formatDate(encounter.start_time)}</div>
-                    </div>
-                  </div>
-                )}
-                {encounter.status === 'finished' && (
-                  <>
-                    <div className="flex items-start">
-                      <div className="mr-4 mt-1">
-                        <div className="h-2 w-2 rounded-full bg-primary" />
-                      </div>
-                      <div>
-                        <div className="font-medium">Encounter Started</div>
-                        <div className="text-sm text-muted-foreground">{formatDate(encounter.start_time)}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-start">
-                      <div className="mr-4 mt-1">
-                        <div className="h-2 w-2 rounded-full bg-primary" />
-                      </div>
-                      <div>
-                        <div className="font-medium">Encounter Completed</div>
-                        <div className="text-sm text-muted-foreground">{formatDate(encounter.end_time)}</div>
-                      </div>
-                    </div>
-                  </>
-                )}
-                {encounter.status === 'cancelled' && (
-                  <div className="flex items-start">
-                    <div className="mr-4 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-destructive" />
-                    </div>
-                    <div>
-                      <div className="font-medium">Encounter Cancelled</div>
-                      <div className="text-sm text-muted-foreground">{formatDate(encounter.end_time)}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="notes" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Clinical Notes</CardTitle>
-              <CardDescription>Notes and observations for this encounter</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-muted-foreground">Clinical notes for this encounter.</p>
-                <Button onClick={() => navigate(`/encounters/${id}/clinical-notes`)}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Add Clinical Note
-                </Button>
-              </div>
-              <div>
-                {isLoadingNotes ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-24 w-full" />
-                    <Skeleton className="h-24 w-full" />
-                  </div>
-                ) : !clinicalNotes || clinicalNotes.length === 0 ? (
-                  <p className="text-muted-foreground">No notes have been added to this encounter yet.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {clinicalNotes.map(note => (
-                      <Card key={note.id} className="border border-muted">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-base">{note.template_title}</CardTitle>
-                          <CardDescription>
-                            Created {new Date(note.created_at).toLocaleString()} by {note.practitioner_name || 'Unknown'}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {Object.entries(note.data).map(([section, data]) => (
-                              <div key={section}>
-                                <h4 className="font-medium text-sm">{section}</h4>
-                                {typeof data === 'string' ? (
-                                  <p className="text-sm text-muted-foreground">{data}</p>
-                                ) : (
-                                  <pre className="text-xs bg-muted p-2 rounded">
-                                    {JSON.stringify(data, null, 2)}
-                                  </pre>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="vitals" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Vital Signs</CardTitle>
-              <CardDescription>Patient vital signs recorded during this encounter</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">No vital signs have been recorded for this encounter.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="diagnoses" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Diagnoses</CardTitle>
-              <CardDescription>Diagnoses associated with this encounter</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">No diagnoses have been recorded for this encounter.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="medications" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Medications</CardTitle>
-              <CardDescription>Medications prescribed during this encounter</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">No medications have been prescribed for this encounter.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="procedures" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Procedures</CardTitle>
-              <CardDescription>Procedures performed during this encounter</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">No procedures have been recorded for this encounter.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Render layout based on view mode */}
+      {renderLayout()}
 
       {/* Discharge Dialog */}
       <AlertDialog open={showDischargeDialog} onOpenChange={setShowDischargeDialog}>

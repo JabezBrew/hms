@@ -1,8 +1,9 @@
-import './App.css'
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
+import { ViewModeProvider } from './contexts/ViewModeContext'
+import { WorkflowProvider } from './contexts/WorkflowContext'
 import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -49,6 +50,8 @@ const EncounterEditPage = lazy(() => import('./pages/encounters/EncounterEditPag
 const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateClinicalNotePage'))
 const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
+const DoctorDashboard = lazy(() => import('./pages/dashboards/DoctorDashboard'))
+const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -381,6 +384,24 @@ function AppContent() {
         </RoleBasedRoute>
       } />
 
+      {/* Doctor Dashboard */}
+      <Route path="/dashboard/doctor" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+          <Layout>
+            <DoctorDashboard />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
+      {/* Workflow routes */}
+      <Route path="/workflows/consultation" element={
+        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+          <Layout>
+            <ConsultationWorkflow />
+          </Layout>
+        </RoleBasedRoute>
+      } />
+
         <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Suspense>
@@ -396,10 +417,14 @@ function App() {
           <AuthProvider>
             <BrowserRouter>
               <BreadcrumbProvider>
-                <AppContent />
-                <Toaster />
-                <OfflineIndicator />
-                <SessionTimeoutWarning />
+                <ViewModeProvider>
+                  <WorkflowProvider>
+                    <AppContent />
+                    <Toaster />
+                    <OfflineIndicator />
+                    <SessionTimeoutWarning />
+                  </WorkflowProvider>
+                </ViewModeProvider>
               </BreadcrumbProvider>
             </BrowserRouter>
           </AuthProvider>

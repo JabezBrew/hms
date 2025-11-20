@@ -10,14 +10,14 @@ import {
 export function Layout({ children }) {
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="relative min-h-screen bg-background">
+      <div className="relative min-h-screen bg-background w-full">
         <Header />
-        <div className="flex pt-14">
+        <div className="flex pt-14 w-full">
           <Sidebar>
             <AppSidebar />
           </Sidebar>
           <SidebarInset className="p-4 flex-1 min-w-0 flex flex-col">
-            <div className="w-full mx-auto flex-1">
+            <div className="w-full flex-1">
               <PageBreadcrumb />
               {children}
             </div>

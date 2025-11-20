@@ -111,6 +111,13 @@
 }
 
 @layer base {
+    html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+  }
   * {
     @apply border-border outline-ring/50;
   }

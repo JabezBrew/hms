@@ -61,6 +61,8 @@ INSTALLED_APPS = [
     'apps.billing',
     'apps.clinical_notes.apps.ClinicalNotesConfig',
     'apps.nursing.apps.NursingConfig',
+    'apps.workflows.apps.WorkflowsConfig',
+    'apps.dashboards.apps.DashboardsConfig',
 ]
 
 MIDDLEWARE = [
