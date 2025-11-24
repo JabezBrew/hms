@@ -1,28 +1,29 @@
 import {
-  LayoutIcon,
-  UsersIcon,
-  CalendarIcon,
-  HomeIcon,
-  PackageIcon,
-  CreditCardIcon,
-  FlaskConicalIcon,
-  PillIcon,
-  ShieldIcon,
-  ClipboardIcon,
-  FileTextIcon,
-  ActivityIcon,
+  LayoutDashboard,
+  Calendar,
+  Inbox,
+  Users,
+  Settings,
+  Activity,
+  FileText,
+  Pill,
+  FlaskConical,
+  CreditCard,
+  Shield,
+  Package,
+  Clock
 } from "lucide-react"
 
 import {
   SidebarContent,
-  SidebarHeader,
-  SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuBadge,
+  SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar"
 
@@ -40,12 +41,13 @@ export function AppSidebar() {
 
   // Define menu items with their access roles
   const menuItems = {
-    dashboard: {
-      overview: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient'],
-      patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing'],
-      appointments: ['admin', 'doctor', 'nurse', 'receptionist'],
-      encounters: ['admin', 'doctor', 'nurse', 'receptionist'],
-      nursing: ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'],
+    primary: {
+      commandCenter: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
+      schedule: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
+      availability: ['admin', 'doctor', 'practitioner', 'physician'],
+      encounters: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
+      inbox: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
+      patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'practitioner', 'physician'],
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],
@@ -54,59 +56,66 @@ export function AppSidebar() {
       laboratory: ['admin', 'lab_technician', 'doctor'],
       pharmacy: ['admin', 'pharmacist', 'doctor'],
       staff: ['admin'],
-      practitionerAvailability: ['admin'],
-      clinicalNoteTemplates: ['admin', 'doctor', 'nurse'],
     }
   }
 
   return (
     <SidebarContent>
-
       <SidebarGroup>
-        <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
+        <SidebarGroupLabel>Menu</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {hasAccess(userRole, menuItems.dashboard.overview) && (
+            {hasAccess(userRole, menuItems.primary.commandCenter) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Overview" href="/overview">
-                  <LayoutIcon />
-                  <span>Overview</span>
+                <SidebarMenuButton tooltip="Command Center" href="/dashboard/provider">
+                  <LayoutDashboard />
+                  <span>Command Center</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.dashboard.patients) && (
+            {hasAccess(userRole, menuItems.primary.schedule) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Patients" href="/patients">
-                  <UsersIcon />
-                  <span>Patients</span>
+                <SidebarMenuButton tooltip="Schedule" href="/appointments">
+                  <Calendar />
+                  <span>Schedule</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.dashboard.appointments) && (
+            {hasAccess(userRole, menuItems.primary.availability) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Appointments" href="/appointments">
-                  <CalendarIcon />
-                  <span>Appointments</span>
+                <SidebarMenuButton tooltip="Availability" href="/practitioner-availability">
+                  <Clock />
+                  <span>Availability</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.dashboard.encounters) && (
+            {hasAccess(userRole, menuItems.primary.encounters) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Encounters" href="/encounters">
-                  <ClipboardIcon />
+                  <FileText />
                   <span>Encounters</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.dashboard.nursing) && (
+            {hasAccess(userRole, menuItems.primary.inbox) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Nursing Dashboard" href="/nursing/dashboard">
-                  <ActivityIcon />
-                  <span>Nursing Dashboard</span>
+                <SidebarMenuButton tooltip="Inbox" href="/inbox">
+                  <Inbox />
+                  <span>Inbox</span>
+                  <SidebarMenuBadge>3</SidebarMenuBadge>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.primary.patients) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Patient Directory" href="/patients">
+                  <Users />
+                  <span>Patient Directory</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
@@ -116,97 +125,86 @@ export function AppSidebar() {
 
       <SidebarSeparator />
 
-      {/* Only show Management section if user has access to at least one item */}
-      {(hasAccess(userRole, menuItems.management.wards) ||
-        hasAccess(userRole, menuItems.management.inventory) ||
-        hasAccess(userRole, menuItems.management.billing) ||
-        hasAccess(userRole, menuItems.management.laboratory) ||
-        hasAccess(userRole, menuItems.management.pharmacy) ||
-        hasAccess(userRole, menuItems.management.staff) ||
-        hasAccess(userRole, menuItems.management.clinicalNoteTemplates)) && (
+      {/* Management Section - Collapsible or separate group */}
+      <SidebarGroup>
+        <SidebarGroupLabel>Management</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {hasAccess(userRole, menuItems.management.wards) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Wards" href="/wards">
+                  <Activity />
+                  <span>Wards</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.laboratory) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Laboratory" href="/laboratory">
+                  <FlaskConical />
+                  <span>Laboratory</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.pharmacy) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Pharmacy" href="/pharmacy">
+                  <Pill />
+                  <span>Pharmacy</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.billing) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Billing" href="/billing">
+                  <CreditCard />
+                  <span>Billing</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.inventory) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Inventory" href="/inventory">
+                  <Package />
+                  <span>Inventory</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.staff) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Staff" href="/staff">
+                  <Shield />
+                  <span>Staff</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      <div className="mt-auto">
         <SidebarGroup>
-          <SidebarGroupLabel>Management</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {hasAccess(userRole, menuItems.management.wards) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Wards" href="/wards">
-                    <HomeIcon />
-                    <span>Wards</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.inventory) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Inventory" href="/inventory">
-                    <PackageIcon />
-                    <span>Inventory</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.billing) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Billing" href="/billing">
-                    <CreditCardIcon />
-                    <span>Billing</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.laboratory) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Laboratory" href="/laboratory">
-                    <FlaskConicalIcon />
-                    <span>Laboratory</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.pharmacy) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Pharmacy" href="/pharmacy">
-                    <PillIcon />
-                    <span>Pharmacy</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.staff) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Staff Management" href="/staff">
-                    <ShieldIcon />
-                    <span>Staff</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.practitionerAvailability) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Practitioner Availability" href="/practitioner-availability">
-                    <CalendarIcon />
-                    <span>Availability</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasAccess(userRole, menuItems.management.clinicalNoteTemplates) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Clinical Note Templates" href="/clinical-notes/templates">
-                    <FileTextIcon />
-                    <span>Note Templates</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Settings" href="/settings">
+                  <Settings />
+                  <span>Settings</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-      )}
+      </div>
 
       <SidebarFooter>
         <div className="px-2 text-xs text-muted-foreground">
-          Hospital Management System v1.0
+          HMS v2.0
         </div>
       </SidebarFooter>
     </SidebarContent>

@@ -398,8 +398,14 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
 class PatientProfileViewSet(viewsets.ModelViewSet):
     """
     API endpoint for patient profiles.
+    Shows most recently registered patients first with pagination.
+    Includes current ward information in each patient record.
     """
-    queryset = PatientProfile.objects.all()
+    queryset = PatientProfile.objects.select_related('user').prefetch_related(
+        'admissions',
+        'admissions__bed',
+        'admissions__bed__ward'
+    ).order_by('-created_at')
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -436,14 +442,23 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter the queryset based on the user's role.
+        Returns patients ordered by most recently registered first.
+        Includes current ward information via prefetched admissions.
         """
         user = self.request.user
+
+        # Base queryset with optimization and ordering
+        base_qs = PatientProfile.objects.select_related('user').prefetch_related(
+            'admissions',
+            'admissions__bed',
+            'admissions__bed__ward'
+        ).order_by('-created_at')
 
         # Patients can only see their own profile
         if user.user_type == 'patient':
             try:
                 patient_profile = PatientProfile.objects.get(user=user)
-                return PatientProfile.objects.filter(id=patient_profile.id)
+                return base_qs.filter(id=patient_profile.id)
             except PatientProfile.DoesNotExist:
                 return PatientProfile.objects.none()
 
@@ -451,11 +466,11 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
         elif user.user_type == 'doctor':
             # In a real implementation, this would filter based on doctor-patient relationships
             # For simplicity, we're allowing doctors to see all patients
-            return PatientProfile.objects.all()
+            return base_qs
 
         # Admin, nurse, receptionist, lab tech, pharmacist, billing can see all patients
         elif user.user_type in ['admin', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']:
-            return PatientProfile.objects.all()
+            return base_qs
 
         # Other roles can't see patients
         else:

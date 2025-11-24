@@ -18,6 +18,7 @@ export const appointmentKeys = {
   recurringSchedules: () => [...appointmentKeys.all, 'recurringSchedules'],
   recurringSchedule: (id) => [...appointmentKeys.recurringSchedules(), id],
   scheduleMappings: () => [...appointmentKeys.all, 'scheduleMappings'],
+  blockedTimes: (params) => [...appointmentKeys.all, 'blockedTimes', params],
 };
 
 /**
@@ -122,12 +123,12 @@ export function useDeleteAppointment() {
     mutationFn: (id) => appointmentsApi.deleteAppointment(id),
     onSuccess: (data, variables) => {
       // Invalidate the appointment detail query
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.detail(variables) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.detail(variables)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.lists()
       });
     },
   });
@@ -144,12 +145,12 @@ export function useCheckInAppointment() {
     mutationFn: (id) => appointmentsApi.checkInAppointment(id),
     onSuccess: (data, variables) => {
       // Update the cache for this specific appointment
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.detail(variables) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.detail(variables)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.lists()
       });
     },
   });
@@ -166,12 +167,12 @@ export function useCancelAppointment() {
     mutationFn: ({ id, reason }) => appointmentsApi.cancelAppointment(id, reason),
     onSuccess: (data, variables) => {
       // Update the cache for this specific appointment
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.detail(variables.id) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.detail(variables.id)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.lists()
       });
     },
   });
@@ -188,12 +189,12 @@ export function useUpdateAppointmentStatus() {
     mutationFn: ({ id, status }) => appointmentsApi.updateAppointmentStatus(id, status),
     onSuccess: (data, variables) => {
       // Update the cache for this specific appointment
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.detail(variables.id) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.detail(variables.id)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.lists() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.lists()
       });
     },
   });
@@ -209,7 +210,79 @@ export function useAvailableSlots(params = {}) {
     queryKey: appointmentKeys.availableSlots(params),
     queryFn: () => appointmentsApi.getAvailableSlots(params),
     enabled: Object.keys(params).length > 0, // Only run if we have parameters
-    staleTime: 5 * 60 * 1000, // 5 minutes - slots can change frequently
+    staleTime: 0, // Always fetch fresh data for just-in-time slots
+  });
+}
+
+/**
+ * Get blocked times
+ * @param {Object} params - Query parameters
+ * @returns {Object} Query result
+ */
+export function useBlockedTimes(params = {}) {
+  return useQuery({
+    queryKey: appointmentKeys.blockedTimes(params),
+    queryFn: () => appointmentsApi.getBlockedTimes(params),
+  });
+}
+
+/**
+ * Create a new blocked time
+ * @returns {Object} Mutation result
+ */
+export function useCreateBlockedTime() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => appointmentsApi.createBlockedTime(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+    },
+  });
+}
+
+/**
+ * Bulk create blocked times
+ * @returns {Object} Mutation result
+ */
+export function useBulkCreateBlockedTime() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => appointmentsApi.bulkCreateBlockedTime(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+    },
+  });
+}
+
+/**
+ * Update a blocked time
+ * @returns {Object} Mutation result
+ */
+export function useUpdateBlockedTime() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => appointmentsApi.updateBlockedTime(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+    },
+  });
+}
+
+/**
+ * Delete a blocked time
+ * @returns {Object} Mutation result
+ */
+export function useDeleteBlockedTime() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => appointmentsApi.deleteBlockedTime(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+    },
   });
 }
 
@@ -405,12 +478,12 @@ export function useDeleteAppointmentType() {
     mutationFn: (id) => appointmentsApi.deleteAppointmentType(id),
     onSuccess: (data, variables) => {
       // Invalidate the appointment type detail query
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.type(variables) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.type(variables)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.types() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.types()
       });
     },
   });
@@ -428,8 +501,8 @@ export function useCreateTimeSlot() {
     onSuccess: (data) => {
       // Invalidate the time slots query for the template
       if (data && data.template) {
-        queryClient.invalidateQueries({ 
-          queryKey: appointmentKeys.timeSlots(data.template) 
+        queryClient.invalidateQueries({
+          queryKey: appointmentKeys.timeSlots(data.template)
         });
       }
     },
@@ -566,12 +639,12 @@ export function useDeleteRecurringSchedule() {
     mutationFn: (id) => appointmentsApi.deleteRecurringSchedule(id),
     onSuccess: (data, variables) => {
       // Invalidate the recurring schedule detail query
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.recurringSchedule(variables) 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.recurringSchedule(variables)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: appointmentKeys.recurringSchedules() 
+      queryClient.invalidateQueries({
+        queryKey: appointmentKeys.recurringSchedules()
       });
     },
   });

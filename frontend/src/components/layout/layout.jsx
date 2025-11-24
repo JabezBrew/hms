@@ -1,4 +1,4 @@
-import { Header } from "./header"
+import { OmniBar } from "./OmniBar"
 import { AppSidebar } from "./sidebar"
 import { PageBreadcrumb } from "./PageBreadcrumb"
 import {
@@ -11,7 +11,7 @@ export function Layout({ children }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="relative min-h-screen bg-background w-full">
-        <Header />
+        <OmniBar />
         <div className="flex pt-14 w-full">
           <Sidebar>
             <AppSidebar />

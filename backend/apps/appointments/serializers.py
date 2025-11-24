@@ -2,8 +2,8 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import (
-    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule, 
-    ScheduleFHIRMapping, RecurringSchedule
+    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
+    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 )
 from ..users.serializers import PractitionerProfileSerializer
 
@@ -101,8 +101,8 @@ class ScheduleFHIRMappingSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'created_by']
 
     def get_practitioner_name(self, obj):
-        if obj.practitioner and hasattr(obj.practitioner, 'user'):
-            return f"{obj.practitioner.user.first_name} {obj.practitioner.user.last_name}"
+        if obj.practitioner and hasattr(obj.practitioner, 'staff') and hasattr(obj.practitioner.staff, 'user'):
+            return f"{obj.practitioner.staff.user.first_name} {obj.practitioner.staff.user.last_name}"
         return "Unknown"
 
 
@@ -117,11 +117,52 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'practitioner', 'practitioner_name', 'days_of_week',
             'start_time', 'end_time', 'slot_duration', 'active_from', 'active_to',
-            'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by'
+            'breaks', 'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by'
         ]
         read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
     def get_practitioner_name(self, obj):
-        if obj.practitioner and hasattr(obj.practitioner, 'user'):
-            return f"{obj.practitioner.user.first_name} {obj.practitioner.user.last_name}"
+        if obj.practitioner and hasattr(obj.practitioner, 'staff') and hasattr(obj.practitioner.staff, 'user'):
+            return f"{obj.practitioner.staff.user.first_name} {obj.practitioner.staff.user.last_name}"
         return "Unknown"
+
+
+class BlockedTimeSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the BlockedTime model.
+    Used for one-off schedule exceptions (vacations, emergencies, etc.).
+    """
+    practitioner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BlockedTime
+        fields = [
+            'id', 'practitioner', 'practitioner_name', 'date', 'start_time',
+            'end_time', 'reason', 'is_all_day', 'created_at', 'updated_at',
+            'created_by', 'updated_by'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def get_practitioner_name(self, obj):
+        if obj.practitioner and hasattr(obj.practitioner, 'staff') and hasattr(obj.practitioner.staff, 'user'):
+            return f"{obj.practitioner.staff.user.first_name} {obj.practitioner.staff.user.last_name}"
+        return "Unknown"
+
+    def validate(self, data):
+        """
+        Validate blocked time fields.
+        """
+        # If not all day, ensure start_time and end_time are provided
+        if not data.get('is_all_day', False):
+            if not data.get('start_time') or not data.get('end_time'):
+                raise serializers.ValidationError(
+                    "start_time and end_time are required when is_all_day is False"
+                )
+
+            # Ensure end_time is after start_time
+            if data.get('start_time') >= data.get('end_time'):
+                raise serializers.ValidationError(
+                    "end_time must be after start_time"
+                )
+
+        return data

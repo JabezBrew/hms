@@ -1,15 +1,51 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { usePatient } from '@/hooks/usePatientQueries';
-import PatientDetail from '@/components/patients/PatientDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2 } from 'lucide-react';
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
+import { PatientHeader } from '@/components/patient/PatientHeader';
+import { TimelineFeed } from '@/components/patient/TimelineFeed';
+
+// Mock Feed Data
+const mockFeedItems = [
+  {
+    id: '1',
+    date: 'Today, 9:00 AM',
+    type: 'Encounter',
+    title: 'Office Visit - Hypertension',
+    summary: 'Patient reports dizziness. BP 150/90. Adjusted Lisinopril dosage.',
+    author: 'Dr. Smith'
+  },
+  {
+    id: '2',
+    date: 'Yesterday, 2:30 PM',
+    type: 'LabResult',
+    title: 'CBC, BMP',
+    summary: 'Potassium elevated (5.8). Creatinine 1.2.',
+    author: 'Lab Corp'
+  },
+  {
+    id: '3',
+    date: 'Oct 15, 2023',
+    type: 'Document',
+    title: 'Cardiology Consult',
+    summary: 'Dr. Jones recommends continued monitoring. No intervention needed at this time.',
+    author: 'Dr. Jones'
+  },
+  {
+    id: '4',
+    date: 'Oct 10, 2023',
+    type: 'Medication',
+    title: 'Refill Request - Lisinopril',
+    summary: '90 day supply approved.',
+    author: 'Dr. Smith'
+  }
+]
 
 const PatientDetailPage = () => {
   const { id } = useParams();
@@ -20,170 +56,162 @@ const PatientDetailPage = () => {
   // Update breadcrumbs when data is loaded
   useEffect(() => {
     if (patient) {
+      // Extract patient name from nested structure
+      const firstName = patient.local_data?.user_details?.first_name || '';
+      const lastName = patient.local_data?.user_details?.last_name || '';
+      const patientName = firstName && lastName ? `${firstName} ${lastName}` : `Patient ${id}`;
+
       updateBreadcrumbs([
         { label: 'Patients', path: '/patients' },
-        { 
-          label: patient.first_name && patient.last_name 
-            ? `${patient.first_name} ${patient.last_name}` 
-            : `Patient ${id}`, 
-          path: `/patients/${id}` 
+        {
+          label: patientName,
+          path: `/patients/${id}`
         }
-      ]);
-    } else {
-      updateBreadcrumbs([
-        { label: 'Patients', path: '/patients' },
-        { label: 'Patient Details', path: `/patients/${id}` }
       ]);
     }
   }, [patient, id, updateBreadcrumbs]);
 
-  // Show error toast if query fails
-  useEffect(() => {
-    if (isError) {
-      toast.error(error?.message || 'Failed to load patient details');
-      console.error('Error loading patient:', error);
+  const handleAction = (action) => {
+    switch (action) {
+      case 'note':
+        // Navigate to create note (mock)
+        toast.info("Starting new clinical note...");
+        break;
+      case 'prescribe':
+        toast.info("Opening ePrescribe...");
+        break;
+      case 'message':
+        toast.info("Opening secure message...");
+        break;
     }
-  }, [isError, error]);
+  }
 
-  const handleBack = () => {
-    navigate('/patients');
-  };
+  if (isLoading) {
+    return <div className="p-6 space-y-4">
+      <Skeleton className="h-32 w-full" />
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-4 space-y-4">
+          <Skeleton className="h-64 w-full" />
+        </div>
+        <div className="col-span-8 space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </div>
+    </div>
+  }
 
-  const handleEdit = () => {
-    navigate(`/patients/${id}/edit`);
-  };
+  if (isError) {
+    return <div className="p-6 text-red-500">Error loading patient: {error?.message}</div>
+  }
 
-  const handleDeleted = () => {
-    navigate('/patients');
-  };
+  // Extract patient name for display
+  const firstName = patient?.local_data?.user_details?.first_name || '';
+  const lastName = patient?.local_data?.user_details?.last_name || '';
+  const patientName = firstName && lastName ? `${firstName} ${lastName}` : 'Patient';
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <Helmet>
-        <title>
-          {patient 
-            ? `${patient.first_name || ''} ${patient.last_name || ''} | Patient Details` 
-            : 'Patient Details | HMS'}
-        </title>
-        <meta name="description" content="View patient details and medical information" />
+        <title>{patientName} | HMS</title>
       </Helmet>
 
-      {isLoading ? (
-        <Card className="w-full">
-          <CardHeader className="flex flex-row items-start justify-between">
-            <div>
-              <div className="flex flex-col">
-                <Button variant="outline" size="sm" className="mb-2 w-fit">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back
+      <PatientHeader patient={patient} onAction={handleAction} />
+
+      <div className="container mx-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+          {/* Left Panel: Static Snapshot (4 cols) */}
+          <div className="lg:col-span-4 space-y-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between py-3">
+                <CardTitle className="text-base font-semibold">Active Problems</CardTitle>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Plus className="h-4 w-4" />
                 </Button>
-                <div className="flex items-center pl-0">
-                  <Skeleton className="h-12 w-12 rounded-full mr-4" />
+              </CardHeader>
+              <CardContent className="py-2">
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-center justify-between group">
+                    <span>Hypertension (I10)</span>
+                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                  </li>
+                  <li className="flex items-center justify-between group">
+                    <span>Type 2 Diabetes (E11.9)</span>
+                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                  </li>
+                  <li className="flex items-center justify-between group">
+                    <span>Osteoarthritis (M19.9)</span>
+                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between py-3">
+                <CardTitle className="text-base font-semibold">Current Meds</CardTitle>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="py-2">
+                <ul className="space-y-3 text-sm">
+                  <li className="flex flex-col">
+                    <div className="flex justify-between font-medium">
+                      <span>Lisinopril 10mg</span>
+                      <span className="text-muted-foreground">Daily</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Last filled: Oct 10</span>
+                  </li>
+                  <li className="flex flex-col">
+                    <div className="flex justify-between font-medium">
+                      <span>Metformin 500mg</span>
+                      <span className="text-muted-foreground">BID</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Last filled: Sep 25</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="text-base font-semibold">Vitals Trends</CardTitle>
+              </CardHeader>
+              <CardContent className="py-2">
+                <div className="space-y-4">
                   <div>
-                    <Skeleton className="h-8 w-48 mb-2" />
-                    <Skeleton className="h-4 w-32" />
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">Blood Pressure</span>
+                      <span className="font-medium">138/88</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-500 w-[70%]" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">Weight</span>
+                      <span className="font-medium">185 lbs</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 w-[60%]" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-            <div className="flex space-x-2">
-              <Skeleton className="h-9 w-20" />
-              <Skeleton className="h-9 w-24" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="overview">
-              <TabsList className="grid w-full grid-cols-7">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="medical">Medical Information</TabsTrigger>
-                <TabsTrigger value="encounters">Encounters</TabsTrigger>
-                <TabsTrigger value="inpatient">Inpatient</TabsTrigger>
-                <TabsTrigger value="imaging">Imaging</TabsTrigger>
-                <TabsTrigger value="billing">Billing</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
-              </TabsList>
+              </CardContent>
+            </Card>
+          </div>
 
-              <TabsContent value="overview" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <Skeleton className="h-6 w-40" />
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-24" />
-                        <Skeleton className="h-4 w-32" />
-                      </div>
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-28" />
-                        <Skeleton className="h-4 w-24" />
-                      </div>
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-16" />
-                        <Skeleton className="h-4 w-20" />
-                      </div>
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-20" />
-                        <Skeleton className="h-4 w-28" />
-                      </div>
-                    </CardContent>
-                  </Card>
+          {/* Right Panel: Chronological Feed (8 cols) */}
+          <div className="lg:col-span-8">
+            <TimelineFeed items={mockFeedItems} />
+          </div>
 
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <Skeleton className="h-6 w-40" />
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-24" />
-                        <Skeleton className="h-4 w-32" />
-                      </div>
-                      <div className="flex justify-between">
-                        <Skeleton className="h-4 w-20" />
-                        <Skeleton className="h-4 w-36" />
-                      </div>
-                      <div className="mt-4">
-                        <Skeleton className="h-4 w-24 mb-2" />
-                        <Skeleton className="h-16 w-full" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <Skeleton className="h-6 w-40" />
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-start">
-                      <Skeleton className="h-5 w-5 mr-2" />
-                      <div>
-                        <Skeleton className="h-5 w-24 mb-1" />
-                        <Skeleton className="h-4 w-16" />
-                      </div>
-                    </div>
-                    <div className="flex items-start">
-                      <Skeleton className="h-5 w-5 mr-2" />
-                      <div>
-                        <Skeleton className="h-5 w-24 mb-1" />
-                        <Skeleton className="h-4 w-48" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      ) : (
-        <PatientDetail
-          patient={patient}
-          onBack={handleBack}
-          onEdit={handleEdit}
-          onDeleted={handleDeleted}
-        />
-      )}
-    </>
+        </div>
+      </div>
+    </div>
   );
 };
 

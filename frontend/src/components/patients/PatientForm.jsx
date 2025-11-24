@@ -3,11 +3,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { 
-  useUpdatePatientWithFHIR, 
-  useRegisterPatient, 
-  usePatientValidationRules 
+import {
+  useUpdatePatientWithFHIR,
+  useRegisterPatient,
+  usePatientValidationRules
 } from "@/hooks/usePatientQueries";
+import { useWards, useWardBeds } from "@/hooks/useWardQueries";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -27,7 +28,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
@@ -68,16 +71,23 @@ const patientFormSchema = z.object({
 
 const PatientForm = ({ patient, onSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [admissionType, setAdmissionType] = useState("outpatient");
+  const [selectedWard, setSelectedWard] = useState("");
+  const [isWaitingList, setIsWaitingList] = useState(false);
   const isEditMode = !!patient;
 
   // Use React Query hooks
-  const { 
-    data: validationRules = [], 
-    isLoading: isValidationRulesLoading 
+  const {
+    data: validationRules = [],
+    isLoading: isValidationRulesLoading
   } = usePatientValidationRules();
 
   const updatePatientMutation = useUpdatePatientWithFHIR();
   const registerPatientMutation = useRegisterPatient();
+
+  // Ward queries
+  const { data: wards = [] } = useWards();
+  const { data: beds = [] } = useWardBeds(selectedWard, { status: 'available' });
 
   // Initialize form with default values
   const form = useForm({
@@ -101,6 +111,9 @@ const PatientForm = ({ patient, onSuccess }) => {
       state: "",
       postal_code: "",
       country: "",
+      // Admission fields
+      bed_id: "",
+      admission_notes: "",
     }
   });
 
@@ -222,6 +235,19 @@ const PatientForm = ({ patient, onSuccess }) => {
         date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd')
       };
 
+      // Add admission details if inpatient
+      if (admissionType === 'inpatient') {
+        formattedData.admission_details = {
+          type: 'inpatient',
+          bed_id: isWaitingList ? null : data.bed_id,
+          notes: data.admission_notes
+        };
+      } else {
+        formattedData.admission_details = {
+          type: 'outpatient'
+        };
+      }
+
       // Register new patient using mutation
       registerPatientMutation.mutate(
         formattedData,
@@ -254,10 +280,11 @@ const PatientForm = ({ patient, onSuccess }) => {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="personal">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="personal">Personal Information</TabsTrigger>
             <TabsTrigger value="medical">Medical Information</TabsTrigger>
             <TabsTrigger value="contact">Contact Information</TabsTrigger>
+            <TabsTrigger value="admission">Admission</TabsTrigger>
           </TabsList>
 
           <Form {...form}>
@@ -576,7 +603,116 @@ const PatientForm = ({ patient, onSuccess }) => {
                       <FormMessage />
                     </FormItem>
                   )}
+
                 />
+              </TabsContent>
+
+              <TabsContent value="admission" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  <FormLabel>Admission Type</FormLabel>
+                  <RadioGroup
+                    defaultValue="outpatient"
+                    value={admissionType}
+                    onValueChange={setAdmissionType}
+                    className="flex flex-col space-y-1"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="outpatient" id="outpatient" />
+                      <FormLabel htmlFor="outpatient" className="font-normal">Outpatient (No admission)</FormLabel>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="inpatient" id="inpatient" />
+                      <FormLabel htmlFor="inpatient" className="font-normal">Inpatient (Admit to ward)</FormLabel>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {admissionType === 'inpatient' && (
+                  <>
+                    <div className="flex items-center space-x-2 mb-4">
+                      <input
+                        type="checkbox"
+                        id="waitingList"
+                        checked={isWaitingList}
+                        onChange={(e) => {
+                          setIsWaitingList(e.target.checked);
+                          if (e.target.checked) {
+                            setSelectedWard("");
+                            form.setValue("bed_id", "");
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <label htmlFor="waitingList" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        Add to Waiting List (Assign bed later)
+                      </label>
+                    </div>
+
+                    {!isWaitingList && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormItem>
+                          <FormLabel>Ward</FormLabel>
+                          <Select onValueChange={setSelectedWard} value={selectedWard}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select ward" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {wards.map((ward) => (
+                                <SelectItem key={ward.id} value={ward.id}>
+                                  {ward.name} ({ward.ward_type})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+
+                        <FormField
+                          control={form.control}
+                          name="bed_id"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Bed</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value} disabled={!selectedWard}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={selectedWard ? "Select bed" : "Select ward first"} />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {beds.map((bed) => (
+                                    <SelectItem key={bed.id} value={bed.id}>
+                                      {bed.bed_number} ({bed.bed_type}) - ${bed.total_rate}
+                                    </SelectItem>
+                                  ))}
+                                  {selectedWard && beds.length === 0 && (
+                                    <div className="p-2 text-sm text-muted-foreground">No available beds</div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    <FormField
+                      control={form.control}
+                      name="admission_notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Admission Notes</FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Reason for admission, initial observations..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
               </TabsContent>
 
               <div className="flex justify-end pt-4">

@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { usePatients, useRecentPatients, useSearchPatients } from "@/hooks/usePatientQueries";
+import { usePatients, useSearchPatients } from "@/hooks/usePatientQueries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -23,17 +26,20 @@ import {
 } from "@/components/ui/pagination";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Plus, Loader2 } from "lucide-react";
+import { Search, Plus, Loader2, Calendar as CalendarIcon, X } from "lucide-react";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 const PatientList = ({ onPatientSelect, onAddPatient }) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedWard, setSelectedWard] = useState("all");
+  const [admissionDate, setAdmissionDate] = useState();
   const [currentPage, setCurrentPage] = useState(1);
   const patientsPerPage = 10;
 
   // Use React Query hooks for data fetching
-  const { 
+  const {
     data: searchResults,
     isLoading: isSearchLoading,
     searchTerm,
@@ -41,21 +47,23 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     debouncedSearchTerm
   } = useSearchPatients();
 
+  // Fetch all patients (most recently registered first) with pagination
   const {
-    data: recentPatientsData,
-    isLoading: isRecentLoading
-  } = useRecentPatients();
+    data: allPatientsData,
+    isLoading: isAllPatientsLoading
+  } = usePatients();
 
   const getPatientId = (patient) => {
-    // First check for patient profile ID (for recent patients)
-    if (patient?.patient_profile) {
-      return patient.patient_profile;
-    }
-    // Then check for ID in the patient object itself
-    else if (patient?.id) {
+    // Check for ID in different data structures:
+    // 1. Direct patient profile (from /users/patients/)
+    if (patient?.id) {
       return patient.id;
     }
-    // Then check the old paths
+    // 2. Recent patients (from /patients/recent/)
+    else if (patient?.patient_profile) {
+      return patient.patient_profile;
+    }
+    // 3. Search results (from /patients/search/)
     else if (patient?.local_data?.id) {
       return patient.local_data.id;
     } else if (patient?.fhir_data?.id) {
@@ -67,14 +75,19 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     return `patient-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-// Function to get patient display name
+  // Function to get patient display name
   const getDisplayName = (patient) => {
-    // Check for name in patient_profile_details first (for recent patients)
-    if (patient?.patient_profile_details?.user_details) {
+    // 1. Direct patient profile (from /users/patients/)
+    if (patient?.user_details) {
+      const { first_name, last_name } = patient.user_details;
+      return `${first_name || ''} ${last_name || ''}`.trim() || "Unknown Patient";
+    }
+    // 2. Recent patients (from /patients/recent/)
+    else if (patient?.patient_profile_details?.user_details) {
       const { first_name, last_name } = patient.patient_profile_details.user_details;
       return `${first_name || ''} ${last_name || ''}`.trim() || "Unknown Patient";
     }
-    // Then check the old paths
+    // 3. Search results (from /patients/search/)
     else if (patient?.local_data?.user_details) {
       return `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim() || "Unknown Patient";
     } else if (patient?.fhir_resource?.name?.[0]) {
@@ -85,45 +98,111 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     return "Unknown Patient";
   };
 
-// Function to get patient MRN
+  // Function to get patient MRN
   const getPatientMRN = (patient) => {
-    // Check for MRN in patient_profile_details first (for recent patients)
-    if (patient?.patient_profile_details?.medical_record_number) {
+    // 1. Direct patient profile (from /users/patients/)
+    if (patient?.medical_record_number) {
+      return patient.medical_record_number;
+    }
+    // 2. Recent patients (from /patients/recent/)
+    else if (patient?.patient_profile_details?.medical_record_number) {
       return patient.patient_profile_details.medical_record_number;
     }
-    // Then check the old paths
+    // 3. Search results (from /patients/search/)
     return patient.local_data?.medical_record_number ||
-        patient.fhir_data?.identifier?.[0]?.value ||
-        patient.fhir_resource?.identifier?.[0]?.value ||
-        "No MRN";
+      patient.fhir_data?.identifier?.[0]?.value ||
+      patient.fhir_resource?.identifier?.[0]?.value ||
+      "No MRN";
   };
 
-// Function to get patient date of birth
-  const getPatientDOB = (patient) => {
-    // Check for DOB in patient_profile_details first (for recent patients)
-    const dob = patient?.patient_profile_details?.user_details?.date_of_birth ||
-        patient?.local_data?.user_details?.date_of_birth ||
-        patient?.fhir_data?.birthDate ||
-        patient?.fhir_resource?.birthDate;
-
-    if (!dob) return "Unknown";
+  // Function to calculate age from date of birth
+  const calculateAge = (dateOfBirth) => {
+    if (!dateOfBirth) return null;
 
     try {
-      return format(new Date(dob), "MMM d, yyyy");
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+
+      return age;
     } catch (error) {
-      return dob;
+      return null;
     }
   };
 
-// Function to get patient initials for avatar
+  // Function to get patient age
+  const getPatientAge = (patient) => {
+    const dob = patient?.user_details?.date_of_birth ||
+      patient?.patient_profile_details?.user_details?.date_of_birth ||
+      patient?.local_data?.user_details?.date_of_birth ||
+      patient?.fhir_data?.birthDate ||
+      patient?.fhir_resource?.birthDate;
+
+    const age = calculateAge(dob);
+    return age !== null ? age : "Unknown";
+  };
+
+  // Function to get patient gender
+  const getPatientGender = (patient) => {
+    const gender = patient?.user_details?.gender ||
+      patient?.patient_profile_details?.user_details?.gender ||
+      patient?.local_data?.user_details?.gender;
+
+    if (gender === 'M') return 'Male';
+    if (gender === 'F') return 'Female';
+    if (gender === 'O') return 'Other';
+    return 'Unknown';
+  };
+
+  // Function to get patient NHIS number
+  const getPatientNHIS = (patient) => {
+    if (patient?.nhis_id) {
+      return patient.nhis_id;
+    }
+    else if (patient?.patient_profile_details?.nhis_id) {
+      return patient.patient_profile_details.nhis_id;
+    }
+    else if (patient?.local_data?.nhis_id) {
+      return patient.local_data.nhis_id;
+    }
+    return null;
+  };
+
+  // Function to get admission date
+  const getAdmissionDate = (patient) => {
+    const admissionDate = patient?.admission_date ||
+      patient?.patient_profile_details?.admission_date ||
+      patient?.local_data?.admission_date;
+
+    if (!admissionDate) return null;
+
+    try {
+      return format(new Date(admissionDate), "MMM d, yyyy");
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Function to get patient initials for avatar
   const getInitials = (patient) => {
-    // Check for name in patient_profile_details first (for recent patients)
-    if (patient?.patient_profile_details?.user_details) {
+    // 1. Direct patient profile (from /users/patients/)
+    if (patient?.user_details) {
+      const firstName = patient.user_details.first_name || "";
+      const lastName = patient.user_details.last_name || "";
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || "P";
+    }
+    // 2. Recent patients (from /patients/recent/)
+    else if (patient?.patient_profile_details?.user_details) {
       const firstName = patient.patient_profile_details.user_details.first_name || "";
       const lastName = patient.patient_profile_details.user_details.last_name || "";
       return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || "P";
     }
-    // Then check the old paths
+    // 3. Search results (from /patients/search/)
     else if (patient?.local_data?.user_details) {
       const firstName = patient.local_data.user_details.first_name || "";
       const lastName = patient.local_data.user_details.last_name || "";
@@ -136,10 +215,67 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     return "P";
   };
 
+  // Function to get patient ward
+  const getPatientWard = (patient) => {
+    // 1. Direct patient profile (from /users/patients/) - includes current_ward
+    if (patient?.current_ward) {
+      return patient.current_ward;
+    }
+    // 2. Recent patients (from /patients/recent/)
+    else if (patient?.patient_profile_details?.current_ward) {
+      return patient.patient_profile_details.current_ward;
+    }
+    // 3. Search results (from /patients/search/)
+    else if (patient?.local_data?.current_ward) {
+      return patient.local_data.current_ward;
+    }
+    return "Not Admitted";
+  };
+
+  // Function to get patient ward ID
+  const getPatientWardId = (patient) => {
+    // 1. Direct patient profile (from /users/patients/) - includes current_ward_id
+    if (patient?.current_ward_id) {
+      return patient.current_ward_id;
+    }
+    // 2. Recent patients or search results might not have ward_id
+    return null;
+  };
+
   // Synchronize the local search input with the React Query hook
   const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-    setSearchTerm(e.target.value);
+    const query = e.target.value;
+    setSearchQuery(query);
+    updateSearch({ query });
+  };
+
+
+  const handleDateChange = (date) => {
+    setAdmissionDate(date);
+    updateSearch({ admission_date: date ? format(date, "yyyy-MM-dd") : "" });
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedWard("all");
+    setAdmissionDate(undefined);
+    setSearchTerm(""); // Reset search term to empty string/object
+  };
+
+  const updateSearch = (updates) => {
+    // Construct the new search object
+    const currentSearch = typeof searchTerm === 'object' ? searchTerm : { query: searchTerm };
+    const newSearch = {
+      ...currentSearch,
+      ...updates,
+      // Ensure query is always present
+      query: updates.query !== undefined ? updates.query : searchQuery
+    };
+
+    // If ward is "all", remove it
+    if (newSearch.ward === "all") newSearch.ward = "";
+
+    setSearchTerm(newSearch);
   };
 
   // Handle patient selection
@@ -169,12 +305,31 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
   const totalPages = Math.ceil(totalPatients / patientsPerPage);
 
   // Determine which data to display based on search state
-  const displayedPatients = debouncedSearchTerm 
-    ? (searchResults?.results || searchResults?.patients || []) 
-    : (recentPatientsData?.results || recentPatientsData?.patients || recentPatientsData || []);
+  const displayedPatients = debouncedSearchTerm
+    ? (searchResults?.results || searchResults?.patients || [])
+    : (allPatientsData?.results || allPatientsData?.patients || allPatientsData || []);
 
   // Ensure displayedPatients is always an array
   const safeDisplayedPatients = Array.isArray(displayedPatients) ? displayedPatients : [];
+
+  // Extract unique wards from patient data for filter dropdown
+  const uniqueWards = safeDisplayedPatients.reduce((wards, patient) => {
+    const wardId = patient?.current_ward_id;
+    const wardName = getPatientWard(patient);
+
+    if (wardId && wardName && wardName !== "Not Admitted" && wardName !== "Waiting List") {
+      // Check if this ward is already in the list
+      if (!wards.find(w => w.id === wardId)) {
+        wards.push({ id: wardId, name: wardName });
+      }
+    }
+    return wards;
+  }, []);
+
+  // Client-side filtering when ward is selected
+  const filteredPatients = selectedWard === "all"
+    ? safeDisplayedPatients
+    : safeDisplayedPatients.filter(patient => patient?.current_ward_id === selectedWard);
 
   return (
     <Card className="w-full">
@@ -186,25 +341,74 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
         </Button>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search patients by name, MRN, or NHIS ID..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-            className="pl-10"
-          />
+        <div className="mb-4 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search patients by name, MRN, or NHIS ID..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="pl-10"
+              />
+            </div>
+
+            <Select value={selectedWard} onValueChange={setSelectedWard}>
+              <SelectTrigger className="w-full md:w-[200px]">
+                <SelectValue placeholder="Filter by Ward" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Wards</SelectItem>
+                {uniqueWards.map((ward) => (
+                  <SelectItem key={ward.id} value={ward.id}>
+                    {ward.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={"outline"}
+                  className={cn(
+                    "w-full md:w-[240px] justify-start text-left font-normal",
+                    !admissionDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {admissionDate ? format(admissionDate, "PPP") : <span>Filter by Admission Date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={admissionDate}
+                  onSelect={handleDateChange}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
+            {(searchQuery || selectedWard !== "all" || admissionDate) && (
+              <Button variant="ghost" onClick={clearFilters} className="px-3">
+                <X className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
 
-        {isSearchLoading || isRecentLoading ? (
+        {isSearchLoading || isAllPatientsLoading ? (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>MRN</TableHead>
-                  <TableHead>Date of Birth</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>MRN / NHIS</TableHead>
+                  <TableHead>Age & Gender</TableHead>
+                  <TableHead>Ward</TableHead>
+                  <TableHead>Date Admitted</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -217,13 +421,16 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                       </div>
                     </TableCell>
                     <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                    <TableCell>
                       <Skeleton className="h-4 w-16" />
                     </TableCell>
                     <TableCell>
                       <Skeleton className="h-4 w-24" />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Skeleton className="h-8 w-16 ml-auto" />
+                    <TableCell>
+                      <Skeleton className="h-4 w-20" />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -232,9 +439,9 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
           </div>
         ) : safeDisplayedPatients.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            {debouncedSearchTerm 
-              ? "No patients found matching your search criteria" 
-              : "No recent patients. Search to find patients."}
+            {debouncedSearchTerm
+              ? "No patients found matching your search criteria"
+              : "No patients registered yet."}
           </div>
         ) : (
           <>
@@ -243,21 +450,30 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>MRN</TableHead>
-                    <TableHead>Date of Birth</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>MRN / NHIS</TableHead>
+                    <TableHead>Age & Gender</TableHead>
+                    <TableHead>Ward</TableHead>
+                    <TableHead>Date Admitted</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {safeDisplayedPatients.map((patient) => {
+                  {filteredPatients.map((patient) => {
                     const patientId = getPatientId(patient);
                     const displayName = getDisplayName(patient);
                     const initials = getInitials(patient);
                     const mrn = getPatientMRN(patient);
-                    const dob = getPatientDOB(patient);
+                    const nhis = getPatientNHIS(patient);
+                    const age = getPatientAge(patient);
+                    const gender = getPatientGender(patient);
+                    const ward = getPatientWard(patient);
+                    const admissionDate = getAdmissionDate(patient);
 
                     return (
-                      <TableRow key={patientId}>
+                      <TableRow
+                        key={patientId}
+                        onClick={() => handleSelectPatient(patient)}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      >
                         <TableCell className="font-medium">
                           <div className="flex items-center">
                             <Avatar className="h-8 w-8 mr-2">
@@ -266,16 +482,30 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                             <span>{displayName}</span>
                           </div>
                         </TableCell>
-                        <TableCell>{mrn}</TableCell>
-                        <TableCell>{dob}</TableCell>
-                        <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleSelectPatient(patient)}
-                          >
-                            View
-                          </Button>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{mrn}</span>
+                            {nhis && <span className="text-xs text-muted-foreground">NHIS: {nhis}</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span>{age} yrs</span>
+                            <span className="text-xs text-muted-foreground">{gender}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                            ward === "Not Admitted" ? "bg-gray-100 text-gray-800" :
+                              ward === "Waiting List" ? "bg-yellow-100 text-yellow-800" :
+                                "bg-green-100 text-green-800"
+                          )}>
+                            {ward}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {admissionDate || <span className="text-muted-foreground">-</span>}
                         </TableCell>
                       </TableRow>
                     );
@@ -288,7 +518,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
               <Pagination className="mt-4">
                 <PaginationContent>
                   <PaginationItem>
-                    <PaginationPrevious 
+                    <PaginationPrevious
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                       disabled={currentPage === 1}
                     />
@@ -309,7 +539,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                   })}
 
                   <PaginationItem>
-                    <PaginationNext 
+                    <PaginationNext
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                       disabled={currentPage === totalPages}
                     />

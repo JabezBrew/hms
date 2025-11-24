@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AppointmentTypeViewSet, AppointmentFHIRMappingViewSet, RecurringAppointmentRuleViewSet,
     AppointmentViewSet, SlotViewSet, ScheduleViewSet, ScheduleFHIRMappingViewSet,
-    RecurringScheduleViewSet, BatchGenerationViewSet
+    RecurringScheduleViewSet, BatchGenerationViewSet, BlockedTimeViewSet
 )
 
 router = DefaultRouter()
@@ -15,6 +15,7 @@ router.register(r'slots', SlotViewSet, basename='slot')
 router.register(r'schedules', ScheduleViewSet, basename='schedule')
 router.register(r'schedule-mappings', ScheduleFHIRMappingViewSet)
 router.register(r'recurring-schedules', RecurringScheduleViewSet)
+router.register(r'blocked-times', BlockedTimeViewSet)
 router.register(r'batch-generate-slots', BatchGenerationViewSet, basename='batch-generate-slots')
 
 urlpatterns = [

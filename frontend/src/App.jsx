@@ -51,6 +51,8 @@ const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateC
 const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
 const DoctorDashboard = lazy(() => import('./pages/dashboards/DoctorDashboard'))
+const ProviderDashboard = lazy(() => import('./pages/dashboards/ProviderDashboard'))
+const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
 const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
 
 // Loading fallback component
@@ -135,274 +137,299 @@ function AppContent() {
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-        {/* Dashboard - accessible to all authenticated users */}
-        <Route path="/" element={
-          <Layout>
-            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-              <h1 className="text-3xl font-bold">Hospital Management System</h1>
-              <p className="text-muted-foreground">Welcome to the HMS Dashboard</p>
-            </div>
-          </Layout>
-        } />
+          {/* Dashboard - accessible to all authenticated users */}
+          <Route path="/" element={
+            <Layout>
+              <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+                <h1 className="text-3xl font-bold">Hospital Management System</h1>
+                <p className="text-muted-foreground">Welcome to the HMS Dashboard</p>
+              </div>
+            </Layout>
+          } />
 
-        {/* Unauthorized page */}
-        <Route path="/unauthorized" element={
-          <Layout>
-            <UnauthorizedPage />
-          </Layout>
-        } />
+          {/* Unauthorized page */}
+          <Route path="/unauthorized" element={
+            <Layout>
+              <UnauthorizedPage />
+            </Layout>
+          } />
 
-      {/* Patient routes */}
-      <Route path="/patients" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
-          <Layout>
-            <PatientDashboard />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/patients/create" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <PatientCreatePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/patients/:id" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
-          <Layout>
-            <PatientDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/patients/:id/edit" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <PatientEditPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      {/* Appointment routes */}
-      <Route path="/appointments" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AppointmentsPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/appointments/create" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AppointmentCreatePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/appointments/:id" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AppointmentDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/appointments/:id/edit" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AppointmentEditPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      {/* Staff routes */}
-      <Route path="/staff" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <StaffListPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/staff/create" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <StaffCreatePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/staff/:id" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <StaffDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      {/* Practitioner Availability routes */}
-      <Route path="/practitioner-availability" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <PractitionerAvailabilityPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-      <Route path="/practitioner-availability/:id" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <PractitionerAvailabilityDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
-
-        {/* Schedule Slots route */}
-        <Route path="/schedules/:id/slots" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-                <Layout>
-                    <ScheduleSlotsPage />
-                </Layout>
+          {/* Patient routes */}
+          <Route path="/patients" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
+              <Layout>
+                <PatientDashboard />
+              </Layout>
             </RoleBasedRoute>
-        } />
+          } />
 
-      {/* Ward management routes */}
-      <Route path="/wards" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <WardsPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/patients/create" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <PatientCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/wards/new" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <NewWardPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/patients/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
+              <Layout>
+                <PatientDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/wards/reports" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <WardReportsPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/patients/:id/edit" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <PatientEditPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/wards/:wardId/edit" element={
-        <RoleBasedRoute allowedRoles={['admin']}>
-          <Layout>
-            <EditWardPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          {/* Appointment routes */}
+          <Route path="/appointments" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AppointmentsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/wards/:wardId" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <WardDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/appointments/create" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AppointmentCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Admission routes */}
-      <Route path="/admissions/new" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AdmissionCreatePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/appointments/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AppointmentDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/admissions/:admissionId" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <AdmissionDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/appointments/:id/edit" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AppointmentEditPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Encounter routes */}
-      <Route path="/encounters" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <EncountersPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          {/* Staff routes */}
+          <Route path="/staff" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <StaffListPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/encounters/new" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <EncounterCreatePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/staff/create" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <StaffCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/encounters/:id" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-          <Layout>
-            <EncounterDetailPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/staff/:id" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <StaffDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/encounters/:id/edit" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <EncounterEditPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          {/* Practitioner Availability routes */}
+          <Route path="/practitioner-availability" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <Layout>
+                <PractitionerAvailabilityPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      <Route path="/encounters/:id/clinical-notes" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <CreateClinicalNotePage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/practitioner-availability/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <Layout>
+                <PractitionerAvailabilityDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Clinical Notes Template Management */}
-      <Route path="/clinical-notes/templates" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-          <Layout>
-            <TemplateListPage />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          {/* Schedule Slots route */}
+          <Route path="/schedules/:id/slots" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <ScheduleSlotsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Nursing routes */}
-      <Route path="/nursing/dashboard" element={
-        <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-          <NursingDashboardPage />
-        </RoleBasedRoute>
-      } />
+          {/* Ward management routes */}
+          <Route path="/wards" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <WardsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Doctor Dashboard */}
-      <Route path="/dashboard/doctor" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-          <Layout>
-            <DoctorDashboard />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/wards/new" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <NewWardPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-      {/* Workflow routes */}
-      <Route path="/workflows/consultation" element={
-        <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-          <Layout>
-            <ConsultationWorkflow />
-          </Layout>
-        </RoleBasedRoute>
-      } />
+          <Route path="/wards/reports" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <WardReportsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
 
-        <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/wards/:wardId/edit" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <EditWardPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/wards/:wardId" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <WardDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Admission routes */}
+          <Route path="/admissions/new" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AdmissionCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/admissions/:admissionId" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <AdmissionDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Encounter routes */}
+          <Route path="/encounters" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <EncountersPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/encounters/new" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <EncounterCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/encounters/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <EncounterDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/encounters/:id/edit" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <EncounterEditPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/encounters/:id/clinical-notes" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <CreateClinicalNotePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Clinical Notes Template Management */}
+          <Route path="/clinical-notes/templates" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <TemplateListPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Nursing routes */}
+          <Route path="/nursing/dashboard" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+              <NursingDashboardPage />
+            </RoleBasedRoute>
+          } />
+
+          {/* Doctor Dashboard */}
+          <Route path="/dashboard/doctor" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <Layout>
+                <DoctorDashboard />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Workflow routes */}
+          <Route path="/workflows/consultation" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <Layout>
+                <ConsultationWorkflow />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Provider Dashboard */}
+          <Route path="/dashboard/provider" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
+              <Layout>
+                <ProviderDashboard />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Encounter Workspace */}
+          <Route path="/encounters/:id/workspace" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
+              {/* Note: Workspace has its own layout/header, so we might not want the main Layout here, 
+               but for now keeping it consistent or we can remove Layout if it duplicates the header. 
+               The design says "Sticky context", implying full screen. 
+               Let's try without Layout for full immersion or with Layout if sidebar is needed.
+               Design guide implies a "Command Center" feel. 
+               I'll use Layout for sidebar navigation but the workspace itself handles the header.
+           */}
+              <Layout>
+                <EncounterWorkspace />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Suspense>
     </ErrorBoundary>

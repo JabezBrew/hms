@@ -24,7 +24,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
-                  'date_of_birth', 'user_type', 'is_active', 'date_joined']
+                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined']
         read_only_fields = ['id', 'date_joined']
 
 
@@ -96,14 +96,84 @@ class PatientProfileSerializer(serializers.ModelSerializer):
     """
     user_details = UserSerializer(source='user', read_only=True)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    current_ward = serializers.SerializerMethodField()
+    current_ward_id = serializers.SerializerMethodField()
+    admission_date = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id', 
-                  'blood_group', 'allergies', 'emergency_contact_name', 
-                  'emergency_contact_phone', 'emergency_contact_relationship', 
-                  'fhir_patient_id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id',
+                  'blood_group', 'allergies', 'emergency_contact_name',
+                  'emergency_contact_phone', 'emergency_contact_relationship',
+                  'fhir_patient_id', 'current_ward', 'current_ward_id', 'admission_date',
+                  'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def get_current_ward(self, obj):
+        """
+        Get the name of the ward where the patient is currently admitted.
+        Returns "Waiting List" if admitted but no bed, "Not Admitted" otherwise.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            # Filter in python to use the cache
+            # Note: admissions are ordered by -admission_date by default
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            # Fallback to DB query if not prefetched
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if not admission:
+            return "Not Admitted"
+
+        if admission.status == 'waiting':
+            return "Waiting List"
+
+        if admission.bed:
+            return admission.bed.ward.name
+
+        return "Admitted (No Bed)"
+
+    def get_current_ward_id(self, obj):
+        """
+        Get the ID of the ward where the patient is currently admitted.
+        Returns None if not admitted to a ward.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission and admission.bed:
+            return str(admission.bed.ward.id)
+
+        return None
+
+    def get_admission_date(self, obj):
+        """
+        Get the admission date of the patient's current admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return admission.admission_date
+
+        return None
 
 
 class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):

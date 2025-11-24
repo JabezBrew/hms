@@ -137,6 +137,7 @@ class RecurringSchedule(models.Model):
     slot_duration = models.IntegerField(help_text="Duration in minutes")
     active_from = models.DateField()
     active_to = models.DateField(blank=True, null=True)
+    breaks = models.JSONField(default=list, blank=True, help_text="List of break times, e.g. [{'start': '12:00', 'end': '13:00'}]")
     is_active = models.BooleanField(default=True)
 
     # Audit fields
@@ -147,6 +148,44 @@ class RecurringSchedule(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['practitioner', 'is_active', 'active_from']),
+            models.Index(fields=['days_of_week']),
+        ]
 
     def __str__(self):
         return f"{self.name} - {self.practitioner}"
+
+
+class BlockedTime(models.Model):
+    """
+    Model for one-off blocked times (vacations, emergencies, closures, etc.).
+    Used to block specific time ranges that override recurring schedules.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='blocked_times')
+    date = models.DateField(help_text="Date to block")
+    start_time = models.TimeField(help_text="Start time of blocked period")
+    end_time = models.TimeField(help_text="End time of blocked period")
+    reason = models.CharField(max_length=200, help_text="Reason for blocking (e.g., 'Vacation', 'Emergency', 'Training')")
+    is_all_day = models.BooleanField(default=False, help_text="Block the entire day")
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_blocked_times')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_blocked_times')
+
+    class Meta:
+        ordering = ['date', 'start_time']
+        indexes = [
+            models.Index(fields=['practitioner', 'date']),
+            models.Index(fields=['date']),
+        ]
+        verbose_name = "Blocked Time"
+        verbose_name_plural = "Blocked Times"
+
+    def __str__(self):
+        if self.is_all_day:
+            return f"{self.practitioner} - {self.date} (All Day): {self.reason}"
+        return f"{self.practitioner} - {self.date} {self.start_time}-{self.end_time}: {self.reason}"

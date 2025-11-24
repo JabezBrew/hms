@@ -145,7 +145,7 @@ class Admission(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='admissions')
-    bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='admissions')
+    bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='admissions', null=True, blank=True)
 
     # FHIR Encounter reference
     fhir_encounter_id = models.CharField(max_length=100, blank=True, null=True)
@@ -161,6 +161,7 @@ class Admission(models.Model):
         ('discharged', 'Discharged'),
         ('transferred', 'Transferred'),
         ('deceased', 'Deceased'),
+        ('waiting', 'Waiting List'),
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='admitted')
 
@@ -178,7 +179,7 @@ class Admission(models.Model):
     discharge_notes = models.TextField(blank=True, null=True)
 
     # Billing
-    daily_rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate per day at time of admission")
+    daily_rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Rate per day at time of admission", default=0.00)
     is_billed = models.BooleanField(default=False)
 
     # Staff
@@ -206,14 +207,15 @@ class Admission(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.patient.user.get_full_name()} - {self.bed.ward.name} - {self.get_status_display()}"
+        bed_name = self.bed.ward.name if self.bed else "No Bed"
+        return f"{self.patient.user.get_full_name()} - {bed_name} - {self.get_status_display()}"
 
     def save(self, *args, **kwargs):
         """
         Override save method to handle bed status changes.
         """
         # If this is a new admission, set the bed status to occupied
-        if not self.pk and self.status == 'admitted':
+        if self._state.adding and self.status == 'admitted' and self.bed:
             self.bed.status = 'occupied'
             self.bed.save()
 
