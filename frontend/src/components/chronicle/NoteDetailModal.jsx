@@ -135,10 +135,52 @@ const NoteDetailModal = ({ open, onOpenChange, entry }) => {
 };
 
 /**
+ * Preferred ordering for clinical note sections
+ * Keys not in this list will appear at the end in their original order
+ */
+const SECTION_ORDER = [
+  // SOAP note sections
+  'subjective', 'objective', 'assessment', 'plan',
+  // Common subjective subsections
+  'chief_complaint', 'chiefComplaint', 'history_of_present_illness', 'historyOfPresentIllness',
+  'review_of_systems', 'reviewOfSystems', 'current_medications', 'currentMedications',
+  'allergies', 'social_history', 'socialHistory', 'family_history', 'familyHistory',
+  // Common objective subsections
+  'vital_signs', 'vitalSigns', 'physical_exam', 'physicalExam', 'investigations', 'investigations_results',
+  // Common assessment subsections
+  'primary_diagnosis', 'primaryDiagnosis', 'differential_diagnoses', 'differentialDiagnoses',
+  'secondary_findings', 'secondaryFindings', 'clinical_reasoning', 'clinicalReasoning', 'severity',
+  // Common plan subsections
+  'medications', 'investigations', 'non_pharmacological', 'nonPharmacological',
+  'patient_education', 'patientEducation', 'follow_up', 'followUp', 'referrals', 'disposition',
+  // Other common sections
+  'history', 'examination', 'diagnosis', 'treatment', 'notes', 'findings', 'recommendations'
+];
+
+/**
+ * Sort object entries according to clinical section ordering
+ */
+const sortClinicalEntries = (entries) => {
+  return [...entries].sort((a, b) => {
+    const indexA = SECTION_ORDER.indexOf(a[0].toLowerCase());
+    const indexB = SECTION_ORDER.indexOf(b[0].toLowerCase());
+
+    // If both keys are in the order list, sort by their position
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    // If only one key is in the list, it comes first
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    // If neither is in the list, keep original order
+    return 0;
+  });
+};
+
+/**
  * GenericDataRenderer - Recursively renders any data structure
  *
  * Handles strings, arrays, objects, and nested structures.
  * Automatically formats keys to be human-readable.
+ * Sorts clinical sections in proper order (e.g., SOAP: Subjective, Objective, Assessment, Plan)
  */
 const GenericDataRenderer = ({ data, depth = 0 }) => {
   if (!data) return null;
@@ -185,9 +227,12 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
     const entries = Object.entries(data);
     if (entries.length === 0) return null;
 
+    // Sort entries according to clinical section ordering
+    const sortedEntries = sortClinicalEntries(entries);
+
     return (
       <div className={cn("space-y-4", depth > 0 && "space-y-3")}>
-        {entries.map(([key, value]) => {
+        {sortedEntries.map(([key, value]) => {
           // Skip null/undefined values
           if (value === null || value === undefined) return null;
           // Skip empty strings

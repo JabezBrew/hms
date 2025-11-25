@@ -12,7 +12,7 @@ export const timelineKeys = {
 /**
  * Fetch patient timeline with pagination
  * @param {string} patientId - Patient ID
- * @param {Object} options - Query options (type, search, page_size, start_date, end_date)
+ * @param {Object} options - Query options (type, search, page_size, start_date, end_date, encounter_id)
  * @returns {Promise} - Paginated timeline data
  */
 async function fetchTimeline(patientId, options = {}) {
@@ -35,6 +35,9 @@ async function fetchTimeline(patientId, options = {}) {
   }
   if (options.end_date) {
     params.append('end_date', options.end_date);
+  }
+  if (options.encounter_id) {
+    params.append('encounter_id', options.encounter_id);
   }
 
   const queryString = params.toString();
@@ -62,6 +65,7 @@ async function fetchTimelineStats(patientId) {
  * @param {number} options.pageSize - Items per page (default: 20)
  * @param {string} options.startDate - Start date filter (ISO format)
  * @param {string} options.endDate - End date filter (ISO format)
+ * @param {string} options.encounterId - Filter by specific encounter
  * @returns {Object} - Infinite query result with timeline entries
  */
 export function usePatientTimeline(patientId, options = {}) {
@@ -71,11 +75,12 @@ export function usePatientTimeline(patientId, options = {}) {
     pageSize = 20,
     startDate,
     endDate,
+    encounterId,
     enabled = true,
   } = options;
 
   return useInfiniteQuery({
-    queryKey: timelineKeys.filtered(patientId, { type, search, pageSize, startDate, endDate }),
+    queryKey: timelineKeys.filtered(patientId, { type, search, pageSize, startDate, endDate, encounterId }),
     queryFn: ({ pageParam = 1 }) => fetchTimeline(patientId, {
       type,
       search,
@@ -83,6 +88,7 @@ export function usePatientTimeline(patientId, options = {}) {
       page_size: pageSize,
       start_date: startDate,
       end_date: endDate,
+      encounter_id: encounterId,
     }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {

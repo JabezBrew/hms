@@ -39,15 +39,21 @@ class NoteEntrySerializer(serializers.ModelSerializer):
     """
     template_title = serializers.SerializerMethodField()
     practitioner_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
 
     class Meta:
         model = NoteEntry
         fields = [
-            'id', 'template', 'template_title', 'encounter_id',
-            'practitioner', 'practitioner_name', 'composition_fhir_id',
+            'id', 'template', 'template_title', 'patient', 'patient_name',
+            'encounter', 'practitioner', 'practitioner_name', 'composition_fhir_id',
             'data', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'composition_fhir_id', 'created_at', 'updated_at']
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name() or obj.patient.user.username
+        return None
 
     def get_template_title(self, obj):
         return obj.template.title
@@ -96,7 +102,7 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             'medication_name', 'dosage', 'route', 'route_display',
             'frequency', 'frequency_display', 'duration_days',
             'start_date', 'end_date', 'instructions', 'reason',
-            'status', 'status_display', 'encounter_id',
+            'status', 'status_display', 'encounter',
             'created_at', 'updated_at', 'is_active', 'days_remaining',
             'discontinued_at', 'discontinued_by', 'discontinue_reason'
         ]
@@ -125,7 +131,7 @@ class PrescriptionCreateSerializer(serializers.ModelSerializer):
         fields = [
             'patient', 'medication_name', 'dosage', 'route', 'frequency',
             'duration_days', 'start_date', 'end_date', 'instructions',
-            'reason', 'encounter_id'
+            'reason', 'encounter'
         ]
 
     def validate(self, data):

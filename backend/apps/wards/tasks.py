@@ -1,10 +1,12 @@
 """
 Celery tasks for the wards app.
 
-Includes background FHIR synchronization for encounters.
+Includes background FHIR synchronization for encounters and
+automatic encounter lifecycle management.
 """
 from celery import shared_task
 import logging
+from datetime import timedelta
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -233,3 +235,143 @@ def _build_fhir_encounter(encounter):
         fhir_resource['id'] = encounter.fhir_id
 
     return fhir_resource
+
+
+# ============================================================================
+# Encounter Lifecycle Management Tasks
+# ============================================================================
+
+@shared_task(name='apps.wards.tasks.close_stale_outpatient_encounters')
+def close_stale_outpatient_encounters():
+    """
+    Close outpatient encounters that are still in-progress from previous days.
+
+    Outpatient encounters should typically be completed within the same day.
+    This task runs daily to automatically close any encounters that were
+    left open, ensuring clean encounter records.
+
+    Schedule: Run daily at midnight or early morning.
+
+    Returns:
+        dict: Summary of closed encounters
+    """
+    from .models import Encounter
+
+    yesterday = timezone.now().date() - timedelta(days=1)
+
+    stale_encounters = Encounter.objects.filter(
+        encounter_type='outpatient',
+        status='in-progress',
+        start_time__date__lte=yesterday
+    )
+
+    count = stale_encounters.count()
+    closed = 0
+    errors = 0
+
+    for encounter in stale_encounters:
+        try:
+            # Set end_time to end of the day the encounter started
+            end_of_day = timezone.make_aware(
+                timezone.datetime.combine(
+                    encounter.start_time.date(),
+                    timezone.datetime.max.time().replace(microsecond=0)
+                )
+            )
+
+            encounter.status = 'finished'
+            encounter.end_time = end_of_day
+            encounter.fhir_synced = False  # Mark for re-sync
+            encounter.save(update_fields=['status', 'end_time', 'fhir_synced', 'updated_at'])
+            closed += 1
+
+            logger.info(f"Auto-closed stale encounter {encounter.id} from {encounter.start_time.date()}")
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to close stale encounter {encounter.id}: {e}")
+
+    results = {
+        'found': count,
+        'closed': closed,
+        'errors': errors,
+    }
+
+    logger.info(f"Stale outpatient encounter cleanup complete: {results}")
+    return results
+
+
+@shared_task(name='apps.wards.tasks.close_stale_emergency_encounters')
+def close_stale_emergency_encounters(hours: int = 24):
+    """
+    Close emergency encounters that have been in-progress for too long.
+
+    Emergency encounters typically shouldn't last more than 24 hours.
+    After that, patients are either discharged or admitted as inpatients.
+
+    Args:
+        hours: Maximum hours before an emergency encounter is considered stale
+
+    Returns:
+        dict: Summary of closed encounters
+    """
+    from .models import Encounter
+
+    cutoff_time = timezone.now() - timedelta(hours=hours)
+
+    stale_encounters = Encounter.objects.filter(
+        encounter_type='emergency',
+        status='in-progress',
+        start_time__lte=cutoff_time
+    )
+
+    count = stale_encounters.count()
+    closed = 0
+    errors = 0
+
+    for encounter in stale_encounters:
+        try:
+            encounter.status = 'finished'
+            encounter.end_time = encounter.start_time + timedelta(hours=hours)
+            encounter.fhir_synced = False
+            encounter.save(update_fields=['status', 'end_time', 'fhir_synced', 'updated_at'])
+            closed += 1
+
+            logger.info(f"Auto-closed stale emergency encounter {encounter.id}")
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to close stale emergency encounter {encounter.id}: {e}")
+
+    results = {
+        'found': count,
+        'closed': closed,
+        'errors': errors,
+    }
+
+    logger.info(f"Stale emergency encounter cleanup complete: {results}")
+    return results
+
+
+@shared_task(name='apps.wards.tasks.cleanup_encounters_daily')
+def cleanup_encounters_daily():
+    """
+    Daily cleanup task that runs all encounter maintenance operations.
+
+    This is a convenience task that runs:
+    - close_stale_outpatient_encounters
+    - close_stale_emergency_encounters
+    - sync_pending_encounters
+
+    Schedule: Run daily at 2 AM local time.
+
+    Returns:
+        dict: Combined results from all cleanup operations
+    """
+    outpatient_results = close_stale_outpatient_encounters()
+    emergency_results = close_stale_emergency_encounters()
+    sync_results = sync_pending_encounters()
+
+    return {
+        'outpatient_cleanup': outpatient_results,
+        'emergency_cleanup': emergency_results,
+        'fhir_sync': sync_results,
+    }

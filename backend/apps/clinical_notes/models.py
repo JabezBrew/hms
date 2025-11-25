@@ -36,12 +36,33 @@ class NoteTemplate(models.Model):
 class NoteEntry(models.Model):
     """
     Model for submitted clinical note entries.
-    Links to a template, patient encounter, and practitioner.
+    Links to a template, patient, encounter, and practitioner.
     Stores the actual values entered for each section.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     template = models.ForeignKey(NoteTemplate, on_delete=models.CASCADE, related_name='entries')
-    encounter_id = models.CharField(max_length=100)  # FHIR Encounter ID
+
+    # Patient - direct link for querying
+    patient = models.ForeignKey(
+        'users.PatientProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='note_entries',
+        help_text="The patient this note is for"
+    )
+
+    # Encounter - required link to group notes by clinical visit
+    # The auto-encounter logic in views ensures this is always set
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.PROTECT,  # Prevent deletion of encounters with linked notes
+        null=False,
+        blank=False,
+        related_name='note_entries',
+        help_text="The clinical encounter/visit during which this note was created"
+    )
+
     practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='note_entries')
     composition_fhir_id = models.CharField(max_length=100, null=True, blank=True)  # FHIR Composition ID
     data = models.JSONField()  # Actual values entered for each section
@@ -53,29 +74,14 @@ class NoteEntry(models.Model):
     class Meta:
         ordering = ['-created_at']
         verbose_name_plural = 'Note entries'
+        indexes = [
+            models.Index(fields=['patient', '-created_at']),
+            models.Index(fields=['encounter', '-created_at']),
+        ]
 
     def __str__(self):
-        return f"{self.template.title} for Encounter {self.encounter_id}"
-
-    @property
-    def encounter(self):
-        """
-        Get the local Encounter object.
-        """
-        if not hasattr(self, '_encounter'):
-            try:
-                from ..wards.models import Encounter
-                self._encounter = Encounter.objects.select_related(
-                    'patient', 'patient__user',
-                    'practitioner', 'practitioner__staff', 'practitioner__staff__user'
-                ).get(id=self.encounter_id)
-            except Exception as e:
-                # Log the error but don't raise it
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Encounter {self.encounter_id} not found locally: {str(e)}")
-                self._encounter = None
-        return self._encounter
+        patient_name = self.patient.user.get_full_name() if self.patient else "Unknown"
+        return f"{self.template.title} for {patient_name}"
 
 
 class Prescription(models.Model):
@@ -161,8 +167,16 @@ class Prescription(models.Model):
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
 
-    # Optional encounter link
-    encounter_id = models.CharField(max_length=100, null=True, blank=True)
+    # Link to encounter - required, groups prescriptions by clinical visit
+    # The auto-encounter logic in views ensures this is always set
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.PROTECT,  # Prevent deletion of encounters with linked prescriptions
+        null=False,
+        blank=False,
+        related_name='prescriptions',
+        help_text="The clinical encounter/visit during which this was prescribed"
+    )
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)

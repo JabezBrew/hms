@@ -15,9 +15,10 @@ class VitalSignsSerializer(serializers.ModelSerializer):
         model = VitalSigns
         fields = [
             'id', 'patient', 'patient_details', 'recorded_by', 'recorded_by_details',
-            'temperature', 'heart_rate', 'blood_pressure_systolic', 'blood_pressure_diastolic',
-            'blood_pressure', 'respiratory_rate', 'oxygen_saturation', 'pain_level',
-            'recorded_at', 'notes', 'is_critical', 'created_at', 'updated_at'
+            'encounter', 'temperature', 'heart_rate', 'blood_pressure_systolic',
+            'blood_pressure_diastolic', 'blood_pressure', 'respiratory_rate',
+            'oxygen_saturation', 'pain_level', 'recorded_at', 'notes', 'is_critical',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'is_critical', 'created_at', 'updated_at']
 
@@ -29,7 +30,7 @@ class VitalSignsCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VitalSigns
         fields = [
-            'patient', 'recorded_by', 'temperature', 'heart_rate',
+            'patient', 'recorded_by', 'encounter', 'temperature', 'heart_rate',
             'blood_pressure_systolic', 'blood_pressure_diastolic',
             'respiratory_rate', 'oxygen_saturation', 'pain_level',
             'recorded_at', 'notes'

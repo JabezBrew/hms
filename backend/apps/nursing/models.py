@@ -11,10 +11,23 @@ User = get_user_model()
 class VitalSigns(models.Model):
     """
     Model for recording patient vital signs.
+
+    Optionally linked to an Encounter to group vitals by clinical visit.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='vital_signs')
     recorded_by = models.ForeignKey(PractitionerProfile, on_delete=models.SET_NULL, null=True, related_name='recorded_vitals')
+
+    # Link to encounter - required, groups vitals by clinical visit
+    # The auto-encounter logic in views ensures this is always set
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.PROTECT,  # Prevent deletion of encounters with linked vitals
+        null=False,
+        blank=False,
+        related_name='vital_signs',
+        help_text="The clinical encounter/visit during which these vitals were recorded"
+    )
 
     # Vital sign measurements
     temperature = models.DecimalField(

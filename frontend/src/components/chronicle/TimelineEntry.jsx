@@ -386,10 +386,20 @@ const MedicationContent = ({ medication }) => {
 };
 
 /**
+ * Preferred ordering for clinical note sections (for preview extraction)
+ */
+const PREVIEW_SECTION_ORDER = [
+  'subjective', 'objective', 'assessment', 'plan',
+  'chief_complaint', 'chiefComplaint', 'history', 'examination',
+  'diagnosis', 'treatment', 'findings', 'recommendations'
+];
+
+/**
  * NotePreview - Generic preview for any note type
  *
  * Shows title and a brief summary extracted from entry data or content.
  * Works with any note structure - not hardcoded to SOAP format.
+ * Extracts preview items in clinical order (e.g., SOAP order).
  */
 const NotePreview = ({ entry }) => {
   const { title, content, data } = entry;
@@ -399,7 +409,16 @@ const NotePreview = ({ entry }) => {
     if (!data || typeof data !== 'object') return [];
 
     const items = [];
-    const keys = Object.keys(data);
+
+    // Sort keys according to clinical section ordering
+    const keys = Object.keys(data).sort((a, b) => {
+      const indexA = PREVIEW_SECTION_ORDER.indexOf(a.toLowerCase());
+      const indexB = PREVIEW_SECTION_ORDER.indexOf(b.toLowerCase());
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return 0;
+    });
 
     // Try to extract meaningful preview items (limit to 2)
     for (const key of keys) {

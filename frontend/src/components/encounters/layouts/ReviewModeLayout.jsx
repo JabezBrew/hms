@@ -1,9 +1,13 @@
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { usePatientTimeline, flattenTimelinePages } from '@/hooks/useTimelineQueries';
+import { TimelineEntry } from '@/components/chronicle';
 import {
   User,
   Calendar,
@@ -13,6 +17,7 @@ import {
   ClipboardList,
   Pill,
   Stethoscope,
+  Clock,
 } from 'lucide-react';
 
 /**
@@ -30,6 +35,60 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
       .toUpperCase()
       .slice(0, 2);
   };
+
+  // Fetch timeline entries filtered by this encounter
+  const patientId = encounter?.patient;
+  const encounterId = encounter?.id;
+
+  const {
+    data: timelineData,
+    isLoading: isTimelineLoading,
+  } = usePatientTimeline(patientId, {
+    encounterId: encounterId,
+    pageSize: 50,
+    enabled: !!patientId && !!encounterId,
+  });
+
+  // Transform timeline entries
+  const timelineEntries = useMemo(() => {
+    if (!timelineData) return [];
+    const flatEntries = flattenTimelinePages(timelineData);
+
+    return flatEntries.map(entry => {
+      let displayType = entry.type;
+      if (entry.entry_type === 'prescription') {
+        displayType = 'medication';
+      }
+      if (entry.entry_type === 'vitals' && entry.data) {
+        return {
+          ...entry,
+          type: 'vitals',
+          data: {
+            temperature: entry.data.temperature,
+            blood_pressure: entry.data.blood_pressure,
+            heart_rate: entry.data.heart_rate,
+            spo2: entry.data.oxygen_saturation,
+            respiratory_rate: entry.data.respiratory_rate,
+            pain_level: entry.data.pain_level,
+          }
+        };
+      }
+      if (entry.entry_type === 'prescription' && entry.data) {
+        return {
+          ...entry,
+          type: 'medication',
+          data: {
+            name: entry.data.medication_name,
+            dose: entry.data.dosage,
+            route: entry.data.route_display,
+            frequency: entry.data.frequency_display,
+            notes: entry.data.instructions,
+          }
+        };
+      }
+      return { ...entry, type: displayType };
+    });
+  }, [timelineData]);
 
   // Mock data - replace with actual API calls
   const patientInfo = {
@@ -264,6 +323,36 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            <Separator />
+
+            {/* Encounter Timeline */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Encounter Timeline
+              </h3>
+              {isTimelineLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : timelineEntries.length > 0 ? (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {timelineEntries.map((entry, index) => (
+                    <TimelineEntry
+                      key={entry.id}
+                      entry={entry}
+                      index={index}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No timeline entries for this encounter yet.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

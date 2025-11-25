@@ -9,6 +9,7 @@ export const encounterKeys = {
   list: (filters) => [...encounterKeys.lists(), { filters }],
   details: () => [...encounterKeys.all, 'detail'],
   detail: (id) => [...encounterKeys.details(), id],
+  forPatient: (patientId) => [...encounterKeys.all, 'forPatient', patientId],
   patients: () => [...encounterKeys.all, 'patients'],
   practitioners: () => [...encounterKeys.all, 'practitioners'],
 };
@@ -37,6 +38,22 @@ export function useEncounter(id) {
     queryFn: () => encountersApi.getEncounter(id),
     enabled: !!id, // Only run the query if we have an ID
     staleTime: 60 * 1000, // 60 seconds
+  });
+}
+
+/**
+ * Get all encounters for a specific patient
+ * @param {string} patientId - Patient ID
+ * @param {Object} options - Query options
+ * @returns {Object} Query result with patient's encounters
+ */
+export function usePatientEncounters(patientId, options = {}) {
+  return useQuery({
+    queryKey: encounterKeys.forPatient(patientId),
+    queryFn: () => encountersApi.getEncountersForPatient(patientId),
+    enabled: !!patientId,
+    staleTime: 60 * 1000, // 60 seconds
+    ...options,
   });
 }
 

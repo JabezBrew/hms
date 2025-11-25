@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
+import logging
 
 from .models import NoteTemplate, NoteEntry, Prescription
 from .serializers import (
@@ -21,6 +22,9 @@ from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     generate_fhir_id, create_reference, create_codeable_concept, create_coding
 )
+from ..wards.services import ensure_encounter_for_entry
+
+logger = logging.getLogger(__name__)
 
 
 class NoteTemplateViewSet(viewsets.ModelViewSet):
@@ -96,12 +100,19 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         Filter note entries based on query parameters.
         """
-        queryset = NoteEntry.objects.all()
+        queryset = NoteEntry.objects.select_related(
+            'template', 'patient', 'patient__user', 'encounter', 'practitioner'
+        ).all()
 
         # Filter by encounter ID
-        encounter_id = self.request.query_params.get('encounter_id')
+        encounter_id = self.request.query_params.get('encounter_id') or self.request.query_params.get('encounter')
         if encounter_id:
             queryset = queryset.filter(encounter_id=encounter_id)
+
+        # Filter by patient
+        patient_id = self.request.query_params.get('patient_id') or self.request.query_params.get('patient')
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by template
         template_id = self.request.query_params.get('template_id')
@@ -119,6 +130,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """
         Create a new note entry and associated FHIR resources.
+
+        If no encounter is provided, automatically finds or creates an active encounter
+        for the patient.
         """
         # Get the practitioner profile first
         try:
@@ -132,39 +146,85 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Add practitioner to the request data
         data = request.data.copy()
         data['practitioner'] = practitioner_profile.id
-        
+
+        # Get patient for auto-encounter logic
+        patient_id = data.get('patient')
+        if not patient_id:
+            return Response(
+                {"error": "Patient is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Auto-encounter: Find or create an active encounter
+        encounter_id = data.get('encounter')
+        try:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=patient,
+                practitioner=practitioner_profile,
+                encounter_id=encounter_id,
+                reason='Clinical note documentation'
+            )
+            data['encounter'] = encounter.id
+            if encounter_created:
+                logger.info(f"Auto-created encounter {encounter.id} for note entry")
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
 
         try:
             # Get template and data
             template = serializer.validated_data['template']
-            encounter_id = serializer.validated_data['encounter_id']
             note_data = serializer.validated_data['data']
 
+            # Get encounter ID for FHIR resources (use encounter UUID or FHIR ID)
+            local_encounter_id = str(encounter.id)
+            fhir_encounter_id = encounter.fhir_id if encounter.fhir_id else local_encounter_id
+
             # Create FHIR resources and Composition
-            fhir_resources = self._create_fhir_resources(template, encounter_id, note_data)
+            composition_id = None
+            try:
+                fhir_resources = self._create_fhir_resources(template, fhir_encounter_id, note_data)
+                composition = self._create_composition(
+                    template,
+                    local_encounter_id,  # Use local encounter ID now
+                    practitioner_profile.fhir_practitioner_id,
+                    note_data,
+                    fhir_resources
+                )
+                composition_id = composition.get('id')
+            except Exception as fhir_error:
+                # Log but don't fail - FHIR sync can happen later
+                logger.warning(f"FHIR resource creation failed: {str(fhir_error)}")
 
-            # Create Composition resource
-            composition = self._create_composition(
-                template, 
-                encounter_id, 
-                practitioner_profile.fhir_practitioner_id,
-                note_data, 
-                fhir_resources
-            )
-
-            # Save the Composition ID to the note entry
-            serializer.validated_data['composition_fhir_id'] = composition['id']
+            # Save the Composition ID to the note entry (if created)
+            if composition_id:
+                serializer.validated_data['composition_fhir_id'] = composition_id
 
             # Save the note entry
             note_entry = serializer.save()
 
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            # Include encounter_created flag in response for frontend awareness
+            response_data = serializer.data
+            response_data['encounter_created'] = encounter_created
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response(
-                {"error": f"Failed to create FHIR resources: {str(e)}"},
+                {"error": f"Failed to create note entry: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -793,9 +853,13 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 
         return queryset.select_related('patient', 'prescribed_by', 'discontinued_by')
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
         """
         Create a new prescription. Only doctors can prescribe.
+
+        If no encounter is provided, automatically finds or creates an active encounter
+        for the patient.
         """
         # Check if user is a doctor
         if request.user.user_type not in ['doctor', 'admin']:
@@ -813,15 +877,54 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+
+        # Get patient for auto-encounter logic
+        patient_id = data.get('patient')
+        if not patient_id:
+            return Response(
+                {"error": "Patient is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Auto-encounter: Find or create an active encounter
+        encounter_id = data.get('encounter')
+        try:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=patient,
+                practitioner=practitioner_profile,
+                encounter_id=encounter_id,
+                reason='Prescription'
+            )
+            data['encounter'] = encounter.id
+            if encounter_created:
+                logger.info(f"Auto-created encounter {encounter.id} for prescription")
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
 
         # Create prescription with prescribed_by
         prescription = serializer.save(prescribed_by=practitioner_profile)
 
-        # Return full serialized data
+        # Return full serialized data with encounter_created flag
         output_serializer = PrescriptionSerializer(prescription)
-        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+        response_data = output_serializer.data
+        response_data['encounter_created'] = encounter_created
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def discontinue(self, request, pk=None):
@@ -908,6 +1011,7 @@ def patient_timeline(request, patient_id):
     - page_size: Items per page (default: 20, max: 100)
     - start_date: Filter entries from this date (ISO format)
     - end_date: Filter entries until this date (ISO format)
+    - encounter_id: Filter entries by specific encounter (UUID)
 
     Returns paginated timeline entries sorted by timestamp (newest first).
     """
@@ -927,6 +1031,7 @@ def patient_timeline(request, patient_id):
     page_size = min(int(request.query_params.get('page_size', 20)), 100)
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')
+    encounter_id = request.query_params.get('encounter_id')
 
     # Parse dates
     start_datetime = None
@@ -946,17 +1051,17 @@ def patient_timeline(request, patient_id):
 
     # Fetch notes
     if entry_type in ['all', 'notes']:
-        notes = _get_patient_notes(patient, search_query, start_datetime, end_datetime)
+        notes = _get_patient_notes(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(notes)
 
     # Fetch prescriptions
     if entry_type in ['all', 'prescriptions']:
-        prescriptions = _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime)
+        prescriptions = _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(prescriptions)
 
     # Fetch vitals
     if entry_type in ['all', 'vitals']:
-        vitals = _get_patient_vitals(patient, search_query, start_datetime, end_datetime)
+        vitals = _get_patient_vitals(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(vitals)
 
     # Sort all entries by timestamp (newest first)
@@ -981,16 +1086,43 @@ def patient_timeline(request, patient_id):
     })
 
 
-def _get_patient_notes(patient, search_query, start_datetime, end_datetime):
+def _format_encounter_details(encounter):
+    """
+    Format encounter details for timeline entries.
+    Returns None if no encounter.
+    """
+    if not encounter:
+        return None
+
+    return {
+        'id': str(encounter.id),
+        'type': encounter.encounter_type,
+        'status': encounter.status,
+        'start_time': encounter.start_time.isoformat() if encounter.start_time else None,
+        'end_time': encounter.end_time.isoformat() if encounter.end_time else None,
+        'reason': encounter.reason,
+        'location': encounter.location,
+        'practitioner_name': encounter.practitioner_name,
+    }
+
+
+def _get_patient_notes(patient, search_query, start_datetime, end_datetime, encounter_id=None):
     """
     Fetch and format clinical notes for a patient.
     """
-    # Get notes - we need to find notes that belong to this patient
-    # Notes are linked via encounter_id, and we need to match encounters for this patient
-    # For now, let's get notes where the encounter involves this patient
-    notes_queryset = NoteEntry.objects.select_related(
-        'template', 'practitioner', 'practitioner__staff', 'practitioner__staff__user'
+    # Get notes for this patient using the patient FK
+    # Also include legacy notes where patient is NULL (backwards compatibility)
+    notes_queryset = NoteEntry.objects.filter(
+        Q(patient=patient) | Q(patient__isnull=True)
+    ).select_related(
+        'template', 'practitioner', 'practitioner__staff', 'practitioner__staff__user',
+        'encounter', 'encounter__practitioner', 'encounter__practitioner__staff',
+        'encounter__practitioner__staff__user'
     )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        notes_queryset = notes_queryset.filter(encounter_id=encounter_id)
 
     # Apply date filters
     if start_datetime:
@@ -1047,21 +1179,28 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime):
             'content': content_summary,
             'author': author_name,
             'data': note.data,
-            'encounter_id': note.encounter_id,
+            'encounter_id': str(note.encounter_id) if note.encounter_id else None,
+            'encounter': _format_encounter_details(note.encounter),
         })
 
     return entries
 
 
-def _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime):
+def _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime, encounter_id=None):
     """
     Fetch and format prescriptions for a patient.
     """
     prescriptions_queryset = Prescription.objects.filter(
         patient=patient
     ).select_related(
-        'prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user'
+        'prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user',
+        'encounter', 'encounter__practitioner', 'encounter__practitioner__staff',
+        'encounter__practitioner__staff__user'
     )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        prescriptions_queryset = prescriptions_queryset.filter(encounter_id=encounter_id)
 
     # Apply date filters
     if start_datetime:
@@ -1109,20 +1248,28 @@ def _get_patient_prescriptions(patient, search_query, start_datetime, end_dateti
                 'status': rx.status,
             },
             'status': rx.status,
+            'encounter_id': str(rx.encounter_id) if rx.encounter_id else None,
+            'encounter': _format_encounter_details(rx.encounter),
         })
 
     return entries
 
 
-def _get_patient_vitals(patient, search_query, start_datetime, end_datetime):
+def _get_patient_vitals(patient, search_query, start_datetime, end_datetime, encounter_id=None):
     """
     Fetch and format vital signs for a patient.
     """
     vitals_queryset = VitalSigns.objects.filter(
         patient=patient
     ).select_related(
-        'recorded_by', 'recorded_by__staff', 'recorded_by__staff__user'
+        'recorded_by', 'recorded_by__staff', 'recorded_by__staff__user',
+        'encounter', 'encounter__practitioner', 'encounter__practitioner__staff',
+        'encounter__practitioner__staff__user'
     )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        vitals_queryset = vitals_queryset.filter(encounter_id=encounter_id)
 
     # Apply date filters
     if start_datetime:
@@ -1177,6 +1324,8 @@ def _get_patient_vitals(patient, search_query, start_datetime, end_datetime):
                 'notes': vital.notes,
             },
             'is_critical': vital.is_critical,
+            'encounter_id': str(vital.encounter_id) if vital.encounter_id else None,
+            'encounter': _format_encounter_details(vital.encounter),
         })
 
     return entries

@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
+import { usePatientEncounters } from "@/hooks/useEncounterQueries";
 import { useClinicalSummary } from "@/hooks/useClinicalSummaryQueries";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,12 @@ import {
   Filter,
   RefreshCw,
   Search,
-  Loader2
+  Loader2,
+  Calendar,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  AlertCircle
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -45,6 +51,7 @@ const PatientChroniclePage = () => {
   const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
   const [isAddVitalsOpen, setIsAddVitalsOpen] = useState(false);
   const [isAddPrescriptionOpen, setIsAddPrescriptionOpen] = useState(false);
+  const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -54,6 +61,9 @@ const PatientChroniclePage = () => {
 
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
+
+  // Fetch patient encounters for grouping
+  const { data: encounters } = usePatientEncounters(id);
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
@@ -204,36 +214,85 @@ const PatientChroniclePage = () => {
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
 
-  // Group entries by date
-  const groupedEntries = useMemo(() => {
-    const groups = {};
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+  // Group entries by encounter
+  const groupedByEncounter = useMemo(() => {
+    // Create a map of encounter_id -> encounter details
+    const encounterMap = new Map();
+    if (encounters) {
+      encounters.forEach(enc => {
+        encounterMap.set(enc.id, enc);
+      });
+    }
+
+    // Group entries
+    const groups = {
+      encounters: [], // Array of { encounter, entries }
+      unlinked: []    // Entries without an encounter
+    };
+
+    // Temporary map to collect entries by encounter
+    const encounterEntries = new Map();
 
     filteredEntries.forEach(entry => {
-      const entryDate = new Date(entry.timestamp).toDateString();
-      let dateLabel;
+      const encounterId = entry.encounter_id || entry.encounter?.id;
 
-      if (entryDate === today) {
-        dateLabel = 'Today';
-      } else if (entryDate === yesterday) {
-        dateLabel = 'Yesterday';
+      if (encounterId) {
+        if (!encounterEntries.has(encounterId)) {
+          encounterEntries.set(encounterId, []);
+        }
+        encounterEntries.get(encounterId).push(entry);
       } else {
-        dateLabel = new Date(entry.timestamp).toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'short',
-          day: 'numeric'
-        });
+        groups.unlinked.push(entry);
       }
+    });
 
-      if (!groups[dateLabel]) {
-        groups[dateLabel] = [];
-      }
-      groups[dateLabel].push(entry);
+    // Convert to array and attach encounter details
+    encounterEntries.forEach((entries, encounterId) => {
+      // Get encounter details from map or from first entry
+      const encounter = encounterMap.get(encounterId) ||
+                       entries[0]?.encounter ||
+                       { id: encounterId, type: 'unknown', status: 'unknown' };
+
+      groups.encounters.push({
+        encounter,
+        entries: entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      });
+    });
+
+    // Sort encounters by start_time (most recent first)
+    groups.encounters.sort((a, b) => {
+      const dateA = new Date(a.encounter.start_time || a.entries[0]?.timestamp);
+      const dateB = new Date(b.encounter.start_time || b.entries[0]?.timestamp);
+      return dateB - dateA;
     });
 
     return groups;
-  }, [filteredEntries]);
+  }, [filteredEntries, encounters]);
+
+  // Toggle encounter expansion
+  const toggleEncounter = useCallback((encounterId) => {
+    setExpandedEncounters(prev => {
+      const next = new Set(prev);
+      if (next.has(encounterId)) {
+        next.delete(encounterId);
+      } else {
+        next.add(encounterId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Expand all encounters
+  const expandAll = useCallback(() => {
+    const allIds = new Set(['unlinked']);
+    groupedByEncounter.encounters.forEach(g => allIds.add(g.encounter.id));
+    setExpandedEncounters(allIds);
+  }, [groupedByEncounter]);
+
+  // Collapse all encounters
+  const collapseAll = useCallback(() => {
+    setExpandedEncounters(new Set());
+  }, []);
 
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
@@ -457,11 +516,31 @@ const PatientChroniclePage = () => {
                   ))}
                 </div>
               </div>
+
+              {/* Expand/Collapse All */}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={expandAll}
+                  className="font-mono text-xs h-8 px-2"
+                >
+                  Expand All
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={collapseAll}
+                  className="font-mono text-xs h-8 px-2"
+                >
+                  Collapse
+                </Button>
+              </div>
             </div>
           </div>
 
-          {/* Timeline Entries */}
-          <div className="relative">
+          {/* Timeline Entries Grouped by Encounter */}
+          <div className="relative space-y-4">
             {/* Loading state for initial load */}
             {isTimelineLoading && filteredEntries.length === 0 && (
               <div className="space-y-4">
@@ -473,15 +552,155 @@ const PatientChroniclePage = () => {
               </div>
             )}
 
-            {/* Entries grouped by date */}
-            {Object.entries(groupedEntries).map(([date, entries], groupIndex) => (
-              <TimelineGroup
-                key={date}
-                date={date}
-                entries={entries}
-                startIndex={groupIndex * 10}
-              />
-            ))}
+            {/* Encounter Groups */}
+            {groupedByEncounter.encounters.map(({ encounter, entries }) => {
+              const isExpanded = expandedEncounters.has(encounter.id);
+              const encounterDate = encounter.start_time
+                ? new Date(encounter.start_time).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })
+                : 'Unknown date';
+
+              const encounterEndDate = encounter.end_time
+                ? new Date(encounter.end_time).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                  })
+                : null;
+
+              const dateRange = encounterEndDate && encounterEndDate !== encounterDate
+                ? `${encounterDate} - ${encounterEndDate}`
+                : encounterDate;
+
+              const typeIcon = encounter.type === 'inpatient' ? Building2 : Calendar;
+              const TypeIcon = typeIcon;
+
+              return (
+                <div key={encounter.id} className="border border-border rounded-lg overflow-hidden bg-card">
+                  {/* Encounter Header */}
+                  <button
+                    onClick={() => toggleEncounter(encounter.id)}
+                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    )}
+
+                    <div className={cn(
+                      "p-2 rounded-lg",
+                      encounter.type === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
+                    )}>
+                      <TypeIcon className={cn(
+                        "h-4 w-4",
+                        encounter.type === 'inpatient' ? "text-blue-500" : "text-amber-500"
+                      )} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm capitalize">
+                          {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
+                           encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
+                        </span>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-xs font-mono",
+                          encounter.status === 'finished' && "bg-muted text-muted-foreground",
+                          encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
+                          encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
+                        )}>
+                          {encounter.status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                        <span>{dateRange}</span>
+                        {encounter.practitioner_name && (
+                          <>
+                            <span>•</span>
+                            <span>{encounter.practitioner_name}</span>
+                          </>
+                        )}
+                        {encounter.location && (
+                          <>
+                            <span>•</span>
+                            <span>{encounter.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </button>
+
+                  {/* Encounter Entries */}
+                  {isExpanded && (
+                    <div className="border-t border-border px-4 py-3 space-y-3">
+                      {entries.map((entry, index) => (
+                        <TimelineEntry
+                          key={entry.id}
+                          entry={entry}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Unlinked Entries */}
+            {groupedByEncounter.unlinked.length > 0 && (
+              <div className="border border-dashed border-border rounded-lg overflow-hidden bg-card/50">
+                {/* Unlinked Header */}
+                <button
+                  onClick={() => toggleEncounter('unlinked')}
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
+                >
+                  {expandedEncounters.has('unlinked') ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  )}
+
+                  <div className="p-2 rounded-lg bg-muted">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm text-muted-foreground">
+                        Unlinked Entries
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Legacy data without encounter context
+                    </div>
+                  </div>
+
+                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                    {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
+                  </span>
+                </button>
+
+                {/* Unlinked Entries List */}
+                {expandedEncounters.has('unlinked') && (
+                  <div className="border-t border-dashed border-border px-4 py-3 space-y-3">
+                    {groupedByEncounter.unlinked.map((entry, index) => (
+                      <TimelineEntry
+                        key={entry.id}
+                        entry={entry}
+                        index={index}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Empty state */}
             {!isTimelineLoading && filteredEntries.length === 0 && (

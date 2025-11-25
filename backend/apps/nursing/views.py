@@ -3,8 +3,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Prefetch
+from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
+import logging
 
 from .models import VitalSigns, NursingTask, NursingAlert, MedicationAdministration, ShiftHandoff
 from .serializers import (
@@ -18,7 +20,10 @@ from .serializers import (
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
-from ..users.models import PatientProfile
+from ..wards.services import ensure_encounter_for_entry
+from ..users.models import PatientProfile, PractitionerProfile
+
+logger = logging.getLogger(__name__)
 
 
 class VitalSignsViewSet(viewsets.ModelViewSet):
@@ -48,6 +53,71 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(recorded_at__lte=end_date)
 
         return queryset
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """
+        Create vital signs with auto-encounter linking.
+
+        If no encounter is provided, automatically finds or creates an active encounter
+        for the patient.
+        """
+        data = request.data.copy()
+
+        # Get patient for auto-encounter logic
+        patient_id = data.get('patient')
+        if not patient_id:
+            return Response(
+                {"error": "Patient is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get practitioner profile for auto-encounter
+        practitioner = None
+        try:
+            practitioner = PractitionerProfile.objects.get(staff__user=request.user)
+            # Set recorded_by if not provided
+            if not data.get('recorded_by'):
+                data['recorded_by'] = practitioner.id
+        except PractitionerProfile.DoesNotExist:
+            pass  # Non-practitioners can record vitals too
+
+        # Auto-encounter: Find or create an active encounter
+        encounter_id = data.get('encounter')
+        try:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=patient,
+                practitioner=practitioner,
+                encounter_id=encounter_id,
+                reason='Vital signs recording'
+            )
+            data['encounter'] = encounter.id
+            if encounter_created:
+                logger.info(f"Auto-created encounter {encounter.id} for vital signs")
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        vital_signs = serializer.save()
+
+        # Return full serializer data with encounter_created flag
+        output_serializer = VitalSignsSerializer(vital_signs)
+        response_data = output_serializer.data
+        response_data['encounter_created'] = encounter_created
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'])
     def patient_trends(self, request):
