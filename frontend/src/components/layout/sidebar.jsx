@@ -11,7 +11,8 @@ import {
   CreditCard,
   Shield,
   Package,
-  Clock
+  Clock,
+  BookOpen
 } from "lucide-react"
 
 import {
@@ -116,6 +117,16 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Patient Directory" href="/patients">
                   <Users />
                   <span>Patient Directory</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.primary.patients) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Patient Chronicle" href="/patients/chronicle">
+                  <BookOpen />
+                  <span>Patient Chronicle</span>
+                  <SidebarMenuBadge className="bg-primary/20 text-primary">New</SidebarMenuBadge>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

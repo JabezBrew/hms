@@ -55,6 +55,10 @@ const ProviderDashboard = lazy(() => import('./pages/dashboards/ProviderDashboar
 const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
 const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
 
+// Chronicle Design System Pages
+const PatientChronicleListPage = lazy(() => import('./pages/patients/PatientChronicleListPage'))
+const PatientChroniclePage = lazy(() => import('./pages/patients/PatientChroniclePage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -183,6 +187,23 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
               <Layout>
                 <PatientEditPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Chronicle Design System Routes */}
+          <Route path="/patients/chronicle" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <PatientChronicleListPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/patients/:id/chronicle" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+              <Layout>
+                <PatientChroniclePage />
               </Layout>
             </RoleBasedRoute>
           } />
