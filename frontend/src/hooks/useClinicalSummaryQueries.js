@@ -11,7 +11,16 @@ export const clinicalSummaryKeys = {
 };
 
 /**
+ * Fetch combined clinical summary (medications + vitals) in a single request
+ */
+async function fetchClinicalSummary(patientId, days = 7) {
+  const response = await apiClient.get(`/clinical-notes/patient-summary/${patientId}/?days=${days}`);
+  return response || { medications: [], vitals: [] };
+}
+
+/**
  * Fetch active medications/prescriptions for a patient
+ * @deprecated Use useClinicalSummary instead for better performance
  */
 async function fetchActiveMedications(patientId) {
   const response = await apiClient.get(`/clinical-notes/prescriptions/patient_active/?patient=${patientId}`);
@@ -20,6 +29,7 @@ async function fetchActiveMedications(patientId) {
 
 /**
  * Fetch recent vital signs for a patient (used as proxy for lab results)
+ * @deprecated Use useClinicalSummary instead for better performance
  */
 async function fetchRecentVitals(patientId, days = 7) {
   const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`);
@@ -179,37 +189,131 @@ export function parseAllergies(allergiesData) {
 
 /**
  * Combined hook to fetch all clinical summary data
+ * Uses a single API call for better performance
  */
 export function useClinicalSummary(patientId, patientData = null, options = {}) {
-  const medicationsQuery = useActiveMedications(patientId, options);
-  const vitalsQuery = useRecentVitals(patientId, options);
+  const { days = 7 } = options;
+
+  // Single query for both medications and vitals
+  const summaryQuery = useQuery({
+    queryKey: clinicalSummaryKeys.patient(patientId),
+    queryFn: () => fetchClinicalSummary(patientId, days),
+    enabled: !!patientId && options.enabled !== false,
+    staleTime: 60000, // 1 minute
+    select: (data) => {
+      // Transform medications to expected format
+      const medications = (data.medications || []).map(prescription => ({
+        id: prescription.id,
+        name: prescription.medication_name,
+        dose: prescription.dosage,
+        route: prescription.route,
+        frequency: prescription.frequency,
+        status: prescription.status,
+        start_date: prescription.start_date,
+        end_date: prescription.end_date,
+        prescribed_by: prescription.prescribed_by_name,
+        instructions: prescription.instructions,
+      }));
+
+      // Transform vitals to lab results format
+      const vitalsData = data.vitals || [];
+      const labResults = [];
+
+      if (vitalsData.length > 0) {
+        const latestVitals = vitalsData[vitalsData.length - 1];
+
+        if (latestVitals.temperature) {
+          const temp = parseFloat(latestVitals.temperature);
+          labResults.push({
+            id: `temp-${latestVitals.id}`,
+            name: 'Temp',
+            value: latestVitals.temperature,
+            unit: '°C',
+            timestamp: latestVitals.recorded_at,
+            is_abnormal: temp > 38 || temp < 36,
+            abnormal_direction: temp > 38 ? 'high' : 'low',
+          });
+        }
+
+        if (latestVitals.heart_rate) {
+          const hr = parseInt(latestVitals.heart_rate);
+          labResults.push({
+            id: `hr-${latestVitals.id}`,
+            name: 'HR',
+            value: latestVitals.heart_rate,
+            unit: 'bpm',
+            timestamp: latestVitals.recorded_at,
+            is_abnormal: hr > 100 || hr < 60,
+            abnormal_direction: hr > 100 ? 'high' : 'low',
+          });
+        }
+
+        if (latestVitals.blood_pressure) {
+          const [systolic] = latestVitals.blood_pressure.split('/').map(Number);
+          labResults.push({
+            id: `bp-${latestVitals.id}`,
+            name: 'BP',
+            value: latestVitals.blood_pressure,
+            unit: 'mmHg',
+            timestamp: latestVitals.recorded_at,
+            is_abnormal: systolic > 140 || systolic < 90,
+            abnormal_direction: systolic > 140 ? 'high' : 'low',
+          });
+        }
+
+        if (latestVitals.oxygen_saturation) {
+          const spo2 = parseInt(latestVitals.oxygen_saturation);
+          labResults.push({
+            id: `spo2-${latestVitals.id}`,
+            name: 'SpO2',
+            value: latestVitals.oxygen_saturation,
+            unit: '%',
+            timestamp: latestVitals.recorded_at,
+            is_abnormal: spo2 < 95,
+            abnormal_direction: 'low',
+          });
+        }
+
+        if (latestVitals.respiratory_rate) {
+          const rr = parseInt(latestVitals.respiratory_rate);
+          labResults.push({
+            id: `rr-${latestVitals.id}`,
+            name: 'RR',
+            value: latestVitals.respiratory_rate,
+            unit: '/min',
+            timestamp: latestVitals.recorded_at,
+            is_abnormal: rr > 20 || rr < 12,
+            abnormal_direction: rr > 20 ? 'high' : 'low',
+          });
+        }
+      }
+
+      return { medications, labResults };
+    },
+  });
 
   // Extract allergies from patient data
   const allergies = patientData?.allergies ? parseAllergies(patientData.allergies) : [];
 
   // For problems, we'd need a dedicated endpoint - placeholder for now
-  // In a real implementation, this would fetch from a conditions/problems API
   const problems = [];
 
   return {
-    medications: medicationsQuery.data || [],
-    medicationsLoading: medicationsQuery.isLoading,
-    medicationsError: medicationsQuery.error,
+    medications: summaryQuery.data?.medications || [],
+    medicationsLoading: summaryQuery.isLoading,
+    medicationsError: summaryQuery.error,
 
-    labResults: vitalsQuery.data || [],
-    labResultsLoading: vitalsQuery.isLoading,
-    labResultsError: vitalsQuery.error,
+    labResults: summaryQuery.data?.labResults || [],
+    labResultsLoading: summaryQuery.isLoading,
+    labResultsError: summaryQuery.error,
 
     allergies,
     problems,
 
-    isLoading: medicationsQuery.isLoading || vitalsQuery.isLoading,
-    isError: medicationsQuery.isError || vitalsQuery.isError,
+    isLoading: summaryQuery.isLoading,
+    isError: summaryQuery.isError,
 
-    refetch: () => {
-      medicationsQuery.refetch();
-      vitalsQuery.refetch();
-    },
+    refetch: summaryQuery.refetch,
   };
 }
 

@@ -1,186 +1,384 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useStaff } from '@/hooks/useStaffQueries';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { PlusIcon, SearchIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { useStaff } from "@/hooks/useStaffQueries";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
+import {
+  Search,
+  Plus,
+  Users,
+  Filter,
+  LayoutGrid,
+  List,
+  RefreshCw,
+  X
+} from "lucide-react";
 
+/**
+ * StaffListPage - Chronicle-style staff directory
+ *
+ * Features:
+ * - Chronicle-style staff cards
+ * - Search and filter functionality
+ * - Toggle between grid and list views
+ * - Role-based filtering
+ * - Staggered animations on load
+ */
 const StaffListPage = () => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRole, setSelectedRole] = useState("all");
+  const [selectedDepartment, setSelectedDepartment] = useState("all");
+  const [viewMode, setViewMode] = useState("grid");
 
-  // Use React Query hook for fetching staff data
-  const { 
-    data: staff = [], 
-    isLoading, 
-    isError, 
-    error 
+  // Fetch staff
+  const {
+    data: staffData = [],
+    isLoading,
+    refetch
   } = useStaff();
 
-  // Filtered staff based on search query
-  const [filteredStaff, setFilteredStaff] = useState([]);
+  // ============================================
+  // Data processing
+  // ============================================
 
-  // Show error toast if query fails
-  useEffect(() => {
-    if (isError) {
-      toast.error(error?.message || 'Failed to fetch staff members');
-      console.error('Error fetching staff:', error);
-    }
-  }, [isError, error]);
+  // Get staff array from response
+  const staffList = useMemo(() => {
+    const staff = Array.isArray(staffData)
+      ? staffData
+      : (staffData?.results || staffData?.staff || []);
+    return Array.isArray(staff) ? staff : [];
+  }, [staffData]);
 
-  // Update filtered staff when staff data changes
-  useEffect(() => {
-    setFilteredStaff(staff);
-  }, [staff]);
+  // Extract unique roles for filter
+  const uniqueRoles = useMemo(() => {
+    const roles = new Set();
+    staffList.forEach(member => {
+      const role = member?.user_details?.user_type;
+      if (role) roles.add(role);
+    });
+    return Array.from(roles).sort();
+  }, [staffList]);
 
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredStaff(staff);
-    } else {
-      const query = searchQuery.toLowerCase();
-      const filtered = staff.filter(
-        (member) =>
-          member.user_details?.first_name?.toLowerCase().includes(query) ||
-          member.user_details?.last_name?.toLowerCase().includes(query) ||
-          member.user_details?.email?.toLowerCase().includes(query) ||
-          member.department?.toLowerCase().includes(query) ||
-          member.position?.toLowerCase().includes(query) ||
-          member.employee_id?.toLowerCase().includes(query)
-      );
-      setFilteredStaff(filtered);
-    }
-  }, [searchQuery, staff]);
+  // Extract unique departments for filter
+  const uniqueDepartments = useMemo(() => {
+    const departments = new Set();
+    staffList.forEach(member => {
+      const dept = member?.department;
+      if (dept) departments.add(dept);
+    });
+    return Array.from(departments).sort();
+  }, [staffList]);
 
-  const handleCreateStaff = () => {
+  // Filter staff
+  const filteredStaff = useMemo(() => {
+    return staffList.filter(member => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const firstName = member?.user_details?.first_name?.toLowerCase() || '';
+        const lastName = member?.user_details?.last_name?.toLowerCase() || '';
+        const email = member?.user_details?.email?.toLowerCase() || '';
+        const department = member?.department?.toLowerCase() || '';
+        const position = member?.position?.toLowerCase() || '';
+        const employeeId = member?.employee_id?.toLowerCase() || '';
+
+        const matches = firstName.includes(query) ||
+          lastName.includes(query) ||
+          email.includes(query) ||
+          department.includes(query) ||
+          position.includes(query) ||
+          employeeId.includes(query);
+
+        if (!matches) return false;
+      }
+
+      // Role filter
+      if (selectedRole !== "all") {
+        if (member?.user_details?.user_type !== selectedRole) return false;
+      }
+
+      // Department filter
+      if (selectedDepartment !== "all") {
+        if (member?.department !== selectedDepartment) return false;
+      }
+
+      return true;
+    });
+  }, [staffList, searchQuery, selectedRole, selectedDepartment]);
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    const total = staffList.length;
+    const active = staffList.filter(s => s?.user_details?.is_active !== false).length;
+    const practitioners = staffList.filter(s =>
+      ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(s?.user_details?.user_type)
+    ).length;
+
+    return { total, active, practitioners };
+  }, [staffList]);
+
+  // ============================================
+  // Event handlers
+  // ============================================
+
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setSelectedRole("all");
+    setSelectedDepartment("all");
+  };
+
+  const handleAddStaff = () => {
     navigate('/staff/create');
   };
 
-  const handleViewStaff = (id) => {
-    navigate(`/staff/${id}`);
-  };
+  const hasActiveFilters = searchQuery || selectedRole !== "all" || selectedDepartment !== "all";
 
-  // Function to get user type badge color
-  const getUserTypeBadgeColor = (userType) => {
-    switch (userType) {
-      case 'admin':
-        return 'bg-red-100 text-red-800';
-      case 'doctor':
-        return 'bg-blue-100 text-blue-800';
-      case 'nurse':
-        return 'bg-green-100 text-green-800';
-      case 'receptionist':
-        return 'bg-purple-100 text-purple-800';
-      case 'lab_technician':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'pharmacist':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'billing':
-        return 'bg-pink-100 text-pink-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Function to format user type for display
-  const formatUserType = (userType) => {
-    if (!userType) return '';
-    return userType
+  // Format role label
+  const formatRoleLabel = (role) => {
+    if (!role) return '';
+    return role
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
 
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Staff Management</h1>
-        <Button onClick={handleCreateStaff} className="ml-5">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Add Staff Member
-        </Button>
-      </div>
+  // ============================================
+  // Render
+  // ============================================
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <CardTitle>Staff Members</CardTitle>
-            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-              <div className="relative w-full sm:w-64">
-                <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                    placeholder="Search staff..."
-                    className="pl-8"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Page Header */}
+      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
+          <div>
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
+              Staff Directory
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {stats.total} staff members
+              {stats.practitioners > 0 && (
+                <span className="text-primary ml-2">
+                  · {stats.practitioners} practitioners
+                </span>
+              )}
+              {stats.active !== stats.total && (
+                <span className="text-muted-foreground ml-2">
+                  · {stats.active} active
+                </span>
+              )}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
+
+          <Button onClick={handleAddStaff} size="sm" className="font-mono text-xs w-full sm:w-auto">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Staff Member
+          </Button>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex flex-col gap-3">
+          {/* Search - Full Width */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, email, department, or employee ID..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="pl-10 font-mono text-sm bg-background"
+            />
+          </div>
+
+          {/* Filters Row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Role Filter */}
+            <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <SelectTrigger className="w-full sm:w-[160px] font-mono text-xs h-9">
+                <Filter className="h-3.5 w-3.5 mr-2" />
+                <SelectValue placeholder="All Roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                {uniqueRoles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {formatRoleLabel(role)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Department Filter */}
+            <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+              <SelectTrigger className="w-full sm:w-[180px] font-mono text-xs h-9">
+                <SelectValue placeholder="All Departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {uniqueDepartments.map((dept) => (
+                  <SelectItem key={dept} value={dept}>
+                    {dept}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* View Mode Toggle */}
+            <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === 'grid'
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === 'list'
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Refresh */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => refetch()}
+              className="shrink-0 h-9 w-9"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="font-mono text-xs h-9"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Staff List */}
+      <main className="p-4 sm:p-6">
+        {isLoading ? (
+          <LoadingSkeleton viewMode={viewMode} />
+        ) : filteredStaff.length === 0 ? (
+          <EmptyState hasFilters={hasActiveFilters} onClear={handleClearFilters} />
+        ) : (
+          <div className={cn(
+            viewMode === 'grid'
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
+              : "space-y-4"
+          )}>
+            {filteredStaff.map((member, index) => (
+              <StaffChronicleCard
+                key={member?.id || index}
+                staff={member}
+                index={index}
+                className={viewMode === 'list' ? 'max-w-none' : ''}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+/**
+ * LoadingSkeleton - Skeleton loading state
+ */
+const LoadingSkeleton = ({ viewMode }) => {
+  const count = viewMode === 'grid' ? 6 : 4;
+
+  return (
+    <div className={cn(
+      viewMode === 'grid'
+        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
+        : "space-y-4"
+    )}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="bg-card/50 border border-border rounded-2xl p-6 space-y-4"
+        >
+          <div className="flex items-start justify-between">
             <div className="space-y-2">
-              <Skeleton className="h-6 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-8 w-40" />
+              <Skeleton className="h-4 w-56" />
             </div>
-          ) : filteredStaff.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {searchQuery ? 'No staff members found matching your search.' : 'No staff members found.'}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Position</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStaff.map((member) => (
-                    <TableRow key={member.id} className="cursor-pointer hover:bg-muted/50" onClick={() => handleViewStaff(member.id)}>
-                      <TableCell className="font-medium">{member.employee_id}</TableCell>
-                      <TableCell>
-                        {member.user_details?.first_name} {member.user_details?.last_name}
-                      </TableCell>
-                      <TableCell>{member.user_details?.email}</TableCell>
-                      <TableCell>{member.department}</TableCell>
-                      <TableCell>{member.position}</TableCell>
-                      <TableCell>
-                        <Badge className={getUserTypeBadgeColor(member.user_details?.user_type)}>
-                          {formatUserType(member.user_details?.user_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewStaff(member.id);
-                        }}>
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            <Skeleton className="h-6 w-24 rounded-full" />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <div className="flex justify-between pt-4 border-t border-border">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-8 w-24 rounded-lg" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * EmptyState - No staff found state
+ */
+const EmptyState = ({ hasFilters, onClear }) => {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+        <Users className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        {hasFilters ? 'No matching staff' : 'No staff members'}
+      </h3>
+      <p className="text-muted-foreground text-sm mb-4 max-w-md">
+        {hasFilters
+          ? 'Try adjusting your search or filter criteria.'
+          : 'Start by adding a new staff member to see them appear here.'}
+      </p>
+      {hasFilters && (
+        <Button variant="outline" size="sm" onClick={onClear}>
+          <X className="h-4 w-4 mr-2" />
+          Clear Filters
+        </Button>
+      )}
     </div>
   );
 };

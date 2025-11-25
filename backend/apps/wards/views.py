@@ -8,16 +8,13 @@ from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta, datetime
 
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter
 from .serializers import (
-    WardSerializer, BedSerializer, AdmissionSerializer, 
+    WardSerializer, BedSerializer, AdmissionSerializer,
     BedAllocationLogSerializer, WardTransferSerializer,
     AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer
 )
 from ..users.permissions import IsAdminOrOwner
-from ..fhir_client.client import fhir_client
-from ..fhir_client.utils import create_reference, create_period, generate_fhir_id
-from .proxies import EncounterProxy
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -430,36 +427,36 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 daily_rate=bed.total_rate if bed else 0
             )
 
-            # Create FHIR Encounter if fhir_encounter_id is not provided
-            if not admission.fhir_encounter_id:
+            # Create local Encounter (syncs to FHIR in background)
+            try:
+                encounter = Encounter.objects.create(
+                    patient=admission.patient,
+                    practitioner=admission.admitting_doctor,
+                    encounter_type='inpatient',
+                    status='in-progress',
+                    start_time=admission.admission_date,
+                    service_type=f"Admission to {admission.bed.ward.name}",
+                    location=admission.bed.ward.name,
+                    admission=admission,
+                    created_by=self.request.user,
+                )
+
+                # Update the admission with the encounter reference (for backwards compatibility)
+                admission.fhir_encounter_id = str(encounter.id)
+                admission.save(update_fields=['fhir_encounter_id'])
+
+                # Queue FHIR sync in background
                 try:
-                    # Get practitioner ID if available
-                    # Note: admitting_doctor is a PractitionerProfile, not StaffProfile
-                    practitioner_id = None
-                    if admission.admitting_doctor and admission.admitting_doctor.fhir_practitioner_id:
-                        practitioner_id = admission.admitting_doctor.fhir_practitioner_id
+                    from .tasks import sync_encounter_to_fhir
+                    sync_encounter_to_fhir.delay(str(encounter.id))
+                except Exception:
+                    pass  # Celery not available, will sync later
 
-                    # Create FHIR Encounter using EncounterProxy
-                    fhir_encounter = EncounterProxy.create(
-                        patient_id=admission.patient.fhir_patient_id,
-                        practitioner_id=practitioner_id,
-                        encounter_type="inpatient",
-                        status="in-progress",
-                        start_time=admission.admission_date,
-                        service_type=f"Admission to {admission.bed.ward.name}",
-                        location=admission.bed.ward.name
-                    )
-
-                    # Update the admission with the FHIR encounter ID
-                    admission.fhir_encounter_id = fhir_encounter["id"]
-                    admission.save()
-
-                except Exception as e:
-                    # Log the error but continue (we don't want to roll back the admission)
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to create FHIR Encounter for admission {admission.id}: {str(e)}", exc_info=True)
-                    print(f"Failed to create FHIR Encounter: {str(e)}")
+            except Exception as e:
+                # Log the error but continue (we don't want to roll back the admission)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
 
             # Store the previous bed status before updating
             previous_status = bed.status
@@ -500,18 +497,20 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 discharge_notes = serializer.validated_data.get('discharge_notes', '')
                 admission.discharge_patient(discharge_notes)
 
-                # Update FHIR Encounter if available
-                if admission.fhir_encounter_id:
+                # Update local Encounter if linked
+                if hasattr(admission, 'encounter') and admission.encounter:
                     try:
-                        # Update the encounter using EncounterProxy
-                        EncounterProxy.update(
-                            encounter_id=admission.fhir_encounter_id,
-                            status="finished",
-                            end_time=admission.actual_discharge_date
-                        )
+                        admission.encounter.finish(end_time=admission.actual_discharge_date)
+                        # Queue FHIR sync in background
+                        try:
+                            from .tasks import sync_encounter_to_fhir
+                            sync_encounter_to_fhir.delay(str(admission.encounter.id))
+                        except Exception:
+                            pass
                     except Exception as e:
-                        # Log the error but continue
-                        print(f"Failed to update FHIR Encounter: {str(e)}")
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Failed to update Encounter: {str(e)}")
 
                 # Create a bed allocation log
                 BedAllocationLog.objects.create(

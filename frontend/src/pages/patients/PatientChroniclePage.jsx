@@ -55,10 +55,12 @@ const PatientChroniclePage = () => {
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
 
-  // Get patient ID for clinical queries
-  const patientLocalId = patient?.local_data?.id || patient?.id;
+  // Get patient ID for clinical queries - use URL id directly to enable parallel loading
+  // The URL id is the patient UUID which works for all clinical endpoints
+  const patientLocalId = patient?.local_data?.id || patient?.id || id;
 
   // Fetch clinical summary data (medications, vitals/labs)
+  // Uses id from URL params to start fetching immediately in parallel with patient data
   const {
     medications,
     labResults,
@@ -66,8 +68,8 @@ const PatientChroniclePage = () => {
     problems,
     isLoading: isClinicalLoading,
     refetch: refetchClinical,
-  } = useClinicalSummary(patientLocalId, patient?.local_data || patient, {
-    enabled: !!patientLocalId,
+  } = useClinicalSummary(id, patient?.local_data || patient, {
+    enabled: !!id, // Use URL id to start immediately
   });
 
   // Map filter to API type
@@ -80,6 +82,7 @@ const PatientChroniclePage = () => {
   };
 
   // Fetch timeline with infinite scroll
+  // Uses id from URL params to start fetching immediately in parallel with patient data
   const {
     data: timelineData,
     fetchNextPage,
@@ -88,7 +91,7 @@ const PatientChroniclePage = () => {
     isLoading: isTimelineLoading,
     error: timelineError,
     refetch: refetchTimeline,
-  } = usePatientTimeline(patient?.local_data?.id || patient?.id, {
+  } = usePatientTimeline(id, {
     type: typeMapping[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
@@ -248,12 +251,14 @@ const PatientChroniclePage = () => {
   }, []);
 
   const handleNoteCreated = useCallback(() => {
-    // Refresh timeline and clinical data when a note is created
-    invalidateTimeline(patientLocalId);
-    refetch();
-    refetchClinical();
+    // Refresh timeline and clinical data in parallel when a note is created
+    Promise.all([
+      invalidateTimeline(id),
+      refetch(),
+      refetchClinical(),
+    ]);
     setIsAddNoteOpen(false);
-  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
+  }, [refetch, refetchClinical, id, invalidateTimeline]);
 
   const handleRecordVitals = useCallback(() => {
     setIsAddVitalsOpen(true);
@@ -264,11 +269,14 @@ const PatientChroniclePage = () => {
   }, []);
 
   const handleVitalsRecorded = useCallback(() => {
-    invalidateTimeline(patientLocalId);
-    refetch();
-    refetchClinical(); // Refresh lab results (vitals)
+    // Refresh timeline and clinical data in parallel
+    Promise.all([
+      invalidateTimeline(id),
+      refetch(),
+      refetchClinical(),
+    ]);
     setIsAddVitalsOpen(false);
-  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
+  }, [refetch, refetchClinical, id, invalidateTimeline]);
 
   const handlePrescribe = useCallback(() => {
     setIsAddPrescriptionOpen(true);
@@ -279,11 +287,14 @@ const PatientChroniclePage = () => {
   }, []);
 
   const handlePrescriptionCreated = useCallback(() => {
-    invalidateTimeline(patientLocalId);
-    refetch();
-    refetchClinical(); // Refresh medications list
+    // Refresh timeline and clinical data in parallel
+    Promise.all([
+      invalidateTimeline(id),
+      refetch(),
+      refetchClinical(),
+    ]);
     setIsAddPrescriptionOpen(false);
-  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
+  }, [refetch, refetchClinical, id, invalidateTimeline]);
 
   // ============================================
   // Loading state

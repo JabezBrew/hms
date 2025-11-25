@@ -79,7 +79,7 @@ export function OmniBar() {
             </div>
 
             <div className="ml-auto flex items-center space-x-4">
-                <AppointmentNotifications />
+                {user && <AppointmentNotifications />}
 
                 <ThemeToggle />
 

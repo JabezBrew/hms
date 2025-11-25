@@ -22,6 +22,7 @@ export function useEncounters(filters = {}) {
   return useQuery({
     queryKey: encounterKeys.list(filters),
     queryFn: () => encountersApi.getEncounters(filters),
+    staleTime: 60 * 1000, // 60 seconds - matches backend cache timeout
   });
 }
 
@@ -35,6 +36,7 @@ export function useEncounter(id) {
     queryKey: encounterKeys.detail(id),
     queryFn: () => encountersApi.getEncounter(id),
     enabled: !!id, // Only run the query if we have an ID
+    staleTime: 60 * 1000, // 60 seconds
   });
 }
 

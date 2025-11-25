@@ -625,15 +625,20 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         Returns:
             The created FHIR Composition resource
         """
-        # Get the encounter to extract patient reference
+        # Get the encounter from local database to extract patient reference
         try:
-            encounter = fhir_client.get_resource("Encounter", encounter_id)
-            patient_reference = encounter.get("subject", {})
+            from ..wards.models import Encounter
+            encounter = Encounter.objects.select_related('patient', 'patient__user').get(id=encounter_id)
+            patient_fhir_id = getattr(encounter.patient, 'fhir_patient_id', None) or str(encounter.patient.id)
+            patient_reference = {
+                "reference": f"Patient/{patient_fhir_id}",
+                "display": encounter.patient_name,
+            }
         except Exception as e:
             # Log the error
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error fetching encounter {encounter_id}: {str(e)}")
+            logger.warning(f"Encounter {encounter_id} not found locally: {str(e)}")
             # Use a default patient reference
             patient_reference = {}
 
@@ -1175,6 +1180,85 @@ def _get_patient_vitals(patient, search_query, start_datetime, end_datetime):
         })
 
     return entries
+
+
+@api_view(['GET'])
+@api_permission_classes([permissions.IsAuthenticated])
+def patient_clinical_summary(request, patient_id):
+    """
+    Get combined clinical summary for a patient in a single request.
+
+    Returns:
+    - Active medications/prescriptions
+    - Recent vital signs (last 7 days)
+
+    This is an optimized endpoint that combines multiple API calls into one.
+    """
+    try:
+        patient = PatientProfile.objects.get(id=patient_id)
+    except PatientProfile.DoesNotExist:
+        return Response(
+            {'error': 'Patient not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Get active prescriptions
+    active_prescriptions = Prescription.objects.filter(
+        patient=patient,
+        status='active'
+    ).filter(
+        models.Q(end_date__gte=timezone.now().date()) |
+        models.Q(end_date__isnull=True)
+    ).select_related('prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user')
+
+    medications = []
+    for rx in active_prescriptions:
+        prescriber_name = 'Unknown'
+        if rx.prescribed_by and rx.prescribed_by.staff and rx.prescribed_by.staff.user:
+            user = rx.prescribed_by.staff.user
+            prescriber_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+        medications.append({
+            'id': str(rx.id),
+            'medication_name': rx.medication_name,
+            'dosage': rx.dosage,
+            'route': rx.route,
+            'route_display': rx.get_route_display(),
+            'frequency': rx.frequency,
+            'frequency_display': rx.get_frequency_display(),
+            'status': rx.status,
+            'start_date': rx.start_date.isoformat() if rx.start_date else None,
+            'end_date': rx.end_date.isoformat() if rx.end_date else None,
+            'prescribed_by_name': prescriber_name,
+            'instructions': rx.instructions,
+        })
+
+    # Get recent vitals (last 7 days)
+    days = int(request.query_params.get('days', 7))
+    start_date = timezone.now() - timezone.timedelta(days=days)
+
+    vitals = VitalSigns.objects.filter(
+        patient=patient,
+        recorded_at__gte=start_date
+    ).select_related('recorded_by').order_by('recorded_at')
+
+    vitals_data = []
+    for vital in vitals:
+        vitals_data.append({
+            'id': str(vital.id),
+            'recorded_at': vital.recorded_at.isoformat(),
+            'temperature': float(vital.temperature) if vital.temperature else None,
+            'heart_rate': vital.heart_rate,
+            'blood_pressure': vital.blood_pressure,
+            'respiratory_rate': vital.respiratory_rate,
+            'oxygen_saturation': vital.oxygen_saturation,
+            'is_critical': vital.is_critical,
+        })
+
+    return Response({
+        'medications': medications,
+        'vitals': vitals_data,
+    })
 
 
 @api_view(['GET'])

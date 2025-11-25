@@ -139,13 +139,13 @@ const PatientChronicleListPage = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Page Header */}
-      <header className="bg-card border-b border-border px-6 py-8">
-        <div className="flex items-start justify-between mb-6">
+      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
           <div>
-            <h1 className="font-display text-4xl text-foreground tracking-tight mb-2">
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
               Patient Registry
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {stats.total} patients
               {stats.critical > 0 && (
                 <span className="text-destructive ml-2">
@@ -160,16 +160,16 @@ const PatientChronicleListPage = () => {
             </p>
           </div>
 
-          <Button onClick={handleAddPatient} className="font-mono text-xs">
+          <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Register Patient
           </Button>
         </div>
 
         {/* Search and Filters */}
-        <div className="flex flex-col md:flex-row gap-4">
-          {/* Search */}
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3">
+          {/* Search - Full Width */}
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search by name, MRN, or NHIS ID..."
@@ -179,75 +179,78 @@ const PatientChronicleListPage = () => {
             />
           </div>
 
-          {/* Ward Filter */}
-          <Select value={selectedWard} onValueChange={setSelectedWard}>
-            <SelectTrigger className="w-full md:w-[200px] font-mono text-sm">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by Ward" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Wards</SelectItem>
-              {uniqueWards.map((ward) => (
-                <SelectItem key={ward.id} value={ward.id}>
-                  {ward.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Filters Row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Ward Filter */}
+            <Select value={selectedWard} onValueChange={setSelectedWard}>
+              <SelectTrigger className="w-full sm:w-[160px] font-mono text-xs h-9">
+                <Filter className="h-3.5 w-3.5 mr-2" />
+                <SelectValue placeholder="All Wards" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Wards</SelectItem>
+                {uniqueWards.map((ward) => (
+                  <SelectItem key={ward.id} value={ward.id}>
+                    {ward.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-          {/* View Mode Toggle */}
-          <div className="flex bg-muted rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                "p-2 rounded-md transition-colors",
-                viewMode === 'grid'
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                "p-2 rounded-md transition-colors",
-                viewMode === 'list'
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
+            {/* View Mode Toggle */}
+            <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === 'grid'
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === 'list'
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
 
-          {/* Clear Filters */}
-          {hasActiveFilters && (
+            {/* Refresh */}
             <Button
               variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              className="font-mono text-xs"
+              size="icon"
+              onClick={() => refetch()}
+              className="shrink-0 h-9 w-9"
             >
-              <X className="h-4 w-4 mr-1" />
-              Clear
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          )}
 
-          {/* Refresh */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refetch()}
-            className="shrink-0"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="font-mono text-xs h-9"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Patient List */}
-      <main className="p-6">
+      <main className="p-4 sm:p-6">
         {isLoading ? (
           <LoadingSkeleton viewMode={viewMode} />
         ) : filteredPatients.length === 0 ? (

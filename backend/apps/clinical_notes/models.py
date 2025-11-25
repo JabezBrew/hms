@@ -4,7 +4,6 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
 from ..users.models import PractitionerProfile
-from ..wards.proxies import EncounterProxy
 
 User = get_user_model()
 
@@ -61,16 +60,20 @@ class NoteEntry(models.Model):
     @property
     def encounter(self):
         """
-        Get the FHIR Encounter resource.
+        Get the local Encounter object.
         """
         if not hasattr(self, '_encounter'):
             try:
-                self._encounter = EncounterProxy.get(self.encounter_id)
+                from ..wards.models import Encounter
+                self._encounter = Encounter.objects.select_related(
+                    'patient', 'patient__user',
+                    'practitioner', 'practitioner__staff', 'practitioner__staff__user'
+                ).get(id=self.encounter_id)
             except Exception as e:
                 # Log the error but don't raise it
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error fetching encounter {self.encounter_id}: {str(e)}")
+                logger.warning(f"Encounter {self.encounter_id} not found locally: {str(e)}")
                 self._encounter = None
         return self._encounter
 

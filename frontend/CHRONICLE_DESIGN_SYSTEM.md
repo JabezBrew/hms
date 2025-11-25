@@ -232,6 +232,122 @@ frontend/src/pages/patients/
 
 ---
 
+## Mobile Responsiveness
+
+Chronicle is designed mobile-first. All components should adapt gracefully to smaller screens.
+
+### Breakpoints
+
+Use Tailwind's responsive prefixes:
+- Default (no prefix): Mobile (< 640px)
+- `sm:`: Small screens (≥ 640px)
+- `md:`: Medium screens (≥ 768px)
+- `lg:`: Large screens (≥ 1024px)
+
+### Responsive Patterns
+
+#### Typography Scaling
+```jsx
+// Page titles - smaller on mobile
+<h1 className="font-display text-2xl sm:text-3xl lg:text-4xl">
+
+// Card headers - readable on small screens
+<h3 className="font-display text-lg sm:text-2xl truncate">
+
+// Data labels - compact on mobile
+<span className="font-mono text-[9px] sm:text-[10px] uppercase">
+
+// Body text
+<span className="text-xs sm:text-sm">
+```
+
+#### Spacing & Padding
+```jsx
+// Page containers
+<div className="p-4 sm:p-6">
+
+// Card components
+<article className="p-4 sm:p-6 rounded-xl sm:rounded-2xl">
+
+// Section margins
+<div className="mb-3 sm:mb-4">
+<div className="gap-2 sm:gap-6">
+```
+
+#### Touch-Friendly Actions
+```jsx
+// Buttons always visible on mobile, hover on desktop
+<div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+  <Button className="flex-1 sm:flex-none h-8">Action</Button>
+</div>
+
+// Full-width buttons on mobile
+<Button className="w-full sm:w-auto">Register</Button>
+```
+
+#### Grid to Stack Layout
+```jsx
+// Vitals: grid on mobile, flex on desktop
+<div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-4">
+
+// Info grid: compact on mobile
+<div className="grid grid-cols-3 gap-2 sm:gap-6">
+
+// Card grid: responsive columns
+<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+```
+
+#### Badges & Status Indicators
+```jsx
+// Stack vertically on mobile
+<div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2">
+  <span className="badge-chronicle-rose text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
+    <span className="hidden sm:inline">CRITICAL</span>
+    <span className="sm:hidden">CRIT</span>
+  </span>
+</div>
+```
+
+#### Text Truncation
+```jsx
+// Prevent overflow on small screens
+<div className="min-w-0 flex-1">
+  <h3 className="truncate">Long patient name here</h3>
+</div>
+```
+
+#### Filters & Controls
+```jsx
+// Stack filters on mobile
+<div className="flex flex-col gap-3">
+  <Input className="w-full" />
+  <div className="flex flex-wrap items-center gap-2">
+    <Select className="w-full sm:w-[160px]">
+    <div className="ml-auto">...</div>
+  </div>
+</div>
+```
+
+### Mobile Guidelines
+
+#### Do
+- Use `text-[10px] sm:text-xs` for compact data
+- Make all buttons/actions visible on mobile (no hover-only)
+- Use `flex-1` for full-width mobile buttons
+- Add `truncate` and `min-w-0` for text overflow
+- Stack elements with `flex-col sm:flex-row`
+- Use smaller padding: `p-4 sm:p-6`
+- Show abbreviated text on mobile: `<span className="sm:hidden">ALLERGY</span>`
+
+#### Don't
+- Use fixed large font sizes without responsive variants
+- Rely on hover states for critical actions
+- Use wide fixed-width elements on mobile
+- Forget `min-w-0` when using truncate in flex containers
+- Use horizontal layouts that overflow on small screens
+
+---
+
 ## Extending Chronicle
 
 When building new pages:

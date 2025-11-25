@@ -1,13 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ArrowLeft, Edit, Trash2, Calendar, Mail, Phone, Building, Briefcase, Award, FileText, User, Clock } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -19,19 +18,151 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { staffApi } from '@/lib/api/staff';
+import {
+  ChevronLeft,
+  Edit,
+  Trash2,
+  Calendar,
+  Mail,
+  Phone,
+  Building,
+  Briefcase,
+  Award,
+  FileText,
+  Clock,
+  Stethoscope,
+  Shield,
+  ClipboardList,
+  Pill,
+  FlaskConical,
+  Receipt,
+  GraduationCap,
+  ExternalLink
+} from 'lucide-react';
 
+/**
+ * StaffDetail - Chronicle-style staff profile
+ *
+ * Clean, single-page layout with:
+ * - Editorial identity header with role badge
+ * - Employment information
+ * - Professional information for practitioners
+ * - Contact details
+ * - Links to manage schedule/availability
+ *
+ * Removed:
+ * - Tabs structure (unnecessary complexity)
+ * - Duplicate contact information
+ * - Fake placeholder data
+ * - System account details (belongs in settings)
+ */
 const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
+  const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
 
   if (!staff) return null;
 
+  // ============================================
+  // Data extraction
+  // ============================================
+
   const userType = staff.user_details?.user_type || '';
-  const fullName = `${staff.user_details?.first_name || ''} ${staff.user_details?.last_name || ''}`.trim();
-  const initials = fullName
-    .split(' ')
-    .map(name => name[0])
-    .join('')
-    .toUpperCase();
+  const firstName = staff.user_details?.first_name || '';
+  const lastName = staff.user_details?.last_name || '';
+  const fullName = `${firstName} ${lastName}`.trim() || 'Unknown Staff';
+  const email = staff.user_details?.email || null;
+  const phone = staff.user_details?.phone_number || null;
+  const isActive = staff.user_details?.is_active !== false;
+  const employeeId = staff.employee_id || 'N/A';
+  const department = staff.department || null;
+  const position = staff.position || null;
+  const hireDate = staff.hire_date ? format(new Date(staff.hire_date), 'MMMM d, yyyy') : null;
+
+  // Calculate tenure
+  const calculateTenure = () => {
+    if (!staff.hire_date) return null;
+    const hire = new Date(staff.hire_date);
+    const today = new Date();
+    let years = today.getFullYear() - hire.getFullYear();
+    const m = today.getMonth() - hire.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < hire.getDate())) {
+      years--;
+    }
+    if (years < 1) {
+      const months = (today.getFullYear() - hire.getFullYear()) * 12 + today.getMonth() - hire.getMonth();
+      return `${months} ${months === 1 ? 'month' : 'months'}`;
+    }
+    return `${years} ${years === 1 ? 'year' : 'years'}`;
+  };
+
+  const tenure = calculateTenure();
+
+  // Check if user is a practitioner (clinical staff)
+  const isPractitioner = ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(userType);
+
+  // ============================================
+  // Role configuration
+  // ============================================
+
+  const getRoleConfig = (type) => {
+    const configs = {
+      admin: {
+        label: 'Administrator',
+        icon: Shield,
+        badgeClass: 'bg-rose-500/10 text-rose-600 border-rose-500/30',
+        description: 'System administrator with full access'
+      },
+      doctor: {
+        label: 'Physician',
+        icon: Stethoscope,
+        badgeClass: 'bg-sky-500/10 text-sky-600 border-sky-500/30',
+        description: 'Medical practitioner providing patient care'
+      },
+      nurse: {
+        label: 'Nurse',
+        icon: ClipboardList,
+        badgeClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
+        description: 'Nursing professional providing patient care'
+      },
+      receptionist: {
+        label: 'Receptionist',
+        icon: Building,
+        badgeClass: 'bg-violet-500/10 text-violet-600 border-violet-500/30',
+        description: 'Front desk staff managing patient intake'
+      },
+      lab_technician: {
+        label: 'Lab Technician',
+        icon: FlaskConical,
+        badgeClass: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
+        description: 'Laboratory specialist processing tests'
+      },
+      pharmacist: {
+        label: 'Pharmacist',
+        icon: Pill,
+        badgeClass: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/30',
+        description: 'Pharmacy professional dispensing medications'
+      },
+      billing: {
+        label: 'Billing Clerk',
+        icon: Receipt,
+        badgeClass: 'bg-pink-500/10 text-pink-600 border-pink-500/30',
+        description: 'Finance staff handling billing and claims'
+      }
+    };
+    return configs[type] || {
+      label: 'Staff',
+      icon: Building,
+      badgeClass: 'bg-muted text-muted-foreground border-border',
+      description: 'Staff member'
+    };
+  };
+
+  const roleConfig = getRoleConfig(userType);
+  const RoleIcon = roleConfig.icon;
+
+  // ============================================
+  // Event handlers
+  // ============================================
 
   const handleDelete = async () => {
     try {
@@ -47,510 +178,279 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
     }
   };
 
-  // Function to get user type badge color
-  const getUserTypeBadgeColor = (userType) => {
-    switch (userType) {
-      case 'admin':
-        return 'bg-red-100 text-red-800';
-      case 'doctor':
-        return 'bg-blue-100 text-blue-800';
-      case 'nurse':
-        return 'bg-green-100 text-green-800';
-      case 'receptionist':
-        return 'bg-purple-100 text-purple-800';
-      case 'lab_technician':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'pharmacist':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'billing':
-        return 'bg-pink-100 text-pink-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const handleManageSchedule = () => {
+    navigate(`/staff/${staff.id}/schedule`);
   };
 
-  // Function to format user type for display
-  const formatUserType = (userType) => {
-    if (!userType) return '';
-    return userType
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
-  // Render different content based on user type
-  const renderRoleSpecificContent = () => {
-    switch (userType) {
-      case 'doctor':
-      case 'nurse':
-      case 'lab_technician':
-      case 'pharmacist':
-        return renderPractitionerContent();
-      case 'receptionist':
-        return renderReceptionistContent();
-      case 'billing':
-        return renderBillingClerkContent();
-      case 'admin':
-        return renderAdminContent();
-      default:
-        return null;
-    }
-  };
-
-  // Practitioner-specific content (doctor, nurse, lab tech, pharmacist)
-  const renderPractitionerContent = () => {
-    if (!practitioner) {
-      return (
-        <Card>
-          <CardHeader>
-            <CardTitle>Professional Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">No professional information available.</p>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    // Calculate years of experience based on hire date
-    const calculateYearsOfExperience = () => {
-      if (!staff.hire_date) return 'N/A';
-      const hireDate = new Date(staff.hire_date);
-      const today = new Date();
-      let years = today.getFullYear() - hireDate.getFullYear();
-      const m = today.getMonth() - hireDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < hireDate.getDate())) {
-        years--;
-      }
-      return `${years} ${years === 1 ? 'year' : 'years'}`;
-    };
-
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Professional Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">License Number</p>
-                <p className="text-sm text-muted-foreground">{practitioner.license_number || 'N/A'}</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <Award className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Specialization</p>
-                <p className="text-sm text-muted-foreground">{practitioner.specialization || 'N/A'}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <Clock className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Years of Experience</p>
-                <p className="text-sm text-muted-foreground">{calculateYearsOfExperience()}</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <Award className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Certifications</p>
-                <p className="text-sm text-muted-foreground">ACLS, BLS (placeholder)</p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-1">Qualifications</p>
-            <p className="text-sm text-muted-foreground">{practitioner.qualification || 'N/A'}</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <Calendar className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Shift Schedule</p>
-                <p className="text-sm text-muted-foreground">Regular (8am-5pm)</p>
-              </div>
-            </div>
-            {practitioner.fhir_practitioner_id && (
-              <div className="flex items-center">
-                <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">FHIR Practitioner ID</p>
-                  <p className="text-sm text-muted-foreground">{practitioner.fhir_practitioner_id}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-1">Recent Activities</p>
-            <div className="text-sm text-muted-foreground mt-2 border rounded-md p-2">
-              <p className="py-1">• Patient consultation - John Doe (2 hours ago)</p>
-              <p className="py-1">• Prescription issued - Jane Smith (Yesterday)</p>
-              <p className="py-1">• Lab results reviewed - Mike Johnson (2 days ago)</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // Receptionist-specific content
-  const renderReceptionistContent = () => {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Receptionist Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <Building className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Assigned Front Desk / Unit</p>
-                <p className="text-sm text-muted-foreground">{staff.department || 'Main Reception'}</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <User className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Patients Registered</p>
-                <p className="text-sm text-muted-foreground">Statistics not available</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center">
-            <Calendar className="h-5 w-5 mr-2 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">Appointments Created</p>
-              <p className="text-sm text-muted-foreground">Statistics not available</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-1">Recent Activity Log</p>
-            <div className="text-sm text-muted-foreground mt-2 border rounded-md p-2">
-              <p className="py-1">• Patient registered - Sarah Johnson (1 hour ago)</p>
-              <p className="py-1">• Appointment scheduled - Robert Smith (3 hours ago)</p>
-              <p className="py-1">• Patient check-in - David Williams (Yesterday)</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // Billing clerk-specific content
-  const renderBillingClerkContent = () => {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Billing Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Invoices Generated</p>
-                <p className="text-sm text-muted-foreground">Statistics not available</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Claims Processed</p>
-                <p className="text-sm text-muted-foreground">Statistics not available</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center">
-            <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">Revenue Handled</p>
-              <p className="text-sm text-muted-foreground">Statistics not available</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-1">Last Billing Actions</p>
-            <div className="text-sm text-muted-foreground mt-2 border rounded-md p-2">
-              <p className="py-1">• Invoice #INV-2023-0042 issued - $450.00 (Today)</p>
-              <p className="py-1">• Payment received - $320.75 from Patient ID #PT-2023-0089 (Yesterday)</p>
-              <p className="py-1">• Insurance claim submitted - $1,250.00 for Patient ID #PT-2023-0076 (2 days ago)</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // Admin-specific content
-  const renderAdminContent = () => {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Administrative Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <User className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">System Roles Managed</p>
-                <p className="text-sm text-muted-foreground">All staff types</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Access Scope</p>
-                <p className="text-sm text-muted-foreground">Full system access</p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-1">Logs of Key Actions</p>
-            <div className="text-sm text-muted-foreground mt-2 border rounded-md p-2">
-              <p className="py-1">• Created new staff account - Dr. Emily Chen (Today)</p>
-              <p className="py-1">• Modified user permissions - James Wilson (Yesterday)</p>
-              <p className="py-1">• System configuration updated - Billing module settings (3 days ago)</p>
-              <p className="py-1">• User account deactivated - Former staff member (1 week ago)</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
+  // ============================================
+  // Render
+  // ============================================
 
   return (
-    <Card className="w-full">
-      <CardHeader className="flex flex-row items-start justify-between">
-        <div>
-          <div className="flex flex-col">
-            <Button variant="outline" size="sm" className="mb-2 w-fit" onClick={onBack}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Staff List
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card border-b border-border">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          {/* Navigation */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="self-start -ml-2"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Staff Directory
             </Button>
-            <div className="flex items-center pl-0">
-              <Avatar className="h-12 w-12 mr-4">
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-              <div>
-                <h2 className="text-2xl font-bold">{fullName}</h2>
-                <div className="flex items-center">
-                  <Badge className={getUserTypeBadgeColor(userType)}>
-                    {formatUserType(userType)}
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                <Edit className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">Edit</span>
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Delete</span>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {fullName}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the staff
+                      member and remove their data from the system.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
+
+          {/* Identity Hero */}
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+            {/* Avatar */}
+            <div className={cn(
+              "w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0",
+              roleConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20')
+            )}>
+              <RoleIcon className="h-8 w-8 sm:h-10 sm:w-10 text-foreground/70" />
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
+                  {fullName}
+                </h1>
+                {!isActive && (
+                  <Badge variant="secondary" className="text-xs">
+                    Inactive
                   </Badge>
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    ID: {staff.employee_id}
-                  </span>
-                </div>
+                )}
               </div>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className={cn(
+                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium",
+                  roleConfig.badgeClass
+                )}>
+                  <RoleIcon className="h-3 w-3" />
+                  {roleConfig.label}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {employeeId}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {roleConfig.description}
+              </p>
             </div>
           </div>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="sm">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the staff member
-                  and remove their data from the system.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {isDeleting ? 'Deleting...' : 'Delete'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="overview">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="details">Details</TabsTrigger>
-          </TabsList>
+      </header>
 
-          <TabsContent value="overview" className="space-y-4 mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Personal Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Full Name</span>
-                    <span className="text-sm text-muted-foreground">{fullName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Email</span>
-                    <span className="text-sm text-muted-foreground">{staff.user_details?.email || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Phone</span>
-                    <span className="text-sm text-muted-foreground">{staff.user_details?.phone_number || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Date of Birth</span>
-                    <span className="text-sm text-muted-foreground">
-                      {staff.user_details?.date_of_birth 
-                        ? format(new Date(staff.user_details.date_of_birth), 'PPP')
-                        : 'N/A'}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+      {/* Content */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* Employment Information */}
+        <section>
+          <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+            <Briefcase className="h-5 w-5 text-muted-foreground" />
+            Employment
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
+            <InfoItem
+              label="Department"
+              value={department}
+              icon={Building}
+            />
+            <InfoItem
+              label="Position"
+              value={position}
+              icon={Briefcase}
+            />
+            <InfoItem
+              label="Hire Date"
+              value={hireDate}
+              icon={Calendar}
+            />
+            <InfoItem
+              label="Tenure"
+              value={tenure}
+              icon={Clock}
+            />
+          </div>
+        </section>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle>Employment Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Employee ID</span>
-                    <span className="text-sm text-muted-foreground">{staff.employee_id}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Department</span>
-                    <span className="text-sm text-muted-foreground">{staff.department}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Position</span>
-                    <span className="text-sm text-muted-foreground">{staff.position}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Hire Date</span>
-                    <span className="text-sm text-muted-foreground">
-                      {staff.hire_date ? format(new Date(staff.hire_date), 'PPP') : 'N/A'}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+        {/* Contact Information */}
+        <section>
+          <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+            <Mail className="h-5 w-5 text-muted-foreground" />
+            Contact
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                <Mail className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">
+                  Email
+                </p>
+                {email ? (
+                  <a
+                    href={`mailto:${email}`}
+                    className="text-sm text-foreground hover:text-primary transition-colors truncate block"
+                  >
+                    {email}
+                  </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not provided</p>
+                )}
+              </div>
             </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                <Phone className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">
+                  Phone
+                </p>
+                {phone ? (
+                  <a
+                    href={`tel:${phone}`}
+                    className="text-sm text-foreground hover:text-primary transition-colors"
+                  >
+                    {phone}
+                  </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not provided</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
 
-            {renderRoleSpecificContent()}
+        {/* Professional Information - Only for practitioners */}
+        {isPractitioner && (
+          <section>
+            <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              Professional
+            </h2>
+            <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
+                <InfoItem
+                  label="License Number"
+                  value={practitioner?.license_number}
+                  icon={FileText}
+                />
+                <InfoItem
+                  label="Specialization"
+                  value={practitioner?.specialization}
+                  icon={Award}
+                />
+                <InfoItem
+                  label="Qualification"
+                  value={practitioner?.qualification}
+                  icon={GraduationCap}
+                  className="col-span-2 sm:col-span-1"
+                />
+              </div>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Contact Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center">
-                  <Mail className="h-5 w-5 mr-2 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Email</p>
-                    <p className="text-sm text-muted-foreground">{staff.user_details?.email || 'N/A'}</p>
-                  </div>
+              {/* Schedule Management Link */}
+              {(userType === 'doctor' || userType === 'nurse') && (
+                <div className="pt-4 border-t border-border">
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={handleManageSchedule}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Manage Schedule & Availability
+                    <ExternalLink className="h-3 w-3 ml-2" />
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Configure recurring schedules, blocked times, and appointment slots
+                  </p>
                 </div>
-                <div className="flex items-center">
-                  <Phone className="h-5 w-5 mr-2 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Phone</p>
-                    <p className="text-sm text-muted-foreground">{staff.user_details?.phone_number || 'N/A'}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              )}
+            </div>
+          </section>
+        )}
 
-          <TabsContent value="details" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>System Account Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center">
-                    <User className="h-5 w-5 mr-2 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Username / Email</p>
-                      <p className="text-sm text-muted-foreground">{staff.user_details?.email || 'N/A'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Clock className="h-5 w-5 mr-2 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Account Created</p>
-                      <p className="text-sm text-muted-foreground">
-                        {staff.user_details?.date_joined 
-                          ? format(new Date(staff.user_details.date_joined), 'PPP')
-                          : 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+        {/* Quick Actions */}
+        <section className="pt-4 border-t border-border">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Profile
+            </Button>
+            {isPractitioner && (
+              <Button variant="outline" size="sm" onClick={handleManageSchedule}>
+                <Calendar className="h-4 w-4 mr-2" />
+                Schedule
+              </Button>
+            )}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center">
-                    <Clock className="h-5 w-5 mr-2 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Last Login Time</p>
-                      <p className="text-sm text-muted-foreground">Today, 09:45 AM</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Badge variant="outline" className="mr-2">
-                      Disabled
-                    </Badge>
-                    <div>
-                      <p className="text-sm font-medium">Two-Factor Authentication</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center">
-                    <Badge variant={staff.user_details?.is_active ? "success" : "destructive"} className="mr-2">
-                      {staff.user_details?.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
-                    <div>
-                      <p className="text-sm font-medium">Account Status</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Briefcase className="h-5 w-5 mr-2 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Role</p>
-                      <p className="text-sm text-muted-foreground">{formatUserType(userType)}</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Additional role-specific details could be added here */}
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+/**
+ * InfoItem - Reusable info display component
+ */
+const InfoItem = ({ label, value, icon: Icon, className }) => {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <div className="flex items-center gap-1.5 mb-1">
+        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+        <p className="font-mono text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground">
+          {label}
+        </p>
+      </div>
+      <p className="text-sm sm:text-base text-foreground truncate">
+        {value || <span className="text-muted-foreground">—</span>}
+      </p>
+    </div>
   );
 };
 
