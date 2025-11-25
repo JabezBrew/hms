@@ -1,158 +1,416 @@
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
+import {
+  Bed,
+  User,
+  Calendar,
+  Clock,
+  Wrench,
+  AlertCircle,
+  ChevronRight
+} from 'lucide-react';
 
-export function WardBedLayout({ beds, admissions, onBedClick, wardId }) {
-  // Filter beds for the specific ward
-  const filteredBeds = beds.filter(bed => bed.ward === wardId);
-
-  // Calculate grid dimensions
-  const totalBeds = filteredBeds.length;
-  const preferredCols = Math.ceil(Math.sqrt(totalBeds * 2));
-  const preferredRows = Math.ceil(totalBeds / preferredCols);
-
-  const bedGrid = {};
-
-  // Initialize the grid with empty cells
-  for (let y = 0; y < preferredRows; y++) {
-    bedGrid[y] = {};
-    for (let x = 0; x < preferredCols; x++) {
-      bedGrid[y][x] = null;
-    }
-  }
-
-  // Place beds in the grid in a left-to-right, top-to-bottom manner
-  filteredBeds.forEach((bed, index) => {
-    const y = Math.floor(index / preferredCols);
-    const x = index % preferredCols;
-    bedGrid[y][x] = bed;
-  });
-
-  // Set maxX and maxY for rendering
-  const maxX = preferredCols - 1;
-  const maxY = preferredRows - 1;
-
-  // Get status color for a bed
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'available':
-        return 'bg-green-100 border-green-500 text-green-700';
-      case 'occupied':
-        return 'bg-red-100 border-red-500 text-red-700';
-      case 'reserved':
-        return 'bg-yellow-100 border-yellow-500 text-yellow-700';
-      case 'maintenance':
-        return 'bg-gray-100 border-gray-500 text-gray-700';
-      default:
-        return 'bg-gray-100 border-gray-500 text-gray-700';
-    }
-  };
+/**
+ * WardBedLayout - Chronicle-style bed visualization
+ *
+ * Features:
+ * - Grid view: Visual bed icons with status colors
+ * - List view: Detailed rows with patient info
+ * - Elegant hover effects and animations
+ * - Status-based color coding
+ */
+export function WardBedLayout({ beds, admissions, onBedClick, wardId, viewMode = 'grid' }) {
+  // Filter beds for this ward (in case not pre-filtered)
+  const wardBeds = beds.filter(bed => bed.ward === wardId || !wardId);
 
   // Get patient info for a bed
   const getPatientInfo = (bedId) => {
     const activeAdmission = admissions.find(
-      admission => admission.bed.id === bedId && admission.status === 'admitted'
+      admission => admission.bed?.id === bedId && admission.status === 'admitted'
     );
 
     if (activeAdmission) {
       return {
-        name: activeAdmission.patient.user.full_name,
-        admissionDate: new Date(activeAdmission.admission_date).toLocaleDateString(),
-        admissionId: activeAdmission.id
+        name: activeAdmission.patient?.user?.full_name || activeAdmission.patient?.full_name || 'Patient',
+        admissionDate: activeAdmission.admission_date,
+        admissionId: activeAdmission.id,
+        diagnosis: activeAdmission.diagnosis || activeAdmission.reason_for_admission,
+        daysAdmitted: getDaysAdmitted(activeAdmission.admission_date)
       };
     }
 
     return null;
   };
 
+  // Calculate days admitted
+  const getDaysAdmitted = (admissionDate) => {
+    if (!admissionDate) return 0;
+    const admission = new Date(admissionDate);
+    const today = new Date();
+    const diffTime = Math.abs(today - admission);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  // Format date
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  // Status configuration
+  const statusConfig = {
+    available: {
+      label: 'Available',
+      color: 'emerald',
+      bgClass: 'bg-emerald-500/10 hover:bg-emerald-500/20',
+      borderClass: 'border-emerald-500/30 hover:border-emerald-500',
+      textClass: 'text-emerald-600',
+      iconClass: 'text-emerald-500',
+      icon: Bed
+    },
+    occupied: {
+      label: 'Occupied',
+      color: 'rose',
+      bgClass: 'bg-rose-500/10 hover:bg-rose-500/20',
+      borderClass: 'border-rose-500/30 hover:border-rose-500',
+      textClass: 'text-rose-600',
+      iconClass: 'text-rose-500',
+      icon: User
+    },
+    reserved: {
+      label: 'Reserved',
+      color: 'amber',
+      bgClass: 'bg-amber-500/10 hover:bg-amber-500/20',
+      borderClass: 'border-amber-500/30 hover:border-amber-500',
+      textClass: 'text-amber-600',
+      iconClass: 'text-amber-500',
+      icon: Clock
+    },
+    maintenance: {
+      label: 'Maintenance',
+      color: 'slate',
+      bgClass: 'bg-slate-500/10 hover:bg-slate-500/20',
+      borderClass: 'border-slate-500/30 hover:border-slate-500',
+      textClass: 'text-slate-500',
+      iconClass: 'text-slate-400',
+      icon: Wrench
+    }
+  };
+
+  // Bed type labels
+  const bedTypeLabels = {
+    'standard': 'Standard',
+    'icu': 'ICU',
+    'pediatric': 'Pediatric',
+    'bariatric': 'Bariatric',
+    'maternity': 'Maternity',
+    'electric': 'Electric',
+    'manual': 'Manual'
+  };
+
+  if (viewMode === 'list') {
+    return (
+      <ListView
+        beds={wardBeds}
+        statusConfig={statusConfig}
+        bedTypeLabels={bedTypeLabels}
+        getPatientInfo={getPatientInfo}
+        formatDate={formatDate}
+        onBedClick={onBedClick}
+      />
+    );
+  }
+
   return (
-    <Card>
-      <CardContent className="p-6">
-        <div className="overflow-auto">
-          <div className="min-w-[600px]">
-            {/* Ward layout grid */}
-            <div className="grid gap-4" style={{ gridTemplateRows: `repeat(${maxY + 1}, 1fr)` }}>
-              {Array.from({ length: maxY + 1 }).map((_, y) => (
-                <div 
-                  key={y} 
-                  className="grid gap-4" 
-                  style={{ gridTemplateColumns: `repeat(${maxX + 1}, 1fr)` }}
-                >
-                  {Array.from({ length: maxX + 1 }).map((_, x) => {
-                    const bed = bedGrid[y][x];
+    <GridView
+      beds={wardBeds}
+      statusConfig={statusConfig}
+      bedTypeLabels={bedTypeLabels}
+      getPatientInfo={getPatientInfo}
+      formatDate={formatDate}
+      onBedClick={onBedClick}
+    />
+  );
+}
 
-                    if (!bed) {
-                      // Empty cell
-                      return <div key={x} className="h-24 w-full"></div>;
-                    }
+/**
+ * GridView - Visual bed grid with icons
+ */
+function GridView({ beds, statusConfig, bedTypeLabels, getPatientInfo, formatDate, onBedClick }) {
+  return (
+    <div className="space-y-6">
+      {/* Beds Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        {beds.map((bed) => {
+          const config = statusConfig[bed.status] || statusConfig.available;
+          const StatusIcon = config.icon;
+          const patientInfo = getPatientInfo(bed.id);
 
-                    const patientInfo = getPatientInfo(bed.id);
+          return (
+            <TooltipProvider key={bed.id}>
+              <Tooltip delayDuration={200}>
+                <TooltipTrigger asChild>
+                  <div
+                    onClick={() => onBedClick(bed.id)}
+                    className={cn(
+                      "relative rounded-xl border-2 p-4 cursor-pointer transition-all duration-200",
+                      "hover:shadow-lg hover:-translate-y-0.5",
+                      config.bgClass,
+                      config.borderClass
+                    )}
+                  >
+                    {/* Bed Icon & Number */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={cn("p-2 rounded-lg", `bg-${config.color}-500/20`)}>
+                        <Bed className={cn("h-5 w-5", config.iconClass)} />
+                      </div>
+                      <span className={cn(
+                        "font-mono text-lg font-bold",
+                        config.textClass
+                      )}>
+                        {bed.bed_number}
+                      </span>
+                    </div>
 
-                    return (
-                      <TooltipProvider key={x}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div 
-                              className={`h-24 w-full border-2 rounded-md p-2 flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow ${getStatusColor(bed.status)}`}
-                              onClick={() => onBedClick(bed.id)}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="font-bold">{bed.bed_number}</span>
-                              </div>
+                    {/* Status & Type */}
+                    <div className="space-y-1">
+                      <div className={cn(
+                        "flex items-center gap-1.5",
+                        config.textClass
+                      )}>
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        <span className="font-mono text-xs font-medium">
+                          {config.label}
+                        </span>
+                      </div>
+                      <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+                        {bedTypeLabels[bed.bed_type] || bed.bed_type}
+                      </p>
+                    </div>
 
-                              {patientInfo && (
-                                <div className="text-xs truncate">
-                                  {patientInfo.name}
-                                </div>
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div className="p-2">
-                              <p className="font-bold">Bed {bed.bed_number}</p>
-                              <p>Type: {bed.bed_type}</p>
-                              <p>Status: {bed.status}</p>
-                              <p>Rate: ${bed.total_rate}/night</p>
+                    {/* Patient Preview (for occupied beds) */}
+                    {patientInfo && (
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {patientInfo.name}
+                        </p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
+                          Day {patientInfo.daysAdmitted}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs p-0">
+                  <BedTooltip
+                    bed={bed}
+                    config={config}
+                    bedTypeLabels={bedTypeLabels}
+                    patientInfo={patientInfo}
+                    formatDate={formatDate}
+                  />
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        })}
+      </div>
 
-                              {patientInfo && (
-                                <>
-                                  <div className="border-t my-2"></div>
-                                  <p className="font-bold">Patient: {patientInfo.name}</p>
-                                  <p>Admitted: {patientInfo.admissionDate}</p>
-                                </>
-                              )}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            {/* Legend */}
-            <div className="mt-6 flex flex-wrap gap-4">
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-green-100 border border-green-500 rounded mr-2"></div>
-                <span className="text-sm">Available</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-red-100 border border-red-500 rounded mr-2"></div>
-                <span className="text-sm">Occupied</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-yellow-100 border border-yellow-500 rounded mr-2"></div>
-                <span className="text-sm">Reserved</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-gray-100 border border-gray-500 rounded mr-2"></div>
-                <span className="text-sm">Maintenance</span>
-              </div>
-            </div>
+      {/* Legend */}
+      <div className="flex flex-wrap items-center justify-center gap-6 py-4 border-t border-border/50">
+        {Object.entries(statusConfig).map(([status, config]) => (
+          <div key={status} className="flex items-center gap-2">
+            <div className={cn(
+              "w-3 h-3 rounded-full",
+              `bg-${config.color}-500`
+            )} />
+            <span className="font-mono text-xs text-muted-foreground">
+              {config.label}
+            </span>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ListView - Detailed table-like list
+ */
+function ListView({ beds, statusConfig, bedTypeLabels, getPatientInfo, formatDate, onBedClick }) {
+  return (
+    <div className="space-y-2">
+      {beds.map((bed) => {
+        const config = statusConfig[bed.status] || statusConfig.available;
+        const StatusIcon = config.icon;
+        const patientInfo = getPatientInfo(bed.id);
+
+        return (
+          <div
+            key={bed.id}
+            onClick={() => onBedClick(bed.id)}
+            className={cn(
+              "flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all",
+              "hover:shadow-md hover:border-border",
+              "bg-card/50 border-border/50"
+            )}
+          >
+            {/* Bed Icon */}
+            <div className={cn(
+              "p-3 rounded-xl shrink-0",
+              config.bgClass
+            )}>
+              <Bed className={cn("h-5 w-5", config.iconClass)} />
+            </div>
+
+            {/* Bed Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-lg font-bold text-foreground">
+                  Bed {bed.bed_number}
+                </span>
+                <span className={cn(
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono",
+                  config.bgClass,
+                  config.textClass
+                )}>
+                  <StatusIcon className="h-3 w-3" />
+                  {config.label}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground uppercase">
+                  {bedTypeLabels[bed.bed_type] || bed.bed_type}
+                </span>
+              </div>
+
+              {/* Patient Info */}
+              {patientInfo ? (
+                <div className="flex items-center gap-4 mt-1.5">
+                  <div className="flex items-center gap-1.5 text-sm text-foreground">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="font-medium">{patientInfo.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    <Calendar className="h-3 w-3" />
+                    {formatDate(patientInfo.admissionDate)}
+                  </div>
+                  <div className="font-mono text-xs text-muted-foreground">
+                    Day {patientInfo.daysAdmitted}
+                  </div>
+                  {patientInfo.diagnosis && (
+                    <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      {patientInfo.diagnosis}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-1">
+                  {bed.status === 'available' && 'Ready for admission'}
+                  {bed.status === 'reserved' && 'Reserved for incoming patient'}
+                  {bed.status === 'maintenance' && 'Under maintenance'}
+                </p>
+              )}
+            </div>
+
+            {/* Rate */}
+            {bed.total_rate && (
+              <div className="text-right shrink-0">
+                <p className="font-mono text-sm font-medium text-foreground">
+                  ${bed.total_rate}
+                </p>
+                <p className="font-mono text-[10px] text-muted-foreground uppercase">
+                  per night
+                </p>
+              </div>
+            )}
+
+            {/* Arrow */}
+            <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * BedTooltip - Rich tooltip content for beds
+ */
+function BedTooltip({ bed, config, bedTypeLabels, patientInfo, formatDate }) {
+  return (
+    <div className="p-4 space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-mono font-bold text-foreground">
+            Bed {bed.bed_number}
+          </h4>
+          <p className="font-mono text-xs text-muted-foreground">
+            {bedTypeLabels[bed.bed_type] || bed.bed_type}
+          </p>
         </div>
-      </CardContent>
-    </Card>
+        <span className={cn(
+          "px-2 py-1 rounded-full text-xs font-mono",
+          config.bgClass,
+          config.textClass
+        )}>
+          {config.label}
+        </span>
+      </div>
+
+      {/* Rate */}
+      {bed.total_rate && (
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-lg font-bold text-foreground">
+            ${bed.total_rate}
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
+            /night
+          </span>
+        </div>
+      )}
+
+      {/* Patient Info */}
+      {patientInfo && (
+        <div className="pt-3 border-t border-border space-y-2">
+          <div className="flex items-center gap-2">
+            <User className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-foreground">
+              {patientInfo.name}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />
+            Admitted {formatDate(patientInfo.admissionDate)}
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-mono text-amber-600">
+              Day {patientInfo.daysAdmitted}
+            </span>
+          </div>
+          {patientInfo.diagnosis && (
+            <div className="flex items-start gap-2 text-sm text-muted-foreground">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span className="line-clamp-2">{patientInfo.diagnosis}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Click hint */}
+      <p className="font-mono text-[10px] text-muted-foreground text-center pt-2">
+        Click to {patientInfo ? 'view admission' : 'view details'}
+      </p>
+    </div>
   );
 }

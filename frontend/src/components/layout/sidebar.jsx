@@ -45,7 +45,6 @@ export function AppSidebar() {
       commandCenter: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
       schedule: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
       availability: ['admin', 'doctor', 'practitioner', 'physician'],
-      encounters: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
       inbox: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
       patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'practitioner', 'physician'],
     },
@@ -55,6 +54,7 @@ export function AppSidebar() {
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
       pharmacy: ['admin', 'pharmacist', 'doctor'],
+      encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
     }
   }
@@ -88,15 +88,6 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Availability" href="/practitioner-availability">
                   <Clock />
                   <span>Availability</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {hasAccess(userRole, menuItems.primary.encounters) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Encounters" href="/encounters">
-                  <FileText />
-                  <span>Encounters</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
@@ -162,6 +153,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Billing" href="/billing">
                   <CreditCard />
                   <span>Billing</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.encounters) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Encounters" href="/encounters">
+                  <FileText />
+                  <span>Encounters</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

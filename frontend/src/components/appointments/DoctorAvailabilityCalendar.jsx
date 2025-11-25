@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
+import { cn } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import {
   format,
   startOfMonth,
@@ -16,22 +19,27 @@ import {
   parseISO,
   isWithinInterval
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Clock,
+  CalendarCheck,
+  CalendarX
+} from 'lucide-react';
 import {
   useAvailableSlots,
   useRecurringSchedules,
   useBlockedTimes
 } from '@/hooks/useAppointmentQueries';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 
 /**
- * DoctorAvailabilityCalendar component
- * Displays a calendar with availability and a list of slots for the selected date.
+ * DoctorAvailabilityCalendar - Chronicle-style calendar component
  *
- * @param {Object} props - Component props
- * @param {string} props.practitionerId - The ID of the practitioner
- * @param {Function} props.onSlotSelect - Callback when a slot is selected
+ * Features:
+ * - Visual calendar with availability indicators
+ * - Slot selection for selected date
+ * - Two-column layout (calendar | slots)
  */
 const DoctorAvailabilityCalendar = ({
   practitionerId,
@@ -39,8 +47,9 @@ const DoctorAvailabilityCalendar = ({
 }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedSlotId, setSelectedSlotId] = useState(null);
 
-  // Calculate the visible date range for the calendar grid
+  // Calculate visible date range
   const calendarStart = startOfWeek(startOfMonth(currentMonth));
   const calendarEnd = endOfWeek(endOfMonth(currentMonth));
 
@@ -50,26 +59,30 @@ const DoctorAvailabilityCalendar = ({
     end_date: format(calendarEnd, 'yyyy-MM-dd'),
   };
 
-  // Fetch data
-  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots({
-    ...dateRangeParams,
-    // Fetch all slots to show booked ones too
-  });
+  // Fetch data with server-side filtering by practitioner
+  // Note: practitionerId must be the UUID (local_data.id), not FHIR resource ID
+  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams);
 
-  const { data: recurringSchedules = [], isLoading: recurringLoading } = useRecurringSchedules({
-    practitioner: practitionerId,
-  });
+  const { data: recurringSchedulesData, isLoading: recurringLoading } = useRecurringSchedules(
+    practitionerId ? { practitioner: practitionerId } : {}
+  );
 
-  const { data: blockedTimes = [], isLoading: blockedLoading } = useBlockedTimes({
-    practitioner: practitionerId,
-    // Fetch blocked times for a slightly wider range to be safe, or just the same range
-    start_date: format(calendarStart, 'yyyy-MM-dd'),
-    end_date: format(calendarEnd, 'yyyy-MM-dd'),
-  });
+  const { data: blockedTimesData, isLoading: blockedLoading } = useBlockedTimes(
+    practitionerId ? { practitioner: practitionerId } : {}
+  );
+
+  // Normalize data to arrays
+  const recurringSchedules = Array.isArray(recurringSchedulesData)
+    ? recurringSchedulesData
+    : recurringSchedulesData?.results || [];
+
+  const blockedTimes = Array.isArray(blockedTimesData)
+    ? blockedTimesData
+    : blockedTimesData?.results || [];
 
   const isLoading = slotsLoading || recurringLoading || blockedLoading;
 
-  // Process availability logic
+  // Process availability
   const { availableDates, unavailableDates, availabilityMap } = useMemo(() => {
     const available = [];
     const unavailable = [];
@@ -77,7 +90,6 @@ const DoctorAvailabilityCalendar = ({
 
     if (isLoading) return { availableDates: [], unavailableDates: [], availabilityMap: {} };
 
-    // Helper to check if a date is blocked
     const isBlocked = (date) => {
       return blockedTimes.some(block => {
         const blockStart = parseISO(block.start_date || block.date);
@@ -86,14 +98,8 @@ const DoctorAvailabilityCalendar = ({
       });
     };
 
-    // Helper to check if a date matches any recurring schedule
     const isScheduled = (date) => {
-      const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
-      // Adjust for Python/Backend day encoding if necessary (usually 0=Mon, 6=Sun or 0=Sun, 6=Sat)
-      // Assuming standard JS getDay() matches backend or we map it.
-      // Let's assume backend uses 0=Monday, 6=Sunday based on previous `['Mon', ...][day]` usage.
-      // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat.
-      // Mapping JS to Backend (0=Mon...6=Sun):
+      const dayOfWeek = date.getDay();
       const backendDay = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
 
       return recurringSchedules.some(schedule => {
@@ -102,17 +108,17 @@ const DoctorAvailabilityCalendar = ({
         const activeFrom = parseISO(schedule.active_from);
         const activeTo = schedule.active_to ? parseISO(schedule.active_to) : null;
 
-        // Check date range
         if (isBefore(date, startOfDay(activeFrom))) return false;
         if (activeTo && isBefore(startOfDay(activeTo), date)) return false;
 
-        // Check day of week
-        return schedule.days_of_week.includes(backendDay);
+        return schedule.days_of_week?.includes(backendDay);
       });
     };
 
+    // Get slots from API response
+    const slots = slotsData?.slots || (Array.isArray(slotsData) ? slotsData : []);
+
     // Populate slots map
-    const slots = slotsData?.slots || [];
     slots.forEach(slot => {
       const dateStr = format(new Date(slot.start), 'yyyy-MM-dd');
       if (!map[dateStr]) {
@@ -121,7 +127,10 @@ const DoctorAvailabilityCalendar = ({
       map[dateStr].push(slot);
     });
 
-    // Iterate through each day in the visible grid
+    // Check if we have any recurring schedules configured
+    const hasRecurringSchedules = recurringSchedules.length > 0;
+
+    // Iterate through visible days
     let iterDate = startOfDay(calendarStart);
     const endDate = startOfDay(calendarEnd);
 
@@ -130,92 +139,91 @@ const DoctorAvailabilityCalendar = ({
       const scheduled = isScheduled(iterDate);
       const blocked = isBlocked(iterDate);
       const dateStr = format(iterDate, 'yyyy-MM-dd');
-      const hasSlots = !!map[dateStr];
+      const hasSlots = map[dateStr]?.some(s => s.status === 'free' || !s.status);
 
-      if (scheduled) {
-        if (isPast || blocked) {
-          unavailable.push(new Date(iterDate));
-        } else if (hasSlots) {
+      // If there are recurring schedules, use them to determine availability
+      if (hasRecurringSchedules) {
+        if (scheduled) {
+          if (isPast || blocked) {
+            unavailable.push(new Date(iterDate));
+          } else if (hasSlots) {
+            available.push(new Date(iterDate));
+          } else {
+            unavailable.push(new Date(iterDate));
+          }
+        }
+      } else {
+        // No recurring schedules - fall back to just checking for slots
+        if (!isPast && !blocked && hasSlots) {
           available.push(new Date(iterDate));
-        } else {
-          // Scheduled, Future, Not Blocked, but No Slots (e.g. fully booked)
+        } else if (hasSlots) {
           unavailable.push(new Date(iterDate));
         }
       }
 
-      // Move to next day
+      iterDate = new Date(iterDate);
       iterDate.setDate(iterDate.getDate() + 1);
     }
 
     return { availableDates: available, unavailableDates: unavailable, availabilityMap: map };
   }, [slotsData, recurringSchedules, blockedTimes, calendarStart, calendarEnd, isLoading]);
 
-
-  const isDayAvailable = (day) => {
-    return availableDates.some(d => isSameDay(d, day));
-  };
-
-  const isDayUnavailable = (day) => {
-    return unavailableDates.some(d => isSameDay(d, day));
-  };
+  const isDayAvailable = (day) => availableDates.some(d => isSameDay(d, day));
 
   const handleSelect = (day) => {
-    // Only allow selecting available days (green)
     if (day && isDayAvailable(day)) {
       setSelectedDate(day);
-      setSelectedSlotId(null); // Reset selected slot when date changes
+      setSelectedSlotId(null);
     }
   };
 
-  const [selectedSlotId, setSelectedSlotId] = useState(null);
-
   const handleSlotClick = (slot) => {
-    if (slot.status === 'booked') return;
+    if (slot.status === 'booked' || slot.status === 'busy') return;
     setSelectedSlotId(slot.id);
     if (onSlotSelect) {
       onSlotSelect(slot);
     }
   };
 
-  const goToPreviousMonth = () => {
-    setCurrentMonth(prev => subMonths(prev, 1));
-  };
-
-  const goToNextMonth = () => {
-    setCurrentMonth(prev => addMonths(prev, 1));
-  };
-
   const selectedDateSlots = selectedDate
     ? (availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])
     : [];
 
-  // Sort slots by time
   selectedDateSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // Count available/booked slots
+  const availableCount = selectedDateSlots.filter(s => s.status !== 'booked' && s.status !== 'busy').length;
+  const bookedCount = selectedDateSlots.filter(s => s.status === 'booked' || s.status === 'busy').length;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Calendar */}
       <div className="space-y-4">
-        <div className="rounded-md border p-3">
+        <div className="rounded-xl border border-border/50 p-4">
+          {/* Month Navigation */}
           <div className="flex justify-between items-center mb-4">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={goToPreviousMonth}
+              onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
+              className="h-8 w-8 p-0"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="font-semibold">
+            <h3 className="font-semibold text-foreground">
               {format(currentMonth, 'MMMM yyyy')}
-            </div>
+            </h3>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={goToNextMonth}
+              onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+              className="h-8 w-8 p-0"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
 
+          {/* Calendar Grid */}
           {isLoading ? (
             <div className="h-[300px] flex items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -233,66 +241,108 @@ const DoctorAvailabilityCalendar = ({
                 unavailable: unavailableDates,
               }}
               modifiersClassNames={{
-                available: "bg-green-100 text-green-900 font-medium hover:bg-green-200",
-                unavailable: "bg-red-50 text-red-900 font-medium opacity-50 hover:bg-red-100 hover:opacity-100",
+                available: "bg-emerald-500/20 text-emerald-700 font-medium hover:bg-emerald-500/30 dark:text-emerald-400",
+                unavailable: "bg-rose-500/10 text-rose-700/50 font-medium cursor-not-allowed dark:text-rose-400/50",
                 selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
               }}
             />
           )}
         </div>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+
+        {/* Legend */}
+        <div className="flex items-center justify-center gap-6 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-100 border border-green-200"></div>
-            <span>Available</span>
+            <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
+            <span className="text-muted-foreground">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-50 border border-red-200"></div>
-            <span>Unavailable</span>
+            <div className="w-3 h-3 rounded-full bg-rose-500/20 border border-rose-500/30" />
+            <span className="text-muted-foreground">Unavailable</span>
           </div>
         </div>
       </div>
 
+      {/* Slots Panel */}
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">
-          Available Slots for {format(selectedDate, 'MMMM d, yyyy')}
-        </h3>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-foreground">
+              {format(selectedDate, 'EEEE, MMMM d')}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {selectedDateSlots.length > 0
+                ? `${availableCount} available, ${bookedCount} booked`
+                : 'No scheduled slots'
+              }
+            </p>
+          </div>
+          {selectedDateSlots.length > 0 && (
+            <div className="flex gap-2">
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                <CalendarCheck className="h-3 w-3 mr-1" />
+                {availableCount}
+              </Badge>
+              <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">
+                <CalendarX className="h-3 w-3 mr-1" />
+                {bookedCount}
+              </Badge>
+            </div>
+          )}
+        </div>
 
+        {/* Slots List */}
         {isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
         ) : selectedDateSlots.length > 0 ? (
-          <ScrollArea className="h-[350px] rounded-md border p-4">
+          <ScrollArea className="h-[350px] rounded-xl border border-border/50 p-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {selectedDateSlots.map((slot) => {
-                const isBooked = slot.status === 'booked' || slot.status === 'busy'; // Handle 'busy' if used
+                const isBooked = slot.status === 'booked' || slot.status === 'busy';
                 const isSelected = selectedSlotId === slot.id;
 
                 return (
-                  <Button
+                  <button
                     key={slot.id}
-                    variant={isBooked ? "outline" : "default"}
-                    className={`justify-start font-normal w-full h-auto py-2 ${isBooked
-                        ? "bg-red-50 text-red-900 border-red-200 hover:bg-red-100 hover:text-red-900 opacity-80 cursor-not-allowed"
-                        : "bg-green-100 text-green-900 border-green-200 hover:bg-green-200 hover:text-green-900"
-                      } ${isSelected ? "ring-2 ring-blue-500 ring-offset-2" : ""}`}
+                    type="button"
                     onClick={() => handleSlotClick(slot)}
                     disabled={isBooked}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border transition-all text-left",
+                      isBooked
+                        ? "bg-rose-500/5 border-rose-500/20 text-rose-600/60 cursor-not-allowed"
+                        : "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10 hover:border-emerald-500/40 cursor-pointer dark:text-emerald-400",
+                      isSelected && !isBooked && "ring-2 ring-primary ring-offset-2"
+                    )}
                   >
-                    <div className="flex justify-between w-full items-center">
-                      <span>{format(new Date(slot.start), 'h:mm a')} - {format(new Date(slot.end), 'h:mm a')}</span>
-                      {isBooked && <span className="text-xs font-semibold ml-2">(Booked)</span>}
+                    <div className="flex items-center gap-2">
+                      <Clock className={cn(
+                        "h-4 w-4",
+                        isBooked ? "text-rose-400" : "text-emerald-500"
+                      )} />
+                      <span className="font-mono text-sm">
+                        {format(new Date(slot.start), 'h:mm a')} - {format(new Date(slot.end), 'h:mm a')}
+                      </span>
                     </div>
-                  </Button>
+                    {isBooked && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-rose-500/10 text-rose-600">
+                        Booked
+                      </Badge>
+                    )}
+                  </button>
                 );
               })}
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex flex-col items-center justify-center h-[200px] border rounded-md bg-muted/10 text-muted-foreground">
-            <p>No slots available for this date.</p>
+          <div className="flex flex-col items-center justify-center h-[200px] rounded-xl border border-border/50 bg-muted/20">
+            <Clock className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm">No slots for this date</p>
+            <p className="text-muted-foreground/60 text-xs mt-1">
+              Select an available day on the calendar
+            </p>
           </div>
         )}
       </div>

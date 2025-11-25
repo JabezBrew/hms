@@ -1,40 +1,51 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Plus, Calendar, Trash2, Edit, RefreshCw, AlertCircle, CalendarDays, Ban } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  Plus,
+  Calendar,
+  Trash2,
+  Edit,
+  Clock,
+  Ban,
+  CalendarDays,
+  RefreshCw,
+  ChevronRight,
+  MoreVertical,
+  Users,
+  CalendarClock,
+  CalendarX
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 import {
   useRecurringSchedules,
@@ -43,49 +54,61 @@ import {
   useDeleteBlockedTime
 } from '@/hooks/useAppointmentQueries';
 import { useSearchPractitioners } from '@/hooks/useEncounterQueries';
-import { cancelSchedule } from '@/lib/api.js';
 import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
 import BlockedTimeForm from '@/components/appointments/BlockedTimeForm';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 import { SearchBar } from '@/components/ui/search-bar';
+import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 
-
+/**
+ * PractitionerAvailabilityPage - Chronicle-style availability management
+ *
+ * Features:
+ * - Calendar-first view with practitioner selection
+ * - Side panel for schedules and blocked times
+ * - Elegant stat cards
+ * - Quick actions
+ */
 const PractitionerAvailabilityPage = () => {
-  // Removed template state
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('schedules'); // 'schedules' | 'blocked'
+  const [selectedPractitioner, setSelectedPractitioner] = useState(null);
 
-  // Recurring schedule state
-  const [selectedRecurringSchedule, setSelectedRecurringSchedule] = useState(null);
+  // Dialog states
   const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
   const [isEditRecurringDialogOpen, setIsEditRecurringDialogOpen] = useState(false);
   const [isDeleteRecurringDialogOpen, setIsDeleteRecurringDialogOpen] = useState(false);
+  const [selectedRecurringSchedule, setSelectedRecurringSchedule] = useState(null);
   const [recurringToDelete, setRecurringToDelete] = useState(null);
-  const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
 
-  // Blocked Time state
-  const [selectedBlockedTime, setSelectedBlockedTime] = useState(null);
   const [isCreateBlockedTimeDialogOpen, setIsCreateBlockedTimeDialogOpen] = useState(false);
   const [isEditBlockedTimeDialogOpen, setIsEditBlockedTimeDialogOpen] = useState(false);
   const [isDeleteBlockedTimeDialogOpen, setIsDeleteBlockedTimeDialogOpen] = useState(false);
+  const [selectedBlockedTime, setSelectedBlockedTime] = useState(null);
   const [blockedTimeToDelete, setBlockedTimeToDelete] = useState(null);
 
-  // Other state
-  const [selectedPractitioner, setSelectedPractitioner] = useState(null);
-  const navigate = useNavigate();
-
-  // Use React Query hooks for data fetching
+  // Fetch data
   const {
     data: recurringSchedules = [],
     isLoading: recurringLoading,
     isError: isRecurringError,
-    error: recurringError
+    error: recurringError,
+    refetch: refetchRecurring
   } = useRecurringSchedules();
 
-  // Search state for practitioners
+  const {
+    data: blockedTimes = [],
+    isLoading: blockedTimesLoading,
+    isError: isBlockedTimesError,
+    error: blockedTimesError,
+    refetch: refetchBlocked
+  } = useBlockedTimes();
+
+  // Practitioner search
   const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
   const {
     data: practitioners = [],
     isLoading: practitionersLoading,
-    searchTerm: practitionerSearchTerm,
     setSearchTerm: setPractitionerSearchTerm
   } = useSearchPractitioners();
 
@@ -94,142 +117,82 @@ const PractitionerAvailabilityPage = () => {
     setPractitionerSearchTerm(value);
   };
 
-  // Format practitioner options for SearchBar
-  const practitionerOptions = Array.isArray(practitioners) ? practitioners.map(practitioner => {
-    // Handle both old and new response structures
-    if (practitioner.fhir_resource) {
-      // New structure with FHIR resource
-      const name = practitioner.fhir_resource.name?.[0];
-      const given = name?.given?.join(' ') || '';
-      const family = name?.family || '';
-      const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
-      return {
-        label: displayName,
-        value: practitioner.local_data?.id || practitioner.fhir_resource.id
-      };
-    } else if (practitioner.staff_details) {
-      // Structure with staff_details
-      return {
-        label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.specialization || 'Practitioner'}`.replace(/\s+/g, ' ').trim(),
-        value: practitioner.id
-      };
-    } else {
-      // Fallback to old format
-      return {
-        label: `${practitioner.user?.full_name || 'Unknown'} - ${practitioner.specialization || 'Practitioner'}`,
-        value: practitioner.id
-      };
-    }
-  }) : [];
-
-  const {
-    data: blockedTimes = [],
-    isLoading: blockedTimesLoading,
-    isError: isBlockedTimesError,
-    error: blockedTimesError
-  } = useBlockedTimes();
-
-  // Use mutation hook for deleting recurring schedules
-  const deleteRecurringScheduleMutation = useDeleteRecurringSchedule();
-  const deleteBlockedTimeMutation = useDeleteBlockedTime();
-
-  const getUserTypeBadgeColor = (userType) => {
-    switch (userType) {
-      case 'admin':
-        return 'bg-red-100 text-red-800';
-      case 'doctor':
-        return 'bg-blue-100 text-blue-800';
-      case 'nurse':
-        return 'bg-green-100 text-green-800';
-      case 'receptionist':
-        return 'bg-purple-100 text-purple-800';
-      case 'lab_technician':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'pharmacist':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'billing':
-        return 'bg-pink-100 text-pink-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Function to format user type for display
-  const formatUserType = (userType) => {
-    if (!userType) return '';
-    return userType
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
-  // Removed template loading useEffect
-
-  // Show error toasts if queries fail
-  if (isRecurringError) {
-    toast.error(recurringError?.message || 'Failed to load recurring schedules');
-    console.error('Error loading recurring schedules:', recurringError);
-  }
-
-  // Removed practitioners error check as search hook handles it differently or silently
-
-  if (isBlockedTimesError) {
-    toast.error(blockedTimesError?.message || 'Failed to load blocked times');
-    console.error('Error loading blocked times:', blockedTimesError);
-  }
-
-  // Removed template handler functions
-
-  // Handle recurring schedule creation success
-  const handleCreateRecurringSuccess = (newSchedule) => {
-    // No need to manually update the state as React Query will automatically refetch
-    setIsCreateRecurringDialogOpen(false);
-    toast.success('Recurring schedule created successfully');
-  };
-
-  // Handle recurring schedule update success
-  const handleUpdateRecurringSuccess = (updatedSchedule) => {
-    // No need to manually update the state as React Query will automatically refetch
-    setIsEditRecurringDialogOpen(false);
-    toast.success('Recurring schedule updated successfully');
-  };
-
-  // Handle recurring schedule deletion
-  const handleDeleteRecurring = async (scheduleId) => {
-    if (!recurringToDelete) return;
-
-    deleteRecurringScheduleMutation.mutate(scheduleId, {
-      onSuccess: () => {
-        // No need to manually update the state as React Query will automatically refetch
-        setIsDeleteRecurringDialogOpen(false);
-        toast.success('Recurring schedule deleted successfully');
-      },
-      onError: (error) => {
-        console.error('Error deleting recurring schedule:', error);
-        toast.error('Failed to delete recurring schedule');
+  // Format practitioner options
+  const practitionerOptions = useMemo(() => {
+    if (!Array.isArray(practitioners)) return [];
+    return practitioners.map(practitioner => {
+      if (practitioner.fhir_resource) {
+        const name = practitioner.fhir_resource.name?.[0];
+        const given = name?.given?.join(' ') || '';
+        const family = name?.family || '';
+        const displayName = `${family}, ${given}`.trim() || 'Unknown';
+        return {
+          label: displayName,
+          value: practitioner.local_data?.id || practitioner.fhir_resource.id
+        };
+      } else if (practitioner.staff_details) {
+        return {
+          label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name}`.trim(),
+          value: practitioner.id
+        };
+      } else {
+        return {
+          label: practitioner.user?.full_name || 'Unknown',
+          value: practitioner.id
+        };
       }
     });
+  }, [practitioners]);
+
+  // Mutations
+  const deleteRecurringMutation = useDeleteRecurringSchedule();
+  const deleteBlockedTimeMutation = useDeleteBlockedTime();
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    const activeSchedules = recurringSchedules.filter(s => s.is_active).length;
+    const totalSchedules = recurringSchedules.length;
+    const activeBlocks = blockedTimes.filter(b => {
+      const endDate = new Date(b.end_date || b.date);
+      return endDate >= new Date();
+    }).length;
+    return { activeSchedules, totalSchedules, activeBlocks, totalBlocks: blockedTimes.length };
+  }, [recurringSchedules, blockedTimes]);
+
+  // Error handling
+  if (isRecurringError) {
+    toast.error(recurringError?.message || 'Failed to load schedules');
+  }
+  if (isBlockedTimesError) {
+    toast.error(blockedTimesError?.message || 'Failed to load blocked times');
+  }
+
+  // Handlers
+  const handleCreateRecurringSuccess = () => {
+    setIsCreateRecurringDialogOpen(false);
+    toast.success('Schedule created successfully');
   };
 
-  // Handle blocked time deletion
-  const handleDeleteBlockedTime = async (id) => {
-    if (!blockedTimeToDelete) return;
+  const handleUpdateRecurringSuccess = () => {
+    setIsEditRecurringDialogOpen(false);
+    toast.success('Schedule updated successfully');
+  };
 
-    deleteBlockedTimeMutation.mutate(id, {
+  const handleDeleteRecurring = (scheduleId) => {
+    deleteRecurringMutation.mutate(scheduleId, {
       onSuccess: () => {
-        setIsDeleteBlockedTimeDialogOpen(false);
-        toast.success('Blocked time deleted successfully');
+        setIsDeleteRecurringDialogOpen(false);
+        toast.success('Schedule deleted successfully');
       },
       onError: (error) => {
-        console.error('Error deleting blocked time:', error);
-        toast.error('Failed to delete blocked time');
+        toast.error('Failed to delete schedule');
       }
     });
   };
 
   const handleCreateBlockedTimeSuccess = () => {
     setIsCreateBlockedTimeDialogOpen(false);
-    toast.success('Blocked time created successfully');
+    toast.success('Time blocked successfully');
   };
 
   const handleUpdateBlockedTimeSuccess = () => {
@@ -237,328 +200,313 @@ const PractitionerAvailabilityPage = () => {
     toast.success('Blocked time updated successfully');
   };
 
-  // Removed generate schedule handler function
-
-  // Helper to get practitioner name from schedule/blocked object if available
-  // The serializer now includes practitioner_name, so we can use that directly.
-  // If not, we fall back to "Unknown" or ID.
-  const getPractitionerName = (item) => {
-    return item.practitioner_name || 'Unknown';
+  const handleDeleteBlockedTime = (id) => {
+    deleteBlockedTimeMutation.mutate(id, {
+      onSuccess: () => {
+        setIsDeleteBlockedTimeDialogOpen(false);
+        toast.success('Blocked time deleted successfully');
+      },
+      onError: (error) => {
+        toast.error('Failed to delete blocked time');
+      }
+    });
   };
 
-  // Removed getTemplateName function
+  const getPractitionerName = (item) => item.practitioner_name || 'Unknown';
 
-  // Render loading state for all tabs
-  if (recurringLoading) {
+  const formatDaysOfWeek = (days) => {
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days.map(d => dayNames[d]).join(', ');
+  };
+
+  const breadcrumbs = [{ label: 'Availability', path: '/practitioner-availability' }];
+
+  // Loading state
+  if (recurringLoading && blockedTimesLoading) {
     return (
-      <div className="container mx-auto py-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-1/3" />
-          <Skeleton className="h-10 w-24" />
+      <div className="min-h-screen bg-background">
+        <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+          <Skeleton className="h-10 w-64" />
+          <div className="grid grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+          </div>
+          <Skeleton className="h-[500px] w-full" />
         </div>
-        <Skeleton className="h-[500px] w-full" />
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight">Practitioner Availability</h1>
-        <div className="flex space-x-2">
-          <Button onClick={() => setIsCreateBlockedTimeDialogOpen(true)} variant="outline">
-            <Ban className="mr-2 h-4 w-4" />
-            Block Time
-          </Button>
-          <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Recurring Schedule
-          </Button>
+    <div className="min-h-screen bg-background">
+      <BreadcrumbSetter breadcrumbs={breadcrumbs} />
+
+      {/* Hero Section */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-display font-bold text-foreground">
+                Practitioner Availability
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Manage schedules, view calendars, and block time off
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsCreateBlockedTimeDialogOpen(true)}>
+                <Ban className="h-4 w-4 mr-2" />
+                Block Time
+              </Button>
+              <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Schedule
+              </Button>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard
+              icon={CalendarClock}
+              label="Active Schedules"
+              value={stats.activeSchedules}
+              sublabel={`of ${stats.totalSchedules} total`}
+              color="primary"
+            />
+            <StatCard
+              icon={CalendarX}
+              label="Active Blocks"
+              value={stats.activeBlocks}
+              sublabel={`${stats.totalBlocks} total`}
+              color="rose"
+            />
+            <StatCard
+              icon={Users}
+              label="Practitioners"
+              value={practitionerOptions.length}
+              sublabel="configured"
+              color="emerald"
+            />
+            <StatCard
+              icon={CalendarDays}
+              label="This Week"
+              value="—"
+              sublabel="appointments"
+              color="amber"
+            />
+          </div>
         </div>
       </div>
 
-      <Tabs defaultValue="recurring" className="w-full">
-        <TabsList>
-          <TabsTrigger value="recurring">Recurring Schedules</TabsTrigger>
-          <TabsTrigger value="blocked">Blocked Times</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar View</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="recurring" className="space-y-4">
-          {recurringLoading ? (
-            <Skeleton className="h-[400px] w-full" />
-          ) : recurringSchedules.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>No Recurring Schedules</CardTitle>
-                <CardDescription>
-                  Create a recurring schedule to define when practitioners are available for appointments.
-                </CardDescription>
-              </CardHeader>
-              <CardFooter>
-                <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Recurring Schedule
-                </Button>
-              </CardFooter>
-            </Card>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Practitioner</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Active Period</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recurringSchedules.map((schedule) => (
-                    <TableRow key={schedule.id}>
-                      <TableCell className="font-medium">{schedule.name}</TableCell>
-
-                      <TableCell>{getPractitionerName(schedule)}</TableCell>
-                      <TableCell>
-                        {schedule.days_of_week.map(day => {
-                          const dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day];
-                          return (
-                            <Badge key={day} variant="outline" className="mr-1">
-                              {dayName}
-                            </Badge>
-                          );
-                        })}
-                      </TableCell>
-                      <TableCell>
-                        {schedule.start_time} - {schedule.end_time}
-                      </TableCell>
-                      <TableCell>{schedule.slot_duration} min</TableCell>
-                      <TableCell>
-                        {new Date(schedule.active_from).toLocaleDateString()}
-                        {schedule.active_to ? ` - ${new Date(schedule.active_to).toLocaleDateString()}` : ' - ∞'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={schedule.is_active ? "success" : "secondary"}>
-                          {schedule.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <span className="sr-only">Open menu</span>
-                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                                <circle cx="12" cy="12" r="1"></circle>
-                                <circle cx="12" cy="5" r="1"></circle>
-                                <circle cx="12" cy="19" r="1"></circle>
-                              </svg>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedRecurringSchedule(schedule);
-                                setIsEditRecurringDialogOpen(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                setRecurringToDelete(schedule);
-                                setIsDeleteRecurringDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="blocked" className="space-y-4">
-          {blockedTimesLoading ? (
-            <Skeleton className="h-[400px] w-full" />
-          ) : blockedTimes.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>No Blocked Times</CardTitle>
-                <CardDescription>
-                  Create a blocked time entry to mark periods when practitioners are unavailable (e.g., vacations, emergencies).
-                </CardDescription>
-              </CardHeader>
-              <CardFooter>
-                <Button onClick={() => setIsCreateBlockedTimeDialogOpen(true)}>
-                  <Ban className="mr-2 h-4 w-4" />
-                  Block Time
-                </Button>
-              </CardFooter>
-            </Card>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Practitioner</TableHead>
-                    <TableHead>Date / Range</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {blockedTimes.map((blocked) => (
-                    <TableRow key={blocked.id}>
-                      <TableCell>{getPractitionerName(blocked)}</TableCell>
-                      <TableCell>
-                        {blocked.start_date && blocked.end_date && blocked.start_date !== blocked.end_date ? (
-                          <span>{new Date(blocked.start_date).toLocaleDateString()} - {new Date(blocked.end_date).toLocaleDateString()}</span>
-                        ) : (
-                          <span>{new Date(blocked.date).toLocaleDateString()}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {blocked.is_all_day ? (
-                          <Badge variant="outline">All Day</Badge>
-                        ) : (
-                          <span>{blocked.start_time} - {blocked.end_time}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{blocked.reason}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <span className="sr-only">Open menu</span>
-                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                                <circle cx="12" cy="12" r="1"></circle>
-                                <circle cx="12" cy="5" r="1"></circle>
-                                <circle cx="12" cy="19" r="1"></circle>
-                              </svg>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedBlockedTime(blocked);
-                                setIsEditBlockedTimeDialogOpen(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                setBlockedTimeToDelete(blocked);
-                                setIsDeleteBlockedTimeDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </TabsContent>
-
-
-
-        <TabsContent value="calendar" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Practitioner Availability Calendar</CardTitle>
-                <CardTitle>Practitioner Availability Calendar</CardTitle>
-                <div className="w-[300px]">
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Calendar Section (2/3 width) */}
+          <div className="lg:col-span-2">
+            <div className="bg-card rounded-xl border border-border/50 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-foreground">
+                  Availability Calendar
+                </h2>
+                <div className="w-72">
                   <SearchBar
                     options={practitionerOptions}
                     value={selectedPractitioner}
                     onChange={setSelectedPractitioner}
                     onInputChange={handleSearchChange}
-                    placeholder="Search practitioner..."
-                    emptyMessage={practitionersLoading ? "Searching..." : "No practitioners found."}
-                    searchPlaceholder="Search by name..."
+                    placeholder="Select practitioner..."
+                    emptyMessage={practitionersLoading ? "Searching..." : "No practitioners found"}
                     maxHeight="20rem"
                     isLoading={practitionersLoading}
                   />
                 </div>
               </div>
-              <CardDescription>
-                View practitioner availability in a calendar format. Select a practitioner to see their available days and time slots.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+
               {!selectedPractitioner ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <CalendarDays className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Please select a practitioner to view their availability.</p>
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="p-4 rounded-full bg-primary/10 mb-4">
+                    <CalendarDays className="h-8 w-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-medium text-foreground mb-2">
+                    Select a Practitioner
+                  </h3>
+                  <p className="text-muted-foreground text-sm max-w-sm">
+                    Choose a practitioner from the dropdown above to view their availability calendar
+                  </p>
                 </div>
               ) : (
                 <DoctorAvailabilityCalendar
                   practitionerId={selectedPractitioner}
                   onSlotSelect={(slot) => {
-                    toast.info(`Selected slot: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
+                    toast.info(`Selected: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
                   }}
                 />
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </div>
 
-      {/* Removed template-related dialogs */}
+          {/* Sidebar (1/3 width) */}
+          <div className="space-y-6">
+            {/* Tab Navigation */}
+            <div className="flex p-1 bg-muted/50 rounded-lg">
+              <button
+                onClick={() => setActiveTab('schedules')}
+                className={cn(
+                  "flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors",
+                  activeTab === 'schedules'
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Schedules
+              </button>
+              <button
+                onClick={() => setActiveTab('blocked')}
+                className={cn(
+                  "flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors",
+                  activeTab === 'blocked'
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Blocked Times
+              </button>
+            </div>
 
-      {/* Create Recurring Schedule Dialog */}
+            {/* Schedules List */}
+            {activeTab === 'schedules' && (
+              <div className="bg-card rounded-xl border border-border/50">
+                <div className="p-4 border-b border-border/50 flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground">Recurring Schedules</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => refetchRecurring()}
+                    className="h-8 w-8 p-0"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <ScrollArea className="h-[400px]">
+                  {recurringLoading ? (
+                    <div className="p-4 space-y-3">
+                      {[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}
+                    </div>
+                  ) : recurringSchedules.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                      <Clock className="h-10 w-10 text-muted-foreground mb-3" />
+                      <p className="text-sm text-muted-foreground">No schedules configured</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => setIsCreateRecurringDialogOpen(true)}
+                      >
+                        Create Schedule
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="p-2">
+                      {recurringSchedules.map((schedule) => (
+                        <ScheduleCard
+                          key={schedule.id}
+                          schedule={schedule}
+                          onEdit={() => {
+                            setSelectedRecurringSchedule(schedule);
+                            setIsEditRecurringDialogOpen(true);
+                          }}
+                          onDelete={() => {
+                            setRecurringToDelete(schedule);
+                            setIsDeleteRecurringDialogOpen(true);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Blocked Times List */}
+            {activeTab === 'blocked' && (
+              <div className="bg-card rounded-xl border border-border/50">
+                <div className="p-4 border-b border-border/50 flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground">Blocked Times</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => refetchBlocked()}
+                    className="h-8 w-8 p-0"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <ScrollArea className="h-[400px]">
+                  {blockedTimesLoading ? (
+                    <div className="p-4 space-y-3">
+                      {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
+                    </div>
+                  ) : blockedTimes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                      <Ban className="h-10 w-10 text-muted-foreground mb-3" />
+                      <p className="text-sm text-muted-foreground">No blocked times</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => setIsCreateBlockedTimeDialogOpen(true)}
+                      >
+                        Block Time
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="p-2">
+                      {blockedTimes.map((blocked) => (
+                        <BlockedTimeCard
+                          key={blocked.id}
+                          blocked={blocked}
+                          onEdit={() => {
+                            setSelectedBlockedTime(blocked);
+                            setIsEditBlockedTimeDialogOpen(true);
+                          }}
+                          onDelete={() => {
+                            setBlockedTimeToDelete(blocked);
+                            setIsDeleteBlockedTimeDialogOpen(true);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Dialogs */}
       <Dialog open={isCreateRecurringDialogOpen} onOpenChange={setIsCreateRecurringDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Create Recurring Schedule</DialogTitle>
             <DialogDescription>
-              Create a new recurring schedule for a practitioner.
+              Set up a new recurring availability schedule for a practitioner.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="p-1">
-              <RecurringScheduleForm
-                onSuccess={handleCreateRecurringSuccess}
-              />
+              <RecurringScheduleForm onSuccess={handleCreateRecurringSuccess} />
             </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Recurring Schedule Dialog */}
       <Dialog open={isEditRecurringDialogOpen} onOpenChange={setIsEditRecurringDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Edit Recurring Schedule</DialogTitle>
-            <DialogDescription>
-              Update the recurring schedule details.
-            </DialogDescription>
+            <DialogTitle>Edit Schedule</DialogTitle>
+            <DialogDescription>Update the schedule details.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="p-1">
@@ -573,13 +521,12 @@ const PractitionerAvailabilityPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Create Blocked Time Dialog */}
       <Dialog open={isCreateBlockedTimeDialogOpen} onOpenChange={setIsCreateBlockedTimeDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Block Time</DialogTitle>
             <DialogDescription>
-              Block time for a practitioner (e.g. vacation, emergency).
+              Mark a period as unavailable (vacation, emergency, etc.).
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
@@ -593,14 +540,11 @@ const PractitionerAvailabilityPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Blocked Time Dialog */}
       <Dialog open={isEditBlockedTimeDialogOpen} onOpenChange={setIsEditBlockedTimeDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Edit Blocked Time</DialogTitle>
-            <DialogDescription>
-              Update the blocked time details.
-            </DialogDescription>
+            <DialogDescription>Update the blocked time details.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="p-1">
@@ -616,16 +560,20 @@ const PractitionerAvailabilityPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Recurring Schedule Alert Dialog */}
       <AlertDialog open={isDeleteRecurringDialogOpen} onOpenChange={setIsDeleteRecurringDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Recurring Schedule</AlertDialogTitle>
+            <AlertDialogTitle>Delete Schedule?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this recurring schedule? This action cannot be undone.
+              This will permanently delete this recurring schedule. This action cannot be undone.
             </AlertDialogDescription>
             {recurringToDelete && (
-              <div className="mt-2 font-medium">{recurringToDelete.name}</div>
+              <div className="mt-2 p-3 bg-muted/50 rounded-lg">
+                <p className="font-medium">{recurringToDelete.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {getPractitionerName(recurringToDelete)}
+                </p>
+              </div>
             )}
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -640,17 +588,19 @@ const PractitionerAvailabilityPage = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Blocked Time Alert Dialog */}
       <AlertDialog open={isDeleteBlockedTimeDialogOpen} onOpenChange={setIsDeleteBlockedTimeDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Blocked Time</AlertDialogTitle>
+            <AlertDialogTitle>Delete Blocked Time?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this blocked time? This will make the time available for booking again.
+              This will remove the blocked time and make it available for bookings again.
             </AlertDialogDescription>
             {blockedTimeToDelete && (
-              <div className="mt-2 font-medium">
-                {blockedTimeToDelete.reason} ({new Date(blockedTimeToDelete.date || blockedTimeToDelete.start_date).toLocaleDateString()})
+              <div className="mt-2 p-3 bg-muted/50 rounded-lg">
+                <p className="font-medium">{blockedTimeToDelete.reason || 'Blocked Time'}</p>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(blockedTimeToDelete.date || blockedTimeToDelete.start_date).toLocaleDateString()}
+                </p>
               </div>
             )}
           </AlertDialogHeader>
@@ -668,5 +618,160 @@ const PractitionerAvailabilityPage = () => {
     </div>
   );
 };
+
+/**
+ * StatCard - Stats display card
+ */
+function StatCard({ icon: Icon, label, value, sublabel, color = 'primary' }) {
+  const colorClasses = {
+    primary: { bg: 'bg-primary/10', icon: 'text-primary', value: 'text-primary' },
+    emerald: { bg: 'bg-emerald-500/10', icon: 'text-emerald-600', value: 'text-emerald-600' },
+    rose: { bg: 'bg-rose-500/10', icon: 'text-rose-600', value: 'text-rose-600' },
+    amber: { bg: 'bg-amber-500/10', icon: 'text-amber-600', value: 'text-amber-600' },
+  };
+  const colors = colorClasses[color];
+
+  return (
+    <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+      <div className="flex items-center gap-3">
+        <div className={cn("p-2 rounded-lg", colors.bg)}>
+          <Icon className={cn("h-5 w-5", colors.icon)} />
+        </div>
+        <div>
+          <p className={cn("font-mono text-2xl font-bold", colors.value)}>{value}</p>
+          <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+            {label}
+          </p>
+          {sublabel && (
+            <p className="font-mono text-[10px] text-muted-foreground">{sublabel}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ScheduleCard - Display recurring schedule
+ */
+function ScheduleCard({ schedule, onEdit, onDelete }) {
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  return (
+    <div className="p-3 rounded-lg border border-border/50 hover:border-border transition-colors mb-2">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium text-foreground truncate">{schedule.name}</h4>
+            <Badge
+              variant={schedule.is_active ? "default" : "secondary"}
+              className="text-[10px] px-1.5 py-0"
+            >
+              {schedule.is_active ? 'Active' : 'Inactive'}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground truncate mt-0.5">
+            {schedule.practitioner_name || 'Unknown practitioner'}
+          </p>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {schedule.days_of_week.map(day => (
+              <span
+                key={day}
+                className="px-1.5 py-0.5 bg-primary/10 text-primary text-[10px] font-mono rounded"
+              >
+                {dayNames[day]}
+              </span>
+            ))}
+          </div>
+          <p className="font-mono text-xs text-muted-foreground mt-2">
+            {schedule.start_time} - {schedule.end_time} • {schedule.slot_duration}min slots
+          </p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDelete} className="text-destructive">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * BlockedTimeCard - Display blocked time entry
+ */
+function BlockedTimeCard({ blocked, onEdit, onDelete }) {
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const isDateRange = blocked.start_date && blocked.end_date && blocked.start_date !== blocked.end_date;
+  const isPast = new Date(blocked.end_date || blocked.date) < new Date();
+
+  return (
+    <div className={cn(
+      "p-3 rounded-lg border border-border/50 hover:border-border transition-colors mb-2",
+      isPast && "opacity-60"
+    )}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Ban className="h-4 w-4 text-rose-500 shrink-0" />
+            <h4 className="font-medium text-foreground truncate">
+              {blocked.reason || 'Blocked'}
+            </h4>
+          </div>
+          <p className="text-sm text-muted-foreground truncate mt-0.5">
+            {blocked.practitioner_name || 'Unknown'}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground mt-2">
+            {isDateRange
+              ? `${formatDate(blocked.start_date)} - ${formatDate(blocked.end_date)}`
+              : formatDate(blocked.date || blocked.start_date)
+            }
+            {blocked.is_all_day
+              ? ' • All Day'
+              : ` • ${blocked.start_time} - ${blocked.end_time}`
+            }
+          </p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDelete} className="text-destructive">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
 
 export default PractitionerAvailabilityPage;
