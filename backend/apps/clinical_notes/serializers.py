@@ -6,24 +6,70 @@ from ..users.models import PractitionerProfile, PatientProfile
 class NoteTemplateSerializer(serializers.ModelSerializer):
     """
     Serializer for NoteTemplate model.
+    Includes new visibility, category, and organizational fields.
     """
     created_by_name = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+    is_system_template = serializers.BooleanField(read_only=True)
+    visibility_display = serializers.CharField(source='get_visibility_display', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
 
     class Meta:
         model = NoteTemplate
         fields = [
-            'id', 'title', 'description', 'is_active', 'is_public', 'structure',
-            'created_by', 'created_by_name', 'created_at', 'updated_at'
+            'id', 'title', 'description', 'is_active', 'structure',
+            # Visibility/sharing fields
+            'visibility', 'visibility_display', 'department',
+            # Organization fields
+            'category', 'category_display', 'icon', 'estimated_steps',
+            # Legacy field (deprecated)
+            'is_public',
+            # Ownership/audit fields
+            'created_by', 'created_by_name', 'is_system_template',
+            'can_edit', 'can_delete',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_by', 'created_by_name', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'created_by', 'created_by_name', 'is_system_template',
+            'can_edit', 'can_delete', 'created_at', 'updated_at',
+            'visibility_display', 'category_display'
+        ]
 
     def get_created_by_name(self, obj):
         if obj.created_by:
-            return obj.created_by.get_full_name() or obj.created_by.username
-        return None
+            return obj.created_by.get_full_name() or obj.created_by.email
+        return 'System'
+
+    def get_can_edit(self, obj):
+        """Check if the current user can edit this template."""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        user = request.user
+        # Admins can edit any template
+        if user.user_type == 'admin':
+            return True
+        # Users can edit their own templates
+        return obj.created_by == user
+
+    def get_can_delete(self, obj):
+        """Check if the current user can delete this template."""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        user = request.user
+        # System templates cannot be deleted
+        if obj.is_system_template:
+            return False
+        # Admins can delete any non-system template
+        if user.user_type == 'admin':
+            return True
+        # Users can delete their own templates
+        return obj.created_by == user
 
     def create(self, validated_data):
-        # Check if this is a default template (should not have a creator)
+        # Check if this is a default/system template (should not have a creator)
         is_default = validated_data.pop('is_default', False)
 
         # Only set created_by if not a default template
@@ -31,6 +77,55 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
             validated_data['created_by'] = self.context['request'].user
 
         return super().create(validated_data)
+
+    def validate(self, data):
+        """Validate template data."""
+        # If visibility is 'department', department field is required
+        visibility = data.get('visibility', self.instance.visibility if self.instance else 'private')
+        department = data.get('department', self.instance.department if self.instance else None)
+
+        if visibility == 'department' and not department:
+            raise serializers.ValidationError({
+                'department': 'Department is required when visibility is set to "department".'
+            })
+
+        return data
+
+
+class NoteTemplateListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing templates with structure included.
+    Structure is needed for the frontend to derive workflow steps.
+    """
+    created_by_name = serializers.SerializerMethodField()
+    visibility_display = serializers.CharField(source='get_visibility_display', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    section_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoteTemplate
+        fields = [
+            'id', 'title', 'description', 'is_active',
+            'visibility', 'visibility_display', 'department',
+            'category', 'category_display', 'icon', 'estimated_steps',
+            'structure',  # Include structure for workflow step derivation
+            'created_by', 'created_by_name',
+            'section_count', 'created_at', 'updated_at'
+        ]
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.email
+        return 'System'
+
+    def get_section_count(self, obj):
+        """Return the number of sections in the template."""
+        if obj.structure and isinstance(obj.structure, dict):
+            sections = obj.structure.get('sections', [])
+            return len(sections)
+        elif obj.structure and isinstance(obj.structure, list):
+            return len(obj.structure)
+        return 0
 
 
 class NoteEntrySerializer(serializers.ModelSerializer):

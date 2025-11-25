@@ -1,22 +1,52 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { clinicalNotesApi } from '@/lib/api/clinical-notes';
+
+/**
+ * Derive workflow steps from a template structure
+ * @param {Object} template - The note template object
+ * @returns {Array} Array of step configurations
+ */
+function deriveStepsFromTemplate(template) {
+  if (!template?.structure) return [];
+
+  // Handle both array and object structure formats
+  const sections = Array.isArray(template.structure)
+    ? template.structure
+    : template.structure.sections || [];
+
+  return sections.map((section, index) => ({
+    id: section.name?.toLowerCase().replace(/\s+/g, '_') || `step_${index}`,
+    title: section.name || section.section || `Step ${index + 1}`,
+    type: section.type || 'text',
+    required: section.required ?? false,
+    subsections: section.subsections || null,
+    observationType: section.observationType || section.observation_type || null,
+    helpText: section.helpText || null,
+    placeholder: section.placeholder || null,
+  }));
+}
 
 /**
  * useNoteWorkflow - Hook for managing clinical note workflow state
  *
  * Features:
+ * - Template-driven workflow (steps derived from template structure)
  * - Workflow lifecycle management (start, update, complete)
  * - Auto-save with debounce
  * - Local state management for form data
  * - API integration
+ *
+ * @param {string} patientId - The patient ID for the note
+ * @returns {Object} Workflow state and actions
  */
 export function useNoteWorkflow(patientId) {
   const queryClient = useQueryClient();
 
   // Workflow state
   const [workflowId, setWorkflowId] = useState(null);
-  const [noteType, setNoteType] = useState(null);
+  const [template, setTemplate] = useState(null);  // Now stores full template object
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -27,36 +57,22 @@ export function useNoteWorkflow(patientId) {
   const autoSaveTimerRef = useRef(null);
   const pendingChangesRef = useRef(false);
 
-  // Note type configurations
-  const noteTypeConfigs = {
-    progress: {
-      name: 'Progress Note',
-      steps: ['chief_complaint', 'assessment', 'plan'],
-      totalSteps: 3,
-    },
-    soap: {
-      name: 'SOAP Note',
-      steps: ['subjective', 'objective', 'assessment', 'plan'],
-      totalSteps: 4,
-    },
-    procedure: {
-      name: 'Procedure Note',
-      steps: ['pre_procedure', 'procedure_details', 'post_procedure'],
-      totalSteps: 3,
-    },
-    phone: {
-      name: 'Phone Note',
-      steps: ['caller_info', 'discussion', 'action_items'],
-      totalSteps: 3,
-    },
-  };
+  // Derive steps from current template
+  const steps = useMemo(() => {
+    return deriveStepsFromTemplate(template);
+  }, [template]);
+
+  // Computed values
+  const totalSteps = steps.length;
+  const noteType = template?.id || null;  // Use template ID as noteType
 
   // Start workflow mutation
   const startWorkflowMutation = useMutation({
-    mutationFn: async ({ patientId, noteType }) => {
+    mutationFn: async ({ patientId, template }) => {
       const data = await apiClient.post('/workflows/clinical-note/start/', {
         patient_id: patientId,
-        note_type: noteType,
+        note_type: template.category || 'custom',  // Send category as note_type
+        template_id: template.id,  // Send template ID
       });
       return data;
     },
@@ -114,23 +130,37 @@ export function useNoteWorkflow(patientId) {
     },
   });
 
-  // Complete workflow mutation
+  // Complete workflow mutation - creates note entry directly
   const completeWorkflowMutation = useMutation({
-    mutationFn: async ({ workflowId, finalData }) => {
-      const data = await apiClient.post(
-        `/workflows/${workflowId}/clinical-note/complete/`,
-        {
-          final_data: finalData,
-          encounter_type: 'outpatient',
-          encounter_status: 'finished',
-        }
-      );
-      return data;
+    mutationFn: async ({ workflowId, template, finalData, patientId }) => {
+      // If we have a backend workflow, complete it
+      if (workflowId) {
+        const data = await apiClient.post(
+          `/workflows/${workflowId}/clinical-note/complete/`,
+          {
+            final_data: finalData,
+            encounter_type: 'outpatient',
+            encounter_status: 'finished',
+            template_id: template.id,
+          }
+        );
+        return data;
+      }
+
+      // Otherwise, create a note entry directly using the clinical notes API
+      const noteEntry = await clinicalNotesApi.createNoteEntry({
+        template_id: template.id,
+        patient_id: patientId,
+        data: finalData,
+      });
+      return { success: true, note: noteEntry };
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries(['patient', patientId]);
       queryClient.invalidateQueries(['encounters']);
+      queryClient.invalidateQueries(['clinical-notes']);
+      queryClient.invalidateQueries(['timeline']);
       setError(null);
     },
     onError: (error) => {
@@ -138,22 +168,31 @@ export function useNoteWorkflow(patientId) {
     },
   });
 
-  // Start a new workflow
-  const startWorkflow = useCallback(async (selectedNoteType) => {
+  // Start a new workflow with a template
+  const startWorkflow = useCallback(async (selectedTemplate) => {
     if (!patientId) {
       setError('Patient ID is required');
       return;
     }
 
-    setNoteType(selectedNoteType);
+    // Store the full template object
+    setTemplate(selectedTemplate);
     setFormData({});
     setCurrentStep(0);
     setLastSaved(null);
+    setError(null);  // Clear any previous errors
 
-    await startWorkflowMutation.mutateAsync({
-      patientId,
-      noteType: selectedNoteType,
-    });
+    try {
+      await startWorkflowMutation.mutateAsync({
+        patientId,
+        template: selectedTemplate,
+      });
+    } catch (err) {
+      // If backend workflow fails, still allow local workflow
+      console.warn('Backend workflow unavailable, using local mode:', err);
+      setError(null);  // Clear error - we're falling back to local mode
+      setCurrentStep(1);  // Start at step 1 in local mode
+    }
   }, [patientId, startWorkflowMutation]);
 
   // Update form data for a step
@@ -166,34 +205,37 @@ export function useNoteWorkflow(patientId) {
   }, []);
 
   // Save current step and optionally advance
-  const saveStep = useCallback(async (nextStep = null) => {
-    if (!workflowId || !noteType) return;
+  const saveStep = useCallback(async (nextStepNum = null) => {
+    if (!template) return;
 
     setIsSaving(true);
 
     try {
-      const config = noteTypeConfigs[noteType];
-      const currentStepId = config.steps[currentStep - 1];
-      const stepData = formData[currentStepId] || {};
+      if (workflowId) {
+        const currentStepConfig = steps[currentStep - 1];
+        const stepData = formData[currentStepConfig?.id] || {};
 
-      await updateStepMutation.mutateAsync({
-        workflowId,
-        stepData: { [currentStepId]: stepData },
-        nextStep,
-        noteFields: stepData,
-      });
+        await updateStepMutation.mutateAsync({
+          workflowId,
+          stepData: { [currentStepConfig?.id]: stepData },
+          nextStep: nextStepNum,
+          noteFields: stepData,
+        });
+      } else if (nextStepNum) {
+        // Local mode - just update step
+        setCurrentStep(nextStepNum);
+      }
     } finally {
       setIsSaving(false);
     }
-  }, [workflowId, noteType, currentStep, formData, updateStepMutation]);
+  }, [workflowId, template, steps, currentStep, formData, updateStepMutation]);
 
   // Navigate to next step
   const nextStep = useCallback(async () => {
-    const config = noteTypeConfigs[noteType];
-    if (currentStep < config.totalSteps) {
+    if (currentStep < totalSteps) {
       await saveStep(currentStep + 1);
     }
-  }, [noteType, currentStep, saveStep]);
+  }, [currentStep, totalSteps, saveStep]);
 
   // Navigate to previous step
   const prevStep = useCallback(() => {
@@ -220,37 +262,37 @@ export function useNoteWorkflow(patientId) {
 
   // Complete the workflow
   const completeWorkflow = useCallback(async () => {
-    if (!workflowId) return;
+    if (!template) return;
 
     setIsSaving(true);
 
     try {
-      // First save the current step
-      const config = noteTypeConfigs[noteType];
-      const currentStepId = config.steps[currentStep - 1];
-      const stepData = formData[currentStepId] || {};
-
       // Build final data from all form data
+      // Structure it according to template sections
       const finalData = {};
-      Object.entries(formData).forEach(([stepId, data]) => {
-        Object.assign(finalData, data);
+      steps.forEach((step) => {
+        if (formData[step.id]) {
+          finalData[step.id] = formData[step.id];
+        }
       });
 
       const result = await completeWorkflowMutation.mutateAsync({
         workflowId,
+        template,
         finalData,
+        patientId,
       });
 
       return result;
     } finally {
       setIsSaving(false);
     }
-  }, [workflowId, noteType, currentStep, formData, completeWorkflowMutation]);
+  }, [workflowId, template, steps, formData, patientId, completeWorkflowMutation]);
 
   // Reset workflow state
   const resetWorkflow = useCallback(() => {
     setWorkflowId(null);
-    setNoteType(null);
+    setTemplate(null);
     setCurrentStep(0);
     setFormData({});
     setLastSaved(null);
@@ -283,24 +325,25 @@ export function useNoteWorkflow(patientId) {
 
   // Get current step configuration
   const getCurrentStepConfig = useCallback(() => {
-    if (!noteType || currentStep === 0) return null;
+    if (!template || currentStep === 0) return null;
 
-    const config = noteTypeConfigs[noteType];
-    const stepId = config.steps[currentStep - 1];
+    const stepConfig = steps[currentStep - 1];
+    if (!stepConfig) return null;
 
     return {
-      id: stepId,
+      ...stepConfig,
       stepNumber: currentStep,
-      totalSteps: config.totalSteps,
+      totalSteps,
       isFirstStep: currentStep === 1,
-      isLastStep: currentStep === config.totalSteps,
+      isLastStep: currentStep === totalSteps,
     };
-  }, [noteType, currentStep]);
+  }, [template, steps, currentStep, totalSteps]);
 
   return {
     // State
     workflowId,
-    noteType,
+    noteType,  // Template ID for compatibility
+    template,  // Full template object
     currentStep,
     formData,
     isSaving,
@@ -308,8 +351,9 @@ export function useNoteWorkflow(patientId) {
     error,
     isLoading: startWorkflowMutation.isPending || updateStepMutation.isPending || completeWorkflowMutation.isPending,
 
-    // Config
-    noteTypeConfigs,
+    // Derived from template
+    steps,
+    totalSteps,
     getCurrentStepConfig,
 
     // Actions

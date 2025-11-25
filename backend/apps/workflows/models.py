@@ -16,10 +16,16 @@ class WorkflowType(models.TextChoices):
 
 
 class ClinicalNoteType(models.TextChoices):
-    """Clinical note type choices"""
-    PROGRESS = 'progress', 'Progress Note'
+    """Clinical note type choices - matches NoteTemplate categories"""
+    GENERAL = 'general', 'General'
     SOAP = 'soap', 'SOAP Note'
+    PROGRESS = 'progress', 'Progress Note'
     PROCEDURE = 'procedure', 'Procedure Note'
+    ADMISSION = 'admission', 'Admission Note'
+    DISCHARGE = 'discharge', 'Discharge Note'
+    NURSING = 'nursing', 'Nursing Note'
+    CONSULTATION = 'consultation', 'Consultation Note'
+    CUSTOM = 'custom', 'Custom Note'
     PHONE = 'phone', 'Phone Note'
 
 

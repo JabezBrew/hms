@@ -11,7 +11,7 @@ import logging
 
 from .models import NoteTemplate, NoteEntry, Prescription
 from .serializers import (
-    NoteTemplateSerializer, NoteEntrySerializer,
+    NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
     PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer
 )
@@ -30,62 +30,155 @@ logger = logging.getLogger(__name__)
 class NoteTemplateViewSet(viewsets.ModelViewSet):
     """
     API endpoint for note templates.
+
+    Templates visibility is controlled by the 'visibility' field:
+    - private: Only visible to the creator
+    - role: Visible to users with the same user_type (doctor, nurse, etc.)
+    - department: Visible to users in the same department
+    - public: Visible to all users
+
+    System templates (created_by=None) are always visible to all users.
     """
     queryset = NoteTemplate.objects.all()
     serializer_class = NoteTemplateSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse]
 
+    def get_serializer_class(self):
+        """Use lightweight serializer for list action."""
+        if self.action == 'list':
+            return NoteTemplateListSerializer
+        return NoteTemplateSerializer
+
     def get_queryset(self):
         """
-        Filter templates based on query parameters and user role.
-        Templates are visible to a user if:
-        1. They are public AND not a nursing template (for non-nurses), or
-        2. They are public AND user is a nurse (for nursing templates), or
-        3. The user created them, or
-        4. They were created by a user with the same role (except for admins who can see all)
+        Filter templates based on visibility settings and user context.
+
+        A template is visible to a user if ANY of these conditions are met:
+        1. User is admin (sees all templates)
+        2. Template visibility is 'public'
+        3. Template visibility is 'private' AND user created it
+        4. Template visibility is 'role' AND creator has same user_type
+        5. Template visibility is 'department' AND user is in same department
+        6. Template is a system template (created_by is NULL)
         """
         user = self.request.user
 
         # Admins can see all templates
         if user.user_type == 'admin':
             queryset = NoteTemplate.objects.all()
-        elif user.user_type == 'nurse':
-            # Nurses can see public templates, templates they created, and templates created by other nurses
-            queryset = NoteTemplate.objects.filter(
-                models.Q(is_public=True) | 
-                models.Q(created_by=user) |
-                models.Q(created_by__user_type='nurse')
-            )
         else:
-            # For non-nurses, filter out nursing templates
-            queryset = NoteTemplate.objects.filter(
-                (models.Q(is_public=True) & ~models.Q(title__icontains='nursing')) | 
-                models.Q(created_by=user) |
-                models.Q(created_by__user_type=user.user_type)
+            # Get user's department from Staff profile if available
+            user_department = None
+            if hasattr(user, 'staff') and user.staff:
+                user_department = user.staff.department
+
+            # Build visibility query
+            visibility_q = (
+                # Public templates
+                Q(visibility='public') |
+                # System templates (no creator)
+                Q(created_by__isnull=True) |
+                # User's own private templates
+                Q(visibility='private', created_by=user) |
+                # Role-shared templates from same user type
+                Q(visibility='role', created_by__user_type=user.user_type)
             )
 
+            # Add department visibility if user has a department
+            if user_department:
+                visibility_q |= Q(visibility='department', department=user_department)
+
+            queryset = NoteTemplate.objects.filter(visibility_q).distinct()
+
+        # Apply query parameter filters
         # Filter by active status
         is_active = self.request.query_params.get('is_active')
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
-        # Filter by title
+        # Filter by title search
         title = self.request.query_params.get('title')
         if title:
             queryset = queryset.filter(title__icontains=title)
 
-        # Filter by public status
+        # Filter by visibility
+        visibility = self.request.query_params.get('visibility')
+        if visibility:
+            queryset = queryset.filter(visibility=visibility)
+
+        # Filter by category
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+
+        # Filter by "my templates" (created by current user)
+        mine_only = self.request.query_params.get('mine')
+        if mine_only and mine_only.lower() == 'true':
+            queryset = queryset.filter(created_by=user)
+
+        # Legacy filter - keep for backwards compatibility
         is_public = self.request.query_params.get('is_public')
         if is_public is not None:
             queryset = queryset.filter(is_public=is_public.lower() == 'true')
 
-        return queryset
+        return queryset.order_by('-updated_at')
 
     def perform_update(self, serializer):
-        """
-        Set the updated_by field when updating a template.
-        """
+        """Set the updated_by field when updating a template."""
         serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """
+        Get templates available for the current user to use when creating notes.
+        Only returns active templates.
+        """
+        queryset = self.get_queryset().filter(is_active=True)
+        serializer = NoteTemplateListSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def mine(self, request):
+        """
+        Get templates created by the current user.
+        """
+        queryset = NoteTemplate.objects.filter(created_by=request.user)
+        serializer = NoteTemplateListSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def categories(self, request):
+        """
+        Get list of available template categories.
+        """
+        return Response([
+            {'value': value, 'label': label}
+            for value, label in NoteTemplate.CATEGORY_CHOICES
+        ])
+
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """
+        Create a copy of an existing template for the current user.
+        The new template will be private by default.
+        """
+        original = self.get_object()
+
+        # Create a copy with new title and reset ownership
+        new_template = NoteTemplate.objects.create(
+            title=f"{original.title} (Copy)",
+            description=original.description,
+            structure=original.structure,
+            is_active=True,
+            visibility='private',
+            category=original.category,
+            icon=original.icon,
+            estimated_steps=original.estimated_steps,
+            created_by=request.user,
+        )
+
+        serializer = NoteTemplateSerializer(new_template, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class NoteEntryViewSet(viewsets.ModelViewSet):

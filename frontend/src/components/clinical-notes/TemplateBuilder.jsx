@@ -1,7 +1,7 @@
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/hooks/useClinicalNotesQueries';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -9,21 +9,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { PlusCircle, Trash2, MoveUp, MoveDown } from 'lucide-react';
+import {
+  PlusCircle, Trash2, MoveUp, MoveDown, Lock, Users, Building2, Globe,
+  FileText, ClipboardList, Activity, UserPlus, LogOut, Heart, Stethoscope, Folder
+} from 'lucide-react';
+
+// Visibility options with icons and descriptions
+const VISIBILITY_OPTIONS = [
+  { value: 'private', label: 'Private', icon: Lock, description: 'Only you can see and use this template' },
+  { value: 'role', label: 'My Role', icon: Users, description: 'Shared with others in your role (e.g., all doctors)' },
+  { value: 'department', label: 'Department', icon: Building2, description: 'Shared with your department members' },
+  { value: 'public', label: 'Public', icon: Globe, description: 'Available to all users' },
+];
+
+// Category options with icons
+const CATEGORY_OPTIONS = [
+  { value: 'general', label: 'General', icon: FileText },
+  { value: 'soap', label: 'SOAP Notes', icon: ClipboardList },
+  { value: 'progress', label: 'Progress Notes', icon: FileText },
+  { value: 'procedure', label: 'Procedure Notes', icon: Activity },
+  { value: 'admission', label: 'Admission Notes', icon: UserPlus },
+  { value: 'discharge', label: 'Discharge Notes', icon: LogOut },
+  { value: 'nursing', label: 'Nursing Notes', icon: Heart },
+  { value: 'consultation', label: 'Consultation Notes', icon: Stethoscope },
+  { value: 'custom', label: 'Custom', icon: Folder },
+];
+
+// Icon options for template display
+const ICON_OPTIONS = [
+  { value: 'file-text', label: 'File Text' },
+  { value: 'clipboard-list', label: 'Clipboard List' },
+  { value: 'activity', label: 'Activity' },
+  { value: 'user-plus', label: 'User Plus' },
+  { value: 'log-out', label: 'Log Out' },
+  { value: 'heart-pulse', label: 'Heart Pulse' },
+  { value: 'stethoscope', label: 'Stethoscope' },
+  { value: 'pill', label: 'Pill' },
+  { value: 'syringe', label: 'Syringe' },
+  { value: 'thermometer', label: 'Thermometer' },
+];
 
 /**
  * Component for building and saving note templates
+ * Supports visibility controls, categories, and custom sections
  */
 const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
+  // Handle both array and object structure formats
+  const getInitialStructure = () => {
+    if (!initialTemplate?.structure) return [];
+    if (Array.isArray(initialTemplate.structure)) return initialTemplate.structure;
+    if (initialTemplate.structure.sections) {
+      // Convert new format to old format for the form
+      return initialTemplate.structure.sections.map(section => ({
+        section: section.name || section.section || '',
+        type: section.type || 'text',
+        observation_type: section.observationType || section.observation_type || null,
+      }));
+    }
+    return [];
+  };
+
   const { register, control, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
       title: initialTemplate?.title || '',
       description: initialTemplate?.description || '',
       is_active: initialTemplate?.is_active ?? true,
-      is_public: initialTemplate?.is_public ?? false,
-      structure: initialTemplate?.structure || []
+      visibility: initialTemplate?.visibility || 'private',
+      department: initialTemplate?.department || '',
+      category: initialTemplate?.category || 'custom',
+      icon: initialTemplate?.icon || 'file-text',
+      estimated_steps: initialTemplate?.estimated_steps || 3,
+      structure: getInitialStructure()
     }
   });
+
+  const visibility = watch('visibility');
 
   const { fields, append, remove, move } = useFieldArray({
     control,
@@ -64,24 +124,37 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   const onSubmit = async (data) => {
     try {
       // Validate that all sections have names
-      const invalidSections = data.structure.filter(section => !section.section.trim());
+      const invalidSections = data.structure.filter(section => !section.section?.trim());
       if (invalidSections.length > 0) {
         toast.error('All sections must have a name');
         return;
       }
 
+      // Convert form structure to the new format with sections array
+      const formattedData = {
+        ...data,
+        structure: {
+          sections: data.structure.map(section => ({
+            name: section.section,
+            type: section.type || 'text',
+            required: section.required ?? false,
+            ...(section.observation_type && { observationType: section.observation_type }),
+          }))
+        }
+      };
+
       if (initialTemplate) {
         // Update existing template
         await updateNoteTemplate.mutateAsync({
           id: initialTemplate.id,
-          data: data
+          data: formattedData
         });
 
         // Show success message
         toast.success('Template updated successfully');
       } else {
         // Create new template
-        await createNoteTemplate.mutateAsync(data);
+        await createNoteTemplate.mutateAsync(formattedData);
 
         // Show success message
         toast.success('Template created successfully');
@@ -184,79 +257,176 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
             />
           </div>
 
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_active"
-                {...register('is_active')}
-                defaultChecked={watch('is_active')}
-              />
-              <Label htmlFor="is_active">Active</Label>
+          {/* Visibility and Category Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <Select
+                defaultValue={watch('visibility')}
+                onValueChange={(value) => setValue('visibility', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select visibility" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VISIBILITY_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    return (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4" />
+                          <span>{option.label}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.description}
+              </p>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_public"
-                {...register('is_public')}
-                defaultChecked={watch('is_public')}
-              />
-              <Label htmlFor="is_public">Public</Label>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select
+                defaultValue={watch('category')}
+                onValueChange={(value) => setValue('category', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    return (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4" />
+                          <span>{option.label}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
+          {/* Department field (only shown when visibility is 'department') */}
+          {visibility === 'department' && (
+            <div className="space-y-2">
+              <Label htmlFor="department">Department</Label>
+              <Input
+                id="department"
+                {...register('department', { required: visibility === 'department' })}
+                placeholder="e.g., Cardiology, Emergency, Nursing"
+              />
+              {errors.department && (
+                <p className="text-red-500 text-sm">Department is required for department-level sharing</p>
+              )}
+            </div>
+          )}
+
+          {/* Icon and Steps Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Icon</Label>
+              <Select
+                defaultValue={watch('icon')}
+                onValueChange={(value) => setValue('icon', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select icon" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ICON_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="estimated_steps">Estimated Steps</Label>
+              <Input
+                id="estimated_steps"
+                type="number"
+                min="1"
+                max="10"
+                {...register('estimated_steps', { valueAsNumber: true, min: 1, max: 10 })}
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 pt-8">
+              <Switch
+                id="is_active"
+                checked={watch('is_active')}
+                onCheckedChange={(checked) => setValue('is_active', checked)}
+              />
+              <Label htmlFor="is_active">Active</Label>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Predefined Templates */}
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <Label>Predefined Templates</Label>
-              <div className="flex space-x-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('soap')}
-                >
-                  SOAP
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('hpi')}
-                >
-                  HPI
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('nursing_vitals')}
-                >
-                  Nursing Vitals
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('nursing_io')}
-                >
-                  Nursing I/O
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('nursing_meds')}
-                >
-                  Nursing Meds
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addPredefinedTemplate('nursing_note')}
-                >
-                  Nursing Note
-                </Button>
-              </div>
+            <Label>Quick Start Templates</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Click to pre-fill the structure with a common template format
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('soap')}
+              >
+                SOAP
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('hpi')}
+              >
+                HPI
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('nursing_vitals')}
+              >
+                Nursing Vitals
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('nursing_io')}
+              >
+                Nursing I/O
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('nursing_meds')}
+              >
+                Nursing Meds
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addPredefinedTemplate('nursing_note')}
+              >
+                Nursing Note
+              </Button>
             </div>
           </div>
 

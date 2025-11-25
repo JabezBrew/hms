@@ -167,23 +167,33 @@ export default function TemplateListPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="flex-grow">
-                      <p className="text-sm text-muted-foreground">
-                        {template.structure.length} section{template.structure.length !== 1 ? 's' : ''}
-                      </p>
-                      <div className="mt-2">
-                        <ul className="text-sm list-disc list-inside">
-                          {template.structure.slice(0, 3).map((section, index) => (
-                            <li key={index} className="truncate">
-                              {section.section}
-                            </li>
-                          ))}
-                          {template.structure.length > 3 && (
-                            <li className="text-muted-foreground">
-                              +{template.structure.length - 3} more
-                            </li>
-                          )}
-                        </ul>
-                      </div>
+                      {(() => {
+                        // Handle both array and object structure formats
+                        const sections = Array.isArray(template.structure)
+                          ? template.structure
+                          : template.structure?.sections || [];
+                        return (
+                          <>
+                            <p className="text-sm text-muted-foreground">
+                              {sections.length} section{sections.length !== 1 ? 's' : ''}
+                            </p>
+                            <div className="mt-2">
+                              <ul className="text-sm list-disc list-inside">
+                                {sections.slice(0, 3).map((section, index) => (
+                                  <li key={index} className="truncate">
+                                    {section.name || section.section}
+                                  </li>
+                                ))}
+                                {sections.length > 3 && (
+                                  <li className="text-muted-foreground">
+                                    +{sections.length - 3} more
+                                  </li>
+                                )}
+                              </ul>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </CardContent>
                     <CardFooter className="flex justify-between">
                       <Button 
@@ -289,17 +299,23 @@ export default function TemplateListPage() {
                     <h3 className="text-lg font-medium">Template Structure</h3>
                     <Separator className="my-2" />
                     <div className="space-y-4 mt-4">
-                      {selectedTemplate.structure.map((section, index) => (
-                        <div key={index} className="border rounded-md p-4">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-medium">{section.section}</h4>
-                            <Badge variant="outline">
-                              {section.type}
-                              {section.observation_type && ` (${section.observation_type})`}
-                            </Badge>
+                      {(() => {
+                        const sections = Array.isArray(selectedTemplate.structure)
+                          ? selectedTemplate.structure
+                          : selectedTemplate.structure?.sections || [];
+                        return sections.map((section, index) => (
+                          <div key={index} className="border rounded-md p-4">
+                            <div className="flex justify-between items-center">
+                              <h4 className="font-medium">{section.name || section.section}</h4>
+                              <Badge variant="outline">
+                                {section.type}
+                                {(section.observationType || section.observation_type) &&
+                                  ` (${section.observationType || section.observation_type})`}
+                              </Badge>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ));
+                      })()}
                     </div>
                   </div>
                 </CardContent>

@@ -11,7 +11,8 @@ import {
   Shield,
   Package,
   Clock,
-  BookOpen
+  BookOpen,
+  ClipboardList
 } from "lucide-react"
 
 import {
@@ -50,6 +51,7 @@ export function AppSidebar() {
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],
+      noteTemplates: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
       inventory: ['admin', 'pharmacist'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
@@ -126,6 +128,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Wards" href="/wards">
                   <Activity />
                   <span>Wards</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.noteTemplates) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Note Templates" href="/clinical-notes/templates">
+                  <ClipboardList />
+                  <span>Note Templates</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

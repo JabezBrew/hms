@@ -1,18 +1,33 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Save, Check, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import NoteTypeSelector from "./NoteTypeSelector";
 import NoteWorkflowSteps from "./NoteWorkflowSteps";
+import DynamicWorkflowStep from "./DynamicWorkflowStep";
 import { useNoteWorkflow } from "@/hooks/useNoteWorkflow";
+
+// Category color mapping
+const CATEGORY_COLORS = {
+  general: 'amber',
+  soap: 'amber',
+  progress: 'amber',
+  procedure: 'rose',
+  admission: 'emerald',
+  discharge: 'emerald',
+  nursing: 'sky',
+  consultation: 'amber',
+  custom: 'violet',
+};
 
 /**
  * AddNoteSlideOver - Split-screen panel for creating clinical notes
  *
  * Features:
  * - Slides in from right without backdrop (timeline remains visible)
- * - Note type selection → multi-step workflow
+ * - Template-based note type selection
+ * - Multi-step workflow derived from template structure
  * - Auto-save indicator
  * - Step progress visualization
  * - Backend API integration via useNoteWorkflow hook
@@ -26,17 +41,18 @@ const AddNoteSlideOver = ({
   // Get patient ID for the workflow hook
   const patientId = patient?.local_data?.id || patient?.id;
 
-  // Use the workflow hook for API integration
+  // Use the template-driven workflow hook
   const {
     workflowId,
-    noteType: selectedNoteType,
+    template,
+    steps,
+    totalSteps,
     currentStep,
     formData,
     isSaving,
     lastSaved,
     error,
     isLoading,
-    noteTypeConfigs,
     startWorkflow,
     updateStepData,
     saveDraft,
@@ -46,207 +62,63 @@ const AddNoteSlideOver = ({
     resetWorkflow,
   } = useNoteWorkflow(patientId);
 
-  // Local state for UI
-  const [localSelectedNoteType, setLocalSelectedNoteType] = useState(null);
-  const [localCurrentStep, setLocalCurrentStep] = useState(0);
-  const [localFormData, setLocalFormData] = useState({});
-  const [localIsSaving, setLocalIsSaving] = useState(false);
-  const [localLastSaved, setLocalLastSaved] = useState(null);
-  const [useBackendWorkflow, setUseBackendWorkflow] = useState(false);
+  // Computed values
+  const isLastStep = currentStep === totalSteps;
+  const currentStepConfig = steps[currentStep - 1] || null;
+  const categoryColor = CATEGORY_COLORS[template?.category] || 'amber';
 
-  // Note type definitions with steps
-  const noteTypes = {
-    progress: {
-      id: 'progress',
-      name: 'Progress Note',
-      color: 'amber',
-      steps: [
-        { id: 'chief_complaint', title: 'Chief Complaint' },
-        { id: 'assessment', title: 'Assessment' },
-        { id: 'plan', title: 'Plan' }
-      ]
-    },
-    soap: {
-      id: 'soap',
-      name: 'SOAP Note',
-      color: 'amber',
-      steps: [
-        { id: 'subjective', title: 'Subjective' },
-        { id: 'objective', title: 'Objective' },
-        { id: 'assessment', title: 'Assessment' },
-        { id: 'plan', title: 'Plan' }
-      ]
-    },
-    procedure: {
-      id: 'procedure',
-      name: 'Procedure Note',
-      color: 'rose',
-      steps: [
-        { id: 'pre_procedure', title: 'Pre-Procedure' },
-        { id: 'procedure_details', title: 'Procedure Details' },
-        { id: 'post_procedure', title: 'Post-Procedure' }
-      ]
-    },
-    phone: {
-      id: 'phone',
-      name: 'Phone Note',
-      color: 'sky',
-      steps: [
-        { id: 'caller_info', title: 'Caller Info' },
-        { id: 'discussion', title: 'Discussion' },
-        { id: 'action_items', title: 'Action Items' }
-      ]
-    }
-  };
-
-  // Determine which state to use (backend workflow or local)
-  const activeNoteType = useBackendWorkflow ? selectedNoteType : localSelectedNoteType;
-  const activeCurrentStep = useBackendWorkflow ? (currentStep - 1) : localCurrentStep; // Backend uses 1-indexed
-  const activeFormData = useBackendWorkflow ? formData : localFormData;
-  const activeIsSaving = useBackendWorkflow ? isSaving : localIsSaving;
-  const activeLastSaved = useBackendWorkflow ? lastSaved : localLastSaved;
-
-  const currentNoteConfig = activeNoteType ? noteTypes[activeNoteType] : null;
-  const totalSteps = currentNoteConfig?.steps?.length || 0;
-  const isLastStep = activeCurrentStep === totalSteps - 1;
-
-  // Handle note type selection
-  const handleSelectNoteType = async (typeId) => {
-    // Try to use backend workflow if patient ID is available
-    if (patientId) {
-      try {
-        await startWorkflow(typeId);
-        setUseBackendWorkflow(true);
-        return;
-      } catch (err) {
-        console.warn('Backend workflow unavailable, using local state:', err);
-      }
-    }
-
-    // Fall back to local state
-    setUseBackendWorkflow(false);
-    setLocalSelectedNoteType(typeId);
-    setLocalCurrentStep(0);
-    setLocalFormData({});
+  // Handle template selection
+  const handleSelectTemplate = async (selectedTemplate) => {
+    await startWorkflow(selectedTemplate);
   };
 
   // Handle step data update
   const handleStepDataChange = useCallback((stepId, data) => {
-    if (useBackendWorkflow) {
-      updateStepData(stepId, data);
-    } else {
-      setLocalFormData(prev => ({
-        ...prev,
-        [stepId]: data
-      }));
-    }
-  }, [useBackendWorkflow, updateStepData]);
+    updateStepData(stepId, data);
+  }, [updateStepData]);
 
   // Navigation handlers
   const handleBack = () => {
-    if (useBackendWorkflow) {
-      if (currentStep > 1) {
-        prevStep();
-      } else {
-        // Go back to note type selection
-        resetWorkflow();
-        setUseBackendWorkflow(false);
-      }
+    if (currentStep > 1) {
+      prevStep();
     } else {
-      if (localCurrentStep > 0) {
-        setLocalCurrentStep(prev => prev - 1);
-      } else {
-        // Go back to note type selection
-        setLocalSelectedNoteType(null);
-        setLocalFormData({});
-      }
+      // Go back to template selection
+      resetWorkflow();
     }
   };
 
   const handleNext = async () => {
-    if (useBackendWorkflow) {
-      await nextStep();
-    } else {
-      if (localCurrentStep < totalSteps - 1) {
-        setLocalCurrentStep(prev => prev + 1);
-      }
-    }
+    await nextStep();
   };
 
   const handleSaveDraft = async () => {
-    if (useBackendWorkflow) {
-      await saveDraft();
-    } else {
-      setLocalIsSaving(true);
-      // Simulate save
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setLocalLastSaved(new Date());
-      setLocalIsSaving(false);
-    }
+    await saveDraft();
   };
 
   const handleComplete = async () => {
-    if (useBackendWorkflow) {
-      try {
-        const result = await completeWorkflow();
-        if (result?.success) {
-          resetWorkflow();
-          setUseBackendWorkflow(false);
-          onNoteCreated?.();
-          onClose();
-        }
-      } catch (err) {
-        console.error('Failed to complete note:', err);
-      }
-    } else {
-      setLocalIsSaving(true);
-      try {
-        // Simulate completion
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Reset local state
-        setLocalSelectedNoteType(null);
-        setLocalCurrentStep(0);
-        setLocalFormData({});
-        setLocalLastSaved(null);
-
-        // Notify parent
+    try {
+      const result = await completeWorkflow();
+      if (result?.success || result?.note) {
+        resetWorkflow();
         onNoteCreated?.();
         onClose();
-      } catch (err) {
-        console.error('Failed to complete note:', err);
-      } finally {
-        setLocalIsSaving(false);
       }
+    } catch (err) {
+      console.error('Failed to complete note:', err);
     }
   };
 
   const handleClose = () => {
-    // Reset all state
-    if (useBackendWorkflow) {
-      resetWorkflow();
-    }
-    setLocalSelectedNoteType(null);
-    setLocalCurrentStep(0);
-    setLocalFormData({});
-    setLocalLastSaved(null);
-    setUseBackendWorkflow(false);
+    resetWorkflow();
     onClose();
   };
 
   // Reset state when panel closes
   useEffect(() => {
     if (!open) {
-      if (useBackendWorkflow) {
-        resetWorkflow();
-      }
-      setLocalSelectedNoteType(null);
-      setLocalCurrentStep(0);
-      setLocalFormData({});
-      setLocalLastSaved(null);
-      setUseBackendWorkflow(false);
+      resetWorkflow();
     }
-  }, [open, useBackendWorkflow, resetWorkflow]);
+  }, [open, resetWorkflow]);
 
   // Get patient display name
   const patientName = patient?.local_data?.user_details
@@ -267,18 +139,20 @@ const AddNoteSlideOver = ({
         <div className="flex items-center gap-3">
           <div>
             <div className="flex items-center gap-2">
-              {currentNoteConfig && (
+              {template && (
                 <span className={cn(
                   "px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider",
-                  currentNoteConfig.color === 'amber' && "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-                  currentNoteConfig.color === 'rose' && "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400",
-                  currentNoteConfig.color === 'sky' && "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                  categoryColor === 'amber' && "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+                  categoryColor === 'rose' && "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400",
+                  categoryColor === 'sky' && "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400",
+                  categoryColor === 'emerald' && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
+                  categoryColor === 'violet' && "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400"
                 )}>
-                  {currentNoteConfig.name}
+                  {template.title}
                 </span>
               )}
               <h2 className="font-display text-xl text-foreground">
-                {activeNoteType ? 'New Note' : 'Add Note'}
+                {template ? 'New Note' : 'Add Note'}
               </h2>
             </div>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
@@ -289,19 +163,19 @@ const AddNoteSlideOver = ({
 
         <div className="flex items-center gap-3">
           {/* Auto-save indicator */}
-          {activeNoteType && (
+          {template && (
             <span className="font-mono text-xs text-muted-foreground">
-              {activeIsSaving || isLoading ? (
+              {isSaving || isLoading ? (
                 'Saving...'
-              ) : activeLastSaved ? (
-                `Saved ${activeLastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+              ) : lastSaved ? (
+                `Saved ${lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
               ) : (
                 'Draft'
               )}
             </span>
           )}
 
-          {/* Close Button - More Prominent */}
+          {/* Close Button */}
           <Button
             variant="destructive"
             size="sm"
@@ -314,73 +188,77 @@ const AddNoteSlideOver = ({
         </div>
       </header>
 
-      {/* Error Alert */}
+      {/* Error Alert with back option */}
       {error && (
         <Alert variant="destructive" className="mx-6 mt-4">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{error}</span>
+            {template && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetWorkflow}
+                className="ml-4 font-mono text-xs"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                Back
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
-      {/* Step Progress */}
-      {activeNoteType && currentNoteConfig && (
+      {/* Step Progress - show when template selected and has steps */}
+      {template && steps.length > 0 && currentStep > 0 && (
         <div className="px-6 py-3 bg-muted/30 border-b border-border">
           {/* Change Note Type Link */}
           <div className="flex items-center justify-between mb-3">
             <button
-              onClick={() => {
-                if (useBackendWorkflow) {
-                  resetWorkflow();
-                  setUseBackendWorkflow(false);
-                } else {
-                  setLocalSelectedNoteType(null);
-                  setLocalCurrentStep(0);
-                  setLocalFormData({});
-                }
-              }}
+              onClick={resetWorkflow}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors font-mono text-xs"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Change Note Type
             </button>
             <span className="font-mono text-xs text-muted-foreground">
-              Step {activeCurrentStep + 1} of {totalSteps}
+              Step {currentStep} of {totalSteps}
             </span>
           </div>
           {/* Step Progress Indicators */}
           <div className="flex items-center justify-between">
-            {currentNoteConfig.steps.map((step, index) => (
+            {steps.map((step, index) => (
               <div
                 key={step.id}
                 className={cn(
                   "flex items-center",
-                  index < currentNoteConfig.steps.length - 1 && "flex-1"
+                  index < steps.length - 1 && "flex-1"
                 )}
               >
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono",
-                    index < activeCurrentStep && "bg-primary text-primary-foreground",
-                    index === activeCurrentStep && "bg-primary text-primary-foreground ring-2 ring-primary/30",
-                    index > activeCurrentStep && "bg-muted text-muted-foreground"
+                    index < currentStep - 1 && "bg-primary text-primary-foreground",
+                    index === currentStep - 1 && "bg-primary text-primary-foreground ring-2 ring-primary/30",
+                    index > currentStep - 1 && "bg-muted text-muted-foreground"
                   )}>
-                    {index < activeCurrentStep ? (
+                    {index < currentStep - 1 ? (
                       <Check className="h-3 w-3" />
                     ) : (
                       index + 1
                     )}
                   </div>
                   <span className={cn(
-                    "font-mono text-xs hidden sm:inline",
-                    index === activeCurrentStep ? "text-foreground" : "text-muted-foreground"
+                    "font-mono text-xs hidden sm:inline truncate max-w-[80px]",
+                    index === currentStep - 1 ? "text-foreground" : "text-muted-foreground"
                   )}>
                     {step.title}
                   </span>
                 </div>
-                {index < currentNoteConfig.steps.length - 1 && (
+                {index < steps.length - 1 && (
                   <div className={cn(
                     "flex-1 h-px mx-3",
-                    index < activeCurrentStep ? "bg-primary" : "bg-border"
+                    index < currentStep - 1 ? "bg-primary" : "bg-border"
                   )} />
                 )}
               </div>
@@ -391,32 +269,43 @@ const AddNoteSlideOver = ({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
-        {!activeNoteType ? (
-          <NoteTypeSelector
-            noteTypes={noteTypes}
-            onSelect={handleSelectNoteType}
+        {!template ? (
+          <NoteTypeSelector onSelect={handleSelectTemplate} />
+        ) : currentStepConfig ? (
+          <DynamicWorkflowStep
+            stepConfig={currentStepConfig}
+            formData={formData[currentStepConfig.id] || {}}
+            onDataChange={(data) => handleStepDataChange(currentStepConfig.id, data)}
+            patient={patient}
+            template={template}
           />
         ) : (
-          <NoteWorkflowSteps
-            noteType={activeNoteType}
-            currentStep={activeCurrentStep}
-            stepConfig={currentNoteConfig.steps[activeCurrentStep]}
-            formData={activeFormData}
-            onDataChange={handleStepDataChange}
-            patient={patient}
-          />
+          <div className="text-center py-12">
+            <p className="text-muted-foreground mb-4">
+              {isLoading ? 'Loading step...' : 'Unable to load workflow step.'}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetWorkflow}
+              className="font-mono text-xs"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              Back to Templates
+            </Button>
+          </div>
         )}
       </div>
 
       {/* Footer */}
-      {activeNoteType && (
+      {template && (
         <footer className="px-6 py-4 border-t border-border bg-card">
           <div className="flex items-center justify-between">
             <Button
               variant="outline"
               size="sm"
               onClick={handleSaveDraft}
-              disabled={activeIsSaving || isLoading}
+              disabled={isSaving || isLoading}
               className="font-mono text-xs"
             >
               <Save className="h-3.5 w-3.5 mr-1.5" />
@@ -424,7 +313,7 @@ const AddNoteSlideOver = ({
             </Button>
 
             <div className="flex items-center gap-2">
-              {activeCurrentStep > 0 && (
+              {currentStep > 1 && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -441,7 +330,7 @@ const AddNoteSlideOver = ({
                 <Button
                   size="sm"
                   onClick={handleComplete}
-                  disabled={activeIsSaving || isLoading}
+                  disabled={isSaving || isLoading}
                   className="font-mono text-xs"
                 >
                   <Check className="h-3.5 w-3.5 mr-1.5" />

@@ -6,6 +6,9 @@ export const clinicalNotesKeys = {
   all: ['clinical-notes'],
   templates: () => [...clinicalNotesKeys.all, 'templates'],
   template: (id) => [...clinicalNotesKeys.templates(), id],
+  availableTemplates: () => [...clinicalNotesKeys.templates(), 'available'],
+  myTemplates: () => [...clinicalNotesKeys.templates(), 'mine'],
+  templateCategories: () => [...clinicalNotesKeys.templates(), 'categories'],
   entries: () => [...clinicalNotesKeys.all, 'entries'],
   entry: (id) => [...clinicalNotesKeys.entries(), id],
   entriesByEncounter: (encounterId) => [...clinicalNotesKeys.entries(), 'encounter', encounterId],
@@ -119,18 +122,70 @@ export function useUpdateNoteTemplate() {
  */
 export function useDeleteNoteTemplate() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id) => clinicalNotesApi.deleteNoteTemplate(id),
     onSuccess: (data, variables) => {
       // Invalidate the template detail query
-      queryClient.invalidateQueries({ 
-        queryKey: clinicalNotesKeys.template(variables) 
+      queryClient.invalidateQueries({
+        queryKey: clinicalNotesKeys.template(variables)
       });
       // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: clinicalNotesKeys.templates() 
+      queryClient.invalidateQueries({
+        queryKey: clinicalNotesKeys.templates()
       });
+    },
+  });
+}
+
+/**
+ * Get available templates for the current user (for note creation)
+ * Only returns active templates that the user can see
+ * @returns {Object} Query result
+ */
+export function useAvailableNoteTemplates() {
+  return useQuery({
+    queryKey: clinicalNotesKeys.availableTemplates(),
+    queryFn: () => clinicalNotesApi.getAvailableTemplates(),
+  });
+}
+
+/**
+ * Get templates created by the current user
+ * @returns {Object} Query result
+ */
+export function useMyNoteTemplates() {
+  return useQuery({
+    queryKey: clinicalNotesKeys.myTemplates(),
+    queryFn: () => clinicalNotesApi.getMyTemplates(),
+  });
+}
+
+/**
+ * Get available template categories
+ * @returns {Object} Query result
+ */
+export function useTemplateCategories() {
+  return useQuery({
+    queryKey: clinicalNotesKeys.templateCategories(),
+    queryFn: () => clinicalNotesApi.getTemplateCategories(),
+    staleTime: 1000 * 60 * 60, // Categories don't change often, cache for 1 hour
+  });
+}
+
+/**
+ * Duplicate an existing template
+ * @returns {Object} Mutation result
+ */
+export function useDuplicateNoteTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => clinicalNotesApi.duplicateTemplate(id),
+    onSuccess: () => {
+      // Invalidate all template queries to show the new copy
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.templates() });
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.myTemplates() });
     },
   });
 }

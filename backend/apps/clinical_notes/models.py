@@ -12,13 +12,79 @@ class NoteTemplate(models.Model):
     """
     Model for clinical note templates.
     Stores reusable form templates with a JSON structure.
+    Supports flexible sharing: private, role-based, department-based, or public.
     """
+    # Visibility choices for sharing control
+    VISIBILITY_CHOICES = [
+        ('private', 'Private'),       # Only creator can see/use
+        ('role', 'Role'),             # Shared with same user_type (doctors, nurses, etc.)
+        ('department', 'Department'), # Shared with same department
+        ('public', 'Public'),         # Available to all users
+    ]
+
+    # Category choices for organization
+    CATEGORY_CHOICES = [
+        ('general', 'General'),
+        ('soap', 'SOAP Notes'),
+        ('progress', 'Progress Notes'),
+        ('procedure', 'Procedure Notes'),
+        ('admission', 'Admission Notes'),
+        ('discharge', 'Discharge Notes'),
+        ('nursing', 'Nursing Notes'),
+        ('consultation', 'Consultation Notes'),
+        ('custom', 'Custom'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=100)  # e.g., "SOAP Note", "Nurse Shift Note"
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
-    is_public = models.BooleanField(default=False)  # If true, the template is available to everyone
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_templates')
+
+    # Sharing/visibility settings
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default='private',
+        help_text="Controls who can see and use this template"
+    )
+    department = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Department for department-level sharing"
+    )
+
+    # Organization
+    category = models.CharField(
+        max_length=50,
+        choices=CATEGORY_CHOICES,
+        default='custom',
+        help_text="Category for organizing templates"
+    )
+    icon = models.CharField(
+        max_length=50,
+        default='file-text',
+        help_text="Lucide icon name for UI display"
+    )
+    estimated_steps = models.PositiveIntegerField(
+        default=3,
+        help_text="Number of steps in the workflow"
+    )
+
+    # Legacy field - kept for backwards compatibility, use 'visibility' instead
+    is_public = models.BooleanField(
+        default=False,
+        help_text="DEPRECATED: Use 'visibility' field instead"
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_templates',
+        help_text="User who created this template. Null for system templates."
+    )
     structure = models.JSONField()  # JSON schema-like definition
 
     # Audit fields
@@ -28,9 +94,28 @@ class NoteTemplate(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['visibility', 'is_active']),
+            models.Index(fields=['category', 'is_active']),
+            models.Index(fields=['created_by', 'visibility']),
+        ]
 
     def __str__(self):
         return self.title
+
+    @property
+    def is_system_template(self):
+        """Check if this is a system-provided template."""
+        return self.created_by is None
+
+    def save(self, *args, **kwargs):
+        # Sync is_public with visibility for backwards compatibility
+        if self.visibility == 'public':
+            self.is_public = True
+        elif self.is_public and self.visibility == 'private':
+            # If is_public was set directly, update visibility
+            self.visibility = 'public'
+        super().save(*args, **kwargs)
 
 
 class NoteEntry(models.Model):
