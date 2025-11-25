@@ -4,9 +4,8 @@ import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useEffect } from 'react';
 
 export default function EncountersPage() {
-  // Set breadcrumb
-    const { updateBreadcrumbs } = useBreadcrumb();
-  
+  const { updateBreadcrumbs } = useBreadcrumb();
+
   useEffect(() => {
     updateBreadcrumbs([
       { label: 'Encounters', path: '/encounters' }

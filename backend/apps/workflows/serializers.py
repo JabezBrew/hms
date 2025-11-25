@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ClinicalWorkflow, ConsultationWorkflow, WorkflowTemplate
+from .models import ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow, WorkflowTemplate, ClinicalNoteType
 from apps.users.models import PatientProfile
 
 
@@ -168,3 +168,148 @@ class WorkflowDraftSerializer(serializers.Serializer):
     Serializer for saving workflow draft
     """
     context_data = serializers.JSONField(required=True)
+
+
+# ============================================
+# Clinical Note Workflow Serializers
+# ============================================
+
+class ClinicalNoteWorkflowSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ClinicalNoteWorkflow model
+    """
+    workflow = ClinicalWorkflowSerializer(read_only=True)
+    note_type_display = serializers.CharField(source='get_note_type_display', read_only=True)
+
+    class Meta:
+        model = ClinicalNoteWorkflow
+        fields = [
+            'id',
+            'workflow',
+            'note_type',
+            'note_type_display',
+            # Common fields
+            'chief_complaint',
+            'assessment',
+            'plan',
+            # SOAP fields
+            'subjective',
+            'objective',
+            'hpi',
+            'ros',
+            'physical_exam',
+            'vitals',
+            # Procedure fields
+            'procedure_name',
+            'indication',
+            'consent',
+            'pre_assessment',
+            'anesthesia',
+            'technique',
+            'specimens',
+            'ebl',
+            'complications',
+            'complication_details',
+            'patient_condition',
+            'disposition',
+            'post_instructions',
+            # Phone fields
+            'caller_name',
+            'caller_relationship',
+            'callback_number',
+            'reason_for_call',
+            'symptoms_discussed',
+            'advice_given',
+            'urgency',
+            'actions_taken',
+            'pending_actions',
+            'callback_needed',
+            # Common
+            'follow_up',
+            'patient_education',
+        ]
+
+
+class ClinicalNoteWorkflowCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a new clinical note workflow
+    """
+    patient_id = serializers.UUIDField(required=True)
+    note_type = serializers.ChoiceField(
+        choices=ClinicalNoteType.choices,
+        required=True
+    )
+    initial_data = serializers.JSONField(required=False, default=dict)
+
+    def validate_patient_id(self, value):
+        """Validate patient exists"""
+        try:
+            PatientProfile.objects.get(id=value)
+        except PatientProfile.DoesNotExist:
+            raise serializers.ValidationError("Patient not found")
+        return value
+
+
+class ClinicalNoteWorkflowUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating clinical note workflow step data
+    """
+    step_data = serializers.JSONField(required=True)
+    next_step = serializers.IntegerField(required=False)
+
+    # Common fields
+    chief_complaint = serializers.CharField(required=False, allow_blank=True)
+    assessment = serializers.CharField(required=False, allow_blank=True)
+    plan = serializers.CharField(required=False, allow_blank=True)
+    follow_up = serializers.CharField(required=False, allow_blank=True)
+    patient_education = serializers.CharField(required=False, allow_blank=True)
+
+    # SOAP fields
+    subjective = serializers.CharField(required=False, allow_blank=True)
+    objective = serializers.CharField(required=False, allow_blank=True)
+    hpi = serializers.CharField(required=False, allow_blank=True)
+    ros = serializers.CharField(required=False, allow_blank=True)
+    physical_exam = serializers.CharField(required=False, allow_blank=True)
+    vitals = serializers.JSONField(required=False)
+
+    # Procedure fields
+    procedure_name = serializers.CharField(required=False, allow_blank=True)
+    indication = serializers.CharField(required=False, allow_blank=True)
+    consent = serializers.CharField(required=False, allow_blank=True)
+    pre_assessment = serializers.CharField(required=False, allow_blank=True)
+    anesthesia = serializers.CharField(required=False, allow_blank=True)
+    technique = serializers.CharField(required=False, allow_blank=True)
+    specimens = serializers.CharField(required=False, allow_blank=True)
+    ebl = serializers.CharField(required=False, allow_blank=True)
+    complications = serializers.CharField(required=False, allow_blank=True)
+    complication_details = serializers.CharField(required=False, allow_blank=True)
+    patient_condition = serializers.CharField(required=False, allow_blank=True)
+    disposition = serializers.CharField(required=False, allow_blank=True)
+    post_instructions = serializers.CharField(required=False, allow_blank=True)
+
+    # Phone fields
+    caller_name = serializers.CharField(required=False, allow_blank=True)
+    caller_relationship = serializers.CharField(required=False, allow_blank=True)
+    callback_number = serializers.CharField(required=False, allow_blank=True)
+    reason_for_call = serializers.CharField(required=False, allow_blank=True)
+    symptoms_discussed = serializers.CharField(required=False, allow_blank=True)
+    advice_given = serializers.CharField(required=False, allow_blank=True)
+    urgency = serializers.CharField(required=False, allow_blank=True)
+    actions_taken = serializers.CharField(required=False, allow_blank=True)
+    pending_actions = serializers.CharField(required=False, allow_blank=True)
+    callback_needed = serializers.CharField(required=False, allow_blank=True)
+
+
+class ClinicalNoteWorkflowCompleteSerializer(serializers.Serializer):
+    """
+    Serializer for completing clinical note workflow
+    """
+    final_data = serializers.JSONField(required=False, default=dict)
+    encounter_type = serializers.ChoiceField(
+        choices=['inpatient', 'outpatient', 'emergency'],
+        default='outpatient'
+    )
+    encounter_status = serializers.ChoiceField(
+        choices=['planned', 'in-progress', 'finished'],
+        default='finished'
+    )

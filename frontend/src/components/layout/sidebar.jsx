@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Calendar,
   Inbox,
-  Users,
   Settings,
   Activity,
   FileText,
@@ -114,19 +113,9 @@ export function AppSidebar() {
 
             {hasAccess(userRole, menuItems.primary.patients) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Patient Directory" href="/patients">
-                  <Users />
-                  <span>Patient Directory</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {hasAccess(userRole, menuItems.primary.patients) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Patient Chronicle" href="/patients/chronicle">
+                <SidebarMenuButton tooltip="Patient Registry" href="/patients">
                   <BookOpen />
-                  <span>Patient Chronicle</span>
-                  <SidebarMenuBadge className="bg-primary/20 text-primary">New</SidebarMenuBadge>
+                  <span>Patient Registry</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

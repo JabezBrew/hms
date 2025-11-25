@@ -1,15 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
+import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
+import { useClinicalSummary } from "@/hooks/useClinicalSummaryQueries";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   PatientIdentityHero,
   ClinicalSummarySidebar,
   TimelineEntry,
-  TimelineGroup
+  TimelineGroup,
+  AddNoteSlideOver,
+  AddVitalsSlideOver,
+  AddPrescriptionSlideOver
 } from "@/components/chronicle";
 import {
   Clock,
@@ -18,8 +23,11 @@ import {
   TestTube,
   Activity,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Search,
+  Loader2
 } from "lucide-react";
+import { useDebounce } from "@/hooks/use-debounce";
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -33,131 +41,164 @@ const PatientChroniclePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
+  const [isAddVitalsOpen, setIsAddVitalsOpen] = useState(false);
+  const [isAddPrescriptionOpen, setIsAddPrescriptionOpen] = useState(false);
+
+  // Debounce search input
+  const debouncedSearch = useDebounce(searchInput, 300);
+
+  // Check if any slide-over is open (for timeline compression)
+  const isAnySlideOverOpen = isAddNoteOpen || isAddVitalsOpen || isAddPrescriptionOpen;
 
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
 
+  // Get patient ID for clinical queries
+  const patientLocalId = patient?.local_data?.id || patient?.id;
+
+  // Fetch clinical summary data (medications, vitals/labs)
+  const {
+    medications,
+    labResults,
+    allergies: parsedAllergies,
+    problems,
+    isLoading: isClinicalLoading,
+    refetch: refetchClinical,
+  } = useClinicalSummary(patientLocalId, patient?.local_data || patient, {
+    enabled: !!patientLocalId,
+  });
+
+  // Map filter to API type
+  const typeMapping = {
+    'all': 'all',
+    'progress_note': 'notes',
+    'vitals': 'vitals',
+    'medication': 'prescriptions',
+    'lab_result': 'all', // No specific lab results endpoint yet
+  };
+
+  // Fetch timeline with infinite scroll
+  const {
+    data: timelineData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isTimelineLoading,
+    error: timelineError,
+    refetch: refetchTimeline,
+  } = usePatientTimeline(patient?.local_data?.id || patient?.id, {
+    type: typeMapping[activeFilter] || 'all',
+    search: debouncedSearch,
+    pageSize: 20,
+  });
+
+  // Invalidate timeline cache helper
+  const invalidateTimeline = useInvalidateTimeline();
+
+  // Infinite scroll ref
+  const loadMoreRef = useRef(null);
+
+  // Set up intersection observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   // ============================================
-  // Mock timeline data (replace with real API)
+  // Transform API data for timeline components
   // ============================================
 
   const timelineEntries = useMemo(() => {
-    // This would come from an API call in production
-    return [
-      {
-        id: 1,
-        type: 'progress_note',
-        timestamp: new Date().toISOString(),
-        title: 'Morning Assessment',
-        content: 'Patient remains stable. Vital signs within normal limits. Continue current management plan. Will reassess in the afternoon. Pain level reported as 3/10, down from 5/10 yesterday. Appetite improving. Ambulated twice today with assistance.',
-        author: 'Dr. M. Chen'
-      },
-      {
-        id: 2,
-        type: 'vitals',
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        data: {
-          temperature: '98.6',
-          blood_pressure: '128/82',
-          heart_rate: '72',
-          spo2: '97',
-          respiratory_rate: '16'
-        },
-        author: 'RN J. Smith'
-      },
-      {
-        id: 3,
-        type: 'medication',
-        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        data: {
-          name: 'Metoprolol',
-          dose: '50mg',
-          route: 'PO',
-          frequency: 'BID'
-        },
-        author: 'RN J. Smith'
-      },
-      {
-        id: 4,
-        type: 'lab_result',
-        timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        data: {
-          test_name: 'Troponin I',
-          value: '0.04',
-          unit: 'ng/mL',
-          reference_range: '<0.04',
-          is_abnormal: false
-        },
-        author: 'Lab'
-      },
-      {
-        id: 5,
-        type: 'consult',
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        title: 'Cardiology Consultation',
-        content: 'Consulted for evaluation of chest pain. Recommend continued monitoring. Consider stress test if symptoms persist. Will follow.',
-        author: 'Dr. A. Patel, Cardiology'
-      },
-      {
-        id: 6,
-        type: 'vitals',
-        timestamp: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-        data: {
-          temperature: '99.1',
-          blood_pressure: '142/88',
-          heart_rate: '88',
-          spo2: '94',
-          respiratory_rate: '18'
-        },
-        author: 'RN K. Williams'
-      },
-      {
-        id: 7,
-        type: 'admission',
-        timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-        title: 'Admission',
-        content: 'Admitted for evaluation of chest pain. Initial workup ordered including ECG, troponins, and chest X-ray.',
-        author: 'Dr. M. Chen'
+    if (!timelineData) return [];
+
+    const flatEntries = flattenTimelinePages(timelineData);
+
+    // Transform API entries to match TimelineEntry component format
+    return flatEntries.map(entry => {
+      // Map entry_type to display type
+      let displayType = entry.type;
+
+      // Handle prescription type
+      if (entry.entry_type === 'prescription') {
+        displayType = 'medication';
       }
-    ];
-  }, []);
 
-  // Mock clinical data
-  const problems = useMemo(() => [
-    { id: 1, name: 'Chest pain, unspecified', severity: 'high', is_primary: true },
-    { id: 2, name: 'Hypertension', severity: 'medium', is_chronic: true, duration: '5 years' },
-    { id: 3, name: 'Type 2 Diabetes', severity: 'medium', is_chronic: true, duration: '3 years' },
-    { id: 4, name: 'Hyperlipidemia', severity: 'low', is_chronic: true }
-  ], []);
+      // Transform vitals data to match expected format
+      if (entry.entry_type === 'vitals' && entry.data) {
+        return {
+          ...entry,
+          type: 'vitals',
+          data: {
+            temperature: entry.data.temperature,
+            blood_pressure: entry.data.blood_pressure,
+            heart_rate: entry.data.heart_rate,
+            spo2: entry.data.oxygen_saturation,
+            respiratory_rate: entry.data.respiratory_rate,
+            pain_level: entry.data.pain_level,
+          }
+        };
+      }
 
-  const medications = useMemo(() => [
-    { id: 1, name: 'Metoprolol', dose: '50mg', frequency: 'BID' },
-    { id: 2, name: 'Lisinopril', dose: '10mg', frequency: 'Daily' },
-    { id: 3, name: 'Metformin', dose: '1000mg', frequency: 'BID' },
-    { id: 4, name: 'Atorvastatin', dose: '40mg', frequency: 'QHS' },
-    { id: 5, name: 'Aspirin', dose: '81mg', frequency: 'Daily' },
-    { id: 6, name: 'Heparin', dose: '5000u', frequency: 'Q8H' }
-  ], []);
+      // Transform prescription data to medication format
+      if (entry.entry_type === 'prescription' && entry.data) {
+        return {
+          ...entry,
+          type: 'medication',
+          data: {
+            name: entry.data.medication_name,
+            dose: entry.data.dosage,
+            route: entry.data.route_display,
+            frequency: entry.data.frequency_display,
+            notes: entry.data.instructions,
+          }
+        };
+      }
 
-  const allergies = useMemo(() => [
-    { name: 'Penicillin', severity: 'severe' },
-    { name: 'Sulfa drugs', severity: 'moderate' }
-  ], []);
+      return {
+        ...entry,
+        type: displayType,
+      };
+    });
+  }, [timelineData]);
 
-  const labResults = useMemo(() => [
-    { id: 1, name: 'K+', value: '4.2', unit: 'mEq/L', is_abnormal: false },
-    { id: 2, name: 'Na+', value: '138', unit: 'mEq/L', is_abnormal: false },
-    { id: 3, name: 'Cr', value: '1.8', unit: 'mg/dL', is_abnormal: true, abnormal_direction: 'high' },
-    { id: 4, name: 'Glucose', value: '142', unit: 'mg/dL', is_abnormal: true, abnormal_direction: 'high' }
-  ], []);
+  // Use allergies from clinical summary hook (already parsed from patient data)
+  // The hook handles parsing from string/array formats
+  const allergies = parsedAllergies;
 
   // ============================================
-  // Filter entries
+  // Filter entries (filtering is done by API, but we keep this for local display type mapping)
   // ============================================
 
   const filteredEntries = useMemo(() => {
-    if (activeFilter === 'all') return timelineEntries;
-    return timelineEntries.filter(entry => entry.type === activeFilter);
+    // If filtering for specific types not supported by API, filter locally
+    if (activeFilter === 'progress_note') {
+      return timelineEntries.filter(entry =>
+        entry.type === 'progress_note' ||
+        entry.type === 'soap_note' ||
+        entry.type === 'admission_note' ||
+        entry.type === 'discharge_note' ||
+        entry.type === 'consult_note' ||
+        entry.type === 'nursing_note'
+      );
+    }
+    if (activeFilter === 'lab_result') {
+      return timelineEntries.filter(entry => entry.type === 'lab_result');
+    }
+    return timelineEntries;
   }, [timelineEntries, activeFilter]);
 
   // Group entries by date
@@ -191,23 +232,58 @@ const PatientChroniclePage = () => {
     return groups;
   }, [filteredEntries]);
 
+  // Get total count for display
+  const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
+
   // ============================================
   // Event handlers
   // ============================================
 
-  const handleAddNote = () => {
-    navigate(`/encounters/create?patient=${id}`);
-  };
+  const handleAddNote = useCallback(() => {
+    setIsAddNoteOpen(true);
+  }, []);
 
-  const handleRecordVitals = () => {
-    // Navigate to vitals recording or open modal
-    console.log('Record vitals');
-  };
+  const handleCloseAddNote = useCallback(() => {
+    setIsAddNoteOpen(false);
+  }, []);
 
-  const handlePrescribe = () => {
-    // Navigate to prescribing workflow or open modal
-    console.log('Prescribe');
-  };
+  const handleNoteCreated = useCallback(() => {
+    // Refresh timeline and clinical data when a note is created
+    invalidateTimeline(patientLocalId);
+    refetch();
+    refetchClinical();
+    setIsAddNoteOpen(false);
+  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
+
+  const handleRecordVitals = useCallback(() => {
+    setIsAddVitalsOpen(true);
+  }, []);
+
+  const handleCloseVitals = useCallback(() => {
+    setIsAddVitalsOpen(false);
+  }, []);
+
+  const handleVitalsRecorded = useCallback(() => {
+    invalidateTimeline(patientLocalId);
+    refetch();
+    refetchClinical(); // Refresh lab results (vitals)
+    setIsAddVitalsOpen(false);
+  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
+
+  const handlePrescribe = useCallback(() => {
+    setIsAddPrescriptionOpen(true);
+  }, []);
+
+  const handleClosePrescription = useCallback(() => {
+    setIsAddPrescriptionOpen(false);
+  }, []);
+
+  const handlePrescriptionCreated = useCallback(() => {
+    invalidateTimeline(patientLocalId);
+    refetch();
+    refetchClinical(); // Refresh medications list
+    setIsAddPrescriptionOpen(false);
+  }, [refetch, refetchClinical, patientLocalId, invalidateTimeline]);
 
   // ============================================
   // Loading state
@@ -278,7 +354,10 @@ const PatientChroniclePage = () => {
       />
 
       {/* Main Content: Sidebar + Timeline */}
-      <div className="flex">
+      <div className={cn(
+        "flex transition-all duration-300",
+        isAnySlideOverOpen && "lg:mr-[50%]"
+      )}>
         {/* Clinical Summary Sidebar */}
         <ClinicalSummarySidebar
           patient={patient}
@@ -286,52 +365,104 @@ const PatientChroniclePage = () => {
           medications={medications}
           allergies={allergies}
           labResults={labResults}
-          className="hidden lg:block"
+          className={cn(
+            "hidden lg:block",
+            isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
+          )}
         />
 
         {/* Timeline Chronicle */}
-        <main className="flex-1 p-6">
-          {/* Timeline Header with Filters */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-              <h2 className="font-display text-2xl text-foreground">
-                Clinical Chronicle
-              </h2>
+        <main className="flex-1 p-6 transition-all duration-300">
+          {/* Timeline Header with Search and Filters */}
+          <div className="space-y-4 mb-6">
+            {/* Title and count */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <h2 className="font-display text-2xl text-foreground">
+                  Clinical Chronicle
+                </h2>
+                {totalCount > 0 && (
+                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                    {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                  </span>
+                )}
+              </div>
+
+              {/* Refresh button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => refetchTimeline()}
+                className="font-mono text-xs"
+              >
+                <RefreshCw className={cn(
+                  "h-3.5 w-3.5 mr-1.5",
+                  isTimelineLoading && "animate-spin"
+                )} />
+                Refresh
+              </Button>
             </div>
 
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <div className="flex bg-muted rounded-lg p-1">
-                {[
-                  { key: 'all', label: 'All', icon: null },
-                  { key: 'progress_note', label: 'Notes', icon: FileText },
-                  { key: 'vitals', label: 'Vitals', icon: Activity },
-                  { key: 'medication', label: 'Meds', icon: Pill },
-                  { key: 'lab_result', label: 'Labs', icon: TestTube }
-                ].map(filter => (
-                  <button
-                    key={filter.key}
-                    onClick={() => setActiveFilter(filter.key)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
-                      "flex items-center gap-1.5",
-                      activeFilter === filter.key
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {filter.icon && <filter.icon className="h-3 w-3" />}
-                    {filter.label}
-                  </button>
-                ))}
+            {/* Search and Filter row */}
+            <div className="flex items-center gap-4">
+              {/* Search Input */}
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search notes, prescriptions..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-9 font-mono text-sm"
+                />
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <div className="flex bg-muted rounded-lg p-1">
+                  {[
+                    { key: 'all', label: 'All', icon: null },
+                    { key: 'progress_note', label: 'Notes', icon: FileText },
+                    { key: 'vitals', label: 'Vitals', icon: Activity },
+                    { key: 'medication', label: 'Meds', icon: Pill },
+                    { key: 'lab_result', label: 'Labs', icon: TestTube }
+                  ].map(filter => (
+                    <button
+                      key={filter.key}
+                      onClick={() => setActiveFilter(filter.key)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
+                        "flex items-center gap-1.5",
+                        activeFilter === filter.key
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {filter.icon && <filter.icon className="h-3 w-3" />}
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Timeline Entries */}
           <div className="relative">
+            {/* Loading state for initial load */}
+            {isTimelineLoading && filteredEntries.length === 0 && (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="pl-8 pb-6">
+                    <Skeleton className="h-32 w-full rounded-xl" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Entries grouped by date */}
             {Object.entries(groupedEntries).map(([date, entries], groupIndex) => (
               <TimelineGroup
                 key={date}
@@ -341,13 +472,82 @@ const PatientChroniclePage = () => {
               />
             ))}
 
-            {filteredEntries.length === 0 && (
+            {/* Empty state */}
+            {!isTimelineLoading && filteredEntries.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
-                <p className="font-mono text-sm">No entries found</p>
+                <p className="font-mono text-sm">
+                  {searchInput ? 'No entries match your search' : 'No entries found'}
+                </p>
+                {searchInput && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchInput('')}
+                    className="mt-2 font-mono text-xs"
+                  >
+                    Clear search
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Infinite scroll trigger */}
+            {hasNextPage && (
+              <div
+                ref={loadMoreRef}
+                className="flex items-center justify-center py-8"
+              >
+                {isFetchingNextPage ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="font-mono text-xs">Loading more...</span>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => fetchNextPage()}
+                    className="font-mono text-xs"
+                  >
+                    Load more
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* End of timeline indicator */}
+            {!hasNextPage && filteredEntries.length > 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <div className="w-12 h-px bg-border mx-auto mb-2" />
+                <p className="font-mono text-xs">End of timeline</p>
               </div>
             )}
           </div>
         </main>
+
+        {/* Add Note Slide-Over Panel */}
+        <AddNoteSlideOver
+          open={isAddNoteOpen}
+          onClose={handleCloseAddNote}
+          patient={patient}
+          onNoteCreated={handleNoteCreated}
+        />
+
+        {/* Add Vitals Slide-Over Panel */}
+        <AddVitalsSlideOver
+          open={isAddVitalsOpen}
+          onClose={handleCloseVitals}
+          patient={patient}
+          onVitalsRecorded={handleVitalsRecorded}
+        />
+
+        {/* Add Prescription Slide-Over Panel */}
+        <AddPrescriptionSlideOver
+          open={isAddPrescriptionOpen}
+          onClose={handleClosePrescription}
+          patient={patient}
+          onPrescriptionCreated={handlePrescriptionCreated}
+        />
       </div>
     </div>
   );

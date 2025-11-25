@@ -1,22 +1,36 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DatePicker } from '@/components/ui/date-picker';
 import { format, parseISO, isValid } from 'date-fns';
 import { useEncounters } from '@/hooks/useEncounterQueries';
-import { PlusCircle, Search, Filter, Clock, Calendar, User, Building2, Activity } from 'lucide-react';
+import {
+  PlusCircle,
+  Search,
+  Filter,
+  Clock,
+  Calendar,
+  User,
+  Building2,
+  Activity,
+  FileText,
+  ChevronRight,
+  AlertTriangle,
+  RefreshCw,
+  X,
+  Stethoscope
+} from 'lucide-react';
 
 export function EncounterList() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -59,11 +73,12 @@ export function EncounterList() {
   }
 
   // Use React Query to fetch encounters
-  const { 
-    data: encountersData, 
-    isLoading, 
-    isError, 
-    error 
+  const {
+    data: encountersData,
+    isLoading,
+    isError,
+    error,
+    refetch
   } = useEncounters(queryParams);
 
   // Handle filter changes
@@ -82,45 +97,18 @@ export function EncounterList() {
     });
   };
 
+  // Check if any filters are active
+  const hasActiveFilters = filters.patient || filters.practitioner || filters.date ||
+    filters.status !== 'all' || (filters.type !== 'all' && activeTab === 'all');
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-
     try {
       const date = parseISO(dateString);
       return isValid(date) ? format(date, 'MMM d, yyyy h:mm a') : 'Invalid date';
     } catch (error) {
       return 'Invalid date';
-    }
-  };
-
-  // Get status badge variant
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'planned':
-        return <Badge variant="outline">Planned</Badge>;
-      case 'in-progress':
-        return <Badge variant="secondary">In Progress</Badge>;
-      case 'finished':
-        return <Badge variant="success">Finished</Badge>;
-      case 'cancelled':
-        return <Badge variant="destructive">Cancelled</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
-
-  // Get encounter type badge
-  const getTypeBadge = (type) => {
-    switch (type) {
-      case 'inpatient':
-        return <Badge variant="default">Inpatient</Badge>;
-      case 'outpatient':
-        return <Badge variant="outline">Outpatient</Badge>;
-      case 'emergency':
-        return <Badge variant="destructive">Emergency</Badge>;
-      default:
-        return <Badge variant="outline">{type}</Badge>;
     }
   };
 
@@ -130,77 +118,109 @@ export function EncounterList() {
   // Handle error state
   if (isError) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-red-500">Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>{error?.message || 'Failed to load encounters. Please try again.'}</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => window.location.reload()}
-          >
-            Try Again
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+          </div>
+          <h2 className="font-display text-2xl text-foreground">Error Loading Encounters</h2>
+          <p className="text-muted-foreground">{error?.message || 'Failed to load encounters.'}</p>
+          <Button onClick={() => refetch()} className="font-mono text-xs">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight">Encounters</h1>
-        <Button onClick={() => navigate('/encounters/new')}>
-          <PlusCircle className="h-4 w-4 mr-2" />
-          New Encounter
-        </Button>
-      </div>
-
-      <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex justify-between items-center mb-4">
-          <TabsList>
-            <TabsTrigger value="all">All Encounters</TabsTrigger>
-            <TabsTrigger value="inpatient">Inpatient</TabsTrigger>
-            <TabsTrigger value="outpatient">Outpatient</TabsTrigger>
-            <TabsTrigger value="emergency">Emergency</TabsTrigger>
-          </TabsList>
+    <div className="min-h-screen bg-background">
+      {/* Page Header */}
+      <header className="bg-card border-b border-border px-6 py-8">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
+              Clinical Documentation
+            </p>
+            <h1 className="font-display text-4xl text-foreground tracking-tight">
+              Encounters
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              {encounters.length} encounter{encounters.length !== 1 ? 's' : ''} found
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className={cn("font-mono text-xs", hasActiveFilters && "border-primary text-primary")}
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+              {hasActiveFilters && (
+                <span className="ml-2 w-2 h-2 rounded-full bg-primary" />
+              )}
+            </Button>
+            <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
+              <PlusCircle className="h-4 w-4 mr-2" />
+              New Encounter
+            </Button>
+          </div>
         </div>
+      </header>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-            <CardDescription>Filter encounters by various criteria</CardDescription>
-          </CardHeader>
-          <CardContent>
+      <main className="p-6 space-y-6">
+        {/* Filters Panel */}
+        {showFilters && (
+          <div className={cn(
+            "bg-card border border-border rounded-2xl p-6",
+            "animate-chronicle-enter"
+          )}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display text-lg text-foreground">Filter Encounters</h3>
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  className="font-mono text-xs text-muted-foreground"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear All
+                </Button>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="patient">Patient</Label>
-                <div className="flex">
-                  <Input
-                    id="patient"
-                    placeholder="Patient ID"
-                    value={filters.patient}
-                    onChange={(e) => handleFilterChange('patient', e.target.value)}
-                  />
-                </div>
+                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                  Patient
+                </Label>
+                <Input
+                  placeholder="Patient ID"
+                  value={filters.patient}
+                  onChange={(e) => handleFilterChange('patient', e.target.value)}
+                  className="font-mono text-sm"
+                />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="practitioner">Practitioner</Label>
-                <div className="flex">
-                  <Input
-                    id="practitioner"
-                    placeholder="Practitioner ID"
-                    value={filters.practitioner}
-                    onChange={(e) => handleFilterChange('practitioner', e.target.value)}
-                  />
-                </div>
+                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                  Practitioner
+                </Label>
+                <Input
+                  placeholder="Practitioner ID"
+                  value={filters.practitioner}
+                  onChange={(e) => handleFilterChange('practitioner', e.target.value)}
+                  className="font-mono text-sm"
+                />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
+                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                  Date
+                </Label>
                 <DatePicker
                   date={filters.date}
                   setDate={(date) => handleFilterChange('date', date)}
@@ -208,12 +228,14 @@ export function EncounterList() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
+                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                  Status
+                </Label>
                 <Select
                   value={filters.status}
                   onValueChange={(value) => handleFilterChange('status', value)}
                 >
-                  <SelectTrigger id="status">
+                  <SelectTrigger className="font-mono text-sm">
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
@@ -228,12 +250,14 @@ export function EncounterList() {
 
               {activeTab === 'all' && (
                 <div className="space-y-2">
-                  <Label htmlFor="type">Type</Label>
+                  <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    Type
+                  </Label>
                   <Select
                     value={filters.type}
                     onValueChange={(value) => handleFilterChange('type', value)}
                   >
-                    <SelectTrigger id="type">
+                    <SelectTrigger className="font-mono text-sm">
                       <SelectValue placeholder="All types" />
                     </SelectTrigger>
                     <SelectContent>
@@ -246,163 +270,204 @@ export function EncounterList() {
                 </div>
               )}
             </div>
+          </div>
+        )}
 
-            <div className="flex justify-end mt-4">
-              <Button variant="outline" onClick={resetFilters} className="mr-2">
-                Reset Filters
-              </Button>
-              <Button>
-                <Filter className="h-4 w-4 mr-2" />
-                Apply Filters
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Tabs */}
+        <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-card border border-border rounded-xl p-1 h-auto">
+            <TabsTrigger
+              value="all"
+              className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg px-4 py-2"
+            >
+              All Encounters
+            </TabsTrigger>
+            <TabsTrigger
+              value="inpatient"
+              className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg px-4 py-2"
+            >
+              Inpatient
+            </TabsTrigger>
+            <TabsTrigger
+              value="outpatient"
+              className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg px-4 py-2"
+            >
+              Outpatient
+            </TabsTrigger>
+            <TabsTrigger
+              value="emergency"
+              className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg px-4 py-2"
+            >
+              Emergency
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="all" className="mt-6">
-          <EncounterTable 
-            encounters={encounters} 
-            loading={isLoading} 
-            formatDate={formatDate}
-            getStatusBadge={getStatusBadge}
-            getTypeBadge={getTypeBadge}
-            navigate={navigate}
-          />
-        </TabsContent>
-
-        <TabsContent value="inpatient" className="mt-6">
-          <EncounterTable 
-            encounters={encounters} 
-            loading={isLoading} 
-            formatDate={formatDate}
-            getStatusBadge={getStatusBadge}
-            getTypeBadge={getTypeBadge}
-            navigate={navigate}
-          />
-        </TabsContent>
-
-        <TabsContent value="outpatient" className="mt-6">
-          <EncounterTable 
-            encounters={encounters} 
-            loading={isLoading} 
-            formatDate={formatDate}
-            getStatusBadge={getStatusBadge}
-            getTypeBadge={getTypeBadge}
-            navigate={navigate}
-          />
-        </TabsContent>
-
-        <TabsContent value="emergency" className="mt-6">
-          <EncounterTable 
-            encounters={encounters} 
-            loading={isLoading} 
-            formatDate={formatDate}
-            getStatusBadge={getStatusBadge}
-            getTypeBadge={getTypeBadge}
-            navigate={navigate}
-          />
-        </TabsContent>
-      </Tabs>
+          {/* Tab Content */}
+          {['all', 'inpatient', 'outpatient', 'emergency'].map((tab) => (
+            <TabsContent key={tab} value={tab} className="mt-6">
+              <EncounterGrid
+                encounters={encounters}
+                loading={isLoading}
+                formatDate={formatDate}
+                navigate={navigate}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+      </main>
     </div>
   );
 }
 
-function EncounterTable({ encounters, loading, formatDate, getStatusBadge, getTypeBadge, navigate }) {
+/**
+ * EncounterGrid - Chronicle-style encounter cards
+ */
+function EncounterGrid({ encounters, loading, formatDate, navigate }) {
   if (loading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
+        {[...Array(5)].map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
       </div>
     );
   }
 
   if (encounters.length === 0) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center py-10">
-          <p className="text-muted-foreground mb-4">No encounters found matching your criteria.</p>
-          <Button variant="outline" onClick={() => navigate('/encounters/new')}>
-            <PlusCircle className="h-4 w-4 mr-2" />
-            Create New Encounter
-          </Button>
-        </CardContent>
-      </Card>
+      <div className={cn(
+        "bg-card/50 border border-border rounded-2xl p-12 text-center",
+        "animate-chronicle-enter"
+      )}>
+        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+          <FileText className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="font-display text-xl text-foreground mb-2">No Encounters Found</h3>
+        <p className="text-muted-foreground text-sm mb-6">
+          No encounters match your current filters.
+        </p>
+        <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
+          <PlusCircle className="h-4 w-4 mr-2" />
+          Create New Encounter
+        </Button>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Patient</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Start Time</TableHead>
-              <TableHead>End Time</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Practitioner</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {encounters.map((encounter) => (
-              <TableRow key={encounter.id}>
-                <TableCell className="font-medium">
-                  <div className="flex items-center">
-                    <User className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {encounter.patient_name || 'Unknown Patient'}
-                  </div>
-                </TableCell>
-                <TableCell>{getTypeBadge(encounter.encounter_type)}</TableCell>
-                <TableCell>{getStatusBadge(encounter.status)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {formatDate(encounter.start_time)}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {encounter.end_time ? (
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      {formatDate(encounter.end_time)}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">Not ended</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center">
-                    <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {encounter.location || 'N/A'}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center">
-                    <Activity className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {encounter.practitioner_name || 'Unknown Practitioner'}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => navigate(`/encounters/${encounter.id}`)}
-                  >
-                    View
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <div className="space-y-3">
+      {encounters.map((encounter, index) => (
+        <EncounterCard
+          key={encounter.id}
+          encounter={encounter}
+          index={index}
+          formatDate={formatDate}
+          onClick={() => navigate(`/encounters/${encounter.id}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * EncounterCard - Individual encounter card in Chronicle style
+ */
+function EncounterCard({ encounter, index, formatDate, onClick }) {
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case 'planned':
+        return { badge: 'badge-chronicle-sky', label: 'Planned' };
+      case 'in-progress':
+        return { badge: 'badge-chronicle-amber', label: 'In Progress', ribbon: 'status-ribbon-warning' };
+      case 'finished':
+        return { badge: 'badge-chronicle-emerald', label: 'Finished' };
+      case 'cancelled':
+        return { badge: 'badge-chronicle-rose', label: 'Cancelled' };
+      default:
+        return { badge: 'font-mono text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground', label: status };
+    }
+  };
+
+  const getTypeConfig = (type) => {
+    switch (type) {
+      case 'inpatient':
+        return { icon: Building2, color: 'text-[oklch(0.70_0.15_230)]', label: 'Inpatient' };
+      case 'outpatient':
+        return { icon: Stethoscope, color: 'text-[oklch(0.70_0.17_155)]', label: 'Outpatient' };
+      case 'emergency':
+        return { icon: AlertTriangle, color: 'text-[oklch(0.65_0.22_15)]', label: 'Emergency' };
+      default:
+        return { icon: Activity, color: 'text-muted-foreground', label: type };
+    }
+  };
+
+  const statusConfig = getStatusConfig(encounter.status);
+  const typeConfig = getTypeConfig(encounter.encounter_type);
+  const TypeIcon = typeConfig.icon;
+
+  return (
+    <article
+      className={cn(
+        "group relative bg-card/50 border border-border rounded-xl p-5",
+        "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
+        "transition-all duration-300 cursor-pointer",
+        "animate-chronicle-enter"
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
+      onClick={onClick}
+    >
+      {statusConfig.ribbon && <div className={cn("status-ribbon", statusConfig.ribbon)} />}
+
+      <div className="flex items-center gap-4">
+        {/* Type Icon */}
+        <div className={cn(
+          "w-12 h-12 rounded-full flex items-center justify-center",
+          "bg-card border border-border"
+        )}>
+          <TypeIcon className={cn("h-5 w-5", typeConfig.color)} />
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 mb-1">
+            <h3 className="font-display text-xl text-foreground truncate">
+              {encounter.patient_name || 'Unknown Patient'}
+            </h3>
+            <span className={statusConfig.badge}>{statusConfig.label}</span>
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">
+              {typeConfig.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-mono text-xs">
+              <Calendar className="h-3 w-3" />
+              {formatDate(encounter.start_time)}
+            </span>
+            {encounter.practitioner_name && (
+              <span className="flex items-center gap-1.5">
+                <User className="h-3 w-3" />
+                {encounter.practitioner_name}
+              </span>
+            )}
+            {encounter.location && (
+              <span className="flex items-center gap-1.5">
+                <Building2 className="h-3 w-3" />
+                {encounter.location}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hover Action */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          View
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+    </article>
   );
 }

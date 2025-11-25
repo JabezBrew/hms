@@ -25,6 +25,12 @@ const ClinicalSummarySidebar = ({
       "chronicle-scrollbar",
       className
     )}>
+      {/* Section: Allergies - High Visibility (First for safety) */}
+      <AllergiesSection allergies={allergies} />
+
+      {/* Divider */}
+      <div className="divider-gradient" />
+
       {/* Section: Active Problems */}
       <ProblemsSection problems={problems} />
 
@@ -36,9 +42,6 @@ const ClinicalSummarySidebar = ({
 
       {/* Divider */}
       <div className="divider-gradient" />
-
-      {/* Section: Allergies - High Visibility */}
-      <AllergiesSection allergies={allergies} />
 
       {/* Section: Recent Labs */}
       <LabResultsSection results={labResults} />

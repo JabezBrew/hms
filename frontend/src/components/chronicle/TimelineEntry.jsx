@@ -10,9 +10,9 @@ import {
   ClipboardList,
   UserPlus,
   LogOut,
-  ChevronDown,
-  ChevronRight
+  Expand
 } from "lucide-react";
+import NoteDetailModal from "./NoteDetailModal";
 
 /**
  * TimelineEntry - A chronological entry in the patient's clinical chronicle
@@ -32,15 +32,9 @@ const TimelineEntry = ({
   entry,
   index = 0,
   isRecent = false,
-  isExpanded: controlledExpanded,
-  onToggleExpand,
   className
 }) => {
-  const [internalExpanded, setInternalExpanded] = useState(false);
-
-  // Support both controlled and uncontrolled expansion
-  const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
-  const toggleExpand = onToggleExpand || (() => setInternalExpanded(!internalExpanded));
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // ============================================
   // Entry type configuration
@@ -53,6 +47,12 @@ const TimelineEntry = ({
       color: 'amber',
       nodeClass: 'timeline-node-amber'
     },
+    soap_note: {
+      icon: FileText,
+      label: 'SOAP Note',
+      color: 'amber',
+      nodeClass: 'timeline-node-amber'
+    },
     vitals: {
       icon: Activity,
       label: 'Vitals',
@@ -62,6 +62,12 @@ const TimelineEntry = ({
     medication: {
       icon: Pill,
       label: 'Medication',
+      color: 'sky',
+      nodeClass: 'timeline-node-sky'
+    },
+    prescription: {
+      icon: Pill,
+      label: 'Prescription',
       color: 'sky',
       nodeClass: 'timeline-node-sky'
     },
@@ -83,9 +89,21 @@ const TimelineEntry = ({
       color: 'amber',
       nodeClass: 'timeline-node-amber'
     },
+    consult_note: {
+      icon: Stethoscope,
+      label: 'Consult Note',
+      color: 'amber',
+      nodeClass: 'timeline-node-amber'
+    },
     admission: {
       icon: UserPlus,
       label: 'Admission',
+      color: 'emerald',
+      nodeClass: 'timeline-node-emerald'
+    },
+    admission_note: {
+      icon: UserPlus,
+      label: 'Admission Note',
       color: 'emerald',
       nodeClass: 'timeline-node-emerald'
     },
@@ -94,6 +112,18 @@ const TimelineEntry = ({
       label: 'Discharge',
       color: 'emerald',
       nodeClass: 'timeline-node-emerald'
+    },
+    discharge_note: {
+      icon: LogOut,
+      label: 'Discharge Note',
+      color: 'emerald',
+      nodeClass: 'timeline-node-emerald'
+    },
+    nursing_note: {
+      icon: FileText,
+      label: 'Nursing Note',
+      color: 'sky',
+      nodeClass: 'timeline-node-sky'
     },
     procedure: {
       icon: Activity,
@@ -163,6 +193,20 @@ const TimelineEntry = ({
   };
 
   // ============================================
+  // Check if entry has viewable detail content
+  // ============================================
+
+  const hasDetailContent = () => {
+    // Notes with structured data
+    if (entry.data && typeof entry.data === 'object' && Object.keys(entry.data).length > 0) {
+      return true;
+    }
+    // Notes with content longer than preview
+    if (entry.content && entry.content.length > 150) return true;
+    return false;
+  };
+
+  // ============================================
   // Render content based on entry type
   // ============================================
 
@@ -173,25 +217,11 @@ const TimelineEntry = ({
       case 'lab_result':
         return <LabResultContent result={entry.data} />;
       case 'medication':
+      case 'prescription':
         return <MedicationContent medication={entry.data} />;
       default:
-        return (
-          <div>
-            {entry.title && (
-              <h4 className="font-medium text-foreground/90 mb-2">
-                {entry.title}
-              </h4>
-            )}
-            {entry.content && (
-              <p className={cn(
-                "text-muted-foreground text-sm leading-relaxed",
-                !isExpanded && "line-clamp-3"
-              )}>
-                {entry.content}
-              </p>
-            )}
-          </div>
-        );
+        // Generic note preview
+        return <NotePreview entry={entry} />;
     }
   };
 
@@ -244,28 +274,26 @@ const TimelineEntry = ({
         {/* Content */}
         {renderContent()}
 
-        {/* Expand button for long content */}
-        {entry.content && entry.content.length > 200 && (
+        {/* View detail button */}
+        {hasDetailContent() && (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-3 font-mono text-xs text-primary p-0 h-auto opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={toggleExpand}
+            className="mt-3 font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
+            onClick={() => setIsModalOpen(true)}
           >
-            {isExpanded ? (
-              <>
-                <ChevronDown className="h-3 w-3 mr-1" />
-                Show less
-              </>
-            ) : (
-              <>
-                <ChevronRight className="h-3 w-3 mr-1" />
-                Read full note
-              </>
-            )}
+            <Expand className="h-3 w-3 mr-1" />
+            View full note
           </Button>
         )}
       </div>
+
+      {/* Note detail modal */}
+      <NoteDetailModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        entry={entry}
+      />
     </article>
   );
 };
@@ -277,7 +305,7 @@ const VitalsContent = ({ vitals }) => {
   if (!vitals) return null;
 
   const vitalItems = [
-    { label: 'Temp', value: vitals.temperature, unit: '°F' },
+    { label: 'Temp', value: vitals.temperature, unit: '°C' },
     { label: 'BP', value: vitals.blood_pressure, unit: '' },
     { label: 'HR', value: vitals.heart_rate, unit: ' bpm' },
     { label: 'SpO2', value: vitals.spo2, unit: '%' },
@@ -358,6 +386,100 @@ const MedicationContent = ({ medication }) => {
 };
 
 /**
+ * NotePreview - Generic preview for any note type
+ *
+ * Shows title and a brief summary extracted from entry data or content.
+ * Works with any note structure - not hardcoded to SOAP format.
+ */
+const NotePreview = ({ entry }) => {
+  const { title, content, data } = entry;
+
+  // Extract a meaningful preview from the data
+  const getPreviewItems = () => {
+    if (!data || typeof data !== 'object') return [];
+
+    const items = [];
+    const keys = Object.keys(data);
+
+    // Try to extract meaningful preview items (limit to 2)
+    for (const key of keys) {
+      if (items.length >= 2) break;
+
+      const value = data[key];
+      if (!value) continue;
+
+      // Get a string preview from the value
+      let preview = null;
+      if (typeof value === 'string') {
+        preview = value.slice(0, 120);
+      } else if (typeof value === 'object' && !Array.isArray(value)) {
+        // Try common field names for preview
+        const previewFields = ['chief_complaint', 'chiefComplaint', 'primary_diagnosis',
+          'primaryDiagnosis', 'summary', 'description', 'reason', 'findings'];
+        for (const field of previewFields) {
+          if (value[field] && typeof value[field] === 'string') {
+            preview = value[field].slice(0, 120);
+            break;
+          }
+        }
+        // If no preview field found, get first string value
+        if (!preview) {
+          const firstStringVal = Object.values(value).find(v => typeof v === 'string');
+          if (firstStringVal) preview = firstStringVal.slice(0, 120);
+        }
+      }
+
+      if (preview) {
+        // Format key to readable label
+        const label = key
+          .replace(/_/g, ' ')
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .replace(/\b\w/g, c => c.toUpperCase());
+        items.push({ label, preview });
+      }
+    }
+
+    return items;
+  };
+
+  const previewItems = getPreviewItems();
+
+  return (
+    <div className="space-y-2">
+      {title && (
+        <h4 className="font-medium text-foreground/90">{title}</h4>
+      )}
+
+      {/* Show extracted preview items */}
+      {previewItems.map((item, i) => (
+        <div key={i}>
+          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground/70">
+            {item.label}:{' '}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {item.preview}{item.preview.length >= 120 ? '...' : ''}
+          </span>
+        </div>
+      ))}
+
+      {/* Fallback to content if no preview items */}
+      {previewItems.length === 0 && content && (
+        <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+          {content}
+        </p>
+      )}
+
+      {/* Empty state */}
+      {previewItems.length === 0 && !content && (
+        <p className="text-sm text-muted-foreground/60 italic">
+          Click to view details...
+        </p>
+      )}
+    </div>
+  );
+};
+
+/**
  * TimelineGroup - Groups timeline entries by date
  */
 const TimelineGroup = ({ date, entries, startIndex = 0 }) => {
@@ -387,4 +509,4 @@ const TimelineGroup = ({ date, entries, startIndex = 0 }) => {
 };
 
 export default TimelineEntry;
-export { TimelineEntry, TimelineGroup, VitalsContent, LabResultContent, MedicationContent };
+export { TimelineEntry, TimelineGroup, VitalsContent, LabResultContent, MedicationContent, NotePreview };

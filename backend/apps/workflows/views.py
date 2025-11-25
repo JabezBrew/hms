@@ -6,17 +6,21 @@ from django.shortcuts import get_object_or_404
 from django.db import models
 import logging
 
-from .models import ClinicalWorkflow, ConsultationWorkflow, WorkflowTemplate, WorkflowType
+from .models import ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow, WorkflowTemplate, WorkflowType
 from .serializers import (
     ClinicalWorkflowSerializer,
     ConsultationWorkflowSerializer,
     ConsultationWorkflowCreateSerializer,
     ConsultationWorkflowUpdateSerializer,
     ConsultationWorkflowCompleteSerializer,
+    ClinicalNoteWorkflowSerializer,
+    ClinicalNoteWorkflowCreateSerializer,
+    ClinicalNoteWorkflowUpdateSerializer,
+    ClinicalNoteWorkflowCompleteSerializer,
     WorkflowTemplateSerializer,
     WorkflowDraftSerializer,
 )
-from .engines import ConsultationEngine
+from .engines import ConsultationEngine, ClinicalNoteEngine
 from apps.users.permissions import IsAdminOrOwner
 
 logger = logging.getLogger(__name__)
@@ -280,6 +284,169 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'Failed to cancel workflow'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    # ============================================
+    # Clinical Note Workflow Endpoints
+    # ============================================
+
+    @action(detail=False, methods=['post'], url_path='clinical-note/start')
+    def start_clinical_note(self, request):
+        """
+        Start a new clinical note workflow
+
+        POST /api/workflows/clinical-note/start/
+        Body: {
+            "patient_id": "uuid",
+            "note_type": "progress|soap|procedure|phone",
+            "initial_data": {}  // optional
+        }
+        """
+        serializer = ClinicalNoteWorkflowCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = ClinicalNoteEngine.start(
+                user=request.user,
+                patient_id=serializer.validated_data['patient_id'],
+                note_type=serializer.validated_data['note_type'],
+                initial_data=serializer.validated_data.get('initial_data', {}),
+            )
+
+            workflow = result['workflow']
+            workflow_serializer = ClinicalWorkflowSerializer(workflow)
+
+            return Response(workflow_serializer.data, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error starting clinical note workflow: {str(e)}")
+            return Response(
+                {'error': 'Failed to start clinical note workflow'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], url_path='clinical-note/step')
+    def update_clinical_note_step(self, request, pk=None):
+        """
+        Update clinical note workflow step
+
+        PATCH /api/workflows/{id}/clinical-note/step/
+        Body: {
+            "step_data": {},
+            "next_step": 2,  // optional
+            "chief_complaint": "...",  // optional note field
+            // ... other note fields
+        }
+        """
+        workflow = self.get_object()
+
+        # Verify workflow type
+        if workflow.workflow_type != WorkflowType.CLINICAL_NOTE:
+            return Response(
+                {'error': 'This endpoint is only for clinical note workflows'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ClinicalNoteWorkflowUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Extract note-specific fields
+        note_fields = {}
+        note_field_names = [
+            'chief_complaint', 'assessment', 'plan', 'follow_up', 'patient_education',
+            'subjective', 'objective', 'hpi', 'ros', 'physical_exam', 'vitals',
+            'procedure_name', 'indication', 'consent', 'pre_assessment', 'anesthesia',
+            'technique', 'specimens', 'ebl', 'complications', 'complication_details',
+            'patient_condition', 'disposition', 'post_instructions',
+            'caller_name', 'caller_relationship', 'callback_number', 'reason_for_call',
+            'symptoms_discussed', 'advice_given', 'urgency', 'actions_taken',
+            'pending_actions', 'callback_needed'
+        ]
+        for field in note_field_names:
+            if field in serializer.validated_data:
+                note_fields[field] = serializer.validated_data[field]
+
+        try:
+            result = ClinicalNoteEngine.update_step(
+                workflow=workflow,
+                step_data=serializer.validated_data['step_data'],
+                next_step=serializer.validated_data.get('next_step'),
+                note_fields=note_fields if note_fields else None,
+            )
+
+            updated_workflow = result['workflow']
+            workflow_serializer = ClinicalWorkflowSerializer(updated_workflow)
+
+            return Response(workflow_serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error updating clinical note step: {str(e)}")
+            return Response(
+                {'error': 'Failed to update clinical note step'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'], url_path='clinical-note/complete')
+    def complete_clinical_note(self, request, pk=None):
+        """
+        Complete clinical note workflow
+
+        POST /api/workflows/{id}/clinical-note/complete/
+        Body: {
+            "final_data": {},  // optional
+            "encounter_type": "outpatient",  // optional
+            "encounter_status": "finished"  // optional
+        }
+        """
+        workflow = self.get_object()
+
+        # Verify workflow type
+        if workflow.workflow_type != WorkflowType.CLINICAL_NOTE:
+            return Response(
+                {'error': 'This endpoint is only for clinical note workflows'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ClinicalNoteWorkflowCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = ClinicalNoteEngine.complete(
+                workflow=workflow,
+                final_data=serializer.validated_data.get('final_data', {}),
+                encounter_type=serializer.validated_data.get('encounter_type', 'outpatient'),
+                encounter_status=serializer.validated_data.get('encounter_status', 'finished'),
+            )
+
+            return Response(result)
+
+        except Exception as e:
+            logger.error(f"Error completing clinical note: {str(e)}")
+            return Response(
+                {'error': f'Failed to complete clinical note: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ClinicalNoteWorkflowViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Read-only API endpoints for clinical note workflow data
+    """
+    serializer_class = ClinicalNoteWorkflowSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Filter clinical note workflows by current user
+        """
+        user = self.request.user
+        return ClinicalNoteWorkflow.objects.filter(
+            workflow__user=user
+        ).select_related('workflow', 'workflow__patient', 'workflow__patient__user')
 
 
 class ConsultationWorkflowViewSet(viewsets.ReadOnlyModelViewSet):

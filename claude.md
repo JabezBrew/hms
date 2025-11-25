@@ -149,6 +149,49 @@ GET /api/dashboards/clinic/           # Clinic schedule
 
 ---
 
+## Chronicle Design System
+
+**See:** [`frontend/CHRONICLE_DESIGN_SYSTEM.md`](frontend/CHRONICLE_DESIGN_SYSTEM.md) for full documentation.
+
+### Philosophy
+"Patient data as story, not spreadsheet." Editorial medical journal aesthetic with narrative-focused presentation.
+
+### Typography
+- **Display** (`font-display`): Fraunces - patient names, page titles
+- **Heading** (`font-heading`): DM Sans - section headers
+- **Data** (`font-mono`): IBM Plex Mono - MRNs, vitals, timestamps
+
+### Colors (Warm Stone + Accents)
+- **Base**: Warm charcoal background, cream text
+- **Amber**: Primary actions, timeline nodes
+- **Emerald**: Positive/stable status
+- **Rose**: Critical alerts, allergies
+- **Sky**: Informational, medications
+
+### Key Components
+```jsx
+import {
+  PatientChronicleCard,    // Magazine-style patient list card
+  TimelineEntry,           // Chronological clinical events
+  ClinicalSummarySidebar,  // Always-visible patient context
+  PatientIdentityHero      // Editorial patient header
+} from '@/components/chronicle';
+```
+
+### Page Patterns
+- **Patient List**: Grid of chronicle cards with search/filter
+- **Patient Detail**: Hero header + sidebar + filterable timeline
+
+### CSS Utilities
+```css
+.animate-chronicle-enter   /* Staggered entry animation */
+.timeline-node-amber       /* Colored timeline nodes */
+.status-ribbon-critical    /* Priority indication */
+.badge-chronicle-rose      /* Accent badges */
+```
+
+---
+
 ## Success Metrics
 
 ### Efficiency (Target: 50-70% improvement)

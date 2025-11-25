@@ -12,6 +12,15 @@ class WorkflowType(models.TextChoices):
     ADMISSION = 'admission', 'Admission'
     DISCHARGE = 'discharge', 'Discharge'
     EMERGENCY = 'emergency', 'Emergency Intake'
+    CLINICAL_NOTE = 'clinical_note', 'Clinical Note'
+
+
+class ClinicalNoteType(models.TextChoices):
+    """Clinical note type choices"""
+    PROGRESS = 'progress', 'Progress Note'
+    SOAP = 'soap', 'SOAP Note'
+    PROCEDURE = 'procedure', 'Procedure Note'
+    PHONE = 'phone', 'Phone Note'
 
 
 class WorkflowStatus(models.TextChoices):
@@ -150,6 +159,76 @@ class ConsultationWorkflow(models.Model):
     def __str__(self):
         patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
         return f"Consultation - {patient_name}"
+
+
+class ClinicalNoteWorkflow(models.Model):
+    """
+    Specific model for clinical note workflow data
+    Stores note-specific fields
+    """
+    workflow = models.OneToOneField(
+        ClinicalWorkflow,
+        on_delete=models.CASCADE,
+        related_name='clinical_note_data'
+    )
+
+    # Note type
+    note_type = models.CharField(
+        max_length=50,
+        choices=ClinicalNoteType.choices,
+        default=ClinicalNoteType.PROGRESS
+    )
+
+    # Common fields across note types
+    chief_complaint = models.TextField(blank=True)
+    assessment = models.TextField(blank=True)
+    plan = models.TextField(blank=True)
+
+    # SOAP-specific fields
+    subjective = models.TextField(blank=True)
+    objective = models.TextField(blank=True)
+    hpi = models.TextField(blank=True, verbose_name='History of Present Illness')
+    ros = models.TextField(blank=True, verbose_name='Review of Systems')
+    physical_exam = models.TextField(blank=True)
+    vitals = models.JSONField(default=dict, blank=True)
+
+    # Procedure-specific fields
+    procedure_name = models.CharField(max_length=255, blank=True)
+    indication = models.TextField(blank=True)
+    consent = models.CharField(max_length=100, blank=True)
+    pre_assessment = models.TextField(blank=True)
+    anesthesia = models.CharField(max_length=255, blank=True)
+    technique = models.TextField(blank=True)
+    specimens = models.TextField(blank=True)
+    ebl = models.CharField(max_length=100, blank=True, verbose_name='Estimated Blood Loss')
+    complications = models.CharField(max_length=100, blank=True)
+    complication_details = models.TextField(blank=True)
+    patient_condition = models.TextField(blank=True)
+    disposition = models.CharField(max_length=100, blank=True)
+    post_instructions = models.TextField(blank=True)
+
+    # Phone note fields
+    caller_name = models.CharField(max_length=255, blank=True)
+    caller_relationship = models.CharField(max_length=100, blank=True)
+    callback_number = models.CharField(max_length=50, blank=True)
+    reason_for_call = models.TextField(blank=True)
+    symptoms_discussed = models.TextField(blank=True)
+    advice_given = models.TextField(blank=True)
+    urgency = models.CharField(max_length=50, blank=True)
+    actions_taken = models.TextField(blank=True)
+    pending_actions = models.TextField(blank=True)
+    callback_needed = models.CharField(max_length=50, blank=True)
+
+    # Common follow-up field
+    follow_up = models.TextField(blank=True)
+    patient_education = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'workflows_clinical_note'
+
+    def __str__(self):
+        patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
+        return f"{self.get_note_type_display()} - {patient_name}"
 
 
 class WorkflowTemplate(models.Model):

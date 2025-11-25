@@ -21,7 +21,6 @@ import { OfflineIndicator } from './components/OfflineIndicator'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
 
 // Lazy load page components for code splitting
-const PatientDashboard = lazy(() => import('./components/patients/PatientDashboard'))
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
 const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
 const PatientCreatePage = lazy(() => import('./pages/PatientCreatePage'))
@@ -158,11 +157,11 @@ function AppContent() {
             </Layout>
           } />
 
-          {/* Patient routes */}
+          {/* Patient routes - Chronicle Design System */}
           <Route path="/patients" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
               <Layout>
-                <PatientDashboard />
+                <PatientChronicleListPage />
               </Layout>
             </RoleBasedRoute>
           } />
@@ -178,7 +177,7 @@ function AppContent() {
           <Route path="/patients/:id" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
               <Layout>
-                <PatientDetailPage />
+                <PatientChroniclePage />
               </Layout>
             </RoleBasedRoute>
           } />
@@ -187,23 +186,6 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
               <Layout>
                 <PatientEditPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Chronicle Design System Routes */}
-          <Route path="/patients/chronicle" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <PatientChronicleListPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/patients/:id/chronicle" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <PatientChroniclePage />
               </Layout>
             </RoleBasedRoute>
           } />

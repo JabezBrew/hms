@@ -106,14 +106,15 @@ export const useCreateVitalSigns = () => {
 
   return useMutation({
     mutationFn: async (data) => {
-      const response = await apiClient.post('/nursing/vital-signs/', data);
-      return response.data;
+      // apiClient.post returns data directly, not wrapped in response.data
+      const result = await apiClient.post('/nursing/vital-signs/', data);
+      return result;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['vital-signs'] });
-      queryClient.invalidateQueries({ queryKey: ['vital-signs-trends', data.patient] });
+      queryClient.invalidateQueries({ queryKey: ['vital-signs-trends', data?.patient] });
       queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-detail', data.patient] });
+      queryClient.invalidateQueries({ queryKey: ['patient-detail', data?.patient] });
     },
   });
 };

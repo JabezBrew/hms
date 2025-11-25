@@ -36,9 +36,26 @@ const PatientIdentityHero = ({
 }) => {
   // ============================================
   // Data extraction helpers
+  // Handles multiple data structures:
+  // - local_data wrapper (from combined API response)
+  // - fhir_data (FHIR format)
+  // - Direct properties (legacy format)
   // ============================================
 
   const getDisplayName = (patient) => {
+    // Check local_data.user_details first (combined API response)
+    if (patient?.local_data?.user_details) {
+      const { first_name, last_name } = patient.local_data.user_details;
+      return `${first_name || ''} ${last_name || ''}`.trim() || "Unknown Patient";
+    }
+    // Check FHIR data
+    if (patient?.fhir_data?.name?.[0]) {
+      const fhirName = patient.fhir_data.name[0];
+      const given = fhirName.given?.join(' ') || '';
+      const family = fhirName.family || '';
+      return `${given} ${family}`.trim() || "Unknown Patient";
+    }
+    // Check user_details directly
     if (patient?.user_details) {
       const { first_name, last_name } = patient.user_details;
       return `${first_name || ''} ${last_name || ''}`.trim() || "Unknown Patient";
@@ -53,6 +70,17 @@ const PatientIdentityHero = ({
   };
 
   const getPatientMRN = (patient) => {
+    // Check local_data first
+    if (patient?.local_data?.medical_record_number) {
+      return patient.local_data.medical_record_number;
+    }
+    // Check FHIR identifier
+    if (patient?.fhir_data?.identifier) {
+      const mrnIdentifier = patient.fhir_data.identifier.find(
+        id => id.system?.includes('mrn') || id.type?.coding?.[0]?.code === 'MR'
+      );
+      if (mrnIdentifier?.value) return mrnIdentifier.value;
+    }
     return patient?.medical_record_number ||
       patient?.patient_profile_details?.medical_record_number ||
       patient?.mrn ||
@@ -60,7 +88,9 @@ const PatientIdentityHero = ({
   };
 
   const getPatientAge = (patient) => {
-    const dob = patient?.user_details?.date_of_birth ||
+    const dob = patient?.local_data?.user_details?.date_of_birth ||
+      patient?.fhir_data?.birthDate ||
+      patient?.user_details?.date_of_birth ||
       patient?.patient_profile_details?.user_details?.date_of_birth ||
       patient?.date_of_birth;
 
@@ -81,18 +111,22 @@ const PatientIdentityHero = ({
   };
 
   const getPatientGender = (patient) => {
-    const gender = patient?.user_details?.gender ||
+    const gender = patient?.local_data?.user_details?.gender ||
+      patient?.fhir_data?.gender ||
+      patient?.user_details?.gender ||
       patient?.patient_profile_details?.user_details?.gender ||
       patient?.gender;
 
-    if (gender === 'M') return 'Male';
-    if (gender === 'F') return 'Female';
-    if (gender === 'O') return 'Other';
+    if (gender === 'M' || gender === 'male') return 'Male';
+    if (gender === 'F' || gender === 'female') return 'Female';
+    if (gender === 'O' || gender === 'other') return 'Other';
     return null;
   };
 
   const getPatientDOB = (patient) => {
-    const dob = patient?.user_details?.date_of_birth ||
+    const dob = patient?.local_data?.user_details?.date_of_birth ||
+      patient?.fhir_data?.birthDate ||
+      patient?.user_details?.date_of_birth ||
       patient?.patient_profile_details?.user_details?.date_of_birth ||
       patient?.date_of_birth;
 
@@ -110,33 +144,54 @@ const PatientIdentityHero = ({
   };
 
   const getPatientPhone = (patient) => {
+    // Check local_data
+    if (patient?.local_data?.user_details?.phone_number) {
+      return patient.local_data.user_details.phone_number;
+    }
+    // Check FHIR telecom
+    if (patient?.fhir_data?.telecom) {
+      const phone = patient.fhir_data.telecom.find(t => t.system === 'phone');
+      if (phone?.value) return phone.value;
+    }
     return patient?.user_details?.phone ||
+      patient?.user_details?.phone_number ||
       patient?.patient_profile_details?.user_details?.phone ||
       patient?.phone ||
       null;
   };
 
   const getPatientWard = (patient) => {
-    return patient?.current_ward ||
+    return patient?.local_data?.current_ward ||
+      patient?.current_ward ||
       patient?.patient_profile_details?.current_ward ||
       null;
   };
 
   const getPatientBed = (patient) => {
-    return patient?.current_bed ||
+    return patient?.local_data?.current_bed ||
+      patient?.current_bed ||
       patient?.patient_profile_details?.current_bed ||
       null;
   };
 
   const getAllergies = (patient) => {
+    // Check local_data for allergies (may be a string)
+    const localAllergies = patient?.local_data?.allergies;
+    if (localAllergies) {
+      // If it's a string, convert to array
+      if (typeof localAllergies === 'string') {
+        return localAllergies.split(',').map(a => a.trim()).filter(Boolean);
+      }
+      return localAllergies;
+    }
     return patient?.allergies ||
       patient?.patient_profile_details?.allergies ||
       [];
   };
 
   const getPatientStatus = (patient) => {
-    if (patient?.is_critical) return 'critical';
-    if (patient?.has_alerts) return 'warning';
+    if (patient?.is_critical || patient?.local_data?.is_critical) return 'critical';
+    if (patient?.has_alerts || patient?.local_data?.has_alerts) return 'warning';
     return 'stable';
   };
 
