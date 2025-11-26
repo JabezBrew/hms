@@ -1,7 +1,11 @@
 import uuid
+import hashlib
+import secrets
+from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -149,3 +153,107 @@ class PatientProfile(models.Model):
             models.Index(fields=['fhir_patient_id']),
             models.Index(fields=['created_at']),
         ]
+
+
+class PasswordResetToken(models.Model):
+    """
+    Secure password reset token model.
+    Tokens are stored hashed (not plain text) for security.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_tokens')
+
+    # Store hashed token, not plain text
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+
+    # Token metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    # Track usage
+    used_at = models.DateTimeField(null=True, blank=True)
+    is_used = models.BooleanField(default=False)
+
+    # Reset type
+    RESET_TYPE_CHOICES = (
+        ('self_service', 'Self Service'),
+        ('admin_force', 'Admin Force Reset'),
+    )
+    reset_type = models.CharField(max_length=20, choices=RESET_TYPE_CHOICES, default='self_service')
+
+    # For admin-initiated resets, track who initiated
+    initiated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='initiated_password_resets'
+    )
+
+    class Meta:
+        db_table = 'password_reset_tokens'
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    @classmethod
+    def hash_token(cls, token):
+        """Hash a token using SHA-256"""
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @classmethod
+    def generate_token(cls):
+        """Generate a cryptographically secure token"""
+        return secrets.token_urlsafe(32)
+
+    @classmethod
+    def create_for_user(cls, user, reset_type='self_service', initiated_by=None, expiry_minutes=15):
+        """
+        Create a new password reset token for a user.
+        Returns the plain token (to be sent in email) and the model instance.
+        """
+        # Generate a secure token
+        plain_token = cls.generate_token()
+        token_hash = cls.hash_token(plain_token)
+
+        # Invalidate any existing unused tokens for this user
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+
+        # Create new token
+        token_obj = cls.objects.create(
+            user=user,
+            token_hash=token_hash,
+            expires_at=timezone.now() + timedelta(minutes=expiry_minutes),
+            reset_type=reset_type,
+            initiated_by=initiated_by,
+        )
+
+        return plain_token, token_obj
+
+    @classmethod
+    def verify_token(cls, plain_token):
+        """
+        Verify a token and return the associated user if valid.
+        Returns (user, token_obj) if valid, (None, None) if invalid.
+        """
+        token_hash = cls.hash_token(plain_token)
+
+        try:
+            token_obj = cls.objects.select_related('user').get(
+                token_hash=token_hash,
+                is_used=False,
+                expires_at__gt=timezone.now()
+            )
+            return token_obj.user, token_obj
+        except cls.DoesNotExist:
+            return None, None
+
+    def mark_as_used(self):
+        """Mark the token as used"""
+        self.is_used = True
+        self.used_at = timezone.now()
+        self.save(update_fields=['is_used', 'used_at'])
+
+    def __str__(self):
+        return f"Password reset token for {self.user.email} ({'used' if self.is_used else 'active'})"

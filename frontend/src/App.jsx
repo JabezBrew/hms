@@ -15,10 +15,12 @@ import { Skeleton } from './components/ui/skeleton'
 import { LoginForm } from './components/auth/login-form'
 import { RegisterForm } from './components/auth/register-form'
 import { ResetPasswordForm } from './components/auth/reset-password-form'
+import { ResetPasswordConfirmForm } from './components/auth/reset-password-confirm-form'
 import { RoleBasedRoute } from './components/auth/RoleBasedRoute'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OfflineIndicator } from './components/OfflineIndicator'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
+import { CriticalAlertsMonitor } from './components/dashboard'
 
 // Lazy load page components for code splitting
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
@@ -51,12 +53,22 @@ const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListP
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
 const DoctorDashboard = lazy(() => import('./pages/dashboards/DoctorDashboard'))
 const ProviderDashboard = lazy(() => import('./pages/dashboards/ProviderDashboard'))
+const NurseDashboard = lazy(() => import('./pages/dashboards/NurseDashboard'))
+const InpatientDoctorDashboard = lazy(() => import('./pages/dashboards/InpatientDoctorDashboard'))
+const ReceptionistDashboard = lazy(() => import('./pages/dashboards/ReceptionistDashboard'))
+const AdminDashboard = lazy(() => import('./pages/dashboards/AdminDashboard'))
 const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
 const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
+const WardRoundWorkflowPage = lazy(() => import('./pages/workflows/ward-round/WardRoundWorkflowPage'))
+const AdmissionWorkflowPage = lazy(() => import('./pages/workflows/admission/AdmissionWorkflowPage'))
+const DischargeWorkflowPage = lazy(() => import('./pages/workflows/discharge/DischargeWorkflowPage'))
 
 // Chronicle Design System Pages
 const PatientChronicleListPage = lazy(() => import('./pages/patients/PatientChronicleListPage'))
 const PatientChroniclePage = lazy(() => import('./pages/patients/PatientChroniclePage'))
+
+// Admin Pages
+const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -129,6 +141,11 @@ function AppContent() {
         <Route path="/reset-password" element={
           <div className="flex min-h-screen items-center justify-center">
             <ResetPasswordForm />
+          </div>
+        } />
+        <Route path="/reset-password/confirm" element={
+          <div className="flex min-h-screen items-center justify-center">
+            <ResetPasswordConfirmForm />
           </div>
         } />
         <Route path="*" element={<Navigate to="/login" />} />
@@ -389,6 +406,31 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          {/* Role-Based Dashboards */}
+          <Route path="/dashboards/nurse" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+              <NurseDashboard />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/dashboards/inpatient" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <InpatientDoctorDashboard />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/dashboards/reception" element={
+            <RoleBasedRoute allowedRoles={['admin', 'receptionist']}>
+              <ReceptionistDashboard />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/dashboards/admin" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <AdminDashboard />
+            </RoleBasedRoute>
+          } />
+
           {/* Doctor Dashboard */}
           <Route path="/dashboard/doctor" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
@@ -407,6 +449,24 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          <Route path="/workflows/ward-round" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <WardRoundWorkflowPage />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/workflows/admission" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <AdmissionWorkflowPage />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/workflows/discharge" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+              <DischargeWorkflowPage />
+            </RoleBasedRoute>
+          } />
+
           {/* Provider Dashboard */}
           <Route path="/dashboard/provider" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
@@ -419,11 +479,11 @@ function AppContent() {
           {/* Encounter Workspace */}
           <Route path="/encounters/:id/workspace" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
-              {/* Note: Workspace has its own layout/header, so we might not want the main Layout here, 
-               but for now keeping it consistent or we can remove Layout if it duplicates the header. 
-               The design says "Sticky context", implying full screen. 
+              {/* Note: Workspace has its own layout/header, so we might not want the main Layout here,
+               but for now keeping it consistent or we can remove Layout if it duplicates the header.
+               The design says "Sticky context", implying full screen.
                Let's try without Layout for full immersion or with Layout if sidebar is needed.
-               Design guide implies a "Command Center" feel. 
+               Design guide implies a "Command Center" feel.
                I'll use Layout for sidebar navigation but the workspace itself handles the header.
            */}
               <Layout>
@@ -432,9 +492,20 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          {/* Admin routes */}
+          <Route path="/admin/audit-logs" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <AuditLogsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Suspense>
+      {/* Mount critical alerts monitor only for authenticated users */}
+      <CriticalAlertsMonitor />
     </ErrorBoundary>
   )
 }

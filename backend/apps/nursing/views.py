@@ -22,6 +22,8 @@ from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
 from ..wards.services import ensure_encounter_for_entry
 from ..users.models import PatientProfile, PractitionerProfile
+from ..audit.services import AuditService
+from ..audit.models import AuditCategory, AuditAction
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,27 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         vital_signs = serializer.save()
+
+        # Audit log - vital signs recorded
+        vitals_summary = []
+        if vital_signs.temperature:
+            vitals_summary.append(f"Temp: {vital_signs.temperature}°C")
+        if vital_signs.blood_pressure:
+            vitals_summary.append(f"BP: {vital_signs.blood_pressure}")
+        if vital_signs.heart_rate:
+            vitals_summary.append(f"HR: {vital_signs.heart_rate}")
+        if vital_signs.oxygen_saturation:
+            vitals_summary.append(f"SpO2: {vital_signs.oxygen_saturation}%")
+
+        AuditService.log(
+            request=request,
+            action=AuditAction.VITALS_RECORD,
+            category=AuditCategory.VITALS,
+            resource_type='VitalSigns',
+            resource_id=vital_signs.id,
+            resource_name=f"Vitals for {patient.user.get_full_name()}",
+            description=f"Recorded vital signs for {patient.user.get_full_name()}: {', '.join(vitals_summary)}" if vitals_summary else f"Recorded vital signs for {patient.user.get_full_name()}",
+        )
 
         # Return full serializer data with encounter_created flag
         output_serializer = VitalSignsSerializer(vital_signs)

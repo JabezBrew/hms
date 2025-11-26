@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { staffApi } from '@/lib/api/staff';
+import { authApi } from '@/lib/api/auth';
 import {
   ChevronLeft,
   Edit,
@@ -37,8 +38,11 @@ import {
   FlaskConical,
   Receipt,
   GraduationCap,
-  ExternalLink
+  ExternalLink,
+  KeyRound,
+  History,
 } from 'lucide-react';
+import StaffActivityLog from './StaffActivityLog';
 
 /**
  * StaffDetail - Chronicle-style staff profile
@@ -59,6 +63,7 @@ import {
 const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
   const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   if (!staff) return null;
 
@@ -175,6 +180,25 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
       console.error('Error deleting staff:', error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!staff.user_details?.id) {
+      toast.error('Cannot reset password: User information not available');
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
+      const response = await authApi.adminForceResetPassword(staff.user_details.id);
+      toast.success('Password reset email sent successfully');
+      console.log('Password reset response:', response);
+    } catch (error) {
+      toast.error(error.message || 'Failed to reset password');
+      console.error('Error resetting password:', error);
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -415,6 +439,18 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
           </section>
         )}
 
+        {/* Activity Log */}
+        <section>
+          <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+            <History className="h-5 w-5 text-muted-foreground" />
+            Activity Log
+          </h2>
+          <StaffActivityLog
+            userId={staff.user_details?.id}
+            userName={fullName}
+          />
+        </section>
+
         {/* Quick Actions */}
         <section className="pt-4 border-t border-border">
           <div className="flex flex-wrap gap-2">
@@ -428,6 +464,32 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
                 Schedule
               </Button>
             )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <KeyRound className="h-4 w-4 mr-2" />
+                  Reset Password
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset Password for {fullName}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will send a temporary password to {email || 'the user\'s email'}.
+                    The user will be required to change their password on next login.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleResetPassword}
+                    disabled={isResettingPassword}
+                  >
+                    {isResettingPassword ? 'Sending...' : 'Send Reset Email'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </section>
       </main>

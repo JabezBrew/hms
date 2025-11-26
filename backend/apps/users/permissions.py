@@ -48,6 +48,15 @@ class IsAdminOrDoctor(permissions.BasePermission):
         )
 
 
+class IsDoctorOnly(permissions.BasePermission):
+    """
+    Custom permission to allow access only to doctors.
+    Used for clinical functions like prescribing that require a licensed practitioner.
+    """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.user_type == 'doctor'
+
+
 class IsAdminOrNurse(permissions.BasePermission):
     """
     Custom permission to allow access to administrators and nurses.

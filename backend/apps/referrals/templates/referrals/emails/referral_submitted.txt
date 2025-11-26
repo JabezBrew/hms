@@ -1,0 +1,33 @@
+{{ urgency }} REFERRAL NOTIFICATION
+
+A new referral has been submitted to your department.
+
+REFERRAL DETAILS:
+Referral Number: {{ referral_number }}
+Urgency: {{ urgency }}
+Department: {{ department }}
+{% if specialty and specialty != 'General' %}Specialty: {{ specialty }}{% endif %}
+
+PATIENT INFORMATION:
+Name: {{ patient_name }}
+MRN: {{ patient_mrn }}
+
+REFERRING PROVIDER:
+{{ referring_provider }}
+
+REASON FOR REFERRAL:
+{{ reason }}
+
+CLINICAL SUMMARY:
+{{ clinical_summary }}
+
+{% if relevant_history %}RELEVANT MEDICAL HISTORY:
+{{ relevant_history }}
+{% endif %}
+
+Referral Date: {{ referral_date }}
+
+---
+Please review this referral and take appropriate action in the system.
+
+This is an automated notification from the Hospital Management System.

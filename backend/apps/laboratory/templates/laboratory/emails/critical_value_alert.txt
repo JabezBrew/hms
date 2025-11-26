@@ -1,0 +1,28 @@
+🚨 CRITICAL LAB VALUE ALERT 🚨
+
+Dear {{ provider_name }},
+
+A CRITICAL laboratory value has been reported and requires immediate attention.
+
+PATIENT INFORMATION:
+Name: {{ patient_name }}
+MRN: {{ patient_mrn }}
+
+LAB TEST DETAILS:
+Test: {{ test_name }}
+Result: {{ result_value }} {{ result_unit }}
+{% if reference_range %}Reference Range: {{ reference_range.low|default:"—" }} - {{ reference_range.high|default:"—" }} {{ reference_range.unit }}{% endif %}
+
+Order Number: {{ order_number }}
+Result Date: {{ result_date }}
+
+{% if result_notes %}NOTES:
+{{ result_notes }}
+{% endif %}
+
+⚠️ This critical value requires immediate clinical action.
+
+Please review the patient's chart and take appropriate clinical action as soon as possible.
+
+---
+This is an automated notification from the Hospital Management System.

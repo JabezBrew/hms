@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .alert-box { background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; margin: 20px 0; }
+        .alert-header { color: #991b1b; font-size: 24px; font-weight: bold; margin-bottom: 15px; }
+        .info-section { background-color: #f9fafb; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .info-label { font-weight: bold; color: #6b7280; }
+        .result-value { font-size: 28px; font-weight: bold; color: #ef4444; margin: 10px 0; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="alert-box">
+            <div class="alert-header">🚨 CRITICAL LAB VALUE ALERT</div>
+            <p>A CRITICAL laboratory value has been reported and requires immediate attention.</p>
+        </div>
+
+        <p>Dear {{ provider_name }},</p>
+
+        <div class="info-section">
+            <h3>Patient Information</h3>
+            <p><span class="info-label">Name:</span> {{ patient_name }}</p>
+            <p><span class="info-label">MRN:</span> {{ patient_mrn }}</p>
+        </div>
+
+        <div class="info-section">
+            <h3>Lab Test Details</h3>
+            <p><span class="info-label">Test:</span> {{ test_name }}</p>
+            <div class="result-value">{{ result_value }} {{ result_unit }}</div>
+            {% if reference_range %}
+            <p><span class="info-label">Reference Range:</span> {{ reference_range.low|default:"—" }} - {{ reference_range.high|default:"—" }} {{ reference_range.unit }}</p>
+            {% endif %}
+            <p><span class="info-label">Order Number:</span> {{ order_number }}</p>
+            <p><span class="info-label">Result Date:</span> {{ result_date }}</p>
+        </div>
+
+        {% if result_notes %}
+        <div class="info-section">
+            <h3>Notes</h3>
+            <p>{{ result_notes }}</p>
+        </div>
+        {% endif %}
+
+        <div style="background-color: #fef3c7; padding: 15px; margin: 20px 0; border-radius: 5px;">
+            <strong>⚠️ Action Required:</strong> This critical value requires immediate clinical action.
+            Please review the patient's chart and take appropriate action as soon as possible.
+        </div>
+
+        <div class="footer">
+            This is an automated notification from the Hospital Management System.
+        </div>
+    </div>
+</body>
+</html>

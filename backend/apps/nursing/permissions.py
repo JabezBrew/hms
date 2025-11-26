@@ -13,14 +13,10 @@ class IsNurseOrAdmin(permissions.BasePermission):
         if request.user.is_superuser or request.user.is_staff:
             return True
 
-        # Check if user has nurse role
-        if hasattr(request.user, 'staff_profile'):
-            staff = request.user.staff_profile
-            return staff.role in ['nurse', 'head_nurse', 'nurse_practitioner']
-
-        if hasattr(request.user, 'practitioner_profile'):
-            practitioner = request.user.practitioner_profile
-            return practitioner.role in ['nurse', 'head_nurse', 'nurse_practitioner']
+        # Check if user has nurse role via user_type
+        user_type = getattr(request.user, 'user_type', None)
+        if user_type in ['nurse', 'admin']:
+            return True
 
         return False
 
@@ -37,13 +33,9 @@ class IsNurseOrDoctor(permissions.BasePermission):
         if request.user.is_superuser or request.user.is_staff:
             return True
 
-        # Check if user has clinical role
-        if hasattr(request.user, 'staff_profile'):
-            staff = request.user.staff_profile
-            return staff.role in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner']
-
-        if hasattr(request.user, 'practitioner_profile'):
-            practitioner = request.user.practitioner_profile
-            return practitioner.role in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner']
+        # Check if user has clinical role via user_type
+        user_type = getattr(request.user, 'user_type', None)
+        if user_type in ['doctor', 'nurse', 'admin']:
+            return True
 
         return False

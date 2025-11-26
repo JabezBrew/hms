@@ -23,6 +23,8 @@ from ..fhir_client.utils import (
     generate_fhir_id, create_reference, create_codeable_concept, create_coding
 )
 from ..wards.services import ensure_encounter_for_entry
+from ..audit.services import AuditService
+from ..audit.models import AuditCategory, AuditAction
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +310,17 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
 
             # Save the note entry
             note_entry = serializer.save()
+
+            # Audit log - clinical note created
+            AuditService.log(
+                request=request,
+                action=AuditAction.NOTE_CREATE,
+                category=AuditCategory.CLINICAL,
+                resource_type='NoteEntry',
+                resource_id=note_entry.id,
+                resource_name=f"{template.title} for {patient.user.get_full_name()}",
+                description=f"Created clinical note '{template.title}' for patient {patient.user.get_full_name()}",
+            )
 
             # Include encounter_created flag in response for frontend awareness
             response_data = serializer.data
@@ -954,10 +967,10 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         If no encounter is provided, automatically finds or creates an active encounter
         for the patient.
         """
-        # Check if user is a doctor
-        if request.user.user_type not in ['doctor', 'admin']:
+        # Check if user is a doctor (admins cannot prescribe - clinical function only)
+        if request.user.user_type != 'doctor':
             return Response(
-                {'error': 'Only doctors can create prescriptions'},
+                {'error': 'Only doctors can prescribe medications'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -1012,6 +1025,19 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         # Create prescription with prescribed_by
         prescription = serializer.save(prescribed_by=practitioner_profile)
 
+        # Audit log - prescription created
+        AuditService.log(
+            request=request,
+            action=AuditAction.PRESCRIPTION_CREATE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='Prescription',
+            resource_id=prescription.id,
+            resource_name=f"{prescription.medication_name} for {patient.user.get_full_name()}",
+            description=f"Prescribed {prescription.medication_name} {prescription.dosage} "
+                        f"({prescription.get_route_display()}, {prescription.get_frequency_display()}) "
+                        f"for patient {patient.user.get_full_name()}",
+        )
+
         # Return full serialized data with encounter_created flag
         output_serializer = PrescriptionSerializer(prescription)
         response_data = output_serializer.data
@@ -1024,7 +1050,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         """
         Discontinue a prescription. Only doctors can discontinue.
         """
-        if request.user.user_type not in ['doctor', 'admin']:
+        if request.user.user_type != 'doctor':
             return Response(
                 {'error': 'Only doctors can discontinue prescriptions'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1056,6 +1082,18 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         prescription.discontinued_by = practitioner_profile
         prescription.discontinue_reason = serializer.validated_data['reason']
         prescription.save()
+
+        # Audit log - prescription discontinued
+        AuditService.log(
+            request=request,
+            action=AuditAction.PRESCRIPTION_DISCONTINUE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='Prescription',
+            resource_id=prescription.id,
+            resource_name=f"{prescription.medication_name}",
+            description=f"Discontinued {prescription.medication_name} for patient "
+                        f"{prescription.patient.user.get_full_name()}. Reason: {prescription.discontinue_reason}",
+        )
 
         output_serializer = PrescriptionSerializer(prescription)
         return Response(output_serializer.data)

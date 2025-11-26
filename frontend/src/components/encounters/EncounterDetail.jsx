@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -65,7 +65,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   } = useNoteEntriesForEncounter(id);
 
   // Update encounter when props change
-  useState(() => {
+  useEffect(() => {
     if (initialEncounter) {
       setEncounter(initialEncounter);
     }

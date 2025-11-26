@@ -3,11 +3,18 @@ Workflow engines - Business logic for clinical workflows
 """
 from django.db import transaction
 from django.utils import timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
-from .models import ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow, WorkflowStatus, WorkflowType, ClinicalNoteType
+from .models import (
+    ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
+    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WorkflowStatus, WorkflowType, ClinicalNoteType
+)
+from .definitions import WorkflowDefinition, WorkflowStepDefinition
+from .registry import get_workflow_definition, WORKFLOW_DEFINITIONS
 from apps.users.models import PatientProfile
+from apps.wards.models import Admission, Ward, Bed
 from apps.wards.proxies import EncounterProxy
 from apps.clinical_notes.models import NoteEntry
 
@@ -16,9 +23,83 @@ logger = logging.getLogger(__name__)
 
 class BaseWorkflowEngine:
     """
-    Base class for workflow engines
-    Provides common functionality for all workflows
+    Enhanced base class for workflow engines with template support
+    Provides common functionality for all workflows with definition-based configuration
     """
+
+    # Subclasses can override this for static definitions
+    workflow_definition: Optional[WorkflowDefinition] = None
+
+    @classmethod
+    def get_definition(cls, context: Dict = None) -> WorkflowDefinition:
+        """
+        Get workflow definition - override for dynamic definitions
+
+        Args:
+            context: Optional context for dynamic definition lookup
+
+        Returns:
+            WorkflowDefinition for this workflow type
+
+        Raises:
+            NotImplementedError: If workflow_definition is not set and not overridden
+        """
+        if cls.workflow_definition:
+            return cls.workflow_definition
+        raise NotImplementedError(
+            f"{cls.__name__} must either set workflow_definition or override get_definition()"
+        )
+
+    @classmethod
+    def get_step_config(cls, step_number: int, context: Dict = None) -> WorkflowStepDefinition:
+        """
+        Get configuration for a specific step
+
+        Args:
+            step_number: Step number (1-indexed)
+            context: Optional context for dynamic step lookup
+
+        Returns:
+            WorkflowStepDefinition for the requested step
+
+        Raises:
+            ValueError: If step_number is out of range
+        """
+        definition = cls.get_definition(context)
+        step = definition.get_step(step_number)
+        if step is None:
+            raise ValueError(
+                f"Step {step_number} not found in workflow {definition.workflow_type}"
+            )
+        return step
+
+    @classmethod
+    def validate_step(cls, workflow: ClinicalWorkflow, step_data: Dict) -> List[str]:
+        """
+        Validate step data against definition
+
+        Args:
+            workflow: Workflow instance
+            step_data: Data to validate for current step
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+
+        try:
+            step_config = cls.get_step_config(workflow.current_step)
+        except ValueError as e:
+            return [str(e)]
+
+        # Validate required fields
+        for field in step_config.fields:
+            if field.required and not step_data.get(field.name):
+                errors.append(f"{field.label} is required")
+
+        # TODO: Add more validation rules based on ValidationRule definitions
+
+        return errors
 
     @staticmethod
     def save_draft(workflow: ClinicalWorkflow, context_data: Dict[str, Any]) -> ClinicalWorkflow:
@@ -321,25 +402,494 @@ class ConsultationEngine(BaseWorkflowEngine):
 class WardRoundEngine(BaseWorkflowEngine):
     """
     Business logic for ward round workflow
+    Handles daily patient rounds for inpatient care
     """
-    # TODO: Implement ward round workflow
-    pass
+
+    workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.WARD_ROUND]
+
+    @staticmethod
+    @transaction.atomic
+    def start(user, patient_id, admission_id, initial_data=None) -> Dict[str, Any]:
+        """
+        Start a ward round for an admitted patient
+
+        Args:
+            user: User starting the workflow
+            patient_id: PatientProfile ID (UUID)
+            admission_id: Admission ID (UUID)
+            initial_data: Optional initial context data
+
+        Returns:
+            Dictionary containing workflow and ward_round_data instances
+        """
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+            admission = Admission.objects.select_related('bed__ward').get(
+                id=admission_id,
+                patient=patient,
+                status='admitted'
+            )
+        except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
+            raise ValueError(str(e))
+
+        definition = WardRoundEngine.get_definition()
+
+        # Prepare context data
+        context_data = {
+            'admission_id': str(admission_id),
+            'ward_name': admission.bed.ward.name if admission.bed else None,
+            'bed_number': admission.bed.bed_number if admission.bed else None,
+            'admission_date': admission.admission_date.isoformat(),
+            'prep_data': WardRoundEngine._load_prep_data(patient, admission),
+        }
+
+        if initial_data:
+            context_data.update(initial_data)
+
+        # Create workflow
+        workflow = ClinicalWorkflow.objects.create(
+            workflow_type=WorkflowType.WARD_ROUND,
+            status=WorkflowStatus.IN_PROGRESS,
+            user=user,
+            patient=patient,
+            current_step=1,
+            total_steps=definition.total_steps,
+            context_data=context_data,
+        )
+
+        # Create type-specific data model
+        ward_round_data = WardRoundWorkflow.objects.create(workflow=workflow)
+
+        logger.info(f"Started ward round workflow {workflow.id} for patient {patient_id}")
+
+        return {
+            'workflow': workflow,
+            'ward_round_data': ward_round_data,
+        }
+
+    @staticmethod
+    def _load_prep_data(patient, admission) -> Dict:
+        """Load context data for ward round"""
+        from apps.nursing.models import VitalSigns
+        from datetime import timedelta
+
+        # Get latest vitals (last 24 hours)
+        latest_vitals = VitalSigns.objects.filter(
+            patient=patient,
+            recorded_at__gte=timezone.now() - timedelta(days=1)
+        ).order_by('-recorded_at').first()
+
+        # Calculate length of stay
+        los_days = (timezone.now().date() - admission.admission_date.date()).days
+
+        return {
+            'patient_name': patient.user.get_full_name(),
+            'mrn': patient.medical_record_number,
+            'admission_days': los_days,
+            'admission_reason': admission.admission_notes if hasattr(admission, 'admission_notes') else None,
+            'latest_vitals': {
+                'temperature': str(latest_vitals.temperature) if latest_vitals and latest_vitals.temperature else None,
+                'blood_pressure': latest_vitals.blood_pressure if latest_vitals else None,
+                'heart_rate': latest_vitals.heart_rate if latest_vitals else None,
+                'respiratory_rate': latest_vitals.respiratory_rate if latest_vitals else None,
+                'spo2': latest_vitals.spo2 if latest_vitals else None,
+                'recorded_at': latest_vitals.recorded_at.isoformat() if latest_vitals else None,
+            } if latest_vitals else {},
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
+        """Update ward round step data"""
+        ward_round_data = workflow.ward_round_data
+
+        # Update ward round specific fields
+        for field, value in step_data.items():
+            if hasattr(ward_round_data, field):
+                setattr(ward_round_data, field, value)
+        ward_round_data.save()
+
+        # Update workflow
+        workflow.context_data.update(step_data)
+        workflow.mark_step_complete(step_number)
+        if step_number < workflow.total_steps:
+            workflow.advance_to_step(step_number + 1)
+        workflow.save()
+
+        logger.info(f"Updated ward round workflow {workflow.id} step {step_number}")
+
+        return workflow
+
+    @staticmethod
+    @transaction.atomic
+    def complete(workflow, final_data) -> Dict[str, Any]:
+        """Complete ward round and create progress note"""
+        ward_round_data = workflow.ward_round_data
+
+        # Update final data
+        for field, value in final_data.items():
+            if hasattr(ward_round_data, field):
+                setattr(ward_round_data, field, value)
+        ward_round_data.save()
+
+        # Create progress note
+        note_content = f"""Ward Round - {workflow.patient.user.get_full_name()}
+
+Date: {timezone.now().strftime('%Y-%m-%d %H:%M')}
+Day {workflow.context_data.get('prep_data', {}).get('admission_days', 'N/A')} of admission
+
+Overnight Events:
+{ward_round_data.overnight_events or 'None reported'}
+
+Nursing Concerns:
+{ward_round_data.nursing_concerns or 'None'}
+
+Examination Findings:
+{ward_round_data.examination_findings}
+
+Assessment:
+{ward_round_data.assessment}
+
+Plan:
+{ward_round_data.plan_notes}
+"""
+
+        note = NoteEntry.objects.create(
+            encounter_id=workflow.encounter_id,
+            author=workflow.user,
+            content=note_content,
+            note_type='progress_note',
+            title=f'Ward Round - {workflow.patient.user.get_full_name()}',
+        )
+
+        workflow.complete_workflow()
+
+        logger.info(f"Completed ward round workflow {workflow.id}")
+
+        return {
+            'success': True,
+            'workflow_id': str(workflow.id),
+            'artifacts': [{'type': 'note', 'id': str(note.id)}],
+        }
 
 
 class AdmissionEngine(BaseWorkflowEngine):
     """
     Business logic for admission workflow
+    Handles patient admissions with bed assignment
     """
-    # TODO: Implement admission workflow
-    pass
+
+    workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.ADMISSION]
+
+    @staticmethod
+    @transaction.atomic
+    def start(user, patient_id, initial_data=None) -> Dict[str, Any]:
+        """
+        Start admission workflow
+
+        Args:
+            user: User starting the workflow
+            patient_id: PatientProfile ID (UUID)
+            initial_data: Optional initial context data
+
+        Returns:
+            Dictionary containing workflow and admission_data instances
+        """
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            raise ValueError(f"Patient with ID {patient_id} not found")
+
+        definition = AdmissionEngine.get_definition()
+
+        # Prepare context data
+        context_data = {
+            'patient_name': patient.user.get_full_name(),
+            'mrn': patient.medical_record_number,
+            'prep_data': AdmissionEngine._load_prep_data(patient),
+        }
+
+        if initial_data:
+            context_data.update(initial_data)
+
+        # Create workflow
+        workflow = ClinicalWorkflow.objects.create(
+            workflow_type=WorkflowType.ADMISSION,
+            status=WorkflowStatus.IN_PROGRESS,
+            user=user,
+            patient=patient,
+            current_step=1,
+            total_steps=definition.total_steps,
+            context_data=context_data,
+        )
+
+        # Create type-specific data model
+        admission_data = AdmissionWorkflow.objects.create(workflow=workflow)
+
+        logger.info(f"Started admission workflow {workflow.id} for patient {patient_id}")
+
+        return {
+            'workflow': workflow,
+            'admission_data': admission_data,
+        }
+
+    @staticmethod
+    def _load_prep_data(patient) -> Dict:
+        """Load context data for admission"""
+        return {
+            'patient_name': patient.user.get_full_name(),
+            'mrn': patient.medical_record_number,
+            'dob': patient.user.date_of_birth.isoformat() if hasattr(patient.user, 'date_of_birth') and patient.user.date_of_birth else None,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
+        """Update admission step data"""
+        admission_data = workflow.admission_data
+
+        # Update admission specific fields
+        for field, value in step_data.items():
+            if hasattr(admission_data, field):
+                setattr(admission_data, field, value)
+        admission_data.save()
+
+        # Update workflow
+        workflow.context_data.update(step_data)
+        workflow.mark_step_complete(step_number)
+        if step_number < workflow.total_steps:
+            workflow.advance_to_step(step_number + 1)
+        workflow.save()
+
+        logger.info(f"Updated admission workflow {workflow.id} step {step_number}")
+
+        return workflow
+
+    @staticmethod
+    @transaction.atomic
+    def complete(workflow, final_data) -> Dict[str, Any]:
+        """Complete admission and create admission record"""
+        admission_data = workflow.admission_data
+
+        # Update final data
+        for field, value in final_data.items():
+            if hasattr(admission_data, field):
+                setattr(admission_data, field, value)
+        admission_data.save()
+
+        # Create Admission record
+        admission = Admission.objects.create(
+            patient=workflow.patient,
+            admitting_doctor=workflow.user.practitionerprofile if hasattr(workflow.user, 'practitionerprofile') else None,
+            ward_id=admission_data.ward_id,
+            bed_id=admission_data.bed_id,
+            admission_date=timezone.now(),
+            admission_type=admission_data.admission_type,
+            admission_notes=admission_data.admission_reason,
+            status='admitted',
+        )
+
+        # Mark bed as occupied
+        if admission_data.bed_id:
+            try:
+                bed = Bed.objects.get(id=admission_data.bed_id)
+                bed.status = 'occupied'
+                bed.save()
+            except Bed.DoesNotExist:
+                logger.warning(f"Bed {admission_data.bed_id} not found")
+
+        # Create FHIR encounter
+        encounter = EncounterProxy.create(
+            patient_id=str(workflow.patient.fhir_patient_id),
+            practitioner_id=str(workflow.user.practitionerprofile.fhir_practitioner_id) if hasattr(workflow.user, 'practitionerprofile') and workflow.user.practitionerprofile.fhir_practitioner_id else None,
+            encounter_type='inpatient',
+            reason=admission_data.admission_reason,
+            start_date=timezone.now(),
+        )
+
+        workflow.encounter_id = encounter.get('id') if encounter else None
+
+        # Create admission note
+        note = NoteEntry.objects.create(
+            encounter_id=workflow.encounter_id,
+            author=workflow.user,
+            content=admission_data.admission_note,
+            note_type='admission',
+            title=f'Admission Note - {workflow.patient.user.get_full_name()}',
+        )
+
+        workflow.complete_workflow()
+
+        logger.info(f"Completed admission workflow {workflow.id}, created admission {admission.id}")
+
+        return {
+            'success': True,
+            'workflow_id': str(workflow.id),
+            'admission_id': str(admission.id),
+            'artifacts': [
+                {'type': 'encounter', 'id': workflow.encounter_id},
+                {'type': 'admission_record', 'id': str(admission.id)},
+                {'type': 'note', 'id': str(note.id)},
+            ],
+        }
 
 
 class DischargeEngine(BaseWorkflowEngine):
     """
     Business logic for discharge workflow
+    Handles patient discharges with medication reconciliation
     """
-    # TODO: Implement discharge workflow
-    pass
+
+    workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.DISCHARGE]
+
+    @staticmethod
+    @transaction.atomic
+    def start(user, patient_id, admission_id, initial_data=None) -> Dict[str, Any]:
+        """
+        Start discharge workflow
+
+        Args:
+            user: User starting the workflow
+            patient_id: PatientProfile ID (UUID)
+            admission_id: Admission ID (UUID)
+            initial_data: Optional initial context data
+
+        Returns:
+            Dictionary containing workflow and discharge_data instances
+        """
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+            admission = Admission.objects.select_related('bed__ward').get(
+                id=admission_id,
+                patient=patient,
+                status='admitted'
+            )
+        except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
+            raise ValueError(str(e))
+
+        definition = DischargeEngine.get_definition()
+
+        # Prepare context data
+        context_data = {
+            'admission_id': str(admission_id),
+            'admission_date': admission.admission_date.isoformat(),
+            'ward_name': admission.bed.ward.name if admission.bed else None,
+            'prep_data': DischargeEngine._load_prep_data(patient, admission),
+        }
+
+        if initial_data:
+            context_data.update(initial_data)
+
+        # Create workflow
+        workflow = ClinicalWorkflow.objects.create(
+            workflow_type=WorkflowType.DISCHARGE,
+            status=WorkflowStatus.IN_PROGRESS,
+            user=user,
+            patient=patient,
+            current_step=1,
+            total_steps=definition.total_steps,
+            context_data=context_data,
+        )
+
+        # Create type-specific data model
+        discharge_data = DischargeWorkflow.objects.create(workflow=workflow)
+
+        logger.info(f"Started discharge workflow {workflow.id} for patient {patient_id}")
+
+        return {
+            'workflow': workflow,
+            'discharge_data': discharge_data,
+        }
+
+    @staticmethod
+    def _load_prep_data(patient, admission) -> Dict:
+        """Load context data for discharge"""
+        los_days = (timezone.now().date() - admission.admission_date.date()).days
+
+        return {
+            'patient_name': patient.user.get_full_name(),
+            'mrn': patient.medical_record_number,
+            'admission_days': los_days,
+            'admission_date': admission.admission_date.isoformat(),
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
+        """Update discharge step data"""
+        discharge_data = workflow.discharge_data
+
+        # Update discharge specific fields
+        for field, value in step_data.items():
+            if hasattr(discharge_data, field):
+                setattr(discharge_data, field, value)
+        discharge_data.save()
+
+        # Update workflow
+        workflow.context_data.update(step_data)
+        workflow.mark_step_complete(step_number)
+        if step_number < workflow.total_steps:
+            workflow.advance_to_step(step_number + 1)
+        workflow.save()
+
+        logger.info(f"Updated discharge workflow {workflow.id} step {step_number}")
+
+        return workflow
+
+    @staticmethod
+    @transaction.atomic
+    def complete(workflow, final_data) -> Dict[str, Any]:
+        """Complete discharge and update admission record"""
+        discharge_data = workflow.discharge_data
+
+        # Update final data
+        for field, value in final_data.items():
+            if hasattr(discharge_data, field):
+                setattr(discharge_data, field, value)
+        discharge_data.save()
+
+        # Update Admission record
+        admission_id = workflow.context_data.get('admission_id')
+        if admission_id:
+            try:
+                admission = Admission.objects.get(id=admission_id)
+                admission.discharge_date = discharge_data.discharge_date or timezone.now()
+                admission.status = 'discharged'
+                admission.discharge_notes = discharge_data.discharge_summary
+                admission.save()
+
+                # Mark bed as available
+                if admission.bed:
+                    admission.bed.status = 'available'
+                    admission.bed.save()
+
+                logger.info(f"Updated admission {admission_id} to discharged status")
+            except Admission.DoesNotExist:
+                logger.warning(f"Admission {admission_id} not found")
+
+        # Create discharge note
+        note = NoteEntry.objects.create(
+            encounter_id=workflow.encounter_id,
+            author=workflow.user,
+            content=discharge_data.discharge_summary,
+            note_type='discharge',
+            title=f'Discharge Summary - {workflow.patient.user.get_full_name()}',
+        )
+
+        workflow.complete_workflow()
+
+        logger.info(f"Completed discharge workflow {workflow.id}")
+
+        return {
+            'success': True,
+            'workflow_id': str(workflow.id),
+            'admission_id': admission_id,
+            'artifacts': [
+                {'type': 'encounter_update', 'id': workflow.encounter_id},
+                {'type': 'note', 'id': str(note.id)},
+                {'type': 'discharge_record', 'id': admission_id},
+            ],
+        }
 
 
 class ClinicalNoteEngine(BaseWorkflowEngine):

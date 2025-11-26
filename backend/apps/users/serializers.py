@@ -466,3 +466,25 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"Failed to create FHIR Practitioner resource: {str(e)}")
 
         return staff
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Serializer for requesting a password reset"""
+    email = serializers.EmailField(required=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Serializer for confirming password reset with token"""
+    token = serializers.CharField(required=True, min_length=32)
+    password = serializers.CharField(required=True, min_length=8, write_only=True)
+    password_confirm = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+        return attrs
+
+
+class AdminForceResetSerializer(serializers.Serializer):
+    """Serializer for admin-initiated password reset"""
+    user_id = serializers.UUIDField(required=True)

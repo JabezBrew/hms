@@ -12,7 +12,8 @@ import {
   Package,
   Clock,
   BookOpen,
-  ClipboardList
+  ClipboardList,
+  FileSearch
 } from "lucide-react"
 
 import {
@@ -40,10 +41,27 @@ export function AppSidebar() {
   const { user } = useAuth()
   const userRole = user?.role || ''
 
+  // Get role-specific dashboard URL
+  const getDashboardUrl = (role) => {
+    if (['nurse', 'head_nurse', 'nurse_practitioner'].includes(role)) {
+      return '/dashboards/nurse';
+    }
+    if (['doctor', 'inpatient_doctor'].includes(role)) {
+      return '/dashboards/inpatient';
+    }
+    if (['receptionist', 'front_desk'].includes(role)) {
+      return '/dashboards/reception';
+    }
+    if (role === 'admin') {
+      return '/dashboards/admin';
+    }
+    return '/dashboard/provider'; // Fallback to legacy dashboard
+  };
+
   // Define menu items with their access roles
   const menuItems = {
     primary: {
-      commandCenter: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
+      dashboard: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'front_desk'],
       schedule: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
       availability: ['admin', 'doctor', 'practitioner', 'physician'],
       inbox: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
@@ -58,6 +76,7 @@ export function AppSidebar() {
       pharmacy: ['admin', 'pharmacist', 'doctor'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
+      auditLogs: ['admin'],
     }
   }
 
@@ -67,11 +86,11 @@ export function AppSidebar() {
         <SidebarGroupLabel>Menu</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {hasAccess(userRole, menuItems.primary.commandCenter) && (
+            {hasAccess(userRole, menuItems.primary.dashboard) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Command Center" href="/dashboard/provider">
+                <SidebarMenuButton tooltip="Dashboard" href={getDashboardUrl(userRole)}>
                   <LayoutDashboard />
-                  <span>Command Center</span>
+                  <span>Dashboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
@@ -191,6 +210,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Staff" href="/staff">
                   <Shield />
                   <span>Staff</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.auditLogs) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Audit Logs" href="/admin/audit-logs">
+                  <FileSearch />
+                  <span>Audit Logs</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

@@ -237,6 +237,137 @@ class ClinicalNoteWorkflow(models.Model):
         return f"{self.get_note_type_display()} - {patient_name}"
 
 
+class WardRoundWorkflow(models.Model):
+    """
+    Specific model for ward round workflow data
+    Stores data for inpatient daily rounds
+    """
+    workflow = models.OneToOneField(
+        ClinicalWorkflow,
+        on_delete=models.CASCADE,
+        related_name='ward_round_data'
+    )
+
+    # Step 1: Patient Review
+    overnight_events = models.TextField(blank=True)
+    nursing_concerns = models.TextField(blank=True)
+
+    # Step 2: Clinical Assessment
+    examination_findings = models.TextField(blank=True)
+    vitals_reviewed = models.BooleanField(default=False)
+
+    # Step 3: Plan
+    assessment = models.TextField(blank=True)
+    plan_notes = models.TextField(blank=True)
+    orders_placed = models.JSONField(default=list, blank=True)
+
+    # Step 4: Documentation
+    progress_note = models.TextField(blank=True)
+    estimated_discharge = models.DateField(null=True, blank=True)
+    discharge_planning_needed = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'workflows_ward_round'
+
+    def __str__(self):
+        patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
+        return f"Ward Round - {patient_name}"
+
+
+class AdmissionWorkflow(models.Model):
+    """
+    Specific model for admission workflow data
+    Stores data for patient admissions
+    """
+    workflow = models.OneToOneField(
+        ClinicalWorkflow,
+        on_delete=models.CASCADE,
+        related_name='admission_data'
+    )
+
+    # Step 1: Patient Info
+    patient_verified = models.BooleanField(default=False)
+    emergency_contact_name = models.CharField(max_length=255, blank=True)
+    emergency_contact_relationship = models.CharField(max_length=100, blank=True)
+    emergency_contact_phone = models.CharField(max_length=50, blank=True)
+
+    # Step 2: Bed Assignment
+    ward_id = models.UUIDField(null=True, blank=True)
+    bed_id = models.UUIDField(null=True, blank=True)
+    admission_type = models.CharField(max_length=50, blank=True)
+    admission_source = models.CharField(max_length=100, blank=True)
+
+    # Step 3: Clinical Info
+    admission_reason = models.TextField(blank=True)
+    chief_complaint = models.TextField(blank=True)
+    initial_diagnosis = models.TextField(blank=True)
+    relevant_history = models.TextField(blank=True)
+
+    # Step 4: Orders
+    diet = models.CharField(max_length=100, blank=True)
+    activity = models.CharField(max_length=100, blank=True)
+    vitals_frequency = models.CharField(max_length=50, blank=True)
+    medications = models.JSONField(default=list, blank=True)
+    labs = models.JSONField(default=list, blank=True)
+    nursing_instructions = models.TextField(blank=True)
+
+    # Step 5: Documentation
+    admission_note = models.TextField(blank=True)
+    expected_los = models.IntegerField(null=True, blank=True, verbose_name='Expected Length of Stay')
+    attending_physician = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = 'workflows_admission'
+
+    def __str__(self):
+        patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
+        return f"Admission - {patient_name}"
+
+
+class DischargeWorkflow(models.Model):
+    """
+    Specific model for discharge workflow data
+    Stores data for patient discharges
+    """
+    workflow = models.OneToOneField(
+        ClinicalWorkflow,
+        on_delete=models.CASCADE,
+        related_name='discharge_data'
+    )
+
+    # Step 1: Discharge Planning
+    discharge_criteria_met = models.JSONField(default=list, blank=True)
+    discharge_disposition = models.CharField(max_length=100, blank=True)
+    discharge_date = models.DateTimeField(null=True, blank=True)
+    transportation = models.CharField(max_length=100, blank=True)
+
+    # Step 2: Medications
+    medications_reconciled = models.BooleanField(default=False)
+    discharge_prescriptions = models.JSONField(default=list, blank=True)
+    medication_changes = models.TextField(blank=True)
+    medication_education_completed = models.BooleanField(default=False)
+
+    # Step 3: Instructions
+    activity_restrictions = models.TextField(blank=True)
+    diet_instructions = models.TextField(blank=True)
+    wound_care = models.TextField(blank=True)
+    warning_signs = models.TextField(blank=True)
+    follow_up_appointments = models.TextField(blank=True)
+
+    # Step 4: Documentation
+    discharge_summary = models.TextField(blank=True)
+    patient_education_complete = models.BooleanField(default=False)
+    discharge_instructions_given = models.BooleanField(default=False)
+    prescriptions_sent = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'workflows_discharge'
+
+    def __str__(self):
+        patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
+        return f"Discharge - {patient_name}"
+
+
 class WorkflowTemplate(models.Model):
     """
     Templates for common workflow scenarios

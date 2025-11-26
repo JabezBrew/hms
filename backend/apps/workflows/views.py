@@ -6,7 +6,11 @@ from django.shortcuts import get_object_or_404
 from django.db import models
 import logging
 
-from .models import ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow, WorkflowTemplate, WorkflowType
+from .models import (
+    ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
+    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WorkflowTemplate, WorkflowType
+)
 from .serializers import (
     ClinicalWorkflowSerializer,
     ConsultationWorkflowSerializer,
@@ -17,10 +21,25 @@ from .serializers import (
     ClinicalNoteWorkflowCreateSerializer,
     ClinicalNoteWorkflowUpdateSerializer,
     ClinicalNoteWorkflowCompleteSerializer,
+    WardRoundWorkflowSerializer,
+    WardRoundWorkflowCreateSerializer,
+    WardRoundWorkflowUpdateSerializer,
+    WardRoundWorkflowCompleteSerializer,
+    AdmissionWorkflowSerializer,
+    AdmissionWorkflowCreateSerializer,
+    AdmissionWorkflowUpdateSerializer,
+    AdmissionWorkflowCompleteSerializer,
+    DischargeWorkflowSerializer,
+    DischargeWorkflowCreateSerializer,
+    DischargeWorkflowUpdateSerializer,
+    DischargeWorkflowCompleteSerializer,
     WorkflowTemplateSerializer,
     WorkflowDraftSerializer,
 )
-from .engines import ConsultationEngine, ClinicalNoteEngine
+from .engines import (
+    ConsultationEngine, ClinicalNoteEngine,
+    WardRoundEngine, AdmissionEngine, DischargeEngine
+)
 from apps.users.permissions import IsAdminOrOwner
 
 logger = logging.getLogger(__name__)
@@ -428,6 +447,370 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             logger.error(f"Error completing clinical note: {str(e)}")
             return Response(
                 {'error': f'Failed to complete clinical note: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # ====================================
+    # Ward Round Workflow Actions
+    # ====================================
+
+    @action(detail=False, methods=['post'], url_path='ward-round/start')
+    def start_ward_round(self, request):
+        """
+        Start a new ward round workflow
+
+        POST /api/workflows/ward-round/start/
+        Body: {
+            "patient_id": "uuid",
+            "admission_id": "uuid",
+            "initial_data": {}  // optional
+        }
+        """
+        serializer = WardRoundWorkflowCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = WardRoundEngine.start(
+                user=request.user,
+                patient_id=serializer.validated_data['patient_id'],
+                admission_id=serializer.validated_data['admission_id'],
+                initial_data=serializer.validated_data.get('initial_data', {}),
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(result['workflow'])
+            ward_round_serializer = WardRoundWorkflowSerializer(result['ward_round_data'])
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'ward_round_data': ward_round_serializer.data,
+            }, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error starting ward round: {str(e)}")
+            return Response(
+                {'error': f'Failed to start ward round: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], url_path='ward-round/step')
+    def update_ward_round_step(self, request, pk=None):
+        """
+        Update ward round workflow step
+
+        PATCH /api/workflows/{id}/ward-round/step/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.WARD_ROUND:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = WardRoundWorkflowUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            step_data = serializer.validated_data.get('step_data', {})
+
+            # Update workflow
+            updated_workflow = WardRoundEngine.update_step(
+                workflow=workflow,
+                step_number=workflow.current_step,
+                step_data=step_data,
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(updated_workflow)
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'message': f'Step {workflow.current_step} updated successfully'
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating ward round step: {str(e)}")
+            return Response(
+                {'error': f'Failed to update step: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'], url_path='ward-round/complete')
+    def complete_ward_round(self, request, pk=None):
+        """
+        Complete ward round workflow
+
+        POST /api/workflows/{id}/ward-round/complete/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.WARD_ROUND:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = WardRoundWorkflowCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = WardRoundEngine.complete(
+                workflow=workflow,
+                final_data=serializer.validated_data.get('final_data', {}),
+            )
+
+            return Response(result)
+
+        except Exception as e:
+            logger.error(f"Error completing ward round: {str(e)}")
+            return Response(
+                {'error': f'Failed to complete ward round: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # ====================================
+    # Admission Workflow Actions
+    # ====================================
+
+    @action(detail=False, methods=['post'], url_path='admission/start')
+    def start_admission(self, request):
+        """
+        Start a new admission workflow
+
+        POST /api/workflows/admission/start/
+        Body: {
+            "patient_id": "uuid",
+            "initial_data": {}  // optional
+        }
+        """
+        serializer = AdmissionWorkflowCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = AdmissionEngine.start(
+                user=request.user,
+                patient_id=serializer.validated_data['patient_id'],
+                initial_data=serializer.validated_data.get('initial_data', {}),
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(result['workflow'])
+            admission_serializer = AdmissionWorkflowSerializer(result['admission_data'])
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'admission_data': admission_serializer.data,
+            }, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error starting admission: {str(e)}")
+            return Response(
+                {'error': f'Failed to start admission: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], url_path='admission/step')
+    def update_admission_step(self, request, pk=None):
+        """
+        Update admission workflow step
+
+        PATCH /api/workflows/{id}/admission/step/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.ADMISSION:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = AdmissionWorkflowUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            step_data = serializer.validated_data.get('step_data', {})
+
+            # Update workflow
+            updated_workflow = AdmissionEngine.update_step(
+                workflow=workflow,
+                step_number=workflow.current_step,
+                step_data=step_data,
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(updated_workflow)
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'message': f'Step {workflow.current_step} updated successfully'
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating admission step: {str(e)}")
+            return Response(
+                {'error': f'Failed to update step: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'], url_path='admission/complete')
+    def complete_admission(self, request, pk=None):
+        """
+        Complete admission workflow
+
+        POST /api/workflows/{id}/admission/complete/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.ADMISSION:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = AdmissionWorkflowCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = AdmissionEngine.complete(
+                workflow=workflow,
+                final_data=serializer.validated_data.get('final_data', {}),
+            )
+
+            return Response(result)
+
+        except Exception as e:
+            logger.error(f"Error completing admission: {str(e)}")
+            return Response(
+                {'error': f'Failed to complete admission: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # ====================================
+    # Discharge Workflow Actions
+    # ====================================
+
+    @action(detail=False, methods=['post'], url_path='discharge/start')
+    def start_discharge(self, request):
+        """
+        Start a new discharge workflow
+
+        POST /api/workflows/discharge/start/
+        Body: {
+            "patient_id": "uuid",
+            "admission_id": "uuid",
+            "initial_data": {}  // optional
+        }
+        """
+        serializer = DischargeWorkflowCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = DischargeEngine.start(
+                user=request.user,
+                patient_id=serializer.validated_data['patient_id'],
+                admission_id=serializer.validated_data['admission_id'],
+                initial_data=serializer.validated_data.get('initial_data', {}),
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(result['workflow'])
+            discharge_serializer = DischargeWorkflowSerializer(result['discharge_data'])
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'discharge_data': discharge_serializer.data,
+            }, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error starting discharge: {str(e)}")
+            return Response(
+                {'error': f'Failed to start discharge: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], url_path='discharge/step')
+    def update_discharge_step(self, request, pk=None):
+        """
+        Update discharge workflow step
+
+        PATCH /api/workflows/{id}/discharge/step/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.DISCHARGE:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = DischargeWorkflowUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            step_data = serializer.validated_data.get('step_data', {})
+
+            # Update workflow
+            updated_workflow = DischargeEngine.update_step(
+                workflow=workflow,
+                step_number=workflow.current_step,
+                step_data=step_data,
+            )
+
+            workflow_serializer = ClinicalWorkflowSerializer(updated_workflow)
+
+            return Response({
+                'workflow': workflow_serializer.data,
+                'message': f'Step {workflow.current_step} updated successfully'
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating discharge step: {str(e)}")
+            return Response(
+                {'error': f'Failed to update step: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'], url_path='discharge/complete')
+    def complete_discharge(self, request, pk=None):
+        """
+        Complete discharge workflow
+
+        POST /api/workflows/{id}/discharge/complete/
+        """
+        workflow = self.get_object()
+
+        if workflow.workflow_type != WorkflowType.DISCHARGE:
+            return Response(
+                {'error': 'Invalid workflow type'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = DischargeWorkflowCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = DischargeEngine.complete(
+                workflow=workflow,
+                final_data=serializer.validated_data.get('final_data', {}),
+            )
+
+            return Response(result)
+
+        except Exception as e:
+            logger.error(f"Error completing discharge: {str(e)}")
+            return Response(
+                {'error': f'Failed to complete discharge: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

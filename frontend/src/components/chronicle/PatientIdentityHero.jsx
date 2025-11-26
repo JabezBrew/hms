@@ -32,6 +32,9 @@ const PatientIdentityHero = ({
   onAddNote,
   onRecordVitals,
   onPrescribe,
+  onOrderLabs,
+  onRequestConsult,
+  onScheduleFollowUp,
   className
 }) => {
   // ============================================
@@ -336,11 +339,11 @@ const PatientIdentityHero = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>Order Labs</DropdownMenuItem>
-              <DropdownMenuItem>Request Consult</DropdownMenuItem>
-              <DropdownMenuItem>Schedule Follow-up</DropdownMenuItem>
+              <DropdownMenuItem onClick={onOrderLabs}>Order Labs</DropdownMenuItem>
+              <DropdownMenuItem onClick={onRequestConsult}>Request Consult</DropdownMenuItem>
+              <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Print Summary</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.print()}>Print Summary</DropdownMenuItem>
               <DropdownMenuItem>Export Record</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

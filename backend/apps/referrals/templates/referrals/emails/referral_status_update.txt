@@ -1,0 +1,34 @@
+{{ title }}
+
+Dear {{ provider_name }},
+
+{{ message }}
+
+REFERRAL DETAILS:
+Referral Number: {{ referral_number }}
+Department: {{ department }}
+{% if specialty and specialty != 'General' %}Specialty: {{ specialty }}{% endif %}
+
+PATIENT INFORMATION:
+Name: {{ patient_name }}
+MRN: {{ patient_mrn }}
+
+REASON FOR REFERRAL:
+{{ reason }}
+
+{% if specialist_name %}SPECIALIST:
+{{ specialist_name }}
+{% endif %}
+
+{% if additional_info %}ADDITIONAL INFORMATION:
+{{ additional_info }}
+{% endif %}
+
+{% if recommendations %}RECOMMENDATIONS:
+{{ recommendations }}
+{% endif %}
+
+---
+You can view the full referral details in the Hospital Management System.
+
+This is an automated notification from the Hospital Management System.

@@ -17,6 +17,8 @@ import {
   AddVitalsSlideOver,
   AddPrescriptionSlideOver
 } from "@/components/chronicle";
+import LabOrderForm from "@/components/laboratory/LabOrderForm";
+import ReferralForm from "@/components/referrals/ReferralForm";
 import {
   Clock,
   FileText,
@@ -51,13 +53,15 @@ const PatientChroniclePage = () => {
   const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
   const [isAddVitalsOpen, setIsAddVitalsOpen] = useState(false);
   const [isAddPrescriptionOpen, setIsAddPrescriptionOpen] = useState(false);
+  const [isLabOrderOpen, setIsLabOrderOpen] = useState(false);
+  const [isReferralOpen, setIsReferralOpen] = useState(false);
   const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
 
   // Check if any slide-over is open (for timeline compression)
-  const isAnySlideOverOpen = isAddNoteOpen || isAddVitalsOpen || isAddPrescriptionOpen;
+  const isAnySlideOverOpen = isAddNoteOpen || isAddVitalsOpen || isAddPrescriptionOpen || isLabOrderOpen || isReferralOpen;
 
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
@@ -355,6 +359,49 @@ const PatientChroniclePage = () => {
     setIsAddPrescriptionOpen(false);
   }, [refetch, refetchClinical, id, invalidateTimeline]);
 
+  // Lab Order handlers
+  const handleOrderLabs = useCallback(() => {
+    setIsLabOrderOpen(true);
+  }, []);
+
+  const handleCloseLabOrder = useCallback(() => {
+    setIsLabOrderOpen(false);
+  }, []);
+
+  const handleLabOrderCreated = useCallback(() => {
+    // Refresh timeline and clinical data in parallel
+    Promise.all([
+      invalidateTimeline(id),
+      refetch(),
+      refetchClinical(),
+    ]);
+    setIsLabOrderOpen(false);
+  }, [refetch, refetchClinical, id, invalidateTimeline]);
+
+  // Referral/Consult handlers
+  const handleRequestConsult = useCallback(() => {
+    setIsReferralOpen(true);
+  }, []);
+
+  const handleCloseReferral = useCallback(() => {
+    setIsReferralOpen(false);
+  }, []);
+
+  const handleReferralCreated = useCallback(() => {
+    // Refresh timeline and clinical data in parallel
+    Promise.all([
+      invalidateTimeline(id),
+      refetch(),
+      refetchClinical(),
+    ]);
+    setIsReferralOpen(false);
+  }, [refetch, refetchClinical, id, invalidateTimeline]);
+
+  // Schedule Follow-up handler (navigate to appointments page)
+  const handleScheduleFollowUp = useCallback(() => {
+    navigate(`/appointments/create?patient=${id}`);
+  }, [navigate, id]);
+
   // ============================================
   // Loading state
   // ============================================
@@ -421,6 +468,9 @@ const PatientChroniclePage = () => {
         onAddNote={handleAddNote}
         onRecordVitals={handleRecordVitals}
         onPrescribe={handlePrescribe}
+        onOrderLabs={handleOrderLabs}
+        onRequestConsult={handleRequestConsult}
+        onScheduleFollowUp={handleScheduleFollowUp}
       />
 
       {/* Main Content: Sidebar + Timeline */}
@@ -777,6 +827,22 @@ const PatientChroniclePage = () => {
           onClose={handleClosePrescription}
           patient={patient}
           onPrescriptionCreated={handlePrescriptionCreated}
+        />
+
+        {/* Lab Order Form Slide-Over */}
+        <LabOrderForm
+          open={isLabOrderOpen}
+          onClose={handleCloseLabOrder}
+          patient={patient}
+          onOrderCreated={handleLabOrderCreated}
+        />
+
+        {/* Referral/Consult Form Slide-Over */}
+        <ReferralForm
+          open={isReferralOpen}
+          onClose={handleCloseReferral}
+          patient={patient}
+          onReferralCreated={handleReferralCreated}
         />
       </div>
     </div>

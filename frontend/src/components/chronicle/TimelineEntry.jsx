@@ -144,10 +144,14 @@ const TimelineEntry = ({
     if (!timestamp) return '';
     try {
       const date = new Date(timestamp);
-      return date.toLocaleTimeString('en-US', {
+      return date.toLocaleString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        hour12: false
+        hour12: true
       });
     } catch {
       return '';

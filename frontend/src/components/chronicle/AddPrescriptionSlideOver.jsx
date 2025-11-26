@@ -11,11 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X, Pill, AlertCircle, Check, Calendar } from "lucide-react";
+import { X, Pill, AlertCircle, Check, Calendar, Shield, Loader2, Package } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDrugSafetyQueries";
+import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
+import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -23,6 +26,7 @@ import { toast } from "sonner";
  * Features:
  * - Slides in from right without backdrop (timeline remains visible)
  * - Medication entry with route, frequency, duration
+ * - Auto-populates dosage and route from RxNorm drug forms
  * - Only available to doctors
  * - Backend API integration
  */
@@ -49,7 +53,24 @@ const AddPrescriptionSlideOver = ({
     reason: ''
   });
 
+  // Selected medication rxcui for fetching drug forms
+  const [selectedRxcui, setSelectedRxcui] = useState(null);
+
   const [errors, setErrors] = useState({});
+
+  // Drug safety state
+  const [safetyCheckPending, setSafetyCheckPending] = useState(false);
+  const [safetyDialogOpen, setSafetyDialogOpen] = useState(false);
+  const [safetyAlerts, setSafetyAlerts] = useState([]);
+  const [hasCriticalAlerts, setHasCriticalAlerts] = useState(false);
+
+  // Hooks for drug safety
+  const safetyCheck = useSafetyCheck();
+  const { data: allergiesData } = usePatientAllergies(patientId);
+
+  // Fetch drug forms when medication is selected
+  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui);
+  const drugForms = drugFormsData?.forms || [];
 
   // Route options
   const routeOptions = [
@@ -65,6 +86,7 @@ const AddPrescriptionSlideOver = ({
     { value: 'otic', label: 'Otic (Ear)' },
     { value: 'nasal', label: 'Nasal' },
     { value: 'transdermal', label: 'Transdermal' },
+    { value: 'vaginal', label: 'Vaginal' },
   ];
 
   // Frequency options
@@ -109,9 +131,50 @@ const AddPrescriptionSlideOver = ({
         instructions: '',
         reason: ''
       });
+      setSelectedRxcui(null);
       setErrors({});
     }
   }, [open]);
+
+  // Handle medication selection from autocomplete
+  const handleMedicationSelect = (medication) => {
+    // medication is now { name, rxcui }
+    setFormData(prev => ({
+      ...prev,
+      medication_name: medication.name
+    }));
+    setSelectedRxcui(medication.rxcui);
+
+    // Clear error
+    if (errors.medication_name) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.medication_name;
+        return newErrors;
+      });
+    }
+  };
+
+  // Handle drug form selection - auto-populate dosage and route
+  const handleDrugFormSelect = (formRxcui) => {
+    const selectedForm = drugForms.find(f => f.rxcui === formRxcui);
+    if (selectedForm) {
+      setFormData(prev => ({
+        ...prev,
+        dosage: selectedForm.strength,
+        route: selectedForm.route
+      }));
+
+      // Clear dosage error
+      if (errors.dosage) {
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors.dosage;
+          return newErrors;
+        });
+      }
+    }
+  };
 
   // Handle input change
   const handleChange = (field, value) => {
@@ -153,10 +216,55 @@ const AddPrescriptionSlideOver = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  // Perform drug safety check
+  const performSafetyCheck = async () => {
+    if (!validate()) return false;
+
+    setSafetyCheckPending(true);
+
+    try {
+      const result = await safetyCheck.mutateAsync({
+        patient_id: patientId,
+        medication_name: formData.medication_name.trim(),
+      });
+
+      setSafetyAlerts(result.alerts || []);
+      setHasCriticalAlerts(result.has_critical_alerts || false);
+
+      // If there are alerts, show the safety dialog
+      if (result.has_alerts) {
+        setSafetyDialogOpen(true);
+        return false;
+      }
+
+      // No alerts, proceed with prescription
+      return true;
+    } catch (error) {
+      console.error('Safety check failed:', error);
+      // Check for permission-related errors
+      const errorMsg = error.message?.toLowerCase() || '';
+      if (errorMsg.includes('practitioner') || errorMsg.includes('doctor') || errorMsg.includes('permission')) {
+        toast.error('Only doctors can prescribe medications');
+      } else {
+        toast.error('Safety check failed. Please try again.');
+      }
+      return false;
+    } finally {
+      setSafetyCheckPending(false);
+    }
+  };
+
   // Handle submit
   const handleSubmit = async () => {
-    if (!validate()) return;
+    // Perform safety check first
+    const canProceed = await performSafetyCheck();
+    if (!canProceed) return;
 
+    await createPrescription();
+  };
+
+  // Create prescription (called after safety check passes)
+  const createPrescription = async (overrideReason = '') => {
     // Build data object
     const data = {
       patient: patientId,
@@ -179,6 +287,11 @@ const AddPrescriptionSlideOver = ({
       data.reason = formData.reason.trim();
     }
 
+    // Add override reason if provided
+    if (overrideReason) {
+      data.safety_override_reason = overrideReason;
+    }
+
     try {
       await createPrescriptionMutation.mutateAsync(data);
       toast.success('Prescription created successfully');
@@ -186,12 +299,25 @@ const AddPrescriptionSlideOver = ({
       onClose();
     } catch (err) {
       console.error('Failed to create prescription:', err);
-      if (err.message?.includes('Only doctors')) {
-        toast.error('Only doctors can create prescriptions');
+      const errorMsg = err.message?.toLowerCase() || '';
+      if (errorMsg.includes('practitioner') || errorMsg.includes('doctor') || errorMsg.includes('permission')) {
+        toast.error('Only doctors can prescribe medications');
       } else {
         toast.error(err.message || 'Failed to create prescription');
       }
     }
+  };
+
+  // Handle safety dialog proceed
+  const handleSafetyProceed = (overrideReason) => {
+    setSafetyDialogOpen(false);
+    createPrescription(overrideReason);
+  };
+
+  // Handle safety dialog cancel
+  const handleSafetyCancel = () => {
+    setSafetyDialogOpen(false);
+    toast.info('Prescription cancelled due to safety alerts');
   };
 
   // Handle close
@@ -206,6 +332,7 @@ const AddPrescriptionSlideOver = ({
       instructions: '',
       reason: ''
     });
+    setSelectedRxcui(null);
     setErrors({});
     onClose();
   };
@@ -214,9 +341,6 @@ const AddPrescriptionSlideOver = ({
   const patientName = patient?.local_data?.user_details
     ? `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim()
     : patient?.name || 'Patient';
-
-  // Get patient allergies for warning
-  const allergies = patient?.local_data?.allergies || patient?.allergies || '';
 
   return (
     <div
@@ -255,12 +379,16 @@ const AddPrescriptionSlideOver = ({
       </header>
 
       {/* Allergy Warning */}
-      {allergies && (
+      {allergiesData?.allergies?.length > 0 && (
         <div className="px-6 pt-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              <span className="font-semibold">Patient Allergies:</span> {allergies}
+              <span className="font-semibold">Patient Allergies ({allergiesData.count}):</span>{' '}
+              {allergiesData.allergies
+                .filter((a) => a.is_active)
+                .map((a) => a.allergen_name)
+                .join(', ')}
             </AlertDescription>
           </Alert>
         </div>
@@ -269,24 +397,75 @@ const AddPrescriptionSlideOver = ({
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
         <div className="space-y-6">
-          {/* Medication Name */}
+          {/* Medication Name with Safety Check */}
           <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              Medication Name *
+            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Shield className="h-3.5 w-3.5 text-sky-600" />
+              Medication Name * (with drug safety check)
             </Label>
-            <Input
-              placeholder="e.g., Amoxicillin, Metformin, Lisinopril"
+            <MedicationAutocomplete
               value={formData.medication_name}
-              onChange={(e) => handleChange('medication_name', e.target.value)}
+              onSelect={handleMedicationSelect}
+              placeholder="Search for medication..."
               className={cn(
                 "font-mono",
                 errors.medication_name && "border-red-500"
               )}
             />
+            <p className="text-xs text-muted-foreground">
+              Drug interactions and allergy checks will be performed automatically
+            </p>
             {errors.medication_name && (
               <p className="text-xs text-red-500">{errors.medication_name}</p>
             )}
           </div>
+
+          {/* Drug Form Selector - Shows available strengths/forms from RxNorm */}
+          {selectedRxcui && (
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Package className="h-3.5 w-3.5 text-sky-600" />
+                Select Formulation (Optional)
+              </Label>
+              {isLoadingForms ? (
+                <div className="flex items-center gap-2 py-3 px-4 bg-muted/50 rounded-lg">
+                  <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
+                  <span className="font-mono text-sm text-muted-foreground">
+                    Loading available formulations...
+                  </span>
+                </div>
+              ) : drugForms.length > 0 ? (
+                <Select onValueChange={handleDrugFormSelect}>
+                  <SelectTrigger className="font-mono">
+                    <SelectValue placeholder="Select a formulation to auto-fill dosage & route" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200] max-h-[300px]">
+                    {drugForms.map((form) => (
+                      <SelectItem
+                        key={form.rxcui}
+                        value={form.rxcui}
+                        className="font-mono"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium">{form.strength} - {form.dose_form}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Route: {routeOptions.find(r => r.value === form.route)?.label || form.route}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-2">
+                  No specific formulations found. Enter dosage manually below.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Selecting a formulation will auto-fill the dosage and route
+              </p>
+            </div>
+          )}
 
           {/* Dosage */}
           <div className="space-y-2">
@@ -294,7 +473,7 @@ const AddPrescriptionSlideOver = ({
               Dosage *
             </Label>
             <Input
-              placeholder="e.g., 500mg, 10ml, 2 tablets"
+              placeholder="e.g., 500 MG, 10 ML, 2 tablets"
               value={formData.dosage}
               onChange={(e) => handleChange('dosage', e.target.value)}
               className={cn(
@@ -463,10 +642,15 @@ const AddPrescriptionSlideOver = ({
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={createPrescriptionMutation.isPending}
+            disabled={createPrescriptionMutation.isPending || safetyCheckPending}
             className="font-mono text-xs"
           >
-            {createPrescriptionMutation.isPending ? (
+            {safetyCheckPending ? (
+              <>
+                <Shield className="h-3.5 w-3.5 mr-1.5 animate-pulse" />
+                Checking Safety...
+              </>
+            ) : createPrescriptionMutation.isPending ? (
               'Creating...'
             ) : (
               <>
@@ -477,6 +661,19 @@ const AddPrescriptionSlideOver = ({
           </Button>
         </div>
       </footer>
+
+      {/* Drug Safety Dialog */}
+      <DrugSafetyDialog
+        open={safetyDialogOpen}
+        onOpenChange={setSafetyDialogOpen}
+        alerts={safetyAlerts}
+        hasCriticalAlerts={hasCriticalAlerts}
+        medicationName={formData.medication_name}
+        onProceed={handleSafetyProceed}
+        onCancel={handleSafetyCancel}
+        allowOverride={true}
+        loading={createPrescriptionMutation.isPending}
+      />
     </div>
   );
 };

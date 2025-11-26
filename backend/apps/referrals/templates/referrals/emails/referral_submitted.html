@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #7c3aed; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+        .urgency-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: bold; margin: 10px 0; }
+        .urgency-emergency { background-color: #fef2f2; color: #991b1b; border: 2px solid #ef4444; }
+        .urgency-urgent { background-color: #fef3c7; color: #78350f; border: 2px solid #f59e0b; }
+        .urgency-routine { background-color: #f3f4f6; color: #374151; border: 2px solid #9ca3af; }
+        .info-section { background-color: #f9fafb; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .info-label { font-weight: bold; color: #6b7280; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">New Referral Notification</h2>
+        </div>
+
+        <div style="padding: 20px; background-color: white;">
+            <p>A new referral has been submitted to your department.</p>
+
+            <div class="info-section">
+                <h3>Referral Details</h3>
+                <p><span class="info-label">Referral Number:</span> {{ referral_number }}</p>
+                <p><span class="info-label">Department:</span> {{ department }}</p>
+                {% if specialty and specialty != 'General' %}
+                <p><span class="info-label">Specialty:</span> {{ specialty }}</p>
+                {% endif %}
+                <p><span class="info-label">Urgency:</span> <span class="urgency-badge urgency-{{ urgency|lower }}">{{ urgency }}</span></p>
+            </div>
+
+            <div class="info-section">
+                <h3>Patient Information</h3>
+                <p><span class="info-label">Name:</span> {{ patient_name }}</p>
+                <p><span class="info-label">MRN:</span> {{ patient_mrn }}</p>
+            </div>
+
+            <div class="info-section">
+                <h3>Referring Provider</h3>
+                <p>{{ referring_provider }}</p>
+            </div>
+
+            <div class="info-section">
+                <h3>Reason for Referral</h3>
+                <p>{{ reason }}</p>
+            </div>
+
+            <div class="info-section">
+                <h3>Clinical Summary</h3>
+                <p style="white-space: pre-wrap;">{{ clinical_summary }}</p>
+            </div>
+
+            {% if relevant_history %}
+            <div class="info-section">
+                <h3>Relevant Medical History</h3>
+                <p style="white-space: pre-wrap;">{{ relevant_history }}</p>
+            </div>
+            {% endif %}
+
+            <p><span class="info-label">Referral Date:</span> {{ referral_date }}</p>
+
+            <div style="background-color: #ede9fe; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <strong>Action Required:</strong> Please review this referral and take appropriate action in the system.
+            </div>
+        </div>
+
+        <div class="footer">
+            This is an automated notification from the Hospital Management System.
+        </div>
+    </div>
+</body>
+</html>

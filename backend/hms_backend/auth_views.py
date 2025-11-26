@@ -10,6 +10,8 @@ from django.contrib.auth import authenticate, login
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
 from .jwt_serializers import get_tokens_for_user
+from apps.audit.services import AuditService
+from apps.audit.models import AuditAction
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -87,6 +89,9 @@ class LogoutView(APIView):
     authentication_classes = []  # Don't require authentication
 
     def post(self, request, *args, **kwargs):
+        # Try to get user from request for audit logging
+        user = getattr(request, 'user', None) if hasattr(request, 'user') and request.user.is_authenticated else None
+
         try:
             # Get refresh token from cookie
             refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
@@ -103,6 +108,12 @@ class LogoutView(APIView):
             # If blacklisting fails, still proceed with logout
             pass
 
+        # Log the logout action
+        try:
+            AuditService.log_authentication(request, AuditAction.LOGOUT, success=True, user=user)
+        except Exception:
+            pass  # Don't let audit logging break logout
+
         response = Response({"detail": "Successfully logged out."})
         response.delete_cookie(
             settings.JWT_AUTH_REFRESH_COOKIE,
@@ -117,7 +128,6 @@ class LoginView(APIView):
     authentication_classes = []  # Disable authentication for login endpoint
     throttle_classes = [LoginRateThrottle]
 
-
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -126,6 +136,12 @@ class LoginView(APIView):
 
         if user is not None:
             login(request, user)
+
+            # Log successful login
+            try:
+                AuditService.log_authentication(request, AuditAction.LOGIN, success=True, user=user)
+            except Exception:
+                pass  # Don't let audit logging break login
 
             # Generate tokens with custom claims
             tokens = get_tokens_for_user(user)
@@ -149,6 +165,12 @@ class LoginView(APIView):
             )
 
             return response
+
+        # Log failed login attempt
+        try:
+            AuditService.log_authentication(request, AuditAction.LOGIN_FAILED, success=False, email=email)
+        except Exception:
+            pass  # Don't let audit logging break login
 
         return Response(
             {"detail": "Invalid credentials"},

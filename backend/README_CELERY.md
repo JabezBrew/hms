@@ -19,17 +19,41 @@ The Celery configuration is in the following files:
 
 ## Running Celery
 
-### Prerequisites
+### Quick Start (Recommended)
 
-Make sure Redis is running. Redis is used as the message broker for Celery.
+The easiest way to start all services (Django, Celery, Redis) together:
 
 ```bash
-# Check if Redis is running
-redis-cli ping
-# Should return PONG
+cd backend
+./start.sh
 ```
 
-### Starting Celery Worker
+This will automatically start:
+- Django development server (port 8000)
+- Celery worker
+- Celery beat scheduler
+- Redis server (port 6379)
+
+Press `Ctrl+C` to stop all services at once.
+
+### Prerequisites
+
+The startup script will check for prerequisites, but if you prefer to set up manually:
+
+1. **Install Redis**: `brew install redis` (macOS) or `apt-get install redis-server` (Linux)
+2. **Install Honcho**: `pip install honcho` (included in requirements.txt)
+3. **Activate virtual environment**: `source .venv/bin/activate`
+
+### Manual Startup (Alternative)
+
+If you prefer to start services individually:
+
+#### Start Redis
+```bash
+redis-server --port 6379
+```
+
+#### Start Celery Worker
 
 To start a Celery worker that processes tasks:
 
@@ -38,7 +62,7 @@ cd backend
 celery -A hms_backend worker --loglevel=info
 ```
 
-### Starting Celery Beat (Scheduler)
+#### Start Celery Beat (Scheduler)
 
 To start the Celery Beat scheduler that triggers periodic tasks:
 
