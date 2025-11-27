@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
 import { useClinicalSummary } from "@/hooks/useClinicalSummaryQueries";
+import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,20 +49,32 @@ import { useDebounce } from "@/hooks/use-debounce";
 const PatientChroniclePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
-  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
-  const [isAddVitalsOpen, setIsAddVitalsOpen] = useState(false);
-  const [isAddPrescriptionOpen, setIsAddPrescriptionOpen] = useState(false);
-  const [isLabOrderOpen, setIsLabOrderOpen] = useState(false);
-  const [isReferralOpen, setIsReferralOpen] = useState(false);
   const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
+
+  // Check for action query params (e.g., from referral inbox)
+  const actionParam = searchParams.get('action');
+  const referralIdParam = searchParams.get('referral_id');
+
+  // Slide-over management - auto-collapses sidebar when any slide-over opens
+  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral']);
+
+  // Auto-open slide-over based on action query param
+  useEffect(() => {
+    if (actionParam === 'add_note') {
+      slideOvers.open('note');
+      // Clear the query params after opening
+      setSearchParams({}, { replace: true });
+    }
+  }, [actionParam, slideOvers, setSearchParams]);
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
 
   // Check if any slide-over is open (for timeline compression)
-  const isAnySlideOverOpen = isAddNoteOpen || isAddVitalsOpen || isAddPrescriptionOpen || isLabOrderOpen || isReferralOpen;
+  const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
 
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
@@ -176,6 +189,7 @@ const PatientChroniclePage = () => {
           ...entry,
           type: 'medication',
           data: {
+            ...entry.data,  // Preserve all original data including status, id, etc.
             name: entry.data.medication_name,
             dose: entry.data.dosage,
             route: entry.data.route_display,
@@ -217,6 +231,23 @@ const PatientChroniclePage = () => {
     }
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
+
+  // Find the active encounter (in-progress inpatient admission takes priority)
+  const activeEncounter = useMemo(() => {
+    if (!encounters || encounters.length === 0) return null;
+
+    // First look for an active inpatient admission
+    const activeInpatient = encounters.find(enc =>
+      enc.status === 'in-progress' &&
+      ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(enc.encounter_type?.toLowerCase())
+    );
+
+    if (activeInpatient) return activeInpatient;
+
+    // Otherwise look for any in-progress encounter
+    const activeAny = encounters.find(enc => enc.status === 'in-progress');
+    return activeAny || null;
+  }, [encounters]);
 
   // Group entries by encounter
   const groupedByEncounter = useMemo(() => {
@@ -305,97 +336,52 @@ const PatientChroniclePage = () => {
   // Event handlers
   // ============================================
 
-  const handleAddNote = useCallback(() => {
-    setIsAddNoteOpen(true);
-  }, []);
-
-  const handleCloseAddNote = useCallback(() => {
-    setIsAddNoteOpen(false);
-  }, []);
-
-  const handleNoteCreated = useCallback(() => {
-    // Refresh timeline and clinical data in parallel when a note is created
+  // Refresh data after any slide-over action
+  const refreshData = useCallback(() => {
     Promise.all([
       invalidateTimeline(id),
       refetch(),
       refetchClinical(),
     ]);
-    setIsAddNoteOpen(false);
   }, [refetch, refetchClinical, id, invalidateTimeline]);
 
-  const handleRecordVitals = useCallback(() => {
-    setIsAddVitalsOpen(true);
-  }, []);
+  // Slide-over handlers - using the centralized hook
+  const handleAddNote = useCallback(() => slideOvers.open('note'), [slideOvers]);
+  const handleRecordVitals = useCallback(() => slideOvers.open('vitals'), [slideOvers]);
+  const handlePrescribe = useCallback(() => slideOvers.open('prescription'), [slideOvers]);
+  const handleOrderLabs = useCallback(() => slideOvers.open('labs'), [slideOvers]);
+  const handleRequestConsult = useCallback(() => slideOvers.open('referral'), [slideOvers]);
 
-  const handleCloseVitals = useCallback(() => {
-    setIsAddVitalsOpen(false);
-  }, []);
+  // Close handler with data refresh
+  const handleSlideOverClose = useCallback(() => {
+    slideOvers.close();
+  }, [slideOvers]);
+
+  // Created handlers - refresh data and close
+  const handleNoteCreated = useCallback(() => {
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
 
   const handleVitalsRecorded = useCallback(() => {
-    // Refresh timeline and clinical data in parallel
-    Promise.all([
-      invalidateTimeline(id),
-      refetch(),
-      refetchClinical(),
-    ]);
-    setIsAddVitalsOpen(false);
-  }, [refetch, refetchClinical, id, invalidateTimeline]);
-
-  const handlePrescribe = useCallback(() => {
-    setIsAddPrescriptionOpen(true);
-  }, []);
-
-  const handleClosePrescription = useCallback(() => {
-    setIsAddPrescriptionOpen(false);
-  }, []);
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
 
   const handlePrescriptionCreated = useCallback(() => {
-    // Refresh timeline and clinical data in parallel
-    Promise.all([
-      invalidateTimeline(id),
-      refetch(),
-      refetchClinical(),
-    ]);
-    setIsAddPrescriptionOpen(false);
-  }, [refetch, refetchClinical, id, invalidateTimeline]);
-
-  // Lab Order handlers
-  const handleOrderLabs = useCallback(() => {
-    setIsLabOrderOpen(true);
-  }, []);
-
-  const handleCloseLabOrder = useCallback(() => {
-    setIsLabOrderOpen(false);
-  }, []);
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
 
   const handleLabOrderCreated = useCallback(() => {
-    // Refresh timeline and clinical data in parallel
-    Promise.all([
-      invalidateTimeline(id),
-      refetch(),
-      refetchClinical(),
-    ]);
-    setIsLabOrderOpen(false);
-  }, [refetch, refetchClinical, id, invalidateTimeline]);
-
-  // Referral/Consult handlers
-  const handleRequestConsult = useCallback(() => {
-    setIsReferralOpen(true);
-  }, []);
-
-  const handleCloseReferral = useCallback(() => {
-    setIsReferralOpen(false);
-  }, []);
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
 
   const handleReferralCreated = useCallback(() => {
-    // Refresh timeline and clinical data in parallel
-    Promise.all([
-      invalidateTimeline(id),
-      refetch(),
-      refetchClinical(),
-    ]);
-    setIsReferralOpen(false);
-  }, [refetch, refetchClinical, id, invalidateTimeline]);
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
 
   // Schedule Follow-up handler (navigate to appointments page)
   const handleScheduleFollowUp = useCallback(() => {
@@ -807,41 +793,46 @@ const PatientChroniclePage = () => {
 
         {/* Add Note Slide-Over Panel */}
         <AddNoteSlideOver
-          open={isAddNoteOpen}
-          onClose={handleCloseAddNote}
+          open={slideOvers.isOpen('note')}
+          onClose={handleSlideOverClose}
           patient={patient}
+          encounter={activeEncounter}
           onNoteCreated={handleNoteCreated}
         />
 
         {/* Add Vitals Slide-Over Panel */}
         <AddVitalsSlideOver
-          open={isAddVitalsOpen}
-          onClose={handleCloseVitals}
+          open={slideOvers.isOpen('vitals')}
+          onClose={handleSlideOverClose}
           patient={patient}
+          encounter={activeEncounter}
           onVitalsRecorded={handleVitalsRecorded}
         />
 
         {/* Add Prescription Slide-Over Panel */}
         <AddPrescriptionSlideOver
-          open={isAddPrescriptionOpen}
-          onClose={handleClosePrescription}
+          open={slideOvers.isOpen('prescription')}
+          onClose={handleSlideOverClose}
           patient={patient}
+          encounter={activeEncounter}
           onPrescriptionCreated={handlePrescriptionCreated}
         />
 
         {/* Lab Order Form Slide-Over */}
         <LabOrderForm
-          open={isLabOrderOpen}
-          onClose={handleCloseLabOrder}
+          open={slideOvers.isOpen('labs')}
+          onClose={handleSlideOverClose}
           patient={patient}
+          encounter={activeEncounter}
           onOrderCreated={handleLabOrderCreated}
         />
 
         {/* Referral/Consult Form Slide-Over */}
         <ReferralForm
-          open={isReferralOpen}
-          onClose={handleCloseReferral}
+          open={slideOvers.isOpen('referral')}
+          onClose={handleSlideOverClose}
           patient={patient}
+          encounter={activeEncounter}
           onReferralCreated={handleReferralCreated}
         />
       </div>

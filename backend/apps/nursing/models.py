@@ -377,6 +377,26 @@ class MedicationAdministration(models.Model):
         related_name='prescribed_medications'
     )
 
+    # Link to prescription (optional for backwards compatibility)
+    prescription = models.ForeignKey(
+        'clinical_notes.Prescription',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mar_entries'
+    )
+
+    # Dispensing status (for pharmacy workflow)
+    is_dispensed = models.BooleanField(default=False)
+    dispensed_at = models.DateTimeField(null=True, blank=True)
+    dispensed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispensed_medications'
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

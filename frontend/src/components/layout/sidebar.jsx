@@ -73,7 +73,7 @@ export function AppSidebar() {
       inventory: ['admin', 'pharmacist'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
-      pharmacy: ['admin', 'pharmacist', 'doctor'],
+      pharmacy: ['admin', 'pharmacist', 'pharmacy_tech', 'doctor'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
       auditLogs: ['admin'],
@@ -171,7 +171,7 @@ export function AppSidebar() {
 
             {hasAccess(userRole, menuItems.management.pharmacy) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Pharmacy" href="/pharmacy">
+                <SidebarMenuButton tooltip="Pharmacy Dispensing" href="/pharmacy/dispensing">
                   <Pill />
                   <span>Pharmacy</span>
                 </SidebarMenuButton>

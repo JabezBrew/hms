@@ -20,6 +20,10 @@ class ReferralSerializer(serializers.ModelSerializer):
     days_since_submission = serializers.IntegerField(read_only=True)
     requires_action = serializers.BooleanField(read_only=True)
 
+    # New fields for consultation workflow integration
+    consultation_workflow_id = serializers.UUIDField(source='consultation_workflow.id', read_only=True, allow_null=True)
+    consultation_encounter_id = serializers.UUIDField(source='consultation_encounter.id', read_only=True, allow_null=True)
+
     class Meta:
         model = Referral
         fields = [
@@ -32,6 +36,7 @@ class ReferralSerializer(serializers.ModelSerializer):
             'reason', 'clinical_summary', 'questions_for_specialist',
             'specialist_notes', 'recommendations',
             'scheduled_appointment_id',
+            'referral_type', 'consultation_workflow_id', 'consultation_encounter_id',
             'submitted_at', 'accepted_at', 'completed_at',
             'declined_at', 'decline_reason',
             'is_urgent', 'days_since_submission', 'requires_action',
@@ -43,7 +48,8 @@ class ReferralSerializer(serializers.ModelSerializer):
             'patient_name', 'patient_mrn', 'referring_provider_name',
             'referred_to_provider_name', 'urgency_display', 'status_display',
             'is_urgent', 'days_since_submission', 'requires_action',
-            'submitted_at', 'accepted_at', 'completed_at', 'declined_at'
+            'submitted_at', 'accepted_at', 'completed_at', 'declined_at',
+            'consultation_workflow_id', 'consultation_encounter_id'
         ]
 
     def get_referring_provider_name(self, obj):
@@ -61,13 +67,25 @@ class ReferralCreateSerializer(serializers.ModelSerializer):
     """
     Create serializer for referrals with validation.
     """
+    # referring_provider is optional - auto-set from current user in perform_create
+    referring_provider = serializers.PrimaryKeyRelatedField(
+        queryset=Referral._meta.get_field('referring_provider').related_model.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    # referred_to_specialty is optional - defaults to department if not provided
+    referred_to_specialty = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Referral
         fields = [
+            'id', 'referral_number',
             'patient', 'encounter', 'referring_provider', 'referring_department',
             'referred_to_provider', 'referred_to_department', 'referred_to_specialty',
-            'urgency', 'reason', 'clinical_summary', 'questions_for_specialist'
+            'urgency', 'reason', 'clinical_summary', 'questions_for_specialist',
+            'referral_type'
         ]
+        read_only_fields = ['id', 'referral_number']
 
     def validate(self, data):
         """Validate referral data."""
@@ -77,16 +95,15 @@ class ReferralCreateSerializer(serializers.ModelSerializer):
                 "Reason for referral must be at least 10 characters."
             )
 
-        # Ensure department and specialty are provided
+        # Ensure department is provided
         if not data.get('referred_to_department'):
             raise serializers.ValidationError(
                 "Target department is required."
             )
 
+        # Default specialty to department if not provided
         if not data.get('referred_to_specialty'):
-            raise serializers.ValidationError(
-                "Target specialty is required."
-            )
+            data['referred_to_specialty'] = data.get('referred_to_department', '')
 
         return data
 
@@ -200,17 +217,22 @@ class ReferralListSerializer(serializers.ModelSerializer):
     is_urgent = serializers.BooleanField(read_only=True)
     days_since_submission = serializers.IntegerField(read_only=True)
 
+    # Consultation workflow fields
+    consultation_workflow_id = serializers.UUIDField(source='consultation_workflow.id', read_only=True, allow_null=True)
+
     class Meta:
         model = Referral
         fields = [
             'id', 'referral_number',
-            'patient_name', 'patient_mrn',
+            'patient', 'patient_name', 'patient_mrn',
             'referring_provider_name', 'referring_department',
             'referred_to_provider_name', 'referred_to_department', 'referred_to_specialty',
             'urgency', 'urgency_display', 'status', 'status_display',
-            'reason', 'submitted_at',
+            'reason', 'submitted_at', 'accepted_at', 'completed_at',
+            'specialist_notes', 'recommendations',
             'is_urgent', 'days_since_submission',
-            'created_at'
+            'referral_type', 'consultation_workflow_id',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['__all__']
 

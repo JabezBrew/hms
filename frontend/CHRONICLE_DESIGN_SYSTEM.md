@@ -348,6 +348,170 @@ Use Tailwind's responsive prefixes:
 
 ---
 
+## Slide-Over Panels
+
+Chronicle uses slide-over panels for forms (prescriptions, notes, vitals, lab orders, referrals). These panels slide in from the right without blocking the main content.
+
+### Z-Index Hierarchy
+
+**CRITICAL: Follow this z-index hierarchy to prevent dropdown/popover issues.**
+
+| Layer | Z-Index | Usage |
+|-------|---------|-------|
+| Base content | `z-0` to `z-10` | Normal page content |
+| Sticky headers | `z-20` to `z-40` | Sticky sidebars, headers |
+| Slide-over panels | `z-[100]` | Form slide-overs |
+| Dropdowns/Popovers inside slide-overs | `z-[200]` | SelectContent, DropdownMenuContent, PopoverContent |
+| Modals/Dialogs | `z-[300]` | Confirmation dialogs, alerts |
+| Toasts | `z-[400]` | Toast notifications |
+
+### Slide-Over Container Pattern
+
+```jsx
+<div
+  className={cn(
+    "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+    "transform transition-transform duration-300 ease-in-out",
+    "flex flex-col shadow-2xl",
+    open ? "translate-x-0" : "translate-x-full"
+  )}
+>
+  {/* Header */}
+  <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+    {/* Icon + Title */}
+    {/* Close button */}
+  </header>
+
+  {/* Content - scrollable */}
+  <div className="flex-1 overflow-y-auto px-6 py-6">
+    {/* Form content */}
+  </div>
+
+  {/* Footer - fixed */}
+  <footer className="border-t border-border bg-card px-6 py-4 flex items-center justify-between">
+    {/* Cancel + Submit buttons */}
+  </footer>
+</div>
+```
+
+### Dropdown Z-Index Fix
+
+**ALWAYS add `z-[200]` to dropdown content inside slide-overs:**
+
+```jsx
+// ❌ WRONG - dropdown will be hidden behind slide-over
+<Select>
+  <SelectTrigger>...</SelectTrigger>
+  <SelectContent>  {/* Missing z-index! */}
+    ...
+  </SelectContent>
+</Select>
+
+// ✅ CORRECT - dropdown appears above slide-over
+<Select>
+  <SelectTrigger>...</SelectTrigger>
+  <SelectContent className="z-[200]">
+    ...
+  </SelectContent>
+</Select>
+```
+
+This applies to ALL popover-based components inside slide-overs:
+- `SelectContent` → `className="z-[200]"`
+- `DropdownMenuContent` → `className="z-[200]"`
+- `PopoverContent` → `className="z-[200]"`
+- `ComboboxContent` → `className="z-[200]"`
+- `DatePicker popover` → `className="z-[200]"`
+
+### Slide-Over Styling
+
+| Element | Classes |
+|---------|---------|
+| Header icon background | `bg-{color}-100 dark:bg-{color}-900/30` |
+| Header icon | `text-{color}-600 dark:text-{color}-400` |
+| Title | `font-display text-xl text-foreground` |
+| Subtitle | `font-mono text-xs text-muted-foreground` |
+| Close button | `variant="destructive" size="sm"` with `font-mono text-xs` |
+| Footer buttons | `font-mono text-xs` |
+| Submit button | `bg-{accent}-600 hover:bg-{accent}-700` |
+
+### Accent Colors by Form Type
+
+| Form | Accent Color | Icon |
+|------|--------------|------|
+| Clinical Notes | Amber | `FileText` |
+| Vitals | Rose | `Activity` |
+| Prescriptions | Amber | `Pill` |
+| Lab Orders | Sky | `TestTube2` |
+| Referrals/Consults | Emerald | `Send` |
+
+### useSlideOver Hook
+
+**IMPORTANT: Always use this hook for slide-overs to auto-collapse the sidebar.**
+
+The `useSlideOver` and `useMultipleSlideOvers` hooks manage slide-over state and automatically collapse the sidebar when a slide-over opens, then restore it when closed.
+
+#### Single Slide-Over
+
+```jsx
+import { useSlideOver } from '@/hooks/useSlideOver';
+
+function MyComponent() {
+  const [isOpen, open, close] = useSlideOver();
+
+  return (
+    <>
+      <Button onClick={open}>Open Panel</Button>
+      <MySlideOver open={isOpen} onClose={close} />
+    </>
+  );
+}
+```
+
+#### Multiple Slide-Overs (Recommended)
+
+When a page has multiple slide-overs, use `useMultipleSlideOvers` to ensure only one is open at a time:
+
+```jsx
+import { useMultipleSlideOvers } from '@/hooks/useSlideOver';
+
+function PatientPage() {
+  // Define all slide-over names
+  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral']);
+
+  // Open handlers
+  const handleAddNote = () => slideOvers.open('note');
+  const handleRecordVitals = () => slideOvers.open('vitals');
+
+  // Close handler (restores sidebar)
+  const handleClose = () => slideOvers.close();
+
+  return (
+    <>
+      <Button onClick={handleAddNote}>Add Note</Button>
+      <Button onClick={handleRecordVitals}>Record Vitals</Button>
+
+      <NoteSlideOver
+        open={slideOvers.isOpen('note')}
+        onClose={handleClose}
+      />
+      <VitalsSlideOver
+        open={slideOvers.isOpen('vitals')}
+        onClose={handleClose}
+      />
+    </>
+  );
+}
+```
+
+#### How It Works
+
+1. **On Open**: Stores current sidebar state, then collapses sidebar
+2. **On Close**: Restores sidebar to its previous state (expanded or collapsed)
+3. **Single Active**: Only one slide-over can be open at a time with `useMultipleSlideOvers`
+
+---
+
 ## Extending Chronicle
 
 When building new pages:

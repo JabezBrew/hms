@@ -14,7 +14,7 @@ from .serializers import (
     NursingTaskSerializer, NursingTaskCreateSerializer, NursingTaskUpdateSerializer,
     NursingAlertSerializer, NursingAlertAcknowledgeSerializer,
     MedicationAdministrationSerializer, MedicationAdministrationCreateSerializer,
-    MedicationAdministrationUpdateSerializer,
+    MedicationAdministrationUpdateSerializer, MedicationDispensingListSerializer,
     ShiftHandoffSerializer,
     PatientMonitoringSerializer
 )
@@ -391,6 +391,167 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(medications, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def pending_dispensing(self, request):
+        """
+        Get medications awaiting pharmacy dispensing.
+        Pharmacists use this to see what needs to be dispensed.
+        Uses lightweight serializer to reduce payload size.
+        """
+        patient_id = request.query_params.get('patient')
+
+        from .services import get_pending_dispensing
+        medications = get_pending_dispensing(patient_id)
+
+        # Use lightweight serializer for dispensing queue
+        serializer = MedicationDispensingListSerializer(medications, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def ready_for_admin(self, request):
+        """
+        Get medications that are dispensed and ready for nurse administration.
+        Uses lightweight serializer to reduce payload size.
+        """
+        patient_id = request.query_params.get('patient')
+
+        from .services import get_dispensed_ready_for_admin
+        medications = get_dispensed_ready_for_admin(patient_id)
+
+        # Use lightweight serializer
+        serializer = MedicationDispensingListSerializer(medications, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def dispense(self, request, pk=None):
+        """
+        Mark a medication as dispensed by pharmacy.
+        Only pharmacists can dispense medications.
+        """
+        if request.user.user_type not in ['pharmacist', 'admin']:
+            return Response(
+                {'error': 'Only pharmacists can dispense medications'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        med_admin = self.get_object()
+
+        if med_admin.is_dispensed:
+            return Response(
+                {'error': 'Medication already dispensed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from .services import dispense_medication
+        med_admin = dispense_medication(med_admin, request.user)
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='MedicationAdministration',
+            resource_id=med_admin.id,
+            resource_name=f"{med_admin.medication_name}",
+            description=f"Dispensed {med_admin.medication_name} for patient "
+                        f"{med_admin.patient.user.get_full_name()}",
+            changes={'is_dispensed': {'old': False, 'new': True}}
+        )
+
+        return Response(MedicationAdministrationSerializer(med_admin).data)
+
+    @action(detail=False, methods=['post'])
+    def dispense_bulk(self, request):
+        """
+        Bulk dispense multiple medications.
+        Only pharmacists can dispense medications.
+        """
+        if request.user.user_type not in ['pharmacist', 'admin']:
+            return Response(
+                {'error': 'Only pharmacists can dispense medications'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        medication_ids = request.data.get('medication_ids', [])
+        if not medication_ids:
+            return Response(
+                {'error': 'medication_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from .services import dispense_medication
+
+        dispensed = []
+        errors = []
+
+        for med_id in medication_ids:
+            try:
+                med_admin = MedicationAdministration.objects.get(id=med_id)
+                if not med_admin.is_dispensed:
+                    dispense_medication(med_admin, request.user)
+                    dispensed.append(str(med_id))
+                else:
+                    errors.append({'id': str(med_id), 'error': 'Already dispensed'})
+            except MedicationAdministration.DoesNotExist:
+                errors.append({'id': str(med_id), 'error': 'Not found'})
+
+        return Response({
+            'dispensed': dispensed,
+            'dispensed_count': len(dispensed),
+            'errors': errors
+        })
+
+    @action(detail=False, methods=['get'])
+    def patient_mar(self, request):
+        """
+        Get full MAR (Medication Administration Record) for a patient.
+        Shows all scheduled, administered, and missed medications.
+        """
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date range (default: today)
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                target_date = timezone.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+            except ValueError:
+                target_date = timezone.now().date()
+        else:
+            target_date = timezone.now().date()
+
+        start_datetime = timezone.make_aware(
+            timezone.datetime.combine(target_date, timezone.datetime.min.time())
+        )
+        end_datetime = timezone.make_aware(
+            timezone.datetime.combine(target_date, timezone.datetime.max.time())
+        )
+
+        medications = self.get_queryset().filter(
+            patient_id=patient_id,
+            scheduled_time__gte=start_datetime,
+            scheduled_time__lte=end_datetime
+        ).order_by('scheduled_time')
+
+        serializer = self.get_serializer(medications, many=True)
+        return Response({
+            'date': str(target_date),
+            'patient_id': patient_id,
+            'medications': serializer.data,
+            'summary': {
+                'total': medications.count(),
+                'scheduled': medications.filter(status='scheduled').count(),
+                'administered': medications.filter(status='administered').count(),
+                'missed': medications.filter(status='missed').count(),
+                'held': medications.filter(status='held').count(),
+                'refused': medications.filter(status='refused').count(),
+            }
+        })
 
 
 class ShiftHandoffViewSet(viewsets.ModelViewSet):

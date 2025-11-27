@@ -73,6 +73,16 @@ class ClinicalWorkflow(models.Model):
         help_text='FHIR Encounter resource ID'
     )
 
+    # Source referral (if workflow was started from a referral)
+    source_referral = models.ForeignKey(
+        'referrals.Referral',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consultation_workflows',
+        help_text='Referral that initiated this consultation workflow'
+    )
+
     # Progress tracking
     current_step = models.IntegerField(default=1)
     total_steps = models.IntegerField(default=5)

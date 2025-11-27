@@ -318,6 +318,107 @@ export const useAdministerMedication = () => {
   });
 };
 
+// ========== Patient MAR (Medication Administration Record) ==========
+
+export const usePatientMAR = (patientId, date = null) => {
+  return useQuery({
+    queryKey: ['patient-mar', patientId, date],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('patient', patientId);
+      if (date) params.append('date', date);
+      const response = await apiClient.getWithPagination(`/nursing/medications/patient_mar/?${params.toString()}`);
+      return response;
+    },
+    enabled: !!patientId,
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+};
+
+export const useGenerateMAR = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ prescriptionId, days = 7, startDate = null }) => {
+      const data = { days };
+      if (startDate) data.start_date = startDate;
+      const response = await apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/generate_mar/`, data);
+      return response;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
+      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+    },
+  });
+};
+
+// ========== Pharmacy Dispensing ==========
+
+export const usePendingDispensing = (patientId = null) => {
+  return useQuery({
+    queryKey: ['pending-dispensing', patientId],
+    queryFn: async () => {
+      const params = patientId ? `?patient=${patientId}` : '';
+      const response = await apiClient.get(`/nursing/medications/pending_dispensing/${params}`);
+      return response;
+    },
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+};
+
+export const useReadyForAdmin = (patientId = null) => {
+  return useQuery({
+    queryKey: ['ready-for-admin', patientId],
+    queryFn: async () => {
+      const params = patientId ? `?patient=${patientId}` : '';
+      const response = await apiClient.get(`/nursing/medications/ready_for_admin/${params}`);
+      return response;
+    },
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+};
+
+export const useDispenseMedication = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (medicationId) => {
+      const response = await apiClient.post(`/nursing/medications/${medicationId}/dispense/`, {});
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-dispensing'] });
+      queryClient.invalidateQueries({ queryKey: ['ready-for-admin'] });
+      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
+    },
+  });
+};
+
+export const useBulkDispense = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (medicationIds) => {
+      const response = await apiClient.post('/nursing/medications/dispense_bulk/', {
+        medication_ids: medicationIds,
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-dispensing'] });
+      queryClient.invalidateQueries({ queryKey: ['ready-for-admin'] });
+      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
+    },
+  });
+};
+
 // ========== Shift Handoffs ==========
 
 export const useShiftHandoffs = (filters = {}) => {

@@ -12,7 +12,9 @@ import {
   RefreshCw,
   ChevronRight,
   AlertTriangle,
-  Stethoscope
+  Stethoscope,
+  Send,
+  Inbox
 } from 'lucide-react';
 
 export default function DoctorDashboard() {
@@ -103,15 +105,35 @@ export default function DoctorDashboard() {
               )}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="font-mono text-xs"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/sent')}
+              className="font-mono text-xs"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Sent Referrals
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/inbox')}
+              className="font-mono text-xs"
+            >
+              <Inbox className="h-4 w-4 mr-2" />
+              Referral Inbox
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="font-mono text-xs"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </header>
 

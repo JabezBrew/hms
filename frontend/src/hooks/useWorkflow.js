@@ -100,6 +100,13 @@ export function useWorkflow(workflowType) {
     },
   });
 
+  // Load an existing workflow by ID
+  const loadWorkflow = useCallback((id) => {
+    if (id) {
+      setWorkflowId(id);
+    }
+  }, []);
+
   // Start workflow
   const startWorkflow = useCallback(async (data) => {
     return startMutation.mutateAsync(data);
@@ -129,6 +136,7 @@ export function useWorkflow(workflowType) {
     workflow,
     loading: isLoading,
     error,
+    loadWorkflow,
     startWorkflow,
     updateStep,
     completeWorkflow,

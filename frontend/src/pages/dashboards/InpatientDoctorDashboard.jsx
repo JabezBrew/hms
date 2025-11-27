@@ -25,6 +25,8 @@ import {
   RefreshCw,
   Calendar,
   Stethoscope,
+  Send,
+  Inbox,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 
@@ -76,6 +78,22 @@ export default function InpatientDoctorDashboard() {
         subtitle="Manage ward patients, rounds, and discharges"
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/sent')}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Sent Referrals
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/inbox')}
+            >
+              <Inbox className="h-4 w-4 mr-2" />
+              Referral Inbox
+            </Button>
             <WorkflowLauncher
               variant="default"
               size="sm"

@@ -16,6 +16,8 @@ from .serializers import (
     ReferralSearchSerializer, ReferralListSerializer
 )
 from ..users.permissions import IsAdminOrDoctor
+from ..workflows.engines import ConsultationEngine
+from ..wards.models import Encounter
 
 logger = logging.getLogger(__name__)
 
@@ -119,11 +121,12 @@ class ReferralViewSet(viewsets.ModelViewSet):
         # If referring_provider not specified, use current user
         if not serializer.validated_data.get('referring_provider'):
             try:
-                practitioner = self.request.user.staff.practitioner_profile
+                practitioner = self.request.user.staff_profile.practitioner_profile
                 serializer.save(referring_provider=practitioner)
             except AttributeError:
-                # Current user is not a practitioner
-                serializer.save()
+                # Current user is not a practitioner - raise error
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Only practitioners can create referrals. Your account is not linked to a practitioner profile.")
         else:
             serializer.save()
 
@@ -171,7 +174,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners can accept referrals'},
@@ -280,7 +283,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners can complete referrals'},
@@ -305,6 +308,106 @@ class ReferralViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(referral)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'], url_path='start-consultation', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    @transaction.atomic
+    def start_consultation(self, request, pk=None):
+        """
+        Start a consultation workflow from an accepted referral.
+        Creates an encounter and starts the consultation workflow.
+        """
+        referral = self.get_object()
+
+        # Validate status - must be accepted
+        if referral.status != ReferralStatus.ACCEPTED:
+            return Response(
+                {'error': f'Can only start consultation for accepted referrals. Current status: {referral.get_status_display()}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get practitioner profile
+        try:
+            practitioner = request.user.staff_profile.practitioner_profile
+        except AttributeError:
+            return Response(
+                {'error': 'Only practitioners can start consultations'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Determine encounter context based on referral type
+        encounter_id = None
+
+        if referral.referral_type == 'inpatient' and referral.encounter:
+            # Inpatient: Use existing admission encounter
+            encounter_id = str(referral.encounter_id)
+            logger.info(f"Using existing inpatient encounter {encounter_id} for referral {referral.referral_number}")
+        else:
+            # OPD: Create new outpatient encounter
+            try:
+                encounter = Encounter.objects.create(
+                    patient=referral.patient,
+                    practitioner=practitioner,
+                    encounter_type='outpatient',
+                    status='in-progress',
+                    reason=f"Specialist consultation: {referral.reason[:200] if referral.reason else 'Referral consultation'}",
+                )
+                encounter_id = str(encounter.id)
+                referral.consultation_encounter = encounter
+                logger.info(f"Created outpatient encounter {encounter_id} for referral {referral.referral_number}")
+            except Exception as e:
+                logger.error(f"Failed to create encounter for referral {referral.referral_number}: {str(e)}")
+                return Response(
+                    {'error': f'Failed to create encounter: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        # Start consultation workflow via ConsultationEngine
+        try:
+            workflow_result = ConsultationEngine.start(
+                user=request.user,
+                patient_id=referral.patient_id,
+                appointment_id=referral.scheduled_appointment_id,
+                initial_data={
+                    'referral_id': str(referral.id),
+                    'referral_number': referral.referral_number,
+                    'referral_reason': referral.reason,
+                    'referral_clinical_summary': referral.clinical_summary,
+                    'referral_questions': referral.questions_for_specialist,
+                    'referral_urgency': referral.urgency,
+                    'referral_referring_doctor': referral.referring_provider.staff.user.get_full_name() if referral.referring_provider else None,
+                    'referral_referring_department': referral.referring_department,
+                }
+            )
+
+            workflow = workflow_result['workflow']
+
+            # Link referral to workflow
+            referral.consultation_workflow = workflow
+            referral.status = ReferralStatus.SCHEDULED
+            referral.save()
+
+            # Also link workflow back to referral
+            workflow.source_referral = referral
+            workflow.encounter_id = encounter_id
+            workflow.save()
+
+            logger.info(
+                f"Started consultation workflow {workflow.id} for referral {referral.referral_number}"
+            )
+
+            return Response({
+                'success': True,
+                'workflow_id': str(workflow.id),
+                'encounter_id': encounter_id,
+                'referral_status': referral.status,
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to start consultation for referral {referral.referral_number}: {str(e)}")
+            return Response(
+                {'error': f'Failed to start consultation: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic
     def update_response(self, request, pk=None):
@@ -321,7 +424,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners can update referral responses'},
@@ -351,7 +454,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
         """
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners have an inbox'},
@@ -379,7 +482,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
         """
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners can view sent referrals'},

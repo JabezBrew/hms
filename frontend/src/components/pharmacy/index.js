@@ -1,0 +1,1 @@
+export { PharmacyQueue } from './PharmacyQueue';

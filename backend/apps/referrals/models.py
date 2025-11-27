@@ -121,6 +121,32 @@ class Referral(models.Model):
         help_text="Linked appointment ID (can be FHIR Appointment ID or local ID)"
     )
 
+    # Referral type (determines encounter handling)
+    referral_type = models.CharField(
+        max_length=20,
+        choices=[('inpatient', 'Inpatient'), ('opd', 'Outpatient')],
+        default='opd',
+        help_text="Type of referral - determines encounter handling"
+    )
+
+    # Consultation workflow linkage
+    consultation_workflow = models.ForeignKey(
+        'workflows.ClinicalWorkflow',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='referrals',
+        help_text="Consultation workflow created for this referral"
+    )
+    consultation_encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consultation_referrals',
+        help_text="Encounter created for specialist consultation (for OPD referrals)"
+    )
+
     # Status tracking timestamps
     submitted_at = models.DateTimeField(
         null=True,

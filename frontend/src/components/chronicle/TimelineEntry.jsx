@@ -2,6 +2,13 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   FileText,
   Pill,
   TestTube,
@@ -10,9 +17,18 @@ import {
   ClipboardList,
   UserPlus,
   LogOut,
-  Expand
+  Expand,
+  Send,
+  ArrowRight,
+  MoreHorizontal,
+  Edit,
+  XCircle,
+  PauseCircle,
+  PlayCircle,
+  RefreshCw,
 } from "lucide-react";
 import NoteDetailModal from "./NoteDetailModal";
+import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
 
 /**
  * TimelineEntry - A chronological entry in the patient's clinical chronicle
@@ -27,6 +43,7 @@ import NoteDetailModal from "./NoteDetailModal";
  * - admission: Patient admission
  * - discharge: Patient discharge
  * - procedure: Procedure performed
+ * - referral: Referral request/consultation result
  */
 const TimelineEntry = ({
   entry,
@@ -130,6 +147,12 @@ const TimelineEntry = ({
       label: 'Procedure',
       color: 'rose',
       nodeClass: 'timeline-node-rose'
+    },
+    referral: {
+      icon: Send,
+      label: 'Referral',
+      color: 'sky',
+      nodeClass: 'timeline-node-sky'
     }
   };
 
@@ -222,7 +245,9 @@ const TimelineEntry = ({
         return <LabResultContent result={entry.data} />;
       case 'medication':
       case 'prescription':
-        return <MedicationContent medication={entry.data} />;
+        return <MedicationContent medication={entry.data} entry={entry} />;
+      case 'referral':
+        return <ReferralContent referral={entry.data} />;
       default:
         // Generic note preview
         return <NotePreview entry={entry} />;
@@ -366,24 +391,276 @@ const LabResultContent = ({ result }) => {
 };
 
 /**
- * MedicationContent - Renders medication administration data
+ * MedicationContent - Renders medication/prescription data with actions
  */
-const MedicationContent = ({ medication }) => {
+const MedicationContent = ({ medication, entry }) => {
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [selectedAction, setSelectedAction] = useState(null);
+
   if (!medication) return null;
 
+  // Get status from medication data or entry
+  const status = medication.status || entry?.data?.status || 'active';
+  const prescriptionId = medication.id || entry?.data?.id || entry?.id;
+
+  // Status badge configuration
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      active: {
+        label: 'Active',
+        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
+      },
+      on_hold: {
+        label: 'On Hold',
+        className: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
+      },
+      discontinued: {
+        label: 'Discontinued',
+        className: 'bg-rose-500/10 text-rose-600 border-rose-500/30',
+      },
+      completed: {
+        label: 'Completed',
+        className: 'bg-muted text-muted-foreground border-border',
+      },
+      draft: {
+        label: 'Draft',
+        className: 'bg-muted text-muted-foreground border-border',
+      },
+    };
+    return statusConfig[status] || statusConfig.active;
+  };
+
+  const statusBadge = getStatusBadge(status);
+
+  // Handle action click
+  const handleAction = (action) => {
+    setSelectedAction(action);
+    setActionDialogOpen(true);
+  };
+
+  // Check if actions should be available (only for doctors, and based on status)
+  const canEdit = status === 'active' || status === 'on_hold';
+  const canDiscontinue = status === 'active' || status === 'on_hold';
+  const canHold = status === 'active';
+  const canResume = status === 'on_hold';
+  const canRenew = status === 'active' || status === 'completed';
+  const hasAnyAction = canEdit || canDiscontinue || canHold || canResume || canRenew;
+
   return (
-    <div className="space-y-1">
-      <h4 className="font-medium text-foreground/90">
-        {medication.name}
-      </h4>
+    <div className="space-y-2">
+      {/* Header row with name and status */}
+      <div className="flex items-start justify-between gap-2">
+        <h4 className="font-medium text-foreground/90">
+          {medication.name || medication.medication_name}
+        </h4>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={cn(
+            "text-[10px] px-2 py-0.5 rounded-full border font-medium",
+            statusBadge.className
+          )}>
+            {statusBadge.label}
+          </span>
+          {/* Actions dropdown - only show if there are valid actions */}
+          {hasAnyAction && prescriptionId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-muted"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                  <span className="sr-only">Prescription actions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => handleAction('edit')}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Prescription
+                  </DropdownMenuItem>
+                )}
+                {canRenew && (
+                  <DropdownMenuItem onClick={() => handleAction('renew')}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Renew
+                  </DropdownMenuItem>
+                )}
+                {(canEdit || canRenew) && (canHold || canResume || canDiscontinue) && (
+                  <DropdownMenuSeparator />
+                )}
+                {canHold && (
+                  <DropdownMenuItem onClick={() => handleAction('hold')}>
+                    <PauseCircle className="h-4 w-4 mr-2" />
+                    Put on Hold
+                  </DropdownMenuItem>
+                )}
+                {canResume && (
+                  <DropdownMenuItem onClick={() => handleAction('resume')}>
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    Resume
+                  </DropdownMenuItem>
+                )}
+                {canDiscontinue && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => handleAction('discontinue')}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Discontinue
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+
+      {/* Medication details */}
       <p className="font-mono text-sm text-muted-foreground">
-        {medication.dose} {medication.route}
-        {medication.frequency && ` · ${medication.frequency}`}
+        {medication.dose || medication.dosage} {medication.route_display || medication.route}
+        {(medication.frequency || medication.frequency_display) &&
+          ` · ${medication.frequency_display || medication.frequency}`}
       </p>
-      {medication.notes && (
-        <p className="text-sm text-muted-foreground mt-2">
-          {medication.notes}
+
+      {/* Duration info */}
+      {medication.duration_days && (
+        <p className="text-xs text-muted-foreground">
+          Duration: {medication.duration_days} days
+          {medication.end_date && ` (ends ${new Date(medication.end_date).toLocaleDateString()})`}
         </p>
+      )}
+
+      {/* Instructions/notes */}
+      {(medication.notes || medication.instructions) && (
+        <p className="text-sm text-muted-foreground mt-2 italic">
+          {medication.notes || medication.instructions}
+        </p>
+      )}
+
+      {/* Discontinue reason if discontinued */}
+      {status === 'discontinued' && medication.discontinue_reason && (
+        <p className="text-xs text-rose-600 mt-2">
+          Reason: {medication.discontinue_reason}
+        </p>
+      )}
+
+      {/* Actions dialog */}
+      <PrescriptionActionsDialog
+        open={actionDialogOpen}
+        onOpenChange={setActionDialogOpen}
+        prescription={{ ...medication, id: prescriptionId }}
+        action={selectedAction}
+        onSuccess={() => {
+          // Dialog handles toast, just close
+        }}
+      />
+    </div>
+  );
+};
+
+/**
+ * ReferralContent - Renders referral/consultation data
+ */
+const ReferralContent = ({ referral }) => {
+  if (!referral) return null;
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20';
+      case 'accepted':
+      case 'scheduled':
+        return 'text-sky-600 bg-sky-50 dark:bg-sky-900/20';
+      case 'pending':
+        return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
+      case 'declined':
+        return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20';
+      default:
+        return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header with referral number and status */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">
+            {referral.referral_number}
+          </span>
+          {referral.is_urgent && (
+            <span className="badge-chronicle-rose text-[10px]">URGENT</span>
+          )}
+        </div>
+        <span className={cn(
+          "font-mono text-xs px-2 py-0.5 rounded-full",
+          getStatusColor(referral.status)
+        )}>
+          {referral.status_display}
+        </span>
+      </div>
+
+      {/* Referral flow: from → to */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-muted-foreground">
+          {referral.referring_department}
+        </span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+        <span className="font-medium text-foreground/90">
+          {referral.referred_to_specialty || referral.referred_to_department}
+        </span>
+        {referral.referred_to_provider && (
+          <span className="text-muted-foreground">
+            ({referral.referred_to_provider})
+          </span>
+        )}
+      </div>
+
+      {/* Reason or specialist notes based on status */}
+      {referral.status === 'completed' && referral.specialist_notes ? (
+        <div className="p-3 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-lg border border-emerald-200/50 dark:border-emerald-900/30">
+          <p className="font-mono text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
+            Specialist Notes
+          </p>
+          <p className="text-sm text-foreground/80 line-clamp-3">
+            {referral.specialist_notes}
+          </p>
+          {referral.recommendations && (
+            <>
+              <p className="font-mono text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mt-2 mb-1">
+                Recommendations
+              </p>
+              <p className="text-sm text-foreground/80 line-clamp-2">
+                {referral.recommendations}
+              </p>
+            </>
+          )}
+        </div>
+      ) : referral.reason && (
+        <div>
+          <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground/70 mb-1">
+            Reason for Referral
+          </p>
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            {referral.reason}
+          </p>
+        </div>
+      )}
+
+      {/* Questions for specialist (if any and not completed) */}
+      {referral.status !== 'completed' && referral.questions_for_specialist && (
+        <div className="p-2 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg border border-amber-200/50 dark:border-amber-900/30">
+          <p className="font-mono text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400">
+            Questions for Specialist
+          </p>
+          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+            {referral.questions_for_specialist}
+          </p>
+        </div>
       )}
     </div>
   );
@@ -532,4 +809,4 @@ const TimelineGroup = ({ date, entries, startIndex = 0 }) => {
 };
 
 export default TimelineEntry;
-export { TimelineEntry, TimelineGroup, VitalsContent, LabResultContent, MedicationContent, NotePreview };
+export { TimelineEntry, TimelineGroup, VitalsContent, LabResultContent, MedicationContent, ReferralContent, NotePreview };

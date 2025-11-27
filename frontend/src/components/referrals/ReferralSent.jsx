@@ -23,20 +23,15 @@ import {
   Eye,
   CheckCircle,
   XCircle,
+  ChevronRight,
+  Stethoscope,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useReferralsSent } from "@/hooks/useReferralQueries";
 
 /**
  * ReferralSent - Track referrals sent by current user
- *
- * Features:
- * - List of sent referrals with status tracking
- * - Filter by patient or department
- * - View detailed referral information
- * - Status indicators (pending, accepted, declined, completed)
- * - Specialist responses and recommendations
- * - Chronicle design system styling
+ * Uses Chronicle Design System for consistent dark mode support
  */
 const ReferralSent = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,7 +42,7 @@ const ReferralSent = () => {
   const { data: sentData, isLoading } = useReferralsSent();
 
   // Filter referrals by search
-  const filteredReferrals = (sentData?.results || []).filter((referral) => {
+  const filteredReferrals = (sentData?.referrals || []).filter((referral) => {
     if (!searchQuery) return true;
 
     const query = searchQuery.toLowerCase();
@@ -55,7 +50,7 @@ const ReferralSent = () => {
       `${referral.patient_details?.first_name} ${referral.patient_details?.last_name}`.toLowerCase();
     const mrn = referral.patient_details?.medical_record_number?.toLowerCase() || "";
     const referralNumber = referral.referral_number?.toLowerCase() || "";
-    const department = referral.department?.toLowerCase() || "";
+    const department = referral.referred_to_department?.toLowerCase() || "";
     const reason = referral.reason?.toLowerCase() || "";
 
     return (
@@ -73,41 +68,41 @@ const ReferralSent = () => {
     setDetailDialogOpen(true);
   };
 
-  // Status config
+  // Status config using Chronicle badge classes
   const statusConfig = {
     draft: {
       label: "Draft",
-      color: "bg-stone-100 text-stone-700",
+      badgeClass: "bg-muted text-muted-foreground",
       icon: FileText,
       description: "Not yet submitted",
     },
-    submitted: {
+    pending: {
       label: "Pending Review",
-      color: "bg-sky-100 text-sky-700",
+      badgeClass: "badge-chronicle-amber",
       icon: Clock,
       description: "Waiting for specialist response",
     },
     accepted: {
       label: "Accepted",
-      color: "bg-emerald-100 text-emerald-700",
+      badgeClass: "badge-chronicle-emerald",
       icon: CheckCircle,
       description: "Specialist has accepted",
     },
     declined: {
       label: "Declined",
-      color: "bg-rose-100 text-rose-700",
+      badgeClass: "badge-chronicle-rose",
       icon: XCircle,
       description: "Specialist declined",
     },
     scheduled: {
       label: "Scheduled",
-      color: "bg-violet-100 text-violet-700",
+      badgeClass: "badge-chronicle-sky",
       icon: Calendar,
       description: "Appointment scheduled",
     },
     completed: {
       label: "Completed",
-      color: "bg-emerald-100 text-emerald-700",
+      badgeClass: "badge-chronicle-emerald",
       icon: CheckCircle,
       description: "Consultation completed",
     },
@@ -117,23 +112,39 @@ const ReferralSent = () => {
   const urgencyConfig = {
     routine: {
       label: "Routine",
-      color: "bg-stone-100 text-stone-700",
+      badgeClass: "bg-muted text-muted-foreground",
       icon: Clock,
     },
     urgent: {
       label: "Urgent",
-      color: "bg-amber-100 text-amber-700",
+      badgeClass: "badge-chronicle-amber",
       icon: AlertCircle,
     },
     emergency: {
       label: "Emergency",
-      color: "bg-rose-100 text-rose-700",
+      badgeClass: "badge-chronicle-rose",
       icon: AlertCircle,
     },
   };
 
+  // Status progression steps for the visual indicator
+  const progressionSteps = [
+    { key: "draft", label: "Created", icon: FileText },
+    { key: "pending", label: "Submitted", icon: Send },
+    { key: "accepted", label: "Accepted", icon: CheckCircle },
+    { key: "scheduled", label: "Scheduled", icon: Calendar },
+    { key: "completed", label: "Completed", icon: Stethoscope },
+  ];
+
+  // Get the step index for a given status
+  const getStepIndex = (status) => {
+    if (status === "declined") return -1; // Special case for declined
+    const index = progressionSteps.findIndex((s) => s.key === status);
+    return index >= 0 ? index : 0;
+  };
+
   // Get status counts
-  const statusCounts = (sentData?.results || []).reduce((acc, referral) => {
+  const statusCounts = (sentData?.referrals || []).reduce((acc, referral) => {
     acc[referral.status] = (acc[referral.status] || 0) + 1;
     return acc;
   }, {});
@@ -142,7 +153,7 @@ const ReferralSent = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-stone-500">Loading referrals...</div>
+        <div className="text-muted-foreground">Loading referrals...</div>
       </div>
     );
   }
@@ -152,16 +163,16 @@ const ReferralSent = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-display font-bold text-stone-900">
+          <h1 className="font-display text-3xl font-bold text-foreground">
             Sent Referrals
           </h1>
-          <p className="text-stone-600 mt-1">
+          <p className="text-muted-foreground mt-1">
             Track the status of referrals you've sent to specialists
           </p>
         </div>
-        <Badge className="text-base px-3 py-1">
+        <span className="badge-chronicle-amber text-base px-3 py-1">
           {filteredReferrals.length} Referrals
-        </Badge>
+        </span>
       </div>
 
       {/* Status Summary */}
@@ -169,15 +180,15 @@ const ReferralSent = () => {
         {Object.entries(statusConfig).map(([status, config]) => {
           const count = statusCounts[status] || 0;
           return (
-            <Card key={status} className="border-stone-200">
+            <Card key={status} className="bg-card border-border">
               <CardContent className="pt-4 pb-3">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-stone-900 mb-1">
+                  <div className="font-mono text-2xl font-bold text-foreground mb-1">
                     {count}
                   </div>
-                  <Badge variant="outline" className={cn("text-xs", config.color)}>
+                  <span className={cn("text-xs px-2 py-0.5 rounded-full", config.badgeClass)}>
                     {config.label}
-                  </Badge>
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -187,22 +198,22 @@ const ReferralSent = () => {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-stone-400" />
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search by patient name, MRN, department, or reason..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
+          className="pl-10 bg-card border-border"
         />
       </div>
 
       {/* Referrals List */}
       {filteredReferrals.length === 0 ? (
-        <Card>
+        <Card className="bg-card border-border">
           <CardContent className="py-12">
-            <div className="text-center text-stone-500">
-              <Send className="h-12 w-12 mx-auto mb-3 text-stone-300" />
-              <p className="font-medium">No referrals found</p>
+            <div className="text-center text-muted-foreground">
+              <Send className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="font-heading font-medium">No referrals found</p>
               <p className="text-sm mt-1">
                 {searchQuery
                   ? "Try adjusting your search"
@@ -214,54 +225,56 @@ const ReferralSent = () => {
       ) : (
         <div className="space-y-4">
           {filteredReferrals.map((referral) => {
-            const status = statusConfig[referral.status];
-            const urgency = urgencyConfig[referral.urgency];
+            const status = statusConfig[referral.status] || statusConfig.draft;
+            const urgency = urgencyConfig[referral.urgency] || urgencyConfig.routine;
             const StatusIcon = status.icon;
             const UrgencyIcon = urgency.icon;
 
             return (
-              <Card key={referral.id} className="border-stone-200">
+              <Card key={referral.id} className="bg-card border-border animate-chronicle-enter">
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <CardTitle className="text-lg font-heading">
+                        <CardTitle className="font-heading text-lg text-foreground">
                           Referral #{referral.referral_number}
                         </CardTitle>
-                        <Badge className={cn("gap-1", status.color)}>
+                        <span className={cn("gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full", status.badgeClass)}>
                           <StatusIcon className="h-3 w-3" />
                           {status.label}
-                        </Badge>
-                        <Badge className={cn("gap-1", urgency.color)}>
+                        </span>
+                        <span className={cn("gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full", urgency.badgeClass)}>
                           <UrgencyIcon className="h-3 w-3" />
                           {urgency.label}
-                        </Badge>
+                        </span>
                       </div>
                       <CardDescription className="space-y-1">
-                        <div className="flex items-center gap-4 flex-wrap">
+                        <div className="flex items-center gap-4 flex-wrap text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
                             {referral.patient_details?.first_name}{" "}
                             {referral.patient_details?.last_name}
                           </span>
                           {referral.patient_details?.medical_record_number && (
-                            <span className="font-mono text-stone-500">
+                            <span className="font-mono">
                               MRN: {referral.patient_details.medical_record_number}
                             </span>
                           )}
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {format(new Date(referral.created_at), "MMM dd, yyyy")}
-                          </span>
+                          {referral.created_at && (
+                            <span className="flex items-center gap-1 font-mono text-xs">
+                              <Calendar className="h-3 w-3" />
+                              {format(new Date(referral.created_at), "MMM dd, yyyy")}
+                            </span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 text-muted-foreground">
                           <Building2 className="h-3 w-3" />
                           <span className="capitalize">
-                            {referral.department?.replace(/_/g, " ")}
+                            {referral.referred_to_department?.replace(/_/g, " ")}
                           </span>
-                          {referral.specialty && referral.specialty !== referral.department && (
-                            <span className="text-stone-400">
-                              • {referral.specialty}
+                          {referral.referred_to_specialty && referral.referred_to_specialty !== referral.referred_to_department && (
+                            <span className="opacity-60">
+                              • {referral.referred_to_specialty}
                             </span>
                           )}
                         </div>
@@ -271,26 +284,96 @@ const ReferralSent = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => handleViewDetails(referral)}
+                      className="font-mono text-xs"
                     >
                       <Eye className="h-4 w-4 mr-2" />
                       View Details
                     </Button>
                   </div>
                 </CardHeader>
+
+                {/* Status Progression Indicator */}
+                {referral.status !== "declined" && (
+                  <div className="px-6 py-3 border-t border-border bg-muted/30">
+                    <div className="flex items-center justify-between">
+                      {progressionSteps.map((step, index) => {
+                        const StepIcon = step.icon;
+                        const currentIndex = getStepIndex(referral.status);
+                        const isCompleted = index <= currentIndex;
+                        const isCurrent = index === currentIndex;
+
+                        return (
+                          <div key={step.key} className="flex items-center flex-1">
+                            {/* Step node */}
+                            <div className="flex flex-col items-center">
+                              <div
+                                className={cn(
+                                  "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                                  isCompleted
+                                    ? "bg-emerald-500 text-white"
+                                    : "bg-muted text-muted-foreground",
+                                  isCurrent && "ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background"
+                                )}
+                              >
+                                <StepIcon className="h-4 w-4" />
+                              </div>
+                              <span
+                                className={cn(
+                                  "font-mono text-[10px] mt-1 text-center",
+                                  isCompleted ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+                                )}
+                              >
+                                {step.label}
+                              </span>
+                            </div>
+                            {/* Connector line */}
+                            {index < progressionSteps.length - 1 && (
+                              <div
+                                className={cn(
+                                  "flex-1 h-0.5 mx-2 transition-colors",
+                                  index < currentIndex ? "bg-emerald-500" : "bg-muted"
+                                )}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Declined status indicator */}
+                {referral.status === "declined" && (
+                  <div className="px-6 py-3 border-t border-border bg-rose-50/50 dark:bg-rose-900/10">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-rose-500" />
+                      <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                        Referral Declined
+                      </span>
+                      {referral.decline_reason && (
+                        <span className="text-sm text-muted-foreground ml-2">
+                          — {referral.decline_reason.slice(0, 50)}
+                          {referral.decline_reason.length > 50 ? "..." : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <CardContent className="space-y-3">
                   {/* Reason */}
                   <div>
-                    <p className="text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
+                    <p className="text-sm font-heading font-medium text-foreground mb-1 flex items-center gap-1">
                       <FileText className="h-3 w-3" />
                       Reason:
                     </p>
-                    <p className="text-sm text-stone-900">{referral.reason}</p>
+                    <p className="text-sm text-muted-foreground">{referral.reason}</p>
                   </div>
 
                   {/* Status-specific messages */}
-                  {referral.status === "submitted" && (
-                    <div className="bg-sky-50 border border-sky-200 rounded-lg p-3">
-                      <p className="text-xs text-sky-700">
+                  {referral.status === "pending" && (
+                    <div className="bg-[oklch(0.75_0.18_55_/_0.1)] border border-[oklch(0.75_0.18_55_/_0.3)] rounded-lg p-3">
+                      <p className="text-xs text-[oklch(0.75_0.18_55)]">
                         <Clock className="inline h-3 w-3 mr-1" />
                         Awaiting specialist response
                       </p>
@@ -298,43 +381,43 @@ const ReferralSent = () => {
                   )}
 
                   {referral.status === "accepted" && referral.acceptance_notes && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                      <p className="text-xs font-medium text-emerald-700 mb-1">
+                    <div className="bg-[oklch(0.70_0.17_155_/_0.1)] border border-[oklch(0.70_0.17_155_/_0.3)] rounded-lg p-3">
+                      <p className="text-xs font-heading font-medium text-[oklch(0.70_0.17_155)] mb-1">
                         Specialist Response:
                       </p>
-                      <p className="text-sm text-emerald-900">
+                      <p className="text-sm text-foreground">
                         {referral.acceptance_notes}
                       </p>
                     </div>
                   )}
 
                   {referral.status === "declined" && referral.decline_reason && (
-                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-3">
-                      <p className="text-xs font-medium text-rose-700 mb-1">
+                    <div className="bg-[oklch(0.65_0.22_15_/_0.1)] border border-[oklch(0.65_0.22_15_/_0.3)] rounded-lg p-3">
+                      <p className="text-xs font-heading font-medium text-[oklch(0.65_0.22_15)] mb-1">
                         Decline Reason:
                       </p>
-                      <p className="text-sm text-rose-900">{referral.decline_reason}</p>
+                      <p className="text-sm text-foreground">{referral.decline_reason}</p>
                     </div>
                   )}
 
                   {referral.status === "completed" && (
                     <div className="space-y-2">
                       {referral.specialist_notes && (
-                        <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
-                          <p className="text-xs font-medium text-violet-700 mb-1">
+                        <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
+                          <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
                             Specialist Notes:
                           </p>
-                          <p className="text-sm text-violet-900 whitespace-pre-wrap">
+                          <p className="text-sm text-foreground whitespace-pre-wrap">
                             {referral.specialist_notes}
                           </p>
                         </div>
                       )}
                       {referral.recommendations && (
-                        <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
-                          <p className="text-xs font-medium text-violet-700 mb-1">
+                        <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
+                          <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
                             Recommendations:
                           </p>
-                          <p className="text-sm text-violet-900 whitespace-pre-wrap">
+                          <p className="text-sm text-foreground whitespace-pre-wrap">
                             {referral.recommendations}
                           </p>
                         </div>
@@ -343,9 +426,11 @@ const ReferralSent = () => {
                   )}
 
                   {/* Last Updated */}
-                  <div className="text-xs text-stone-500">
-                    Last updated: {format(new Date(referral.updated_at), "MMM dd, yyyy HH:mm")}
-                  </div>
+                  {referral.updated_at && (
+                    <div className="font-mono text-xs text-muted-foreground">
+                      Last updated: {format(new Date(referral.updated_at), "MMM dd, yyyy HH:mm")}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -355,9 +440,9 @@ const ReferralSent = () => {
 
       {/* Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto bg-card border-border">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="font-display text-xl">
               Referral #{selectedReferral?.referral_number}
             </DialogTitle>
             <DialogDescription>
@@ -369,45 +454,108 @@ const ReferralSent = () => {
             <div className="space-y-6 py-4">
               {/* Status & Urgency */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge className={statusConfig[selectedReferral.status]?.color}>
+                <span className={cn("text-xs px-2 py-0.5 rounded-full", statusConfig[selectedReferral.status]?.badgeClass)}>
                   {statusConfig[selectedReferral.status]?.label}
-                </Badge>
-                <Badge className={urgencyConfig[selectedReferral.urgency]?.color}>
+                </span>
+                <span className={cn("text-xs px-2 py-0.5 rounded-full", urgencyConfig[selectedReferral.urgency]?.badgeClass)}>
                   {urgencyConfig[selectedReferral.urgency]?.label}
-                </Badge>
+                </span>
               </div>
 
+              {/* Status Progression in Detail View */}
+              {selectedReferral.status !== "declined" && (
+                <div className="bg-muted/50 border border-border rounded-lg p-4">
+                  <h3 className="font-heading font-semibold text-foreground mb-4">
+                    Referral Progress
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    {progressionSteps.map((step, index) => {
+                      const StepIcon = step.icon;
+                      const currentIndex = getStepIndex(selectedReferral.status);
+                      const isCompleted = index <= currentIndex;
+                      const isCurrent = index === currentIndex;
+
+                      return (
+                        <div key={step.key} className="flex items-center flex-1">
+                          <div className="flex flex-col items-center">
+                            <div
+                              className={cn(
+                                "w-10 h-10 rounded-full flex items-center justify-center transition-all",
+                                isCompleted
+                                  ? "bg-emerald-500 text-white"
+                                  : "bg-muted text-muted-foreground",
+                                isCurrent && "ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background"
+                              )}
+                            >
+                              <StepIcon className="h-5 w-5" />
+                            </div>
+                            <span
+                              className={cn(
+                                "font-mono text-xs mt-2 text-center",
+                                isCompleted ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground"
+                              )}
+                            >
+                              {step.label}
+                            </span>
+                          </div>
+                          {index < progressionSteps.length - 1 && (
+                            <div
+                              className={cn(
+                                "flex-1 h-0.5 mx-3 transition-colors",
+                                index < currentIndex ? "bg-emerald-500" : "bg-muted"
+                              )}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Declined Banner in Detail View */}
+              {selectedReferral.status === "declined" && (
+                <div className="bg-rose-50/50 dark:bg-rose-900/10 border border-rose-200/50 dark:border-rose-900/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-5 w-5 text-rose-500" />
+                    <span className="text-base font-medium text-rose-600 dark:text-rose-400">
+                      This referral was declined by the specialist
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Patient Info */}
-              <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-stone-900 mb-3">
+              <div className="bg-muted border border-border rounded-lg p-4">
+                <h3 className="font-heading font-semibold text-foreground mb-3">
                   Patient Information
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-stone-600">Name:</span>
-                    <span className="font-semibold text-stone-900">
+                    <span className="text-muted-foreground">Name:</span>
+                    <span className="font-semibold text-foreground">
                       {selectedReferral.patient_details?.first_name}{" "}
                       {selectedReferral.patient_details?.last_name}
                     </span>
                   </div>
                   {selectedReferral.patient_details?.medical_record_number && (
                     <div className="flex items-center justify-between">
-                      <span className="text-stone-600">MRN:</span>
-                      <span className="font-mono text-stone-900">
+                      <span className="text-muted-foreground">MRN:</span>
+                      <span className="font-mono text-foreground">
                         {selectedReferral.patient_details.medical_record_number}
                       </span>
                     </div>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-stone-600">Department:</span>
-                    <span className="capitalize text-stone-900">
-                      {selectedReferral.department?.replace(/_/g, " ")}
+                    <span className="text-muted-foreground">Department:</span>
+                    <span className="capitalize text-foreground">
+                      {selectedReferral.referred_to_department?.replace(/_/g, " ")}
                     </span>
                   </div>
-                  {selectedReferral.specialty && (
+                  {selectedReferral.referred_to_specialty && (
                     <div className="flex items-center justify-between">
-                      <span className="text-stone-600">Specialty:</span>
-                      <span className="text-stone-900">{selectedReferral.specialty}</span>
+                      <span className="text-muted-foreground">Specialty:</span>
+                      <span className="text-foreground">{selectedReferral.referred_to_specialty}</span>
                     </div>
                   )}
                 </div>
@@ -415,31 +563,23 @@ const ReferralSent = () => {
 
               {/* Referral Details */}
               <div>
-                <h3 className="font-heading font-semibold text-stone-900 mb-3">
+                <h3 className="font-heading font-semibold text-foreground mb-3">
                   Referral Details
                 </h3>
                 <div className="space-y-3">
                   <div>
-                    <p className="text-sm font-medium text-stone-700 mb-1">
+                    <p className="text-sm font-heading font-medium text-muted-foreground mb-1">
                       Reason for Referral:
                     </p>
-                    <p className="text-sm text-stone-900">{selectedReferral.reason}</p>
+                    <p className="text-sm text-foreground">{selectedReferral.reason}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-stone-700 mb-1">
-                      Clinical Summary:
-                    </p>
-                    <p className="text-sm text-stone-900 whitespace-pre-wrap">
-                      {selectedReferral.clinical_summary}
-                    </p>
-                  </div>
-                  {selectedReferral.relevant_history && (
+                  {selectedReferral.clinical_summary && (
                     <div>
-                      <p className="text-sm font-medium text-stone-700 mb-1">
-                        Relevant Medical History:
+                      <p className="text-sm font-heading font-medium text-muted-foreground mb-1">
+                        Clinical Summary:
                       </p>
-                      <p className="text-sm text-stone-900 whitespace-pre-wrap">
-                        {selectedReferral.relevant_history}
+                      <p className="text-sm text-foreground whitespace-pre-wrap">
+                        {selectedReferral.clinical_summary}
                       </p>
                     </div>
                   )}
@@ -451,46 +591,46 @@ const ReferralSent = () => {
                 selectedReferral.decline_reason ||
                 selectedReferral.specialist_notes) && (
                 <div>
-                  <h3 className="font-heading font-semibold text-stone-900 mb-3">
+                  <h3 className="font-heading font-semibold text-foreground mb-3">
                     Specialist Response
                   </h3>
                   <div className="space-y-3">
                     {selectedReferral.acceptance_notes && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-                        <p className="text-sm font-medium text-emerald-700 mb-2">
+                      <div className="bg-[oklch(0.70_0.17_155_/_0.1)] border border-[oklch(0.70_0.17_155_/_0.3)] rounded-lg p-4">
+                        <p className="text-sm font-heading font-medium text-[oklch(0.70_0.17_155)] mb-2">
                           Acceptance Notes:
                         </p>
-                        <p className="text-sm text-emerald-900">
+                        <p className="text-sm text-foreground">
                           {selectedReferral.acceptance_notes}
                         </p>
                       </div>
                     )}
                     {selectedReferral.decline_reason && (
-                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
-                        <p className="text-sm font-medium text-rose-700 mb-2">
+                      <div className="bg-[oklch(0.65_0.22_15_/_0.1)] border border-[oklch(0.65_0.22_15_/_0.3)] rounded-lg p-4">
+                        <p className="text-sm font-heading font-medium text-[oklch(0.65_0.22_15)] mb-2">
                           Decline Reason:
                         </p>
-                        <p className="text-sm text-rose-900">
+                        <p className="text-sm text-foreground">
                           {selectedReferral.decline_reason}
                         </p>
                       </div>
                     )}
                     {selectedReferral.specialist_notes && (
-                      <div className="bg-violet-50 border border-violet-200 rounded-lg p-4">
-                        <p className="text-sm font-medium text-violet-700 mb-2">
+                      <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-4">
+                        <p className="text-sm font-heading font-medium text-[oklch(0.70_0.15_230)] mb-2">
                           Specialist Notes:
                         </p>
-                        <p className="text-sm text-violet-900 whitespace-pre-wrap">
+                        <p className="text-sm text-foreground whitespace-pre-wrap">
                           {selectedReferral.specialist_notes}
                         </p>
                       </div>
                     )}
                     {selectedReferral.recommendations && (
-                      <div className="bg-violet-50 border border-violet-200 rounded-lg p-4">
-                        <p className="text-sm font-medium text-violet-700 mb-2">
+                      <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-4">
+                        <p className="text-sm font-heading font-medium text-[oklch(0.70_0.15_230)] mb-2">
                           Recommendations:
                         </p>
-                        <p className="text-sm text-violet-900 whitespace-pre-wrap">
+                        <p className="text-sm text-foreground whitespace-pre-wrap">
                           {selectedReferral.recommendations}
                         </p>
                       </div>
@@ -500,23 +640,27 @@ const ReferralSent = () => {
               )}
 
               {/* Timestamps */}
-              <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-stone-900 mb-3">
+              <div className="bg-muted border border-border rounded-lg p-4">
+                <h3 className="font-heading font-semibold text-foreground mb-3">
                   Timeline
                 </h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-stone-600">Created:</span>
-                    <span className="text-stone-900">
-                      {format(new Date(selectedReferral.created_at), "MMM dd, yyyy HH:mm")}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-stone-600">Last Updated:</span>
-                    <span className="text-stone-900">
-                      {format(new Date(selectedReferral.updated_at), "MMM dd, yyyy HH:mm")}
-                    </span>
-                  </div>
+                  {selectedReferral.created_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Created:</span>
+                      <span className="font-mono text-foreground">
+                        {format(new Date(selectedReferral.created_at), "MMM dd, yyyy HH:mm")}
+                      </span>
+                    </div>
+                  )}
+                  {selectedReferral.updated_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Last Updated:</span>
+                      <span className="font-mono text-foreground">
+                        {format(new Date(selectedReferral.updated_at), "MMM dd, yyyy HH:mm")}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -150,6 +150,23 @@ export function useCompleteReferral() {
 }
 
 /**
+ * Start consultation from a referral
+ */
+export function useStartConsultation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => referralsApi.startConsultation(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: referralKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.inbox() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.pending() });
+    },
+  });
+}
+
+/**
  * Update referral response
  */
 export function useUpdateReferralResponse() {

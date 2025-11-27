@@ -40,8 +40,6 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
     specialty: "",
     urgency: "routine",
     reason: "",
-    clinical_summary: "",
-    relevant_history: "",
   });
 
   const [errors, setErrors] = useState({});
@@ -58,8 +56,6 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
         specialty: "",
         urgency: "routine",
         reason: "",
-        clinical_summary: "",
-        relevant_history: "",
       });
       setErrors({});
     }
@@ -118,12 +114,20 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
     if (!formData.reason || formData.reason.trim() === "") {
       newErrors.reason = "Reason for referral is required";
     }
-    if (!formData.clinical_summary || formData.clinical_summary.trim() === "") {
-      newErrors.clinical_summary = "Clinical summary is required";
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Determine if this is an inpatient referral based on encounter type
+  const isInpatientReferral = () => {
+    const encounterType = encounter?.local_data?.encounter_type || encounter?.encounter_type;
+    // Check if encounter is inpatient (admission, inpatient, etc.)
+    if (encounterType) {
+      const inpatientTypes = ['inpatient', 'admission', 'emergency', 'hospitalization'];
+      return inpatientTypes.includes(encounterType.toLowerCase());
+    }
+    return false;
   };
 
   // Handle submit
@@ -131,16 +135,18 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
     if (!validate()) return;
 
     try {
+      // Determine referral type based on encounter
+      const referralType = isInpatientReferral() ? 'inpatient' : 'opd';
+
       // Create referral
       const referralData = {
         patient: patientId,
         encounter: encounterId || null,
-        department: formData.department,
-        specialty: formData.specialty || formData.department,
+        referred_to_department: formData.department,
+        referred_to_specialty: formData.specialty || formData.department,
         urgency: formData.urgency,
         reason: formData.reason,
-        clinical_summary: formData.clinical_summary,
-        relevant_history: formData.relevant_history,
+        referral_type: referralType,
       };
 
       const createdReferral = await createReferral.mutateAsync(referralData);
@@ -242,7 +248,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
                   >
                     <SelectValue placeholder="Select department..." />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[200]">
                     {departments.map((dept) => (
                       <SelectItem key={dept.value} value={dept.value}>
                         {dept.label}
@@ -322,7 +328,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
             </CardContent>
           </Card>
 
-          {/* Clinical Information */}
+          {/* Reason for Referral */}
           <Card className="border-border">
             <CardContent className="pt-6 space-y-4">
               <div className="space-y-2">
@@ -338,53 +344,16 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
                     setFormData((prev) => ({ ...prev, reason: e.target.value }))
                   }
                   className={cn(
-                    "min-h-[80px]",
+                    "min-h-[100px]",
                     errors.reason && "border-rose-500"
                   )}
                 />
                 {errors.reason && (
                   <p className="text-sm text-rose-600">{errors.reason}</p>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="clinical_summary">Clinical Summary *</Label>
-                <Textarea
-                  id="clinical_summary"
-                  placeholder="Current clinical situation, relevant findings, and diagnostic workup completed (e.g., HPI, physical exam findings, lab results, imaging)"
-                  value={formData.clinical_summary}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      clinical_summary: e.target.value,
-                    }))
-                  }
-                  className={cn(
-                    "min-h-[120px]",
-                    errors.clinical_summary && "border-rose-500"
-                  )}
-                />
-                {errors.clinical_summary && (
-                  <p className="text-sm text-rose-600">{errors.clinical_summary}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="relevant_history">
-                  Relevant Medical History (Optional)
-                </Label>
-                <Textarea
-                  id="relevant_history"
-                  placeholder="Past medical history, medications, allergies, previous treatments relevant to this referral"
-                  value={formData.relevant_history}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      relevant_history: e.target.value,
-                    }))
-                  }
-                  className="min-h-[100px]"
-                />
+                <p className="text-xs text-muted-foreground">
+                  The consulted specialist will have access to the patient's full chronicle.
+                </p>
               </div>
             </CardContent>
           </Card>

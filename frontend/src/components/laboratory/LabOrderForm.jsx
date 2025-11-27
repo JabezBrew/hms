@@ -553,7 +553,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[200]">
                     {Object.entries(priorityConfig).map(([key, config]) => (
                       <SelectItem key={key} value={key}>
                         <div className="flex items-center gap-2">

@@ -163,9 +163,26 @@ class ConsultationEngine(BaseWorkflowEngine):
             raise ValueError(f"Patient with ID {patient_id} not found")
 
         # Prepare initial context
+        prep_data = ConsultationEngine._load_prep_data(patient)
+
+        # If referral data is provided, add it to prep_data
+        if initial_data and initial_data.get('referral_id'):
+            prep_data['referral'] = {
+                'id': initial_data.get('referral_id'),
+                'referral_number': initial_data.get('referral_number'),
+                'reason': initial_data.get('referral_reason'),
+                'clinical_summary': initial_data.get('referral_clinical_summary'),
+                'questions': initial_data.get('referral_questions'),
+                'urgency': initial_data.get('referral_urgency'),
+                'referring_doctor': initial_data.get('referral_referring_doctor'),
+                'referring_department': initial_data.get('referral_referring_department'),
+            }
+            # Pre-populate chief complaint from referral reason
+            prep_data['chief_complaint'] = initial_data.get('referral_reason', '')
+
         context_data = {
             'appointment_id': appointment_id,
-            'prep_data': ConsultationEngine._load_prep_data(patient),
+            'prep_data': prep_data,
         }
 
         if initial_data:
@@ -350,11 +367,21 @@ class ConsultationEngine(BaseWorkflowEngine):
         if note:
             artifacts.append({'type': 'note', 'id': note.id})
 
-        # TODO: Process additional artifacts:
-        # - Lab orders
-        # - Prescriptions
-        # - Referrals
-        # - Follow-up appointments
+        # Auto-complete linked referral if this consultation was started from a referral
+        if workflow.source_referral:
+            try:
+                referral = workflow.source_referral
+                referral.status = 'completed'
+                referral.completed_at = timezone.now()
+                referral.specialist_notes = ConsultationEngine._format_consultation_note(consultation_data, context)
+                referral.recommendations = consultation_data.plan or ''
+                referral.save()
+
+                artifacts.append({'type': 'referral_completed', 'id': str(referral.id)})
+                logger.info(f"Auto-completed referral {referral.referral_number} from consultation workflow {workflow.id}")
+            except Exception as e:
+                logger.error(f"Failed to auto-complete referral for workflow {workflow.id}: {str(e)}")
+                # Don't fail the whole operation if referral update fails
 
         return {
             'success': True,

@@ -25,6 +25,7 @@ from ..fhir_client.utils import (
 from ..wards.services import ensure_encounter_for_entry
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
+from ..referrals.models import Referral
 
 logger = logging.getLogger(__name__)
 
@@ -1038,10 +1039,39 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
                         f"for patient {patient.user.get_full_name()}",
         )
 
+        # Auto-generate MAR entries if requested or if patient is admitted
+        mar_generated = False
+        generate_mar = data.get('generate_mar', 'auto')  # 'auto', 'yes', 'no'
+
+        if generate_mar != 'no':
+            # Check if patient is currently admitted (inpatient)
+            from ..wards.models import Admission
+            is_admitted = Admission.objects.filter(
+                patient=patient,
+                status='admitted'
+            ).exists()
+
+            # Generate MAR if explicitly requested OR if auto and patient is admitted
+            if generate_mar == 'yes' or (generate_mar == 'auto' and is_admitted):
+                from ..nursing.services import generate_mar_entries_for_prescription
+                try:
+                    days = int(data.get('mar_days', 7))  # Default 7 days
+                    mar_entries = generate_mar_entries_for_prescription(
+                        prescription,
+                        days=days,
+                        created_by=request.user
+                    )
+                    mar_generated = len(mar_entries) > 0
+                    if mar_generated:
+                        logger.info(f"Auto-generated {len(mar_entries)} MAR entries for prescription {prescription.id}")
+                except Exception as e:
+                    logger.error(f"Failed to auto-generate MAR entries: {e}")
+
         # Return full serialized data with encounter_created flag
         output_serializer = PrescriptionSerializer(prescription)
         response_data = output_serializer.data
         response_data['encounter_created'] = encounter_created
+        response_data['mar_generated'] = mar_generated
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 
@@ -1098,6 +1128,172 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         output_serializer = PrescriptionSerializer(prescription)
         return Response(output_serializer.data)
 
+    @action(detail=True, methods=['post'])
+    def hold(self, request, pk=None):
+        """
+        Put a prescription on hold. Only doctors can hold prescriptions.
+        """
+        if request.user.user_type != 'doctor':
+            return Response(
+                {'error': 'Only doctors can hold prescriptions'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        prescription = self.get_object()
+
+        if prescription.status != 'active':
+            return Response(
+                {'error': 'Only active prescriptions can be put on hold'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reason = request.data.get('reason', '')
+
+        prescription.status = 'on_hold'
+        prescription.save()
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='Prescription',
+            resource_id=prescription.id,
+            resource_name=f"{prescription.medication_name}",
+            description=f"Put {prescription.medication_name} on hold for patient "
+                        f"{prescription.patient.user.get_full_name()}. Reason: {reason}",
+            changes={'status': {'old': 'active', 'new': 'on_hold'}, 'hold_reason': reason}
+        )
+
+        output_serializer = PrescriptionSerializer(prescription)
+        return Response(output_serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def resume(self, request, pk=None):
+        """
+        Resume a prescription that was on hold. Only doctors can resume.
+        """
+        if request.user.user_type != 'doctor':
+            return Response(
+                {'error': 'Only doctors can resume prescriptions'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        prescription = self.get_object()
+
+        if prescription.status != 'on_hold':
+            return Response(
+                {'error': 'Only prescriptions on hold can be resumed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        prescription.status = 'active'
+        prescription.save()
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='Prescription',
+            resource_id=prescription.id,
+            resource_name=f"{prescription.medication_name}",
+            description=f"Resumed {prescription.medication_name} for patient "
+                        f"{prescription.patient.user.get_full_name()}",
+            changes={'status': {'old': 'on_hold', 'new': 'active'}}
+        )
+
+        output_serializer = PrescriptionSerializer(prescription)
+        return Response(output_serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def renew(self, request, pk=None):
+        """
+        Renew a prescription by creating a new one with the same details.
+        Only doctors can renew prescriptions.
+        """
+        if request.user.user_type != 'doctor':
+            return Response(
+                {'error': 'Only doctors can renew prescriptions'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        original = self.get_object()
+
+        # Get the practitioner profile
+        try:
+            practitioner_profile = PractitionerProfile.objects.get(staff__user=request.user)
+        except PractitionerProfile.DoesNotExist:
+            return Response(
+                {'error': 'User does not have an associated practitioner profile'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get new duration from request or use original
+        duration_days = request.data.get('duration_days', original.duration_days)
+        instructions = request.data.get('instructions', original.instructions)
+
+        # Auto-encounter: Find or create an active encounter
+        try:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=original.patient,
+                practitioner=practitioner_profile,
+                encounter_id=request.data.get('encounter'),
+                reason='Prescription Renewal'
+            )
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Calculate new dates
+        start_date = timezone.now().date()
+        end_date = None
+        if duration_days:
+            end_date = start_date + timedelta(days=int(duration_days))
+
+        # Create new prescription
+        new_prescription = Prescription.objects.create(
+            patient=original.patient,
+            prescribed_by=practitioner_profile,
+            medication_name=original.medication_name,
+            dosage=original.dosage,
+            route=original.route,
+            frequency=original.frequency,
+            duration_days=duration_days,
+            start_date=start_date,
+            end_date=end_date,
+            instructions=instructions,
+            reason=f"Renewal of {original.medication_name}",
+            status='active',
+            encounter=encounter,
+        )
+
+        # Mark original as completed if still active
+        if original.status == 'active':
+            original.status = 'completed'
+            original.save()
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.PRESCRIPTION_CREATE,
+            category=AuditCategory.PRESCRIPTION,
+            resource_type='Prescription',
+            resource_id=new_prescription.id,
+            resource_name=f"{new_prescription.medication_name} (Renewal)",
+            description=f"Renewed {new_prescription.medication_name} for patient "
+                        f"{original.patient.user.get_full_name()}. Original Rx: {original.id}",
+        )
+
+        output_serializer = PrescriptionSerializer(new_prescription)
+        response_data = output_serializer.data
+        response_data['original_prescription_id'] = str(original.id)
+        response_data['encounter_created'] = encounter_created
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
     @action(detail=False, methods=['get'])
     def patient_active(self, request):
         """
@@ -1121,6 +1317,64 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         serializer = PrescriptionSerializer(prescriptions, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'])
+    def generate_mar(self, request, pk=None):
+        """
+        Generate Medication Administration Record entries for a prescription.
+        Only doctors and nurses can generate MAR entries.
+        """
+        if request.user.user_type not in ['doctor', 'nurse', 'admin']:
+            return Response(
+                {'error': 'Only clinical staff can generate MAR entries'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        prescription = self.get_object()
+
+        if prescription.status not in ['active']:
+            return Response(
+                {'error': 'MAR can only be generated for active prescriptions'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get parameters
+        days = request.data.get('days', 7)
+        start_date_str = request.data.get('start_date')
+
+        start_date = None
+        if start_date_str:
+            try:
+                start_date = timezone.datetime.fromisoformat(start_date_str.replace('Z', '+00:00')).date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid start_date format'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Import and use the MAR generation service
+        from apps.nursing.services import generate_mar_entries_for_prescription
+
+        entries = generate_mar_entries_for_prescription(
+            prescription,
+            days=days,
+            start_date=start_date,
+            created_by=request.user
+        )
+
+        return Response({
+            'prescription_id': str(prescription.id),
+            'medication': prescription.medication_name,
+            'entries_created': len(entries),
+            'entries': [
+                {
+                    'id': str(e.id),
+                    'scheduled_time': e.scheduled_time.isoformat(),
+                    'status': e.status
+                }
+                for e in entries
+            ]
+        }, status=status.HTTP_201_CREATED)
+
 
 # ========== Patient Timeline API ==========
 
@@ -1134,9 +1388,10 @@ def patient_timeline(request, patient_id):
     - Clinical notes (NoteEntry)
     - Prescriptions
     - Vital signs
+    - Referrals (sent and received)
 
     Query Parameters:
-    - type: Filter by type (notes, vitals, prescriptions, all)
+    - type: Filter by type (notes, vitals, prescriptions, referrals, all)
     - search: Text search across entries
     - page: Page number (default: 1)
     - page_size: Items per page (default: 20, max: 100)
@@ -1194,6 +1449,11 @@ def patient_timeline(request, patient_id):
     if entry_type in ['all', 'vitals']:
         vitals = _get_patient_vitals(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(vitals)
+
+    # Fetch referrals
+    if entry_type in ['all', 'referrals']:
+        referrals = _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id)
+        timeline_entries.extend(referrals)
 
     # Sort all entries by timestamp (newest first)
     timeline_entries.sort(key=lambda x: x['timestamp'], reverse=True)
@@ -1365,8 +1625,11 @@ def _get_patient_prescriptions(patient, search_query, start_datetime, end_dateti
                        (f' for {rx.duration_days} days' if rx.duration_days else ''),
             'author': author_name,
             'data': {
+                'id': str(rx.id),
                 'medication_name': rx.medication_name,
+                'name': rx.medication_name,  # alias for frontend compatibility
                 'dosage': rx.dosage,
+                'dose': rx.dosage,  # alias for frontend compatibility
                 'route': rx.route,
                 'route_display': rx.get_route_display(),
                 'frequency': rx.frequency,
@@ -1377,6 +1640,8 @@ def _get_patient_prescriptions(patient, search_query, start_datetime, end_dateti
                 'instructions': rx.instructions,
                 'reason': rx.reason,
                 'status': rx.status,
+                'status_display': rx.get_status_display(),
+                'discontinue_reason': rx.discontinue_reason if hasattr(rx, 'discontinue_reason') else None,
             },
             'status': rx.status,
             'encounter_id': str(rx.encounter_id) if rx.encounter_id else None,
@@ -1457,6 +1722,119 @@ def _get_patient_vitals(patient, search_query, start_datetime, end_datetime, enc
             'is_critical': vital.is_critical,
             'encounter_id': str(vital.encounter_id) if vital.encounter_id else None,
             'encounter': _format_encounter_details(vital.encounter),
+        })
+
+    return entries
+
+
+def _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id=None):
+    """
+    Fetch and format referrals for a patient (both sent and received consultations).
+    """
+    # Get referrals where patient is the subject - includes both outgoing and incoming
+    referrals_queryset = Referral.objects.filter(
+        patient=patient,
+        status__in=['pending', 'accepted', 'scheduled', 'completed']
+    ).select_related(
+        'referring_provider', 'referring_provider__staff', 'referring_provider__staff__user',
+        'referred_to_provider', 'referred_to_provider__staff', 'referred_to_provider__staff__user',
+        'encounter', 'encounter__practitioner', 'encounter__practitioner__staff',
+        'encounter__practitioner__staff__user',
+        'consultation_encounter'
+    )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        referrals_queryset = referrals_queryset.filter(
+            Q(encounter_id=encounter_id) | Q(consultation_encounter_id=encounter_id)
+        )
+
+    # Apply date filters - use submitted_at as the primary timestamp
+    if start_datetime:
+        referrals_queryset = referrals_queryset.filter(
+            Q(submitted_at__gte=start_datetime) | Q(created_at__gte=start_datetime)
+        )
+    if end_datetime:
+        referrals_queryset = referrals_queryset.filter(
+            Q(submitted_at__lte=end_datetime) | Q(created_at__lte=end_datetime)
+        )
+
+    # Apply search filter
+    if search_query:
+        referrals_queryset = referrals_queryset.filter(
+            Q(reason__icontains=search_query) |
+            Q(clinical_summary__icontains=search_query) |
+            Q(specialist_notes__icontains=search_query) |
+            Q(referred_to_department__icontains=search_query) |
+            Q(referred_to_specialty__icontains=search_query)
+        )
+
+    entries = []
+    for referral in referrals_queryset[:500]:
+        # Get referring provider name
+        referring_name = 'Unknown'
+        if referral.referring_provider and referral.referring_provider.staff and referral.referring_provider.staff.user:
+            user = referral.referring_provider.staff.user
+            referring_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+        # Get referred-to provider name
+        referred_to_name = None
+        if referral.referred_to_provider and referral.referred_to_provider.staff and referral.referred_to_provider.staff.user:
+            user = referral.referred_to_provider.staff.user
+            referred_to_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+        # Determine the timestamp - use submitted_at if available, otherwise created_at
+        timestamp = referral.submitted_at or referral.created_at
+
+        # Build title based on status
+        if referral.status == 'completed':
+            title = f"Consultation Complete: {referral.referred_to_specialty or referral.referred_to_department}"
+        elif referral.status == 'scheduled':
+            title = f"Consultation Scheduled: {referral.referred_to_specialty or referral.referred_to_department}"
+        elif referral.status == 'accepted':
+            title = f"Referral Accepted: {referral.referred_to_specialty or referral.referred_to_department}"
+        else:
+            title = f"Referral: {referral.referred_to_specialty or referral.referred_to_department}"
+
+        # Build content summary
+        content = referral.reason[:200] if referral.reason else ''
+        if referral.status == 'completed' and referral.specialist_notes:
+            content = referral.specialist_notes[:200]
+
+        entries.append({
+            'id': str(referral.id),
+            'type': 'referral',
+            'entry_type': 'referral',
+            'timestamp': timestamp.isoformat(),
+            'title': title,
+            'content': content,
+            'author': referring_name,
+            'data': {
+                'referral_number': referral.referral_number,
+                'status': referral.status,
+                'status_display': referral.get_status_display(),
+                'urgency': referral.urgency,
+                'urgency_display': referral.get_urgency_display(),
+                'is_urgent': referral.is_urgent,
+                'referring_provider': referring_name,
+                'referring_department': referral.referring_department,
+                'referred_to_provider': referred_to_name,
+                'referred_to_department': referral.referred_to_department,
+                'referred_to_specialty': referral.referred_to_specialty,
+                'reason': referral.reason,
+                'clinical_summary': referral.clinical_summary,
+                'questions_for_specialist': referral.questions_for_specialist,
+                'specialist_notes': referral.specialist_notes,
+                'recommendations': referral.recommendations,
+                'submitted_at': referral.submitted_at.isoformat() if referral.submitted_at else None,
+                'accepted_at': referral.accepted_at.isoformat() if referral.accepted_at else None,
+                'completed_at': referral.completed_at.isoformat() if referral.completed_at else None,
+                'referral_type': referral.referral_type,
+                'consultation_workflow_id': str(referral.consultation_workflow_id) if referral.consultation_workflow_id else None,
+            },
+            'encounter_id': str(referral.encounter_id) if referral.encounter_id else None,
+            'encounter': _format_encounter_details(referral.encounter),
+            'consultation_encounter_id': str(referral.consultation_encounter_id) if referral.consultation_encounter_id else None,
         })
 
     return entries

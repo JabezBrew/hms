@@ -70,6 +70,13 @@ const PatientChroniclePage = lazy(() => import('./pages/patients/PatientChronicl
 // Admin Pages
 const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'))
 
+// Referral Pages
+const ReferralInbox = lazy(() => import('./components/referrals/ReferralInbox'))
+const ReferralSent = lazy(() => import('./components/referrals/ReferralSent'))
+
+// Pharmacy Pages
+const PharmacyDispensingPage = lazy(() => import('./pages/pharmacy/PharmacyDispensingPage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -399,10 +406,36 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          {/* Referral routes */}
+          <Route path="/referrals/inbox" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <ReferralInbox />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/referrals/sent" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+              <Layout>
+                <ReferralSent />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
           {/* Nursing routes */}
           <Route path="/nursing/dashboard" element={
             <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
               <NursingDashboardPage />
+            </RoleBasedRoute>
+          } />
+
+          {/* Pharmacy routes */}
+          <Route path="/pharmacy/dispensing" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
+              <Layout>
+                <PharmacyDispensingPage />
+              </Layout>
             </RoleBasedRoute>
           } />
 
