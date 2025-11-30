@@ -135,15 +135,21 @@ class NoteEntrySerializer(serializers.ModelSerializer):
     template_title = serializers.SerializerMethodField()
     practitioner_name = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
+    copied_from_id = serializers.UUIDField(source='copied_from.id', read_only=True)
+    copied_from_date = serializers.DateTimeField(source='copied_from.created_at', read_only=True)
 
     class Meta:
         model = NoteEntry
         fields = [
             'id', 'template', 'template_title', 'patient', 'patient_name',
             'encounter', 'practitioner', 'practitioner_name', 'composition_fhir_id',
-            'data', 'created_at', 'updated_at'
+            'data', 'copied_from', 'copied_from_id', 'copied_from_date',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'composition_fhir_id', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'composition_fhir_id', 'copied_from_id', 'copied_from_date',
+            'created_at', 'updated_at'
+        ]
 
     def get_patient_name(self, obj):
         if obj.patient and obj.patient.user:
@@ -178,6 +184,39 @@ class NoteEntrySerializer(serializers.ModelSerializer):
         # Additional validation could be added here based on section types
 
         return data
+
+
+class NoteEntryCloneSerializer(serializers.Serializer):
+    """
+    Input serializer for cloning a note entry.
+    Used by the clone action to specify which sections to copy.
+    """
+    sections = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="Section names to copy. Defaults to all sections if not provided."
+    )
+    encounter = serializers.UUIDField(
+        required=False,
+        help_text="Target encounter ID. Auto-creates if not provided."
+    )
+    patient = serializers.UUIDField(
+        required=False,
+        help_text="Target patient ID. Defaults to same patient as source note."
+    )
+
+    def validate_sections(self, value):
+        """Validate section names - actual validation happens in view with template context."""
+        if value:
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_sections = []
+            for section in value:
+                if section not in seen:
+                    seen.add(section)
+                    unique_sections.append(section)
+            return unique_sections
+        return value
 
 
 class PrescriptionSerializer(serializers.ModelSerializer):

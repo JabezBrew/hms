@@ -42,23 +42,17 @@ export default function CriticalAlertsMonitor() {
     }
   );
 
-  const { data: inpatientDashboardData } = useInpatientDashboard(
-    {},
-    {
-      enabled: shouldMonitor && isInpatientDoctor,
-      refetchInterval: 30000,
-      refetchIntervalInBackground: false,
-    }
-  );
+  const { data: inpatientDashboardData } = useInpatientDashboard({
+    enabled: shouldMonitor && isInpatientDoctor,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  });
 
-  const { data: adminDashboardData } = useAdminDashboard(
-    {},
-    {
-      enabled: shouldMonitor && isAdmin,
-      refetchInterval: 30000,
-      refetchIntervalInBackground: false,
-    }
-  );
+  const { data: adminDashboardData } = useAdminDashboard({
+    enabled: shouldMonitor && isAdmin,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  });
 
   // Select the appropriate dashboard data
   const dashboardData = isNurse

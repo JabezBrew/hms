@@ -13,17 +13,23 @@ from .models import (
 )
 from .serializers import (
     LabTestCatalogSerializer, LabTestCatalogCreateSerializer,
-    LabPanelSerializer,
+    LabTestCatalogListSerializer, LabTestFacilityCustomizeSerializer,
+    LabTestResetSerializer,
+    LabPanelSerializer, LabPanelListSerializer,
+    LabPanelFacilityCustomizeSerializer,
     LabOrderSerializer, LabOrderCreateSerializer,
     LabOrderSubmitSerializer, LabOrderCancelSerializer,
+    LabOrderListSerializer,
     LabOrderTestSerializer,
     LabSpecimenSerializer, LabSpecimenCollectionSerializer,
-    LabSpecimenReceiptSerializer,
+    LabSpecimenReceiptSerializer, LabSpecimenListSerializer,
     LabResultSerializer, LabResultCreateSerializer,
-    LabResultVerifySerializer,
+    LabResultVerifySerializer, LabResultListSerializer,
     LabOrderSearchSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
+from ..audit.services import AuditService
+from ..audit.models import AuditCategory, AuditAction
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +38,11 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     """
     API endpoint for lab test catalog.
     Read-only for most users, write access for admins.
+
+    Supports facility customization:
+    - POST /tests/{id}/customize/ - Customize price, reference ranges, TAT
+    - POST /tests/{id}/reset_to_defaults/ - Reset to system defaults
+    - DELETE /tests/{id}/ - Only allowed for custom (non-system) tests
     """
     queryset = LabTestCatalog.objects.all()
     permission_classes = [permissions.IsAuthenticated]
@@ -39,10 +50,16 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return LabTestCatalogCreateSerializer
+        elif self.action == 'list':
+            return LabTestCatalogListSerializer
+        elif self.action == 'customize':
+            return LabTestFacilityCustomizeSerializer
+        elif self.action == 'reset_to_defaults':
+            return LabTestResetSerializer
         return LabTestCatalogSerializer
 
     def get_queryset(self):
-        """Filter tests by category and active status."""
+        """Filter tests by category, active status, and customization flags."""
         queryset = LabTestCatalog.objects.all()
 
         # Filter by category
@@ -55,35 +72,150 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
-        # Search by name or code
+        # Filter by system default status
+        is_system = self.request.query_params.get('is_system_default')
+        if is_system is not None:
+            queryset = queryset.filter(is_system_default=is_system.lower() == 'true')
+
+        # Filter by facility modified status
+        is_modified = self.request.query_params.get('is_facility_modified')
+        if is_modified is not None:
+            queryset = queryset.filter(is_facility_modified=is_modified.lower() == 'true')
+
+        # Full-text search across all relevant fields
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
                 Q(short_name__icontains=search) |
-                Q(code__icontains=search)
+                Q(code__icontains=search) |
+                Q(loinc_code__icontains=search) |
+                Q(description__icontains=search) |
+                Q(category__icontains=search) |
+                Q(specimen_type__icontains=search)
             )
 
         return queryset.order_by('category', 'short_name')
 
     def get_permissions(self):
-        """Admin-only for create/update/delete."""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Admin-only for create/update/delete/customize."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        """Only allow deletion of custom (non-system) tests."""
+        instance = self.get_object()
+        if instance.is_system_default:
+            return Response(
+                {'error': 'Cannot delete system tests. Use is_active=False to disable instead.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def customize(self, request, pk=None):
+        """
+        Customize a test's facility-specific values (price, reference_ranges, tat_hours).
+        Marks the test as facility-modified if it's a system default.
+
+        POST /api/laboratory/tests/{id}/customize/
+        {
+            "price": 25.00,
+            "reference_ranges": {"adult": {"low": 4.0, "high": 10.0, "unit": "K/uL"}},
+            "tat_hours": 4,
+            "is_active": true
+        }
+        """
+        test = self.get_object()
+        serializer = LabTestFacilityCustomizeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+
+        # Update the customizable fields
+        if 'price' in data:
+            test.price = data['price']
+        if 'reference_ranges' in data:
+            test.reference_ranges = data['reference_ranges']
+        if 'tat_hours' in data:
+            test.tat_hours = data['tat_hours']
+        if 'is_active' in data:
+            test.is_active = data['is_active']
+
+        # Mark as facility-modified if it's a system test
+        if test.is_system_default:
+            test.is_facility_modified = True
+
+        test.save()
+
+        return Response(
+            LabTestCatalogSerializer(test).data,
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=['post'])
+    def reset_to_defaults(self, request, pk=None):
+        """
+        Reset a test to its system default values.
+        Only works for system tests that have been facility-modified.
+
+        POST /api/laboratory/tests/{id}/reset_to_defaults/
+        {"confirm": true}
+        """
+        test = self.get_object()
+        serializer = LabTestResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not test.is_system_default:
+            return Response(
+                {'error': 'Cannot reset custom tests. Only system tests can be reset.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not test.is_facility_modified:
+            return Response(
+                {'error': 'Test has not been modified. Nothing to reset.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if test.reset_to_system_defaults():
+            return Response(
+                LabTestCatalogSerializer(test).data,
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                {'error': 'Failed to reset test. System defaults may be missing.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class LabPanelViewSet(viewsets.ModelViewSet):
     """
     API endpoint for lab panels.
     Read-only for most users, write access for admins.
+
+    Supports facility customization:
+    - POST /panels/{id}/customize/ - Customize price
+    - POST /panels/{id}/reset_to_defaults/ - Reset to system defaults
+    - DELETE /panels/{id}/ - Only allowed for custom (non-system) panels
     """
     queryset = LabPanel.objects.prefetch_related('tests').all()
     serializer_class = LabPanelSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return LabPanelListSerializer
+        elif self.action == 'customize':
+            return LabPanelFacilityCustomizeSerializer
+        elif self.action == 'reset_to_defaults':
+            return LabTestResetSerializer  # Same serializer works
+        return LabPanelSerializer
+
     def get_queryset(self):
-        """Filter panels by active status."""
+        """Filter panels by active status and customization flags."""
         queryset = LabPanel.objects.prefetch_related('tests').all()
 
         # Filter by active status
@@ -91,21 +223,112 @@ class LabPanelViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
-        # Search by name or code
+        # Filter by system default status
+        is_system = self.request.query_params.get('is_system_default')
+        if is_system is not None:
+            queryset = queryset.filter(is_system_default=is_system.lower() == 'true')
+
+        # Filter by facility modified status
+        is_modified = self.request.query_params.get('is_facility_modified')
+        if is_modified is not None:
+            queryset = queryset.filter(is_facility_modified=is_modified.lower() == 'true')
+
+        # Full-text search across all relevant fields
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
-                Q(code__icontains=search)
+                Q(code__icontains=search) |
+                Q(description__icontains=search)
             )
 
         return queryset.order_by('name')
 
     def get_permissions(self):
-        """Admin-only for create/update/delete."""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Admin-only for create/update/delete/customize."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        """Only allow deletion of custom (non-system) panels."""
+        instance = self.get_object()
+        if instance.is_system_default:
+            return Response(
+                {'error': 'Cannot delete system panels. Use is_active=False to disable instead.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def customize(self, request, pk=None):
+        """
+        Customize a panel's facility-specific values (price).
+        Marks the panel as facility-modified if it's a system default.
+
+        POST /api/laboratory/panels/{id}/customize/
+        {
+            "price": 95.00,
+            "is_active": true
+        }
+        """
+        panel = self.get_object()
+        serializer = LabPanelFacilityCustomizeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+
+        if 'price' in data:
+            panel.price = data['price']
+        if 'is_active' in data:
+            panel.is_active = data['is_active']
+
+        # Mark as facility-modified if it's a system panel
+        if panel.is_system_default:
+            panel.is_facility_modified = True
+
+        panel.save()
+
+        return Response(
+            LabPanelSerializer(panel).data,
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=['post'])
+    def reset_to_defaults(self, request, pk=None):
+        """
+        Reset a panel to its system default values.
+        Only works for system panels that have been facility-modified.
+
+        POST /api/laboratory/panels/{id}/reset_to_defaults/
+        {"confirm": true}
+        """
+        panel = self.get_object()
+        serializer = LabTestResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not panel.is_system_default:
+            return Response(
+                {'error': 'Cannot reset custom panels. Only system panels can be reset.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not panel.is_facility_modified:
+            return Response(
+                {'error': 'Panel has not been modified. Nothing to reset.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if panel.reset_to_system_defaults():
+            return Response(
+                LabPanelSerializer(panel).data,
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                {'error': 'Failed to reset panel. System defaults may be missing.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class LabOrderViewSet(viewsets.ModelViewSet):
@@ -122,6 +345,8 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             return LabOrderSubmitSerializer
         elif self.action == 'cancel':
             return LabOrderCancelSerializer
+        elif self.action == 'list':
+            return LabOrderListSerializer
         return LabOrderSerializer
 
     def get_queryset(self):
@@ -182,7 +407,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         # If ordering_provider not specified, use current user
         if not serializer.validated_data.get('ordering_provider'):
             try:
-                practitioner = self.request.user.staff.practitioner_profile
+                practitioner = self.request.user.staff_profile.practitioner_profile
                 serializer.save(ordering_provider=practitioner)
             except AttributeError:
                 # Current user is not a practitioner
@@ -222,6 +447,17 @@ class LabOrderViewSet(viewsets.ModelViewSet):
 
         logger.info(
             f"Lab order {order.order_number} submitted by {request.user.get_full_name()}"
+        )
+
+        # Audit log - lab order submitted
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_ORDER_SUBMIT,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabOrder',
+            resource_id=order.id,
+            resource_name=f"Lab Order {order.order_number}",
+            description=f"Lab order {order.order_number} submitted with {order.order_tests.count()} tests",
         )
 
         serializer = self.get_serializer(order)
@@ -359,6 +595,17 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             f"Lab order {order.order_number} completed"
         )
 
+        # Audit log - lab order completed
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_ORDER_COMPLETE,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabOrder',
+            resource_id=order.id,
+            resource_name=f"Lab Order {order.order_number}",
+            description=f"Lab order {order.order_number} completed with all results verified",
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data)
 
@@ -391,6 +638,17 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             f"Reason: {order.cancellation_reason}"
         )
 
+        # Audit log - lab order cancelled
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_ORDER_CANCEL,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabOrder',
+            resource_id=order.id,
+            resource_name=f"Lab Order {order.order_number}",
+            description=f"Lab order {order.order_number} cancelled. Reason: {order.cancellation_reason}",
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data)
 
@@ -408,6 +666,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
             return LabSpecimenCollectionSerializer
         elif self.action == 'receive':
             return LabSpecimenReceiptSerializer
+        elif self.action == 'list':
+            return LabSpecimenListSerializer
         return LabSpecimenSerializer
 
     def get_queryset(self):
@@ -452,12 +712,27 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         # Set collected_by if not specified
         if not serializer.validated_data.get('collected_by'):
             try:
-                practitioner = self.request.user.staff.practitioner_profile
-                serializer.save(collected_by=practitioner)
+                practitioner = self.request.user.staff_profile.practitioner_profile
+                specimen = serializer.save(collected_by=practitioner)
             except AttributeError:
-                serializer.save()
+                specimen = serializer.save()
         else:
-            serializer.save()
+            specimen = serializer.save()
+
+        # Audit log - specimen collected
+        AuditService.log(
+            request=self.request,
+            action=AuditAction.LAB_SPECIMEN_COLLECT,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabSpecimen',
+            resource_id=specimen.id,
+            resource_name=f"Specimen {specimen.barcode}",
+            description=f"Specimen {specimen.barcode} collected for order {specimen.order.order_number}",
+        )
+
+        logger.info(
+            f"Specimen {specimen.barcode} collected by {self.request.user.get_full_name()}"
+        )
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     @transaction.atomic
@@ -479,7 +754,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
 
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only lab staff can receive specimens'},
@@ -500,6 +775,18 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
             f"by {request.user.get_full_name()}"
         )
 
+        # Audit log - specimen received/rejected
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_SPECIMEN_RECEIVE,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabSpecimen',
+            resource_id=specimen.id,
+            resource_name=f"Specimen {specimen.barcode}",
+            description=f"Specimen {specimen.barcode} {'rejected' if specimen.is_rejected else 'received'}"
+                       + (f". Reason: {specimen.rejection_reason}" if specimen.is_rejected else ""),
+        )
+
         serializer = self.get_serializer(specimen)
         return Response(serializer.data)
 
@@ -516,6 +803,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
             return LabResultCreateSerializer
         elif self.action == 'verify':
             return LabResultVerifySerializer
+        elif self.action == 'list':
+            return LabResultListSerializer
         return LabResultSerializer
 
     def get_queryset(self):
@@ -559,7 +848,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
         try:
-            practitioner = self.request.user.staff.practitioner_profile
+            practitioner = self.request.user.staff_profile.practitioner_profile
             serializer.save(performed_by=practitioner)
         except AttributeError:
             serializer.save()
@@ -580,7 +869,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         # Get practitioner profile
         try:
-            practitioner = request.user.staff.practitioner_profile
+            practitioner = request.user.staff_profile.practitioner_profile
         except AttributeError:
             return Response(
                 {'error': 'Only practitioners can verify results'},
@@ -599,6 +888,17 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         logger.info(
             f"Lab result for {result.order_test.test.short_name} verified by {request.user.get_full_name()}"
+        )
+
+        # Audit log - lab result verified
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_RESULT_VERIFY,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabResult',
+            resource_id=result.id,
+            resource_name=f"Result for {result.order_test.test.short_name}",
+            description=f"Lab result for {result.order_test.test.short_name} verified. Value: {result.value} {result.unit or ''}",
         )
 
         serializer = self.get_serializer(result)

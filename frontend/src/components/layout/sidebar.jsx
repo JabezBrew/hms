@@ -13,7 +13,9 @@ import {
   Clock,
   BookOpen,
   ClipboardList,
-  FileSearch
+  FileSearch,
+  TestTube2,
+  Droplet,
 } from "lucide-react"
 
 import {
@@ -73,6 +75,10 @@ export function AppSidebar() {
       inventory: ['admin', 'pharmacist'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
+      labWorklist: ['admin', 'lab_technician'],
+      labCollection: ['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner'],
+      labOrders: ['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner'],
+      labResults: ['admin', 'lab_technician', 'doctor', 'physician', 'practitioner'],
       pharmacy: ['admin', 'pharmacist', 'pharmacy_tech', 'doctor'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
@@ -162,9 +168,45 @@ export function AppSidebar() {
 
             {hasAccess(userRole, menuItems.management.laboratory) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Laboratory" href="/laboratory">
+                <SidebarMenuButton tooltip="Lab Catalog" href="/laboratory/catalog">
                   <FlaskConical />
-                  <span>Laboratory</span>
+                  <span>Lab Catalog</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.labWorklist) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Lab Worklist" href="/laboratory/dashboard">
+                  <ClipboardList />
+                  <span>Lab Worklist</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.labCollection) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Collection Queue" href="/laboratory/collection">
+                  <Droplet />
+                  <span>Collection Queue</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.labOrders) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Lab Orders" href="/laboratory/orders">
+                  <TestTube2 />
+                  <span>Lab Orders</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.labResults) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Lab Results" href="/laboratory/results">
+                  <FileText />
+                  <span>Lab Results</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

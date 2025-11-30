@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
+import { toast } from "sonner";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
 import { useClinicalSummary } from "@/hooks/useClinicalSummaryQueries";
@@ -53,6 +54,9 @@ const PatientChroniclePage = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
+
+  // Copy forward state - holds template and data for pre-filling note editor
+  const [copyForwardData, setCopyForwardData] = useState(null);
 
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
@@ -355,13 +359,35 @@ const PatientChroniclePage = () => {
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
     slideOvers.close();
+    setCopyForwardData(null); // Clear copy forward data when closing
   }, [slideOvers]);
 
   // Created handlers - refresh data and close
   const handleNoteCreated = useCallback(() => {
     refreshData();
     slideOvers.close();
+    setCopyForwardData(null); // Clear copy forward data after note is created
   }, [refreshData, slideOvers]);
+
+  // Handle copy note from timeline - opens note editor with pre-filled data
+  const handleCopyNote = useCallback((copyData) => {
+    // copyData contains: { template, templateId, templateTitle, data, sectionsCopied }
+    // Template is now included directly from the timeline entry
+    if (!copyData.template) {
+      toast.error("Cannot copy note", { description: "Template information is missing" });
+      return;
+    }
+
+    setCopyForwardData({
+      template: copyData.template,
+      data: copyData.data,
+      sectionsCopied: copyData.sectionsCopied,
+    });
+    slideOvers.open('note');
+    toast.success("Note copied", {
+      description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
+    });
+  }, [slideOvers]);
 
   const handleVitalsRecorded = useCallback(() => {
     refreshData();
@@ -681,6 +707,7 @@ const PatientChroniclePage = () => {
                           key={entry.id}
                           entry={entry}
                           index={index}
+                          onCopyNote={handleCopyNote}
                         />
                       ))}
                     </div>
@@ -731,6 +758,7 @@ const PatientChroniclePage = () => {
                         key={entry.id}
                         entry={entry}
                         index={index}
+                        onCopyNote={handleCopyNote}
                       />
                     ))}
                   </div>
@@ -798,6 +826,8 @@ const PatientChroniclePage = () => {
           patient={patient}
           encounter={activeEncounter}
           onNoteCreated={handleNoteCreated}
+          initialTemplate={copyForwardData?.template}
+          initialData={copyForwardData?.data}
         />
 
         {/* Add Vitals Slide-Over Panel */}

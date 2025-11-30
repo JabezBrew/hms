@@ -8,11 +8,15 @@ from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta, datetime
 
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity
 from .serializers import (
-    WardSerializer, BedSerializer, AdmissionSerializer,
-    BedAllocationLogSerializer, WardTransferSerializer,
-    AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer
+    WardSerializer, WardListSerializer,
+    BedSerializer, BedListSerializer,
+    AdmissionSerializer, AdmissionListSerializer,
+    BedAllocationLogSerializer,
+    WardTransferSerializer, WardTransferListSerializer,
+    AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer,
+    WardSectionSerializer, WardSectionListSerializer, BedAmenitySerializer
 )
 from ..users.permissions import IsAdminOrOwner
 
@@ -32,6 +36,11 @@ class WardViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward_type', 'is_active']
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardListSerializer
+        return WardSerializer
 
     def get_queryset(self):
         """
@@ -343,6 +352,11 @@ class BedViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward', 'status', 'bed_type']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BedListSerializer
+        return BedSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
@@ -392,6 +406,61 @@ class BedViewSet(viewsets.ModelViewSet):
         serializer = BedAllocationLogSerializer(logs, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """
+        Get available beds with optional filters.
+        Filters: ward, section, gender (M/F for patient), accommodation_tier,
+                 isolation_capable, amenities (comma-separated codes)
+        """
+        queryset = Bed.objects.select_related('ward', 'section').prefetch_related('amenities').filter(status='available')
+
+        # Filter by ward
+        ward_id = request.query_params.get('ward')
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        # Filter by section
+        section_id = request.query_params.get('section')
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+
+        # Filter by gender compatibility
+        gender = request.query_params.get('gender')
+        if gender:
+            # Exclude beds in male-only sections if patient is female
+            if gender == 'F':
+                queryset = queryset.exclude(section__gender_restriction='male_only')
+            # Exclude beds in female-only sections if patient is male
+            elif gender == 'M':
+                queryset = queryset.exclude(section__gender_restriction='female_only')
+
+        # Filter by accommodation tier
+        accommodation_tier = request.query_params.get('accommodation_tier')
+        if accommodation_tier:
+            queryset = queryset.filter(
+                Q(accommodation_tier=accommodation_tier) |
+                Q(accommodation_tier__isnull=True, section__accommodation_tier=accommodation_tier)
+            )
+
+        # Filter by isolation capability
+        isolation_capable = request.query_params.get('isolation_capable')
+        if isolation_capable and isolation_capable.lower() == 'true':
+            queryset = queryset.filter(
+                Q(is_isolation_capable=True) |
+                Q(section__is_isolation_capable=True)
+            )
+
+        # Filter by required amenities
+        amenities = request.query_params.get('amenities')
+        if amenities:
+            amenity_codes = [code.strip() for code in amenities.split(',')]
+            for code in amenity_codes:
+                queryset = queryset.filter(amenities__code=code)
+
+        serializer = BedListSerializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class AdmissionViewSet(viewsets.ModelViewSet):
     """
@@ -412,6 +481,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return AdmissionCreateSerializer
+        elif self.action == 'list':
+            return AdmissionListSerializer
         return AdmissionSerializer
 
     def perform_create(self, serializer):
@@ -549,6 +620,11 @@ class WardTransferViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['patient', 'from_admission', 'to_admission', 'created_by']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardTransferListSerializer
+        return WardTransferSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
@@ -616,3 +692,97 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 })
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class WardSectionViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for ward sections.
+    Supports CRUD operations for managing sections within wards.
+    """
+    queryset = WardSection.objects.select_related('ward').prefetch_related('beds').all()
+    serializer_class = WardSectionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    filterset_fields = ['ward', 'gender_restriction', 'accommodation_tier', 'is_isolation_capable', 'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['display_order', 'name', 'created_at']
+    ordering = ['ward', 'display_order', 'name']
+    pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardSectionListSerializer
+        return WardSectionSerializer
+
+    def get_queryset(self):
+        """
+        Override to allow filtering by ward and add search.
+        """
+        queryset = super().get_queryset()
+        ward_id = self.request.query_params.get('ward', None)
+        search_query = self.request.query_params.get('search', None)
+
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['get'])
+    def beds(self, request, pk=None):
+        """
+        Get all beds in this section.
+        """
+        section = self.get_object()
+        beds = section.beds.all()
+        serializer = BedListSerializer(beds, many=True)
+        return Response(serializer.data)
+
+
+class BedAmenityViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for bed amenities.
+    Supports CRUD operations for managing amenity types.
+    """
+    queryset = BedAmenity.objects.all()
+    serializer_class = BedAmenitySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['category', 'is_active']
+    search_fields = ['name', 'code', 'description']
+    ordering_fields = ['category', 'name', 'additional_rate']
+    ordering = ['category', 'name']
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        """
+        Add search functionality.
+        """
+        queryset = super().get_queryset()
+        search_query = self.request.query_params.get('search', None)
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(code__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        return queryset
+
+    def get_permissions(self):
+        """
+        Only admins can create/update/delete amenities.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]

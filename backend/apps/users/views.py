@@ -7,9 +7,11 @@ from django.db import transaction
 from django.db.models import Q
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping
 from .serializers import (
-    UserSerializer, StaffSerializer, PractitionerProfileSerializer, 
-    PatientProfileSerializer, UserCreateSerializer, PractitionerFHIRMappingSerializer,
-    StaffRegistrationSerializer
+    UserSerializer, UserListSerializer, UserCreateSerializer,
+    StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
+    PractitionerProfileSerializer, PractitionerProfileListSerializer,
+    PatientProfileSerializer, PatientProfileListSerializer,
+    PractitionerFHIRMappingSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
 from .rbac import (
@@ -59,6 +61,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return UserCreateSerializer
+        elif self.action == 'list':
+            return UserListSerializer
         return UserSerializer
 
     def get_queryset(self):
@@ -113,6 +117,11 @@ class StaffViewSet(viewsets.ModelViewSet):
     queryset = Staff.objects.all()
     serializer_class = StaffSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return StaffListSerializer
+        return StaffSerializer
 
     def get_permissions(self):
         """
@@ -194,6 +203,11 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
     queryset = PractitionerProfile.objects.all()
     serializer_class = PractitionerProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PractitionerProfileListSerializer
+        return PractitionerProfileSerializer
 
     def get_permissions(self):
         """
@@ -408,6 +422,11 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     ).order_by('-created_at')
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PatientProfileListSerializer
+        return PatientProfileSerializer
 
     def get_permissions(self):
         """

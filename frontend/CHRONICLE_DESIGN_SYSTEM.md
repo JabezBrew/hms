@@ -445,6 +445,42 @@ This applies to ALL popover-based components inside slide-overs:
 | Lab Orders | Sky | `TestTube2` |
 | Referrals/Consults | Emerald | `Send` |
 
+### WorkflowSteps
+
+**IMPORTANT: Always use clickable step indicators for multi-step workflows.**
+
+Reusable step indicator with click navigation and keyboard shortcuts. Use for all wizard-style flows.
+
+```jsx
+import { WorkflowSteps, WorkflowKeyboardHints, useWorkflowKeyboard } from '@/components/ui/workflow-steps';
+
+// Clickable step indicators
+<WorkflowSteps
+  steps={steps}              // Array of { id, title }
+  currentStep={currentStep}   // 1-indexed current step
+  onStepClick={goToStep}      // (stepNumber) => void
+/>
+
+// Keyboard hints bar (optional)
+<WorkflowKeyboardHints totalSteps={4} />
+
+// Keyboard navigation hook
+useWorkflowKeyboard({
+  enabled: open,
+  currentStep,
+  totalSteps,
+  onNextStep,
+  onPrevStep,
+  onGoToStep,
+  onComplete,
+  onClose,
+});
+```
+
+Keyboard shortcuts: `Tab` (next field), `PgDn`/`⌘→` (next step), `PgUp`/`⌘←` (prev step), `⌘1-9` (jump to step), `Esc` (close).
+
+---
+
 ### useSlideOver Hook
 
 **IMPORTANT: Always use this hook for slide-overs to auto-collapse the sidebar.**

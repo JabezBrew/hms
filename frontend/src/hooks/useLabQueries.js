@@ -38,6 +38,64 @@ export function useLabTest(id) {
   });
 }
 
+export function useCreateLabTest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.createLabTest(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: labKeys.tests() });
+    },
+  });
+}
+
+export function useUpdateLabTest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => laboratoryApi.updateLabTest(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.test(variables.id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.tests() });
+    },
+  });
+}
+
+export function useCustomizeLabTest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => laboratoryApi.customizeLabTest(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.test(variables.id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.tests() });
+    },
+  });
+}
+
+export function useResetLabTestToDefaults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => laboratoryApi.resetLabTestToDefaults(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.test(id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.tests() });
+    },
+  });
+}
+
+export function useDeleteLabTest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => laboratoryApi.deleteLabTest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: labKeys.tests() });
+    },
+  });
+}
+
 // ========== Lab Panels ==========
 
 export function useLabPanels(filters = {}) {
@@ -52,6 +110,64 @@ export function useLabPanel(id) {
     queryKey: labKeys.panel(id),
     queryFn: () => laboratoryApi.getLabPanel(id),
     enabled: !!id,
+  });
+}
+
+export function useCreateLabPanel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.createLabPanel(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: labKeys.panels() });
+    },
+  });
+}
+
+export function useUpdateLabPanel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => laboratoryApi.updateLabPanel(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.panel(variables.id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.panels() });
+    },
+  });
+}
+
+export function useCustomizeLabPanel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => laboratoryApi.customizeLabPanel(id, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.panel(variables.id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.panels() });
+    },
+  });
+}
+
+export function useResetLabPanelToDefaults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => laboratoryApi.resetLabPanelToDefaults(id),
+    onSuccess: (data, id) => {
+      queryClient.invalidateQueries({ queryKey: labKeys.panel(id) });
+      queryClient.invalidateQueries({ queryKey: labKeys.panels() });
+    },
+  });
+}
+
+export function useDeleteLabPanel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => laboratoryApi.deleteLabPanel(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: labKeys.panels() });
+    },
   });
 }
 

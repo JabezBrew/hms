@@ -1,10 +1,14 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Save, Check, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  WorkflowSteps,
+  WorkflowKeyboardHints,
+  useWorkflowKeyboard,
+} from "@/components/ui/workflow-steps";
 import NoteTypeSelector from "./NoteTypeSelector";
-import NoteWorkflowSteps from "./NoteWorkflowSteps";
 import DynamicWorkflowStep from "./DynamicWorkflowStep";
 import { useNoteWorkflow } from "@/hooks/useNoteWorkflow";
 
@@ -31,12 +35,15 @@ const CATEGORY_COLORS = {
  * - Auto-save indicator
  * - Step progress visualization
  * - Backend API integration via useNoteWorkflow hook
+ * - Copy forward support via initialTemplate and initialData props
  */
 const AddNoteSlideOver = ({
   open,
   onClose,
   patient,
-  onNoteCreated
+  onNoteCreated,
+  initialTemplate = null,  // Pre-selected template (for copy forward)
+  initialData = null,      // Pre-filled data (for copy forward)
 }) => {
   // Get patient ID for the workflow hook
   const patientId = patient?.local_data?.id || patient?.id;
@@ -58,6 +65,7 @@ const AddNoteSlideOver = ({
     saveDraft,
     nextStep,
     prevStep,
+    goToStep,
     completeWorkflow,
     resetWorkflow,
   } = useNoteWorkflow(patientId);
@@ -119,6 +127,25 @@ const AddNoteSlideOver = ({
       resetWorkflow();
     }
   }, [open, resetWorkflow]);
+
+  // Auto-start workflow when opened with initial template (copy forward)
+  useEffect(() => {
+    if (open && initialTemplate && !template) {
+      startWorkflow(initialTemplate, initialData);
+    }
+  }, [open, initialTemplate, initialData, template, startWorkflow]);
+
+  // Keyboard navigation for steps
+  useWorkflowKeyboard({
+    enabled: open && !!template,
+    currentStep,
+    totalSteps,
+    onNextStep: nextStep,
+    onPrevStep: prevStep,
+    onGoToStep: goToStep,
+    onComplete: completeWorkflow,
+    onClose: handleClose,
+  });
 
   // Get patient display name
   const patientName = patient?.local_data?.user_details
@@ -225,45 +252,12 @@ const AddNoteSlideOver = ({
               Step {currentStep} of {totalSteps}
             </span>
           </div>
-          {/* Step Progress Indicators */}
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => (
-              <div
-                key={step.id}
-                className={cn(
-                  "flex items-center",
-                  index < steps.length - 1 && "flex-1"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono",
-                    index < currentStep - 1 && "bg-primary text-primary-foreground",
-                    index === currentStep - 1 && "bg-primary text-primary-foreground ring-2 ring-primary/30",
-                    index > currentStep - 1 && "bg-muted text-muted-foreground"
-                  )}>
-                    {index < currentStep - 1 ? (
-                      <Check className="h-3 w-3" />
-                    ) : (
-                      index + 1
-                    )}
-                  </div>
-                  <span className={cn(
-                    "font-mono text-xs hidden sm:inline truncate max-w-[80px]",
-                    index === currentStep - 1 ? "text-foreground" : "text-muted-foreground"
-                  )}>
-                    {step.title}
-                  </span>
-                </div>
-                {index < steps.length - 1 && (
-                  <div className={cn(
-                    "flex-1 h-px mx-3",
-                    index < currentStep - 1 ? "bg-primary" : "bg-border"
-                  )} />
-                )}
-              </div>
-            ))}
-          </div>
+          {/* Step Progress Indicators - Clickable */}
+          <WorkflowSteps
+            steps={steps}
+            currentStep={currentStep}
+            onStepClick={goToStep}
+          />
         </div>
       )}
 
@@ -299,7 +293,10 @@ const AddNoteSlideOver = ({
 
       {/* Footer */}
       {template && (
-        <footer className="px-6 py-4 border-t border-border bg-card">
+        <footer className="px-6 py-3 border-t border-border bg-card">
+          {/* Keyboard shortcuts hint */}
+          <WorkflowKeyboardHints totalSteps={totalSteps} className="mb-3" />
+
           <div className="flex items-center justify-between">
             <Button
               variant="outline"

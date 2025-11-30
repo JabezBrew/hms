@@ -7,11 +7,13 @@ from django.db.models import Q
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
+import copy
 import logging
 
 from .models import NoteTemplate, NoteEntry, Prescription
 from .serializers import (
     NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
+    NoteEntryCloneSerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
     PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer
 )
@@ -221,6 +223,192 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(practitioner_id=practitioner_id)
 
         return queryset
+
+    @action(detail=True, methods=['get'])
+    def sections(self, request, pk=None):
+        """
+        Get available sections for copying from this note.
+        Returns section names with preview of content.
+
+        Used by the frontend to show a section picker before cloning.
+        """
+        note = self.get_object()
+        template_structure = note.template.structure
+
+        # Handle both list and dict structure formats
+        if isinstance(template_structure, dict):
+            template_sections = template_structure.get('sections', [])
+        elif isinstance(template_structure, list):
+            template_sections = template_structure
+        else:
+            template_sections = []
+
+        sections_info = []
+        for section in template_sections:
+            # Handle different structure formats
+            name = section.get('name') or section.get('section', '')
+            section_type = section.get('type', 'text')
+
+            # Check if this section has data
+            has_data = name in note.data and note.data[name]
+
+            # Generate preview (truncated content)
+            preview = None
+            if has_data:
+                section_data = note.data[name]
+                if isinstance(section_data, str):
+                    preview = section_data[:150] + ('...' if len(section_data) > 150 else '')
+                elif isinstance(section_data, dict):
+                    # For structured sections, show first few key-value pairs
+                    preview_parts = []
+                    for key, value in list(section_data.items())[:3]:
+                        if value:
+                            preview_parts.append(f"{key}: {str(value)[:50]}")
+                    preview = '; '.join(preview_parts)
+                    if len(preview) > 150:
+                        preview = preview[:150] + '...'
+                elif isinstance(section_data, list):
+                    preview = f"{len(section_data)} items"
+
+            sections_info.append({
+                'name': name,
+                'type': section_type,
+                'has_data': bool(has_data),
+                'preview': preview,
+            })
+
+        return Response(sections_info)
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def clone(self, request, pk=None):
+        """
+        Clone an existing note entry with selective section copying.
+
+        Request body:
+        {
+            "sections": ["Subjective", "Objective"],  // Optional - defaults to all
+            "encounter": "uuid",  // Optional - auto-creates if not provided
+            "patient": "uuid"     // Optional - defaults to same patient
+        }
+
+        Returns: New NoteEntry with selected sections copied.
+        Only allows cloning to the same template type.
+        """
+        source_note = self.get_object()
+
+        # Validate input
+        serializer = NoteEntryCloneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        # Get the practitioner profile
+        try:
+            practitioner_profile = PractitionerProfile.objects.get(staff__user=request.user)
+        except PractitionerProfile.DoesNotExist:
+            return Response(
+                {"error": "User does not have an associated practitioner profile"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Determine target patient (default: same as source)
+        target_patient_id = validated_data.get('patient')
+        if target_patient_id:
+            try:
+                target_patient = PatientProfile.objects.get(id=target_patient_id)
+            except PatientProfile.DoesNotExist:
+                return Response(
+                    {"error": "Target patient not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            target_patient = source_note.patient
+
+        if not target_patient:
+            return Response(
+                {"error": "Patient is required for cloning"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get or create encounter
+        encounter_id = validated_data.get('encounter')
+        try:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=target_patient,
+                practitioner=practitioner_profile,
+                encounter_id=encounter_id,
+                reason='Clinical note (copied from previous)'
+            )
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get template structure to validate sections
+        template_structure = source_note.template.structure
+        if isinstance(template_structure, dict):
+            template_sections = template_structure.get('sections', [])
+        elif isinstance(template_structure, list):
+            template_sections = template_structure
+        else:
+            template_sections = []
+
+        valid_section_names = {
+            s.get('name') or s.get('section', '') for s in template_sections
+        }
+
+        # Determine which sections to copy
+        requested_sections = validated_data.get('sections')
+        if requested_sections:
+            # Validate requested sections exist in template
+            invalid_sections = set(requested_sections) - valid_section_names
+            if invalid_sections:
+                return Response(
+                    {"error": f"Invalid section names: {', '.join(invalid_sections)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            sections_to_copy = set(requested_sections)
+        else:
+            # Default: copy all sections that have data
+            sections_to_copy = valid_section_names
+
+        # Build new data by copying selected sections
+        new_data = {}
+        for section_name in sections_to_copy:
+            if section_name in source_note.data:
+                # Deep copy the section data
+                new_data[section_name] = copy.deepcopy(source_note.data[section_name])
+
+        # Create the new note entry
+        new_note = NoteEntry.objects.create(
+            template=source_note.template,
+            patient=target_patient,
+            encounter=encounter,
+            practitioner=practitioner_profile,
+            data=new_data,
+            copied_from=source_note,
+        )
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.NOTE_CREATE,
+            category=AuditCategory.CLINICAL,
+            resource_type='NoteEntry',
+            resource_id=new_note.id,
+            resource_name=f"{source_note.template.title} (Copy)",
+            description=f"Cloned clinical note '{source_note.template.title}' for patient {target_patient.user.get_full_name()}. "
+                        f"Sections copied: {', '.join(sections_to_copy)}. Source note: {source_note.id}",
+        )
+
+        # Return the new note
+        output_serializer = NoteEntrySerializer(new_note, context={'request': request})
+        response_data = output_serializer.data
+        response_data['encounter_created'] = encounter_created
+        response_data['sections_copied'] = list(sections_to_copy)
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -1561,6 +1749,16 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
                     content_summary = str(note.data[key])[:200]
                     break
 
+        # Include template info for copy forward feature
+        template_info = None
+        if note.template:
+            template_info = {
+                'id': str(note.template.id),
+                'title': note.template.title,
+                'category': note.template.category,
+                'structure': note.template.structure,
+            }
+
         entries.append({
             'id': str(note.id),
             'type': note_type,
@@ -1570,6 +1768,9 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
             'content': content_summary,
             'author': author_name,
             'data': note.data,
+            'template_id': str(note.template_id) if note.template_id else None,
+            'template_title': note.template.title if note.template else None,
+            'template': template_info,
             'encounter_id': str(note.encounter_id) if note.encounter_id else None,
             'encounter': _format_encounter_details(note.encounter),
         })

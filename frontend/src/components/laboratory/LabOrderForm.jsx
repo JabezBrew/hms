@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { X, TestTube2, Package, AlertCircle, Check, Search, Clock } from "lucide-react";
+import { X, TestTube2, Package, AlertCircle, Check, Search, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  WorkflowSteps,
+  WorkflowKeyboardHints,
+  useWorkflowKeyboard,
+} from "@/components/ui/workflow-steps";
 import {
   useLabTests,
   useLabPanels,
@@ -41,6 +46,14 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   const patientId = patient?.local_data?.id || patient?.id;
   const encounterId = encounter?.local_data?.id || encounter?.id;
 
+  // Workflow steps configuration
+  const steps = [
+    { id: 'select_tests', title: 'Select Tests' },
+    { id: 'details', title: 'Details' },
+    { id: 'review', title: 'Review' },
+  ];
+  const totalSteps = steps.length;
+
   // Step state
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -57,7 +70,12 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   const [activeCategory, setActiveCategory] = useState("all");
   const [errors, setErrors] = useState({});
 
-  // API queries
+  // TODO: Switch to backend search when catalog grows beyond ~500 items
+  // Currently using frontend fuzzy search for instant results with small catalog
+  // To switch: pass { search: debouncedSearch } to useLabTests/useLabPanels hooks
+  // and remove the client-side fuzzyMatch filtering below
+
+  // Load all tests and panels once (small catalog, ~200 items)
   const { data: testsData, isLoading: testsLoading } = useLabTests();
   const { data: panelsData, isLoading: panelsLoading } = useLabPanels();
   const createOrder = useCreateLabOrder();
@@ -80,31 +98,57 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
     }
   }, [open]);
 
-  // Get test categories
-  const categories = testsData?.results
-    ? [...new Set(testsData.results.map((test) => test.category))]
+  // Normalize data - API returns array directly, not { results: [...] }
+  const tests = Array.isArray(testsData) ? testsData : (testsData?.results || []);
+  const panels = Array.isArray(panelsData) ? panelsData : (panelsData?.results || []);
+
+  // Fuzzy search function - matches if all search terms appear in searchable text
+  // Handles abbreviations naturally (TSH matches "Thyroid Stimulating Hormone" if TSH is in code/short_name)
+  const fuzzyMatch = (item, query) => {
+    if (!query.trim()) return true;
+
+    const searchTerms = query.toLowerCase().trim().split(/\s+/);
+    const searchableText = [
+      item.name,
+      item.code,
+      item.short_name,
+      item.loinc_code,
+      item.description,
+      item.category,
+      item.specimen_type,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    // All terms must match somewhere in the searchable text
+    return searchTerms.every(term => searchableText.includes(term));
+  };
+
+  // Filter tests by search query, category, and active status
+  const filteredTests = useMemo(() => {
+    return tests.filter((test) => {
+      const isActive = test.is_active !== false;
+      const matchesSearch = fuzzyMatch(test, searchQuery);
+      const matchesCategory = activeCategory === "all" || test.category === activeCategory;
+      return isActive && matchesSearch && matchesCategory;
+    });
+  }, [tests, searchQuery, activeCategory]);
+
+  // Filter panels by search query and active status
+  const filteredPanels = useMemo(() => {
+    return panels.filter((panel) => {
+      const isActive = panel.is_active !== false;
+      const matchesSearch = fuzzyMatch(panel, searchQuery);
+      return isActive && matchesSearch;
+    });
+  }, [panels, searchQuery]);
+
+  // Get test categories for the category filter buttons
+  const categories = tests.length > 0
+    ? [...new Set(tests.map((test) => test.category).filter(Boolean))]
     : [];
 
-  // Filter tests by search and category
-  const filteredTests =
-    testsData?.results?.filter((test) => {
-      const matchesSearch =
-        searchQuery === "" ||
-        test.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        test.code.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory =
-        activeCategory === "all" || test.category === activeCategory;
-      return matchesSearch && matchesCategory;
-    }) || [];
-
-  // Filter panels by search
-  const filteredPanels =
-    panelsData?.results?.filter(
-      (panel) =>
-        searchQuery === "" ||
-        panel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        panel.code.toLowerCase().includes(searchQuery.toLowerCase())
-    ) || [];
+  // Check if we have search results to show combined view
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const totalResults = filteredTests.length + filteredPanels.length;
 
   // Handle test selection
   const handleTestToggle = (testId) => {
@@ -157,24 +201,37 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   };
 
   // Handle previous step
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
-  };
+  }, []);
+
+  // Handle jump to specific step
+  const goToStep = useCallback((stepNumber) => {
+    if (stepNumber >= 1 && stepNumber <= totalSteps && stepNumber !== currentStep) {
+      setCurrentStep(stepNumber);
+    }
+  }, [currentStep, totalSteps]);
 
   // Handle submit
   const handleSubmit = async () => {
-    if (!validateStep(2)) return;
+    // Validate all steps before submitting
+    if (!validateStep(1) || !validateStep(2)) return;
 
     try {
-      // Create order
+      // Create order (ordering_provider auto-set by backend from current user)
+      // Combine indication and clinical_notes into clinical_notes field
+      const combinedNotes = [
+        formData.indication && `Indication: ${formData.indication}`,
+        formData.clinical_notes
+      ].filter(Boolean).join('\n\n');
+
       const orderData = {
         patient: patientId,
         encounter: encounterId || null,
         priority: formData.priority,
-        clinical_notes: formData.clinical_notes,
-        indication: formData.indication,
-        tests: formData.selected_tests,
-        panels: formData.selected_panels,
+        clinical_notes: combinedNotes,
+        test_ids: formData.selected_tests,
+        panel_ids: formData.selected_panels,
       };
 
       const createdOrder = await createOrder.mutateAsync(orderData);
@@ -199,16 +256,26 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
     }
   };
 
+  // Keyboard navigation for workflow
+  useWorkflowKeyboard({
+    enabled: open,
+    currentStep,
+    totalSteps,
+    onNextStep: handleNext,
+    onPrevStep: handleBack,
+    onGoToStep: goToStep,
+    onComplete: currentStep === totalSteps ? handleSubmit : undefined,
+    onClose,
+  });
+
   // Get selected items summary
   const getSelectedSummary = () => {
-    const selectedTests =
-      testsData?.results?.filter((test) =>
-        formData.selected_tests.includes(test.id)
-      ) || [];
-    const selectedPanels =
-      panelsData?.results?.filter((panel) =>
-        formData.selected_panels.includes(panel.id)
-      ) || [];
+    const selectedTests = tests.filter((test) =>
+      formData.selected_tests.includes(test.id)
+    );
+    const selectedPanels = panels.filter((panel) =>
+      formData.selected_panels.includes(panel.id)
+    );
 
     return { tests: selectedTests, panels: selectedPanels };
   };
@@ -280,64 +347,16 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
       {/* Progress Indicator */}
       <div className="bg-card border-b border-border px-6 py-3">
-        <div className="flex items-center justify-between text-sm">
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              currentStep >= 1 ? "text-sky-600" : "text-muted-foreground"
-            )}
-          >
-            <div
-              className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold font-mono",
-                currentStep >= 1
-                  ? "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              1
-            </div>
-            <span className="font-medium text-xs">Select Tests</span>
-          </div>
-          <div className="flex-1 h-px bg-border mx-4" />
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              currentStep >= 2 ? "text-sky-600" : "text-muted-foreground"
-            )}
-          >
-            <div
-              className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold font-mono",
-                currentStep >= 2
-                  ? "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              2
-            </div>
-            <span className="font-medium text-xs">Details</span>
-          </div>
-          <div className="flex-1 h-px bg-border mx-4" />
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              currentStep >= 3 ? "text-sky-600" : "text-muted-foreground"
-            )}
-          >
-            <div
-              className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold font-mono",
-                currentStep >= 3
-                  ? "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              3
-            </div>
-            <span className="font-medium text-xs">Review</span>
-          </div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-mono text-xs text-muted-foreground">
+            Step {currentStep} of {totalSteps}
+          </span>
         </div>
+        <WorkflowSteps
+          steps={steps}
+          currentStep={currentStep}
+          onStepClick={goToStep}
+        />
       </div>
 
         {/* Content */}
@@ -349,33 +368,12 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search tests or panels..."
+                  placeholder="Search by name or abbreviation (TSH, CBC, LFTs...)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
+                  autoFocus
                 />
-              </div>
-
-              {/* Category Filter */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button
-                  variant={activeCategory === "all" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveCategory("all")}
-                >
-                  All
-                </Button>
-                {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={activeCategory === category ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveCategory(category)}
-                    className="capitalize"
-                  >
-                    {category}
-                  </Button>
-                ))}
               </div>
 
               {errors.tests && (
@@ -385,156 +383,315 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                 </Alert>
               )}
 
-              {/* Tabs */}
-              <Tabs defaultValue="panels" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="panels">
-                    <Package className="h-4 w-4 mr-2" />
-                    Panels ({formData.selected_panels.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="tests">
-                    <TestTube2 className="h-4 w-4 mr-2" />
-                    Individual Tests ({formData.selected_tests.length})
-                  </TabsTrigger>
-                </TabsList>
+              {/* Selection summary */}
+              {(formData.selected_tests.length > 0 || formData.selected_panels.length > 0) && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                  <Check className="h-4 w-4 text-emerald-600" />
+                  <span>
+                    {formData.selected_panels.length > 0 && (
+                      <span className="font-medium">{formData.selected_panels.length} panel{formData.selected_panels.length !== 1 ? 's' : ''}</span>
+                    )}
+                    {formData.selected_panels.length > 0 && formData.selected_tests.length > 0 && ' and '}
+                    {formData.selected_tests.length > 0 && (
+                      <span className="font-medium">{formData.selected_tests.length} test{formData.selected_tests.length !== 1 ? 's' : ''}</span>
+                    )}
+                    {' '}selected
+                  </span>
+                </div>
+              )}
 
-                {/* Panels Tab */}
-                <TabsContent value="panels" className="space-y-3 mt-4">
-                  {panelsLoading ? (
+              {/* Combined Search Results or Tabbed Browse */}
+              {hasSearchQuery ? (
+                // Combined search results view
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{searchQuery}"
+                  </div>
+
+                  {testsLoading || panelsLoading ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      Loading panels...
+                      Searching...
                     </div>
-                  ) : filteredPanels.length === 0 ? (
+                  ) : totalResults === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      No panels found
+                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No tests or panels found</p>
+                      <p className="text-xs mt-1">Try different keywords or abbreviations (e.g., TSH, CBC, LFTs)</p>
                     </div>
                   ) : (
-                    filteredPanels.map((panel) => (
-                      <Card
-                        key={panel.id}
-                        className={cn(
-                          "cursor-pointer transition-colors",
-                          formData.selected_panels.includes(panel.id)
-                            ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                            : "hover:border-muted-foreground/50"
-                        )}
-                        onClick={() => handlePanelToggle(panel.id)}
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
-                              <Checkbox
-                                checked={formData.selected_panels.includes(
-                                  panel.id
-                                )}
-                                onCheckedChange={() => handlePanelToggle(panel.id)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <div>
-                                <CardTitle className="text-base">
-                                  {panel.name}
-                                </CardTitle>
-                                <CardDescription className="text-xs font-mono mt-1">
-                                  {panel.code}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-foreground">
-                                ${panel.price?.toFixed(2)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {panel.tests_count} tests
-                              </div>
-                            </div>
+                    <div className="space-y-3">
+                      {/* Panels first */}
+                      {filteredPanels.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
+                            <Package className="h-3 w-3" />
+                            Panels ({filteredPanels.length})
                           </div>
-                        </CardHeader>
-                        {panel.description && (
-                          <CardContent className="pt-0">
-                            <p className="text-sm text-muted-foreground">
-                              {panel.description}
-                            </p>
-                          </CardContent>
-                        )}
-                      </Card>
-                    ))
-                  )}
-                </TabsContent>
-
-                {/* Individual Tests Tab */}
-                <TabsContent value="tests" className="space-y-3 mt-4">
-                  {testsLoading ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      Loading tests...
-                    </div>
-                  ) : filteredTests.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No tests found
-                    </div>
-                  ) : (
-                    filteredTests.map((test) => (
-                      <Card
-                        key={test.id}
-                        className={cn(
-                          "cursor-pointer transition-colors",
-                          formData.selected_tests.includes(test.id)
-                            ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                            : "hover:border-muted-foreground/50"
-                        )}
-                        onClick={() => handleTestToggle(test.id)}
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3">
-                              <Checkbox
-                                checked={formData.selected_tests.includes(test.id)}
-                                onCheckedChange={() => handleTestToggle(test.id)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <CardTitle className="text-base">
-                                    {test.name}
-                                  </CardTitle>
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs capitalize"
-                                  >
-                                    {test.category}
-                                  </Badge>
-                                </div>
-                                <CardDescription className="text-xs font-mono mt-1">
-                                  {test.code}
-                                  {test.loinc_code && ` • LOINC: ${test.loinc_code}`}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-foreground">
-                                ${test.price?.toFixed(2)}
-                              </div>
-                              {test.tat_hours && (
-                                <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                  <Clock className="h-3 w-3" />
-                                  {test.tat_hours}h TAT
-                                </div>
+                          {filteredPanels.map((panel) => (
+                            <Card
+                              key={panel.id}
+                              className={cn(
+                                "cursor-pointer transition-colors",
+                                formData.selected_panels.includes(panel.id)
+                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                  : "hover:border-muted-foreground/50"
                               )}
-                            </div>
+                              onClick={() => handlePanelToggle(panel.id)}
+                            >
+                              <CardHeader className="py-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <Checkbox
+                                      checked={formData.selected_panels.includes(panel.id)}
+                                      onCheckedChange={() => handlePanelToggle(panel.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <CardTitle className="text-base">{panel.name}</CardTitle>
+                                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                          Panel
+                                        </Badge>
+                                      </div>
+                                      <CardDescription className="text-xs font-mono mt-1">
+                                        {panel.code} • {panel.test_count || 0} tests
+                                      </CardDescription>
+                                    </div>
+                                  </div>
+                                  <div className="text-sm font-semibold text-foreground">
+                                    ${Number(panel.price || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </CardHeader>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tests */}
+                      {filteredTests.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
+                            <TestTube2 className="h-3 w-3" />
+                            Individual Tests ({filteredTests.length})
                           </div>
-                        </CardHeader>
-                        {test.specimen_type && (
-                          <CardContent className="pt-0">
-                            <div className="text-xs text-muted-foreground">
-                              <span className="font-medium">Specimen:</span>{" "}
-                              {test.specimen_type}
-                            </div>
-                          </CardContent>
-                        )}
-                      </Card>
-                    ))
+                          {filteredTests.slice(0, 20).map((test) => (
+                            <Card
+                              key={test.id}
+                              className={cn(
+                                "cursor-pointer transition-colors",
+                                formData.selected_tests.includes(test.id)
+                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                  : "hover:border-muted-foreground/50"
+                              )}
+                              onClick={() => handleTestToggle(test.id)}
+                            >
+                              <CardHeader className="py-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <Checkbox
+                                      checked={formData.selected_tests.includes(test.id)}
+                                      onCheckedChange={() => handleTestToggle(test.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <CardTitle className="text-base">{test.name}</CardTitle>
+                                        <Badge variant="outline" className="text-xs capitalize">
+                                          {test.category}
+                                        </Badge>
+                                      </div>
+                                      <CardDescription className="text-xs font-mono mt-1">
+                                        {test.loinc_code && `LOINC: ${test.loinc_code}`}
+                                        {test.loinc_code && test.tat_hours && ' • '}
+                                        {test.tat_hours && `${test.tat_hours}h TAT`}
+                                      </CardDescription>
+                                    </div>
+                                  </div>
+                                  <div className="text-sm font-semibold text-foreground">
+                                    ${Number(test.price || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </CardHeader>
+                            </Card>
+                          ))}
+                          {filteredTests.length > 20 && (
+                            <p className="text-xs text-muted-foreground text-center py-2">
+                              Showing first 20 of {filteredTests.length} tests. Refine your search for more specific results.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
-                </TabsContent>
-              </Tabs>
+                </div>
+              ) : (
+                // Tabbed browse view (no search)
+                <>
+                  {/* Category Filter */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant={activeCategory === "all" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setActiveCategory("all")}
+                    >
+                      All
+                    </Button>
+                    {categories.map((category) => (
+                      <Button
+                        key={category}
+                        variant={activeCategory === category ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setActiveCategory(category)}
+                        className="capitalize"
+                      >
+                        {category}
+                      </Button>
+                    ))}
+                  </div>
+
+                  {/* Tabs */}
+                  <Tabs defaultValue="panels" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="panels">
+                        <Package className="h-4 w-4 mr-2" />
+                        Panels ({filteredPanels.length})
+                      </TabsTrigger>
+                      <TabsTrigger value="tests">
+                        <TestTube2 className="h-4 w-4 mr-2" />
+                        Tests ({filteredTests.length})
+                      </TabsTrigger>
+                    </TabsList>
+
+                    {/* Panels Tab */}
+                    <TabsContent value="panels" className="space-y-3 mt-4">
+                      {panelsLoading ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          Loading panels...
+                        </div>
+                      ) : filteredPanels.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No panels available
+                        </div>
+                      ) : (
+                        filteredPanels.map((panel) => (
+                          <Card
+                            key={panel.id}
+                            className={cn(
+                              "cursor-pointer transition-colors",
+                              formData.selected_panels.includes(panel.id)
+                                ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                : "hover:border-muted-foreground/50"
+                            )}
+                            onClick={() => handlePanelToggle(panel.id)}
+                          >
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-3">
+                                  <Checkbox
+                                    checked={formData.selected_panels.includes(panel.id)}
+                                    onCheckedChange={() => handlePanelToggle(panel.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <div>
+                                    <CardTitle className="text-base">
+                                      {panel.name}
+                                    </CardTitle>
+                                    <CardDescription className="text-xs font-mono mt-1">
+                                      {panel.code} • {panel.test_count || 0} tests
+                                    </CardDescription>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm font-semibold text-foreground">
+                                    ${Number(panel.price || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                            </CardHeader>
+                            {panel.description && (
+                              <CardContent className="pt-0">
+                                <p className="text-sm text-muted-foreground">
+                                  {panel.description}
+                                </p>
+                              </CardContent>
+                            )}
+                          </Card>
+                        ))
+                      )}
+                    </TabsContent>
+
+                    {/* Individual Tests Tab */}
+                    <TabsContent value="tests" className="space-y-3 mt-4">
+                      {testsLoading ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          Loading tests...
+                        </div>
+                      ) : filteredTests.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No tests available
+                        </div>
+                      ) : (
+                        filteredTests.map((test) => (
+                          <Card
+                            key={test.id}
+                            className={cn(
+                              "cursor-pointer transition-colors",
+                              formData.selected_tests.includes(test.id)
+                                ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                : "hover:border-muted-foreground/50"
+                            )}
+                            onClick={() => handleTestToggle(test.id)}
+                          >
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-3">
+                                  <Checkbox
+                                    checked={formData.selected_tests.includes(test.id)}
+                                    onCheckedChange={() => handleTestToggle(test.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <CardTitle className="text-base">
+                                        {test.name}
+                                      </CardTitle>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs capitalize"
+                                      >
+                                        {test.category}
+                                      </Badge>
+                                    </div>
+                                    <CardDescription className="text-xs font-mono mt-1">
+                                      {test.loinc_code && `LOINC: ${test.loinc_code}`}
+                                      {test.loinc_code && test.tat_hours && ' • '}
+                                      {test.tat_hours && `${test.tat_hours}h TAT`}
+                                    </CardDescription>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm font-semibold text-foreground">
+                                    ${Number(test.price || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                            </CardHeader>
+                            {test.specimen_type && (
+                              <CardContent className="pt-0">
+                                <div className="text-xs text-muted-foreground">
+                                  <span className="font-medium">Specimen:</span>{" "}
+                                  {test.specimen_type}
+                                </div>
+                              </CardContent>
+                            )}
+                          </Card>
+                        ))
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </>
+              )}
             </div>
           )}
 
@@ -698,7 +855,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                               <span className="text-foreground">{panel.name}</span>
                             </div>
                             <span className="font-semibold text-foreground">
-                              ${panel.price?.toFixed(2)}
+                              ${Number(panel.price || 0).toFixed(2)}
                             </span>
                           </div>
                         ))}
@@ -721,7 +878,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                               <span className="text-foreground">{test.name}</span>
                             </div>
                             <span className="font-semibold text-foreground">
-                              ${test.price?.toFixed(2)}
+                              ${Number(test.price || 0).toFixed(2)}
                             </span>
                           </div>
                         ))}
@@ -735,11 +892,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                         $
                         {(
                           selectedPanelsList.reduce(
-                            (sum, panel) => sum + (panel.price || 0),
+                            (sum, panel) => sum + Number(panel.price || 0),
                             0
                           ) +
                           selectedTestsList.reduce(
-                            (sum, test) => sum + (test.price || 0),
+                            (sum, test) => sum + Number(test.price || 0),
                             0
                           )
                         ).toFixed(2)}
@@ -780,36 +937,46 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
         </div>
 
         {/* Footer */}
-        <footer className="border-t border-border bg-card px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {currentStep > 1 && (
-              <Button variant="outline" onClick={handleBack} className="font-mono text-xs">
-                Back
+        <footer className="border-t border-border bg-card px-6 py-3">
+          {/* Keyboard shortcuts hint */}
+          <WorkflowKeyboardHints totalSteps={totalSteps} className="mb-3" />
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {currentStep > 1 && (
+                <Button variant="outline" size="sm" onClick={handleBack} className="font-mono text-xs">
+                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                  Back
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
+                Cancel
               </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={onClose} className="font-mono text-xs">
-              Cancel
-            </Button>
-            {currentStep < 3 ? (
-              <Button onClick={handleNext} className="font-mono text-xs">Next</Button>
-            ) : (
-              <Button
-                onClick={handleSubmit}
-                disabled={createOrder.isPending || submitOrder.isPending}
-                className="bg-sky-600 hover:bg-sky-700 font-mono text-xs"
-              >
-                {createOrder.isPending || submitOrder.isPending ? (
-                  "Submitting..."
-                ) : (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Submit Order
-                  </>
-                )}
-              </Button>
-            )}
+              {currentStep < totalSteps ? (
+                <Button size="sm" onClick={handleNext} className="font-mono text-xs">
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={createOrder.isPending || submitOrder.isPending}
+                  className="bg-sky-600 hover:bg-sky-700 font-mono text-xs"
+                >
+                  {createOrder.isPending || submitOrder.isPending ? (
+                    "Submitting..."
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1.5" />
+                      Submit Order
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </footer>
       </div>

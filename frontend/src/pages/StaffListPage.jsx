@@ -86,6 +86,7 @@ const StaffListPage = () => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
+        const name = member?.name?.toLowerCase() || '';
         const firstName = member?.user_details?.first_name?.toLowerCase() || '';
         const lastName = member?.user_details?.last_name?.toLowerCase() || '';
         const email = member?.user_details?.email?.toLowerCase() || '';
@@ -93,7 +94,8 @@ const StaffListPage = () => {
         const position = member?.position?.toLowerCase() || '';
         const employeeId = member?.employee_id?.toLowerCase() || '';
 
-        const matches = firstName.includes(query) ||
+        const matches = name.includes(query) ||
+          firstName.includes(query) ||
           lastName.includes(query) ||
           email.includes(query) ||
           department.includes(query) ||

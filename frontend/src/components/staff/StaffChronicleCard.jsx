@@ -37,6 +37,7 @@ const StaffChronicleCard = ({
   const getStaffId = (staff) => staff?.id || null;
 
   const getDisplayName = (staff) => {
+    if (staff?.name) return staff.name;
     const firstName = staff?.user_details?.first_name || '';
     const lastName = staff?.user_details?.last_name || '';
     return `${firstName} ${lastName}`.trim() || "Unknown Staff";
@@ -50,9 +51,9 @@ const StaffChronicleCard = ({
 
   const getPosition = (staff) => staff?.position || null;
 
-  const getEmail = (staff) => staff?.user_details?.email || null;
+  const getEmail = (staff) => staff?.email || staff?.user_details?.email || null;
 
-  const getPhone = (staff) => staff?.user_details?.phone_number || null;
+  const getPhone = (staff) => staff?.phone_number || staff?.phone || staff?.user_details?.phone_number || null;
 
   const getHireDate = (staff) => {
     const hireDate = staff?.hire_date;
@@ -67,18 +68,40 @@ const StaffChronicleCard = ({
     }
   };
 
-  const getYearsAtFacility = (staff) => {
+  const getTenureString = (staff) => {
     const hireDate = staff?.hire_date;
     if (!hireDate) return null;
     try {
-      const hire = new Date(hireDate);
-      const today = new Date();
-      let years = today.getFullYear() - hire.getFullYear();
-      const m = today.getMonth() - hire.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < hire.getDate())) {
-        years--;
+      const start = new Date(hireDate);
+      const end = new Date();
+
+      if (start > end) return "0 days";
+
+      let years = end.getFullYear() - start.getFullYear();
+      let months = end.getMonth() - start.getMonth();
+      let days = end.getDate() - start.getDate();
+
+      if (days < 0) {
+        months--;
+        const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+        days += prevMonth.getDate();
       }
-      return years;
+      if (months < 0) {
+        years--;
+        months += 12;
+      }
+
+      if (years > 0) {
+        return months > 0
+          ? `${years} ${years === 1 ? 'year' : 'years'} ${months} ${months === 1 ? 'month' : 'months'}`
+          : `${years} ${years === 1 ? 'year' : 'years'}`;
+      }
+
+      if (months > 0) {
+        return `${months} ${months === 1 ? 'month' : 'months'}`;
+      }
+
+      return `${days} ${days === 1 ? 'day' : 'days'}`;
     } catch {
       return null;
     }
@@ -164,7 +187,7 @@ const StaffChronicleCard = ({
   const email = getEmail(staff);
   const phone = getPhone(staff);
   const hireDate = getHireDate(staff);
-  const yearsAtFacility = getYearsAtFacility(staff);
+  const tenure = getTenureString(staff);
   const active = isActive(staff);
 
   const roleConfig = getRoleConfig(userType);
@@ -268,11 +291,7 @@ const StaffChronicleCard = ({
             Tenure
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
-            {yearsAtFacility !== null ? (
-              `${yearsAtFacility} ${yearsAtFacility === 1 ? 'year' : 'years'}`
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
+            {tenure || <span className="text-muted-foreground">—</span>}
           </dd>
         </div>
       </div>

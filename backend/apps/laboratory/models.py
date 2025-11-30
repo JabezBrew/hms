@@ -10,6 +10,12 @@ class LabTestCatalog(models.Model):
     """
     Catalog of available lab tests with LOINC codes and reference ranges.
     Represents the test menu available for ordering.
+
+    Supports facility customization:
+    - System defaults are seeded with is_system_default=True
+    - Facilities can modify prices, reference ranges, TAT
+    - Original system values are preserved in system_defaults JSON
+    - Custom facility tests have is_system_default=False
     """
     CATEGORY_CHOICES = [
         ('hematology', 'Hematology'),
@@ -21,6 +27,9 @@ class LabTestCatalog(models.Model):
         ('serology', 'Serology'),
         ('molecular', 'Molecular/PCR'),
         ('pathology', 'Pathology'),
+        ('toxicology', 'Toxicology'),
+        ('endocrine', 'Endocrine'),
+        ('cardiac', 'Cardiac Markers'),
         ('other', 'Other'),
     ]
 
@@ -29,6 +38,21 @@ class LabTestCatalog(models.Model):
         max_length=20,
         unique=True,
         help_text="Internal test code (e.g., 'CBC', 'BMP')"
+    )
+
+    # Facility customization tracking
+    is_system_default = models.BooleanField(
+        default=False,
+        help_text="True if this test was seeded from the system catalog"
+    )
+    is_facility_modified = models.BooleanField(
+        default=False,
+        help_text="True if facility has customized this system test"
+    )
+    system_defaults = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Original system values (price, reference_ranges, tat_hours) for reset capability"
     )
     loinc_code = models.CharField(
         max_length=20,
@@ -107,17 +131,50 @@ class LabTestCatalog(models.Model):
     def __str__(self):
         return f"{self.short_name} - {self.name}"
 
+    def reset_to_system_defaults(self):
+        """Reset facility-customized values back to system defaults."""
+        if not self.is_system_default or not self.system_defaults:
+            return False
+
+        if 'price' in self.system_defaults:
+            self.price = self.system_defaults['price']
+        if 'reference_ranges' in self.system_defaults:
+            self.reference_ranges = self.system_defaults['reference_ranges']
+        if 'tat_hours' in self.system_defaults:
+            self.tat_hours = self.system_defaults['tat_hours']
+
+        self.is_facility_modified = False
+        self.save()
+        return True
+
 
 class LabPanel(models.Model):
     """
     Groupings of lab tests (e.g., CBC, BMP, LFT panels).
     Allows ordering multiple related tests as a bundle.
+
+    Supports facility customization similar to LabTestCatalog.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(
         max_length=20,
         unique=True,
         help_text="Panel code (e.g., 'CMP', 'LFT')"
+    )
+
+    # Facility customization tracking
+    is_system_default = models.BooleanField(
+        default=False,
+        help_text="True if this panel was seeded from the system catalog"
+    )
+    is_facility_modified = models.BooleanField(
+        default=False,
+        help_text="True if facility has customized this system panel"
+    )
+    system_defaults = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Original system values (price) for reset capability"
     )
     name = models.CharField(
         max_length=255,
@@ -147,6 +204,18 @@ class LabPanel(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
+
+    def reset_to_system_defaults(self):
+        """Reset facility-customized values back to system defaults."""
+        if not self.is_system_default or not self.system_defaults:
+            return False
+
+        if 'price' in self.system_defaults:
+            self.price = self.system_defaults['price']
+
+        self.is_facility_modified = False
+        self.save()
+        return True
 
 
 class LabOrderStatus(models.TextChoices):

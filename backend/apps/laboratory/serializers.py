@@ -4,13 +4,16 @@ from .models import (
     LabTestCatalog, LabPanel, LabOrder, LabOrderTest,
     LabSpecimen, LabResult, LabOrderStatus, LabOrderPriority
 )
+from ..users.models import PractitionerProfile
 
 
 class LabTestCatalogSerializer(serializers.ModelSerializer):
     """
     Serializer for lab test catalog with reference ranges.
+    Includes facility customization tracking fields.
     """
     category_display = serializers.CharField(source='get_category_display', read_only=True)
+    can_reset = serializers.SerializerMethodField()
 
     class Meta:
         model = LabTestCatalog
@@ -20,14 +23,23 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
             'specimen_type', 'container_type', 'volume_required',
             'special_instructions', 'reference_ranges', 'unit',
             'tat_hours', 'price', 'is_active',
-            'created_at', 'updated_at'
+            'is_system_default', 'is_facility_modified', 'system_defaults',
+            'can_reset', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'category_display']
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'category_display',
+            'is_system_default', 'system_defaults', 'can_reset'
+        ]
+
+    def get_can_reset(self, obj):
+        """Check if test can be reset to system defaults."""
+        return obj.is_system_default and obj.is_facility_modified
 
 
 class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
     """
-    Create serializer with validation for lab test catalog.
+    Create serializer for custom facility tests.
+    System tests are seeded via management command.
     """
     class Meta:
         model = LabTestCatalog
@@ -50,10 +62,75 @@ class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Reference ranges must be a dictionary.")
         return value
 
+    def create(self, validated_data):
+        """Create a custom facility test (not a system default)."""
+        validated_data['is_system_default'] = False
+        validated_data['is_facility_modified'] = False
+        validated_data['system_defaults'] = {}
+        return super().create(validated_data)
+
+
+class LabTestFacilityCustomizeSerializer(serializers.Serializer):
+    """
+    Serializer for facility customization of lab tests.
+    Allows updating price, reference_ranges, and tat_hours.
+    """
+    price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        help_text="Facility-specific price"
+    )
+    reference_ranges = serializers.JSONField(
+        required=False,
+        help_text="Facility-specific reference ranges"
+    )
+    tat_hours = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Facility-specific turnaround time in hours"
+    )
+    is_active = serializers.BooleanField(
+        required=False,
+        help_text="Enable or disable test for ordering"
+    )
+
+    def validate_reference_ranges(self, value):
+        """Validate reference ranges JSON structure."""
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError("Reference ranges must be a dictionary.")
+        return value
+
+    def validate(self, data):
+        """Ensure at least one field is provided."""
+        if not any(data.values()):
+            raise serializers.ValidationError(
+                "At least one customization field must be provided."
+            )
+        return data
+
+
+class LabTestResetSerializer(serializers.Serializer):
+    """
+    Serializer for resetting a test to system defaults.
+    """
+    confirm = serializers.BooleanField(
+        required=True,
+        help_text="Confirm reset to system defaults"
+    )
+
+    def validate_confirm(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "You must confirm the reset by setting confirm to true."
+            )
+        return value
+
 
 class LabPanelSerializer(serializers.ModelSerializer):
     """
     Serializer for lab panels with nested test information.
+    Includes facility customization tracking.
     """
     tests = LabTestCatalogSerializer(many=True, read_only=True)
     test_ids = serializers.PrimaryKeyRelatedField(
@@ -63,6 +140,7 @@ class LabPanelSerializer(serializers.ModelSerializer):
         source='tests'
     )
     test_count = serializers.SerializerMethodField()
+    can_reset = serializers.SerializerMethodField()
 
     class Meta:
         model = LabPanel
@@ -70,13 +148,45 @@ class LabPanelSerializer(serializers.ModelSerializer):
             'id', 'code', 'name', 'description',
             'tests', 'test_ids', 'test_count',
             'price', 'is_active',
+            'is_system_default', 'is_facility_modified', 'system_defaults', 'can_reset',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'test_count']
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'test_count',
+            'is_system_default', 'system_defaults', 'can_reset'
+        ]
 
     def get_test_count(self, obj):
         """Return number of tests in panel."""
         return obj.tests.count()
+
+    def get_can_reset(self, obj):
+        """Check if panel can be reset to system defaults."""
+        return obj.is_system_default and obj.is_facility_modified
+
+
+class LabPanelFacilityCustomizeSerializer(serializers.Serializer):
+    """
+    Serializer for facility customization of lab panels.
+    """
+    price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        help_text="Facility-specific panel price"
+    )
+    is_active = serializers.BooleanField(
+        required=False,
+        help_text="Enable or disable panel for ordering"
+    )
+
+    def validate(self, data):
+        """Ensure at least one field is provided."""
+        if not any(data.values()):
+            raise serializers.ValidationError(
+                "At least one customization field must be provided."
+            )
+        return data
 
 
 class LabOrderTestSerializer(serializers.ModelSerializer):
@@ -287,6 +397,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
 class LabOrderCreateSerializer(serializers.ModelSerializer):
     """
     Create serializer for lab orders with validation.
+    ordering_provider is optional - will be auto-set from current user in view's perform_create.
     """
     test_ids = serializers.PrimaryKeyRelatedField(
         queryset=LabTestCatalog.objects.filter(is_active=True),
@@ -300,14 +411,22 @@ class LabOrderCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True
     )
+    ordering_provider = serializers.PrimaryKeyRelatedField(
+        queryset=PractitionerProfile.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="Auto-set from current user if not provided"
+    )
 
     class Meta:
         model = LabOrder
         fields = [
+            'id', 'order_number',  # Include id and order_number in response
             'patient', 'encounter', 'ordering_provider',
             'test_ids', 'panel_ids',
             'priority', 'clinical_notes', 'fasting_required'
         ]
+        read_only_fields = ['id', 'order_number']
 
     def validate(self, data):
         """Validate that at least one test or panel is selected."""
@@ -428,3 +547,134 @@ class LabOrderSearchSerializer(serializers.Serializer):
     date_to = serializers.DateTimeField(required=False)
     has_critical_results = serializers.BooleanField(required=False)
     unverified_only = serializers.BooleanField(required=False)
+
+
+# =============================================================================
+# LIST SERIALIZERS - Lightweight serializers for list views
+# These reduce payload sizes by 60-80% compared to full serializers
+# =============================================================================
+
+class LabTestCatalogListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for lab test catalog lists.
+    Used by order forms and test selection dropdowns.
+    Includes customization flags for admin views.
+
+    Payload reduction: ~60% (includes key customization fields)
+    """
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = LabTestCatalog
+        fields = [
+            'id', 'code', 'loinc_code', 'name', 'short_name',
+            'category', 'category_display', 'specimen_type',
+            'price', 'tat_hours', 'is_active',
+            'is_system_default', 'is_facility_modified'
+        ]
+
+
+class LabPanelListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for lab panel lists.
+    Returns test count instead of full nested test objects.
+    Includes customization flags for admin views.
+
+    Payload reduction: ~75% (includes customization fields)
+    """
+    test_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LabPanel
+        fields = [
+            'id', 'code', 'name', 'description',
+            'test_count', 'price', 'is_active',
+            'is_system_default', 'is_facility_modified'
+        ]
+
+    def get_test_count(self, obj):
+        return obj.tests.count()
+
+
+class LabOrderListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for lab order lists.
+    Removes nested order_tests, panels, specimens - uses counts instead.
+
+    Payload reduction: ~87% (~2KB vs ~15KB per item)
+    """
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+    ordering_provider_name = serializers.SerializerMethodField()
+    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    test_count = serializers.SerializerMethodField()
+    has_critical_results = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LabOrder
+        fields = [
+            'id', 'order_number', 'patient', 'patient_name', 'patient_mrn',
+            'ordering_provider_name', 'priority', 'priority_display',
+            'status', 'status_display', 'test_count', 'has_critical_results',
+            'fasting_required', 'ordered_at', 'created_at'
+        ]
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return None
+
+    def get_ordering_provider_name(self, obj):
+        if obj.ordering_provider and obj.ordering_provider.staff and obj.ordering_provider.staff.user:
+            return obj.ordering_provider.staff.user.get_full_name()
+        return None
+
+    def get_test_count(self, obj):
+        return obj.order_tests.count()
+
+    def get_has_critical_results(self, obj):
+        return obj.order_tests.filter(
+            result__flag__in=['critical_low', 'critical_high']
+        ).exists()
+
+
+class LabResultListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for lab result lists.
+    Used for patient result history and dashboard views.
+
+    Payload reduction: ~60% (12 fields vs 21 in full serializer)
+    """
+    test_name = serializers.CharField(source='order_test.test.short_name', read_only=True)
+    order_number = serializers.CharField(source='order_test.order.order_number', read_only=True)
+    flag_display = serializers.CharField(source='get_flag_display', read_only=True)
+
+    class Meta:
+        model = LabResult
+        fields = [
+            'id', 'order_number', 'test_name',
+            'value', 'unit', 'reference_low', 'reference_high',
+            'flag', 'flag_display', 'is_verified',
+            'performed_at', 'verified_at'
+        ]
+
+
+class LabSpecimenListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for specimen lists.
+    Used for specimen tracking and collection queues.
+
+    Payload reduction: ~50% (10 fields vs 19 in full serializer)
+    """
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    order_number = serializers.CharField(source='order.order_number', read_only=True)
+
+    class Meta:
+        model = LabSpecimen
+        fields = [
+            'id', 'barcode', 'order_number',
+            'specimen_type', 'container_type',
+            'status', 'status_display', 'is_rejected',
+            'collected_at', 'received_at'
+        ]

@@ -926,6 +926,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
     """
 
     # Note type step configurations
+    # Supports all ClinicalNoteType categories from models.py
     NOTE_TYPE_STEPS = {
         'progress': {
             'steps': ['chief_complaint', 'assessment', 'plan'],
@@ -942,6 +943,30 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         'phone': {
             'steps': ['caller_info', 'discussion', 'action_items'],
             'total_steps': 3,
+        },
+        'general': {
+            'steps': ['chief_complaint', 'assessment', 'plan'],
+            'total_steps': 3,
+        },
+        'admission': {
+            'steps': ['presenting_complaint', 'history', 'examination', 'assessment', 'plan'],
+            'total_steps': 5,
+        },
+        'discharge': {
+            'steps': ['summary', 'diagnosis', 'medications', 'follow_up'],
+            'total_steps': 4,
+        },
+        'nursing': {
+            'steps': ['assessment', 'interventions', 'evaluation'],
+            'total_steps': 3,
+        },
+        'consultation': {
+            'steps': ['reason', 'findings', 'recommendations'],
+            'total_steps': 3,
+        },
+        'custom': {
+            'steps': ['content'],
+            'total_steps': 1,
         },
     }
 

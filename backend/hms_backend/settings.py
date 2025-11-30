@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
 
     # Local apps
+    'apps.core.apps.CoreConfig',  # Shared utilities for API optimization
     'apps.users.apps.UsersConfig',  # Use this instead of 'apps.users'
     'apps.fhir_client',
     'apps.appointments',

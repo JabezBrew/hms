@@ -137,6 +137,31 @@ GET /api/dashboards/ward-rounds/      # Ward-specific data
 GET /api/dashboards/clinic/           # Clinic schedule
 ```
 
+### API Payload Optimization
+
+**Critical:** Keep API response payloads minimal. Only return fields the frontend actually needs.
+
+**Patterns:**
+- Use **List Serializers** for list endpoints (5-8 fields max)
+- Use **Detail Serializers** for single-item retrieval (full data)
+- Flatten nested relationships with `SerializerMethodField` (e.g., `patient_name` instead of nested `patient` object)
+- Return counts instead of full arrays when listing (e.g., `items_count` instead of `items[]`)
+
+**Example:**
+```python
+# In ViewSet
+def get_serializer_class(self):
+    if self.action == 'list':
+        return MyListSerializer  # Lightweight
+    return MySerializer          # Full details
+
+# List serializer: return name, not full nested object
+patient_name = serializers.SerializerMethodField()  # Good
+patient = PatientSerializer()                        # Bad for lists
+```
+
+**Reference:** See `apps/core/serializers.py` for minimal serializers and `apps/core/mixins.py` for `ListDetailSerializerMixin`.
+
 ---
 
 ## Tech Stack

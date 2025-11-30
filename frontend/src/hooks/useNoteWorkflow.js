@@ -169,7 +169,7 @@ export function useNoteWorkflow(patientId) {
   });
 
   // Start a new workflow with a template
-  const startWorkflow = useCallback(async (selectedTemplate) => {
+  const startWorkflow = useCallback(async (selectedTemplate, initialData = null) => {
     if (!patientId) {
       setError('Patient ID is required');
       return;
@@ -177,10 +177,33 @@ export function useNoteWorkflow(patientId) {
 
     // Store the full template object
     setTemplate(selectedTemplate);
-    setFormData({});
-    setCurrentStep(0);
     setLastSaved(null);
     setError(null);  // Clear any previous errors
+
+    // If initial data provided (e.g., from copy), pre-populate formData
+    if (initialData && typeof initialData === 'object') {
+      // Map the initial data to step IDs
+      const derivedSteps = deriveStepsFromTemplate(selectedTemplate);
+      const mappedFormData = {};
+
+      derivedSteps.forEach((step) => {
+        // Try to find matching data by step ID or original section name
+        const stepId = step.id;
+        const originalName = step.title;
+
+        if (initialData[stepId]) {
+          mappedFormData[stepId] = initialData[stepId];
+        } else if (initialData[originalName]) {
+          mappedFormData[stepId] = initialData[originalName];
+        }
+      });
+
+      setFormData(mappedFormData);
+    } else {
+      setFormData({});
+    }
+
+    setCurrentStep(0);
 
     try {
       await startWorkflowMutation.mutateAsync({
@@ -243,6 +266,13 @@ export function useNoteWorkflow(patientId) {
       setCurrentStep(currentStep - 1);
     }
   }, [currentStep]);
+
+  // Navigate to a specific step (for clickable step indicators)
+  const goToStep = useCallback((stepNumber) => {
+    if (stepNumber >= 1 && stepNumber <= totalSteps && stepNumber !== currentStep) {
+      setCurrentStep(stepNumber);
+    }
+  }, [currentStep, totalSteps]);
 
   // Save draft (for auto-save)
   const saveDraft = useCallback(async () => {
@@ -362,6 +392,7 @@ export function useNoteWorkflow(patientId) {
     saveStep,
     nextStep,
     prevStep,
+    goToStep,
     saveDraft,
     completeWorkflow,
     resetWorkflow,

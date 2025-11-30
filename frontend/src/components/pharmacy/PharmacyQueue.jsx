@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { format } from 'date-fns';
 import {
   Search, Package, CheckCircle, Clock, AlertCircle,
-  RefreshCw, User, Pill, CheckSquare
+  RefreshCw, User, Pill, CheckSquare, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -213,11 +213,12 @@ export function PharmacyQueue() {
 
   const totalPending = filteredMeds.length;
   const totalPatients = Object.keys(groupedByPatient).length;
+  const totalOverdue = filteredMeds.filter(med => med.is_overdue).length;
 
   return (
     <div className="space-y-6">
       {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -231,6 +232,22 @@ export function PharmacyQueue() {
             </div>
           </CardContent>
         </Card>
+
+        {totalOverdue > 0 && (
+          <Card className="border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-600">{totalOverdue}</p>
+                  <p className="text-sm text-red-600/80">Overdue</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="pt-6">
@@ -363,7 +380,7 @@ export function PharmacyQueue() {
                           </TableHeader>
                           <TableBody>
                             {data.medications.map(med => (
-                              <TableRow key={med.id}>
+                              <TableRow key={med.id} className={med.is_overdue ? 'bg-red-50 dark:bg-red-900/10' : ''}>
                                 <TableCell>
                                   <Checkbox
                                     checked={selectedMeds.includes(med.id)}
@@ -371,12 +388,22 @@ export function PharmacyQueue() {
                                   />
                                 </TableCell>
                                 <TableCell className="font-medium">
-                                  {med.medication_name}
+                                  <div className="flex items-center gap-2">
+                                    {med.medication_name}
+                                    {med.is_overdue && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                        Overdue
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </TableCell>
                                 <TableCell>{med.dosage}</TableCell>
                                 <TableCell>{med.route}</TableCell>
                                 <TableCell className="font-mono text-sm">
-                                  {formatTime(med.scheduled_time)}
+                                  <div className={med.is_overdue ? 'text-red-600 dark:text-red-400' : ''}>
+                                    {formatTime(med.scheduled_time)}
+                                  </div>
                                 </TableCell>
                                 <TableCell>
                                   {getPrescriberName(med)}
@@ -384,7 +411,7 @@ export function PharmacyQueue() {
                                 <TableCell className="text-right">
                                   <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant={med.is_overdue ? 'destructive' : 'outline'}
                                     onClick={() => openConfirmDialog(med)}
                                     disabled={dispenseMutation.isPending}
                                   >
@@ -448,7 +475,7 @@ export function PharmacyQueue() {
                     </TableHeader>
                     <TableBody>
                       {filteredMeds.map(med => (
-                        <TableRow key={med.id}>
+                        <TableRow key={med.id} className={med.is_overdue ? 'bg-red-50 dark:bg-red-900/10' : ''}>
                           <TableCell>
                             <Checkbox
                               checked={selectedMeds.includes(med.id)}
@@ -466,11 +493,19 @@ export function PharmacyQueue() {
                             </div>
                           </TableCell>
                           <TableCell className="font-medium">
-                            {med.medication_name}
+                            <div className="flex items-center gap-2">
+                              {med.medication_name}
+                              {med.is_overdue && (
+                                <Badge variant="destructive" className="text-xs">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Overdue
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>{med.dosage}</TableCell>
                           <TableCell>{med.route}</TableCell>
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className={`font-mono text-sm ${med.is_overdue ? 'text-red-600 dark:text-red-400' : ''}`}>
                             {formatDateTime(med.scheduled_time)}
                           </TableCell>
                           <TableCell>
@@ -479,7 +514,7 @@ export function PharmacyQueue() {
                           <TableCell className="text-right">
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant={med.is_overdue ? 'destructive' : 'outline'}
                               onClick={() => openConfirmDialog(med)}
                               disabled={dispenseMutation.isPending}
                             >
@@ -509,6 +544,12 @@ export function PharmacyQueue() {
 
           {confirmMedication && (
             <div className="space-y-4 py-4">
+              {confirmMedication.is_overdue && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400">
+                  <AlertTriangle className="h-5 w-5" />
+                  <span className="font-medium">This medication is overdue for dispensing</span>
+                </div>
+              )}
               <div className="bg-muted p-4 rounded-lg space-y-3">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Patient:</span>

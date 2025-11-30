@@ -41,11 +41,25 @@ class Ward(models.Model):
 
     # Staff in charge
     head_nurse = models.ForeignKey(
-        PractitionerProfile, 
-        on_delete=models.SET_NULL, 
-        null=True, 
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
         related_name='headed_wards'
+    )
+
+    # Section configuration
+    uses_sections = models.BooleanField(
+        default=False,
+        help_text="If true, beds must be assigned to sections for better organization"
+    )
+    default_section = models.ForeignKey(
+        'WardSection',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='default_for_wards',
+        help_text="Default section for backward compatibility"
     )
 
     # Audit fields
@@ -113,6 +127,57 @@ class Bed(models.Model):
     # Notes
     notes = models.TextField(blank=True, null=True)
 
+    # Section FK (nullable for backward compatibility)
+    section = models.ForeignKey(
+        'WardSection',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='beds',
+        help_text="Section this bed belongs to (optional for backward compatibility)"
+    )
+
+    # Amenities M2M
+    amenities = models.ManyToManyField(
+        'BedAmenity',
+        blank=True,
+        related_name='beds',
+        help_text="Amenities/features available with this bed"
+    )
+
+    # Isolation support
+    is_isolation_capable = models.BooleanField(default=False, help_text="Can this bed handle isolation cases")
+    has_negative_pressure = models.BooleanField(default=False, help_text="Has negative pressure for airborne isolation")
+
+    ISOLATION_TYPE_CHOICES = (
+        ('none', 'None'),
+        ('contact', 'Contact Isolation'),
+        ('airborne', 'Airborne Isolation'),
+        ('droplet', 'Droplet Isolation'),
+        ('protective', 'Protective Isolation'),
+    )
+    current_isolation_type = models.CharField(
+        max_length=20,
+        choices=ISOLATION_TYPE_CHOICES,
+        default='none',
+        help_text="Current isolation status of this bed"
+    )
+
+    # Accommodation tier override (if set, overrides section's tier)
+    ACCOMMODATION_TIER_CHOICES = (
+        ('open', 'Open Ward'),
+        ('semi_private', 'Semi-Private'),
+        ('private', 'Private'),
+        ('vip', 'VIP'),
+    )
+    accommodation_tier = models.CharField(
+        max_length=20,
+        choices=ACCOMMODATION_TIER_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Override section accommodation tier if specified"
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -126,6 +191,10 @@ class Bed(models.Model):
             models.Index(fields=['ward', 'status']),
             models.Index(fields=['status']),
             models.Index(fields=['bed_type']),
+            models.Index(fields=['section', 'status']),
+            models.Index(fields=['accommodation_tier']),
+            models.Index(fields=['current_isolation_type']),
+            models.Index(fields=['is_isolation_capable']),
         ]
 
     def __str__(self):
@@ -134,9 +203,43 @@ class Bed(models.Model):
     @property
     def total_rate(self):
         """
-        Calculate the total rate for this bed per night.
+        Calculate the total rate for this bed per night including section multiplier and amenities.
         """
-        return self.ward.base_rate_per_night + self.additional_rate
+        base = self.ward.base_rate_per_night
+
+        # Apply section multiplier if section exists
+        if self.section:
+            base = base * self.section.rate_multiplier
+
+        # Add bed-level additional rate
+        rate = base + self.additional_rate
+
+        # Add amenity costs
+        amenity_cost = self.amenities.aggregate(
+            total=models.Sum('additional_rate')
+        )['total'] or 0
+
+        return rate + amenity_cost
+
+    @property
+    def effective_accommodation_tier(self):
+        """
+        Get accommodation tier (bed override or section default or 'open').
+        """
+        if self.accommodation_tier:
+            return self.accommodation_tier
+        if self.section:
+            return self.section.accommodation_tier
+        return 'open'
+
+    @property
+    def effective_gender_restriction(self):
+        """
+        Get gender restriction from section.
+        """
+        if self.section:
+            return self.section.gender_restriction
+        return 'mixed'
 
 
 class Admission(models.Model):
@@ -514,3 +617,157 @@ class WardTransfer(models.Model):
             self.from_admission.save()
 
         super().save(*args, **kwargs)
+
+
+class BedAmenity(models.Model):
+    """
+    Model for tracking bed-level amenities/features.
+    Examples: oxygen supply, cardiac monitoring, private bathroom, TV, etc.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=50, unique=True, help_text="Unique identifier code for the amenity")
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(max_length=50, blank=True, null=True, help_text="Icon name for frontend display (lucide-react)")
+
+    # Categorization
+    CATEGORY_CHOICES = (
+        ('medical', 'Medical Equipment'),
+        ('comfort', 'Comfort & Convenience'),
+        ('accessibility', 'Accessibility'),
+        ('safety', 'Safety'),
+    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='medical')
+
+    # Pricing impact
+    additional_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        help_text="Additional charge per night for this amenity"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name_plural = "Bed Amenities"
+        ordering = ['category', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class WardSection(models.Model):
+    """
+    Model for sections within wards.
+    Sections represent logical groupings like "Male Side", "Female Side", "VIP Wing", "Open Ward Area".
+    Provides hierarchical organization: Ward → Section → Bed
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ward = models.ForeignKey(Ward, on_delete=models.CASCADE, related_name='sections')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+
+    # Display ordering
+    display_order = models.PositiveSmallIntegerField(default=0, help_text="Order for display (lower numbers first)")
+
+    # Gender restrictions
+    GENDER_RESTRICTION_CHOICES = (
+        ('male_only', 'Male Only'),
+        ('female_only', 'Female Only'),
+        ('mixed', 'Mixed'),
+    )
+    gender_restriction = models.CharField(
+        max_length=20,
+        choices=GENDER_RESTRICTION_CHOICES,
+        default='mixed'
+    )
+
+    # Privacy/Accommodation tier
+    ACCOMMODATION_TIER_CHOICES = (
+        ('open', 'Open Ward (6+ beds)'),
+        ('semi_private', 'Semi-Private (2-4 beds)'),
+        ('private', 'Private (Single room)'),
+        ('vip', 'VIP (Premium amenities)'),
+    )
+    accommodation_tier = models.CharField(
+        max_length=20,
+        choices=ACCOMMODATION_TIER_CHOICES,
+        default='open'
+    )
+
+    # Pricing - rate multiplier applied to ward base rate
+    rate_multiplier = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=1.00,
+        help_text="Multiplier applied to ward base rate (e.g., 1.5 = 150%)"
+    )
+
+    # Isolation capabilities
+    is_isolation_capable = models.BooleanField(default=False, help_text="Can this section handle isolation cases")
+    has_negative_pressure = models.BooleanField(default=False, help_text="Has negative pressure rooms for airborne isolation")
+
+    ISOLATION_TYPE_CHOICES = (
+        ('none', 'None'),
+        ('contact', 'Contact Isolation'),
+        ('airborne', 'Airborne Isolation'),
+        ('droplet', 'Droplet Isolation'),
+        ('protective', 'Protective Isolation'),
+    )
+    default_isolation_type = models.CharField(
+        max_length=20,
+        choices=ISOLATION_TYPE_CHOICES,
+        default='none',
+        help_text="Default isolation type for this section"
+    )
+
+    # Capacity
+    max_beds = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Maximum number of beds (0 = unlimited)"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_sections')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_sections')
+
+    class Meta:
+        unique_together = ('ward', 'name')
+        ordering = ['ward', 'display_order', 'name']
+        indexes = [
+            models.Index(fields=['ward', 'is_active']),
+            models.Index(fields=['gender_restriction']),
+            models.Index(fields=['accommodation_tier']),
+        ]
+
+    def __str__(self):
+        return f"{self.ward.name} - {self.name}"
+
+    @property
+    def bed_count(self):
+        """Get total number of beds in this section."""
+        return self.beds.count()
+
+    @property
+    def available_beds_count(self):
+        """Get number of available beds in this section."""
+        return self.beds.filter(status='available').count()
+
+    @property
+    def occupancy_rate(self):
+        """Calculate the occupancy rate of the section."""
+        total = self.bed_count
+        if total == 0:
+            return 0
+        occupied = self.beds.filter(status='occupied').count()
+        return (occupied / total) * 100
+
+    @property
+    def effective_rate(self):
+        """Calculate the effective base rate for this section (ward base rate * section multiplier)."""
+        return self.ward.base_rate_per_night * self.rate_multiplier

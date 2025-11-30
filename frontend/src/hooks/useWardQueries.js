@@ -12,6 +12,7 @@ export const wardKeys = {
   bedsList: (filters) => [...wardKeys.beds(), 'list', { filters }],
   bed: (id) => [...wardKeys.beds(), id],
   wardBeds: (wardId, filters) => [...wardKeys.detail(wardId), 'beds', { filters }],
+  availableBeds: (filters) => [...wardKeys.beds(), 'available', { filters }],
   transfers: () => [...wardKeys.all, 'transfers'],
   transfersList: (filters) => [...wardKeys.transfers(), 'list', { filters }],
   allocationLogs: () => [...wardKeys.all, 'allocationLogs'],
@@ -19,6 +20,14 @@ export const wardKeys = {
   admissions: () => [...wardKeys.all, 'admissions'],
   admissionsList: (filters) => [...wardKeys.admissions(), 'list', { filters }],
   admission: (id) => [...wardKeys.admissions(), id],
+  sections: () => [...wardKeys.all, 'sections'],
+  sectionsList: (filters) => [...wardKeys.sections(), 'list', { filters }],
+  section: (id) => [...wardKeys.sections(), id],
+  wardSections: (wardId) => [...wardKeys.detail(wardId), 'sections'],
+  sectionBeds: (sectionId) => [...wardKeys.section(sectionId), 'beds'],
+  amenities: () => [...wardKeys.all, 'amenities'],
+  amenitiesList: (filters) => [...wardKeys.amenities(), 'list', { filters }],
+  amenity: (id) => [...wardKeys.amenities(), id],
 };
 
 /**
@@ -350,5 +359,283 @@ export function useAllocationLogs(filters = {}) {
   return useQuery({
     queryKey: wardKeys.allocationLogsList(filters),
     queryFn: () => wardsApi.getAllocationLogs(filters),
+  });
+}
+
+// =============================================================================
+// WARD SECTIONS HOOKS
+// =============================================================================
+
+/**
+ * Get all ward sections with optional filtering
+ * @param {Object} filters - Query parameters for filtering
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useSections(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.sectionsList(filters),
+    queryFn: () => wardsApi.getSections(filters),
+    ...options,
+  });
+}
+
+/**
+ * Get sections for a specific ward
+ * @param {string} wardId - Ward ID
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useWardSections(wardId, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.wardSections(wardId),
+    queryFn: () => wardsApi.getWardSections(wardId),
+    enabled: !!wardId,
+    ...options,
+  });
+}
+
+/**
+ * Get a single section by ID
+ * @param {string} id - Section ID
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useSection(id, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.section(id),
+    queryFn: () => wardsApi.getSection(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+/**
+ * Get beds in a specific section
+ * @param {string} sectionId - Section ID
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useSectionBeds(sectionId, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.sectionBeds(sectionId),
+    queryFn: () => wardsApi.getSectionBeds(sectionId),
+    enabled: !!sectionId,
+    ...options,
+  });
+}
+
+/**
+ * Create a new ward section (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useCreateSection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => wardsApi.createSection(data),
+    onSuccess: (data) => {
+      // Invalidate sections list
+      queryClient.invalidateQueries({ queryKey: wardKeys.sections() });
+
+      // If section has a ward, invalidate that ward's sections
+      if (data && data.ward) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.wardSections(data.ward)
+        });
+        // Also invalidate the ward detail
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.detail(data.ward)
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Update an existing ward section (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useUpdateSection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => wardsApi.updateSection(id, data),
+    onSuccess: (responseData, variables) => {
+      // Update the cache for this specific section
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.section(variables.id)
+      });
+
+      // Invalidate sections list
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.sections()
+      });
+
+      // If section has a ward, invalidate that ward's sections
+      if (responseData && responseData.ward) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.wardSections(responseData.ward)
+        });
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.detail(responseData.ward)
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Delete a ward section (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useDeleteSection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, wardId }) => {
+      // wardId is optional and used only for cache invalidation
+      return wardsApi.deleteSection(id);
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate the section detail query
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.section(variables.id)
+      });
+
+      // Invalidate sections list
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.sections()
+      });
+
+      // If wardId was provided, invalidate that ward's sections
+      if (variables.wardId) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.wardSections(variables.wardId)
+        });
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.detail(variables.wardId)
+        });
+      }
+    },
+  });
+}
+
+// =============================================================================
+// BED AMENITIES HOOKS
+// =============================================================================
+
+/**
+ * Get all bed amenities with optional filtering
+ * @param {Object} filters - Query parameters for filtering
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useAmenities(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.amenitiesList(filters),
+    queryFn: () => wardsApi.getAmenities(filters),
+    ...options,
+  });
+}
+
+/**
+ * Get a single amenity by ID
+ * @param {string} id - Amenity ID
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useAmenity(id, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.amenity(id),
+    queryFn: () => wardsApi.getAmenity(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+/**
+ * Create a new bed amenity (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useCreateAmenity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => wardsApi.createAmenity(data),
+    onSuccess: () => {
+      // Invalidate amenities list
+      queryClient.invalidateQueries({ queryKey: wardKeys.amenities() });
+    },
+  });
+}
+
+/**
+ * Update an existing bed amenity (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useUpdateAmenity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => wardsApi.updateAmenity(id, data),
+    onSuccess: (responseData, variables) => {
+      // Update the cache for this specific amenity
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.amenity(variables.id)
+      });
+
+      // Invalidate amenities list
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.amenities()
+      });
+    },
+  });
+}
+
+/**
+ * Delete a bed amenity (admin only)
+ * @returns {Object} Mutation result
+ */
+export function useDeleteAmenity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => wardsApi.deleteAmenity(id),
+    onSuccess: (data, variables) => {
+      // Invalidate the amenity detail query
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.amenity(variables)
+      });
+
+      // Invalidate amenities list
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.amenities()
+      });
+    },
+  });
+}
+
+// =============================================================================
+// AVAILABLE BEDS HOOKS
+// =============================================================================
+
+/**
+ * Get available beds with advanced filtering
+ * @param {Object} filters - Query parameters:
+ *   - ward: Ward ID
+ *   - section: Section ID
+ *   - gender: Patient gender (M/F) for automatic compatibility filtering
+ *   - accommodation_tier: Tier (open, semi_private, private, vip)
+ *   - isolation_capable: Boolean for isolation capability
+ *   - amenities: Comma-separated amenity codes
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result
+ */
+export function useAvailableBeds(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.availableBeds(filters),
+    queryFn: () => wardsApi.getAvailableBeds(filters),
+    ...options,
   });
 }

@@ -3,14 +3,18 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WardDashboard } from '@/components/wards/WardDashboard';
+import { SectionManagement } from '@/components/wards/SectionManagement';
 import { useWard, useDeleteWard } from '@/hooks/useWardQueries';
 import {
   ChevronLeft,
   Edit,
   Trash2,
   Building2,
-  RefreshCw
+  RefreshCw,
+  LayoutGrid,
+  Settings
 } from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { toast } from 'sonner';
@@ -203,7 +207,30 @@ export default function WardDetailPage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <WardDashboard />
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview" className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Ward Overview
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="sections" className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Manage Sections
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
+            <WardDashboard />
+          </TabsContent>
+
+          {isAdmin && (
+            <TabsContent value="sections" className="space-y-6">
+              <SectionManagement wardId={wardId} />
+            </TabsContent>
+          )}
+        </Tabs>
       </div>
 
       {/* Delete Confirmation Dialog */}

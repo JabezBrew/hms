@@ -610,47 +610,73 @@ def admin_dashboard(request):
     """
     Admin dashboard with system-wide statistics
     GET /api/dashboards/admin/
+
+    Optimized to avoid N+1 queries and handle slow external APIs gracefully.
     """
+    from django.db.models import Count, Q
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
     today = timezone.now().date()
 
     # Patient count
     total_patients = PatientProfile.objects.count()
 
-    # Bed statistics
-    total_beds = Bed.objects.count()
-    occupied_beds = Bed.objects.filter(status='occupied').count()
+    # Bed statistics - single query with aggregation
+    bed_stats = Bed.objects.aggregate(
+        total=Count('id'),
+        occupied=Count('id', filter=Q(status='occupied')),
+    )
+    total_beds = bed_stats['total'] or 0
+    occupied_beds = bed_stats['occupied'] or 0
     occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
 
     # Current admissions
     current_admissions = Admission.objects.filter(status='admitted').count()
 
-    # Today's appointments
+    # Today's appointments - with timeout to avoid blocking dashboard
+    appointments_today = 0
     try:
-        bundle = AppointmentProxy.search(date=today.isoformat())
-        appointments_today = len(bundle.get('entry', [])) if bundle else 0
-    except:
+        def fetch_appointments():
+            bundle = AppointmentProxy.search(date=today.isoformat())
+            return len(bundle.get('entry', [])) if bundle else 0
+
+        # Use ThreadPoolExecutor with 5-second timeout
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(fetch_appointments)
+            try:
+                appointments_today = future.result(timeout=5)  # 5 second timeout
+            except FuturesTimeoutError:
+                logger.warning("FHIR appointment search timed out for admin dashboard")
+                appointments_today = 0
+    except Exception as e:
+        logger.warning(f"Failed to fetch appointments for admin dashboard: {e}")
         appointments_today = 0
 
     # Active staff (count practitioners whose user accounts are active)
     active_staff = PractitionerProfile.objects.filter(staff__user__is_active=True).count()
 
-    # Ward breakdown
-    ward_stats = []
-    for ward in Ward.objects.filter(is_active=True).prefetch_related('beds'):
-        total_beds_in_ward = ward.beds.count()
-        occupied_in_ward = ward.beds.filter(status='occupied').count()
-        maintenance_in_ward = ward.beds.filter(status='maintenance').count()
-        available_in_ward = ward.beds.filter(status='available').count()
+    # Ward breakdown - optimized with annotation to avoid N+1
+    # Note: Annotation names must not conflict with Ward model properties
+    # (e.g., available_beds_count is a @property on Ward, so we use _annotated suffix)
+    wards = Ward.objects.filter(is_active=True).annotate(
+        total_beds_annotated=Count('beds'),
+        occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
+        available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
+        maintenance_beds_annotated=Count('beds', filter=Q(beds__status='maintenance')),
+    )
 
-        ward_stats.append({
+    ward_stats = [
+        {
             'id': str(ward.id),
             'name': ward.name,
             'description': ward.description or '',
-            'total_beds': total_beds_in_ward,
-            'occupied_beds': occupied_in_ward,
-            'available_beds': available_in_ward,
-            'maintenance_beds': maintenance_in_ward,
-        })
+            'total_beds': ward.total_beds_annotated,
+            'occupied_beds': ward.occupied_beds_annotated,
+            'available_beds': ward.available_beds_annotated,
+            'maintenance_beds': ward.maintenance_beds_annotated,
+        }
+        for ward in wards
+    ]
 
     return Response({
         'role': 'admin',

@@ -234,17 +234,59 @@ export function useNoteEntry(id) {
  */
 export function useCreateNoteEntry() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data) => clinicalNotesApi.createNoteEntry(data),
     onSuccess: (data) => {
       // Invalidate the entries list query to refetch
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
-      
+
       // If the entry is associated with an encounter, invalidate that specific query
       if (data.encounter_id) {
-        queryClient.invalidateQueries({ 
-          queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter_id) 
+        queryClient.invalidateQueries({
+          queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter_id)
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Get available sections for copying from a note entry
+ * @param {string} id - Note entry ID
+ * @param {Object} options - Query options
+ * @returns {Object} Query result with sections array
+ */
+export function useNoteEntrySections(id, options = {}) {
+  return useQuery({
+    queryKey: [...clinicalNotesKeys.entry(id), 'sections'],
+    queryFn: () => clinicalNotesApi.getNoteEntrySections(id),
+    enabled: !!id && options.enabled !== false,
+    ...options,
+  });
+}
+
+/**
+ * Clone a note entry with selective section copying
+ * @returns {Object} Mutation result
+ */
+export function useCloneNoteEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => clinicalNotesApi.cloneNoteEntry(id, data),
+    onSuccess: (data) => {
+      // Invalidate entries to show the new cloned note
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+
+      // Invalidate timeline queries (patient timeline uses different keys)
+      queryClient.invalidateQueries({ queryKey: ['patient-timeline'] });
+      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+
+      // If there's an encounter, invalidate that too
+      if (data.encounter) {
+        queryClient.invalidateQueries({
+          queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter)
         });
       }
     },

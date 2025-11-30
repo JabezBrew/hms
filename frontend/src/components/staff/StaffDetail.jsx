@@ -84,20 +84,43 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
   const hireDate = staff.hire_date ? format(new Date(staff.hire_date), 'MMMM d, yyyy') : null;
 
   // Calculate tenure
+  // Calculate tenure
   const calculateTenure = () => {
     if (!staff.hire_date) return null;
-    const hire = new Date(staff.hire_date);
-    const today = new Date();
-    let years = today.getFullYear() - hire.getFullYear();
-    const m = today.getMonth() - hire.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < hire.getDate())) {
-      years--;
+    try {
+      const start = new Date(staff.hire_date);
+      const end = new Date();
+
+      if (start > end) return "0 days";
+
+      let years = end.getFullYear() - start.getFullYear();
+      let months = end.getMonth() - start.getMonth();
+      let days = end.getDate() - start.getDate();
+
+      if (days < 0) {
+        months--;
+        const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+        days += prevMonth.getDate();
+      }
+      if (months < 0) {
+        years--;
+        months += 12;
+      }
+
+      if (years > 0) {
+        return months > 0
+          ? `${years} ${years === 1 ? 'year' : 'years'} ${months} ${months === 1 ? 'month' : 'months'}`
+          : `${years} ${years === 1 ? 'year' : 'years'}`;
+      }
+
+      if (months > 0) {
+        return `${months} ${months === 1 ? 'month' : 'months'}`;
+      }
+
+      return `${days} ${days === 1 ? 'day' : 'days'}`;
+    } catch {
+      return null;
     }
-    if (years < 1) {
-      const months = (today.getFullYear() - hire.getFullYear()) * 12 + today.getMonth() - hire.getMonth();
-      return `${months} ${months === 1 ? 'month' : 'months'}`;
-    }
-    return `${years} ${years === 1 ? 'year' : 'years'}`;
   };
 
   const tenure = calculateTenure();

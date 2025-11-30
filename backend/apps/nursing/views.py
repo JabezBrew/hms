@@ -10,13 +10,15 @@ import logging
 
 from .models import VitalSigns, NursingTask, NursingAlert, MedicationAdministration, ShiftHandoff
 from .serializers import (
-    VitalSignsSerializer, VitalSignsCreateSerializer,
+    VitalSignsSerializer, VitalSignsCreateSerializer, VitalSignsListSerializer,
     NursingTaskSerializer, NursingTaskCreateSerializer, NursingTaskUpdateSerializer,
-    NursingAlertSerializer, NursingAlertAcknowledgeSerializer,
+    NursingTaskListSerializer,
+    NursingAlertSerializer, NursingAlertAcknowledgeSerializer, NursingAlertListSerializer,
     MedicationAdministrationSerializer, MedicationAdministrationCreateSerializer,
-    MedicationAdministrationUpdateSerializer, MedicationDispensingListSerializer,
-    ShiftHandoffSerializer,
-    PatientMonitoringSerializer
+    MedicationAdministrationUpdateSerializer, MedicationAdministrationListSerializer,
+    MedicationDispensingListSerializer,
+    ShiftHandoffSerializer, ShiftHandoffListSerializer,
+    PatientMonitoringSerializer, PatientMonitoringListSerializer
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
@@ -39,6 +41,8 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return VitalSignsCreateSerializer
+        elif self.action == 'list':
+            return VitalSignsListSerializer
         return VitalSignsSerializer
 
     def get_queryset(self):
@@ -181,6 +185,8 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
             return NursingTaskCreateSerializer
         elif self.action in ['update_status', 'complete']:
             return NursingTaskUpdateSerializer
+        elif self.action == 'list':
+            return NursingTaskListSerializer
         return NursingTaskSerializer
 
     def get_queryset(self):
@@ -261,6 +267,11 @@ class NursingAlertViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsNurseOrAdmin]
     filterset_fields = ['patient', 'alert_type', 'severity', 'is_acknowledged']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return NursingAlertListSerializer
+        return NursingAlertSerializer
+
     def get_queryset(self):
         """Override to show unacknowledged alerts by default."""
         queryset = super().get_queryset()
@@ -317,6 +328,8 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             return MedicationAdministrationCreateSerializer
         elif self.action == 'administer':
             return MedicationAdministrationUpdateSerializer
+        elif self.action == 'list':
+            return MedicationAdministrationListSerializer
         return MedicationAdministrationSerializer
 
     def get_queryset(self):
@@ -565,6 +578,11 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsNurseOrAdmin]
     filterset_fields = ['patient', 'shift_date', 'shift_type', 'from_nurse', 'to_nurse']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ShiftHandoffListSerializer
+        return ShiftHandoffSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
@@ -683,7 +701,8 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                     'medications_due': medications_due
                 })
 
-            serializer = PatientMonitoringSerializer(monitoring_data, many=True)
+            # Use lightweight list serializer for dashboard (97% payload reduction)
+            serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
 
             # Return paginated response
             return Response({

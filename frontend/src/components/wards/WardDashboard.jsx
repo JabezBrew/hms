@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -21,9 +22,12 @@ import {
   LayoutGrid,
   List,
   RefreshCw,
-  Building2
+  Building2,
+  Home,
+  Sparkles,
+  Shield
 } from 'lucide-react';
-import { useWard, useWardBeds, useAdmissions } from '@/hooks/useWardQueries';
+import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 
 /**
@@ -66,7 +70,14 @@ export function WardDashboard() {
     isLoading: isAdmissionsLoading
   } = useAdmissions({ ward: wardId });
 
-  const isLoading = isWardLoading || isBedsLoading || isAdmissionsLoading;
+  const {
+    data: sections = [],
+    isLoading: isSectionsLoading
+  } = useWardSections(wardId, {
+    enabled: !!wardId,
+  });
+
+  const isLoading = isWardLoading || isBedsLoading || isAdmissionsLoading || isSectionsLoading;
 
   // Filter beds
   const filteredBeds = useMemo(() => {
@@ -90,6 +101,29 @@ export function WardDashboard() {
 
     return { total, available, occupied, reserved, maintenance };
   }, [beds]);
+
+  // Calculate section stats
+  const sectionStats = useMemo(() => {
+    if (!sections || sections.length === 0) return [];
+
+    return sections
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      .map(section => {
+        const sectionBeds = beds.filter(bed => bed.section === section.id);
+        const availableBeds = sectionBeds.filter(b => b.status === 'available').length;
+        const occupiedBeds = sectionBeds.filter(b => b.status === 'occupied').length;
+        const totalBeds = sectionBeds.length;
+        const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+
+        return {
+          ...section,
+          totalBeds,
+          availableBeds,
+          occupiedBeds,
+          occupancyRate
+        };
+      });
+  }, [sections, beds]);
 
   // Handle filter change
   const handleFilterChange = (key, value) => {
@@ -259,6 +293,18 @@ export function WardDashboard() {
         />
       </div>
 
+      {/* Section Stats */}
+      {sectionStats.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Section Overview</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sectionStats.map(section => (
+              <SectionStatCard key={section.id} section={section} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between bg-card/50 rounded-xl p-4 border border-border/50">
         <div className="flex flex-wrap gap-3 items-center flex-1">
@@ -424,6 +470,112 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
             {label}
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SectionStatCard - Section statistics card
+ */
+function SectionStatCard({ section }) {
+  // Get icon for accommodation tier
+  const getTierIcon = (tier) => {
+    switch (tier) {
+      case 'vip':
+        return <Sparkles className="h-3.5 w-3.5" />;
+      case 'private':
+        return <Home className="h-3.5 w-3.5" />;
+      case 'semi_private':
+        return <Users className="h-3.5 w-3.5" />;
+      default:
+        return null;
+    }
+  };
+
+  // Get color for accommodation tier
+  const getTierColor = (tier) => {
+    switch (tier) {
+      case 'vip':
+        return 'text-amber-600 bg-amber-50 border-amber-200';
+      case 'private':
+        return 'text-sky-600 bg-sky-50 border-sky-200';
+      case 'semi_private':
+        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+      case 'open':
+        return 'text-stone-600 bg-stone-50 border-stone-200';
+      default:
+        return 'text-stone-600 bg-stone-50 border-stone-200';
+    }
+  };
+
+  // Get occupancy color
+  const getOccupancyColor = (rate) => {
+    if (rate >= 90) return 'text-rose-600';
+    if (rate >= 70) return 'text-amber-600';
+    return 'text-emerald-600';
+  };
+
+  return (
+    <div className="rounded-xl p-4 border border-border/50 bg-card/50 space-y-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {getTierIcon(section.accommodation_tier)}
+          <h4 className="font-semibold text-sm text-foreground truncate">
+            {section.name}
+          </h4>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn('text-xs shrink-0', getTierColor(section.accommodation_tier))}
+        >
+          {section.accommodation_tier?.replace('_', ' ')}
+        </Badge>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <p className="font-mono text-xs text-muted-foreground">Beds</p>
+          <p className="font-mono text-lg font-bold text-foreground">
+            {section.availableBeds}/{section.totalBeds}
+          </p>
+          <p className="font-mono text-[10px] text-muted-foreground">available</p>
+        </div>
+
+        <div className="text-right space-y-1">
+          <p className="font-mono text-xs text-muted-foreground">Occupancy</p>
+          <p className={cn(
+            "font-mono text-lg font-bold",
+            getOccupancyColor(section.occupancyRate)
+          )}>
+            {section.occupancyRate}%
+          </p>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            {section.occupiedBeds} occupied
+          </p>
+        </div>
+      </div>
+
+      {/* Badges */}
+      <div className="flex flex-wrap gap-1.5">
+        {section.gender_restriction === 'male_only' && (
+          <Badge variant="outline" className="text-xs text-sky-700 bg-sky-50 border-sky-200">
+            Male Only
+          </Badge>
+        )}
+        {section.gender_restriction === 'female_only' && (
+          <Badge variant="outline" className="text-xs text-rose-700 bg-rose-50 border-rose-200">
+            Female Only
+          </Badge>
+        )}
+        {section.is_isolation_capable && (
+          <Badge variant="outline" className="text-xs">
+            <Shield className="h-3 w-3 mr-1" />
+            Isolation
+          </Badge>
+        )}
       </div>
     </div>
   );

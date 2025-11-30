@@ -152,6 +152,16 @@ class NoteEntry(models.Model):
     composition_fhir_id = models.CharField(max_length=100, null=True, blank=True)  # FHIR Composition ID
     data = models.JSONField()  # Actual values entered for each section
 
+    # Copy tracking - for "copy forward" workflow
+    copied_from = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='copies',
+        help_text="Source note this was copied from (for audit trail)"
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

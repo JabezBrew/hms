@@ -77,6 +77,13 @@ const ReferralSent = lazy(() => import('./components/referrals/ReferralSent'))
 // Pharmacy Pages
 const PharmacyDispensingPage = lazy(() => import('./pages/pharmacy/PharmacyDispensingPage'))
 
+// Laboratory Pages
+const LabCatalogPage = lazy(() => import('./pages/laboratory/LabCatalogPage'))
+const LabDashboardPage = lazy(() => import('./pages/laboratory/LabDashboardPage'))
+const LabOrdersPage = lazy(() => import('./pages/laboratory/LabOrdersPage'))
+const LabResultsPage = lazy(() => import('./pages/laboratory/LabResultsPage'))
+const LabCollectionWorklistPage = lazy(() => import('./pages/laboratory/LabCollectionWorklistPage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -435,6 +442,43 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
               <Layout>
                 <PharmacyDispensingPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Laboratory routes */}
+          <Route path="/laboratory/catalog" element={
+            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor']}>
+              <Layout>
+                <LabCatalogPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/laboratory/dashboard" element={
+            <RoleBasedRoute allowedRoles={['admin', 'lab_technician']}>
+              <Layout>
+                <LabDashboardPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/laboratory/orders" element={
+            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner']}>
+              <Layout>
+                <LabOrdersPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/laboratory/results" element={
+            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'physician', 'practitioner']}>
+              <Layout>
+                <LabResultsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/laboratory/collection" element={
+            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+              <Layout>
+                <LabCollectionWorklistPage />
               </Layout>
             </RoleBasedRoute>
           } />

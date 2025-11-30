@@ -215,12 +215,17 @@ def get_pending_dispensing(patient_id=None):
     Returns:
         QuerySet of MedicationAdministration entries
     """
+    # Show ALL undispensed scheduled medications
+    # Pharmacy needs to see everything that hasn't been dispensed yet
+    # Including overdue ones (they still need to be dispensed or addressed)
     queryset = MedicationAdministration.objects.filter(
         status='scheduled',
         is_dispensed=False,
-        scheduled_time__gte=timezone.now() - timedelta(hours=2),  # Include recently scheduled
-        scheduled_time__lte=timezone.now() + timedelta(hours=24),  # Next 24 hours
-    ).select_related('patient', 'prescription', 'prescribed_by')
+    ).select_related(
+        'patient', 'patient__user',
+        'prescription',
+        'prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user'
+    )
 
     if patient_id:
         queryset = queryset.filter(patient_id=patient_id)

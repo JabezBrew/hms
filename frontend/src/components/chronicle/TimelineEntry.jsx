@@ -26,9 +26,11 @@ import {
   PauseCircle,
   PlayCircle,
   RefreshCw,
+  Copy,
 } from "lucide-react";
 import NoteDetailModal from "./NoteDetailModal";
 import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
+import CopyNoteModal from "./CopyNoteModal";
 
 /**
  * TimelineEntry - A chronological entry in the patient's clinical chronicle
@@ -49,9 +51,11 @@ const TimelineEntry = ({
   entry,
   index = 0,
   isRecent = false,
-  className
+  className,
+  onCopyNote,  // Callback when user confirms copy: (copyData) => void
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
 
   // ============================================
   // Entry type configuration
@@ -91,8 +95,8 @@ const TimelineEntry = ({
     lab_result: {
       icon: TestTube,
       label: 'Lab Result',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
+      color: 'sky',
+      nodeClass: 'timeline-node-sky'
     },
     order: {
       icon: ClipboardList,
@@ -234,6 +238,23 @@ const TimelineEntry = ({
   };
 
   // ============================================
+  // Check if entry is a copyable clinical note
+  // ============================================
+
+  const isCopyableNote = () => {
+    // Note types that can be copied
+    const copyableTypes = [
+      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
+      'discharge_note', 'consult_note', 'procedure'
+    ];
+    // Must have an id and be a note type with data
+    return copyableTypes.includes(entry.type) &&
+           entry.id &&
+           entry.data &&
+           typeof entry.data === 'object';
+  };
+
+  // ============================================
   // Render content based on entry type
   // ============================================
 
@@ -303,17 +324,32 @@ const TimelineEntry = ({
         {/* Content */}
         {renderContent()}
 
-        {/* View detail button */}
-        {hasDetailContent() && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-3 font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
-            onClick={() => setIsModalOpen(true)}
-          >
-            <Expand className="h-3 w-3 mr-1" />
-            View full note
-          </Button>
+        {/* Action buttons */}
+        {(hasDetailContent() || isCopyableNote()) && (
+          <div className="mt-3 flex items-center gap-3">
+            {hasDetailContent() && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
+                onClick={() => setIsModalOpen(true)}
+              >
+                <Expand className="h-3 w-3 mr-1" />
+                View full note
+              </Button>
+            )}
+            {isCopyableNote() && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
+                onClick={() => setIsCopyModalOpen(true)}
+              >
+                <Copy className="h-3 w-3 mr-1" />
+                Copy note
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -323,6 +359,22 @@ const TimelineEntry = ({
         onOpenChange={setIsModalOpen}
         entry={entry}
       />
+
+      {/* Copy note modal */}
+      {isCopyableNote() && (
+        <CopyNoteModal
+          open={isCopyModalOpen}
+          onOpenChange={setIsCopyModalOpen}
+          noteEntry={{
+            id: entry.id,
+            template: entry.template,  // Full template object from timeline API
+            template_id: entry.template_id,
+            template_title: entry.template_title || entry.title || config.label,
+            data: entry.data,
+          }}
+          onCopyConfirm={onCopyNote}
+        />
+      )}
     </article>
   );
 };

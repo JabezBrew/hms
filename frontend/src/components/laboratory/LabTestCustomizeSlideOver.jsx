@@ -1,0 +1,499 @@
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  X,
+  TestTube2,
+  Check,
+  Loader2,
+  DollarSign,
+  Clock,
+  AlertCircle,
+  RotateCcw,
+  Info,
+} from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "sonner";
+import {
+  useCustomizeLabTest,
+  useResetLabTestToDefaults,
+  useCustomizeLabPanel,
+  useResetLabPanelToDefaults,
+} from "@/hooks/useLabQueries";
+
+/**
+ * LabTestCustomizeSlideOver - Chronicle-styled slide-over for customizing lab tests
+ *
+ * Features:
+ * - Edit price, reference ranges, TAT, and active status
+ * - Shows original system values for comparison
+ * - Reset to defaults functionality
+ * - Works for both tests and panels
+ */
+const LabTestCustomizeSlideOver = ({
+  open,
+  onClose,
+  item, // test or panel object
+  type = "test", // 'test' or 'panel'
+  onSuccess,
+}) => {
+  const isPanel = type === "panel";
+
+  // Mutations
+  const customizeTest = useCustomizeLabTest();
+  const resetTest = useResetLabTestToDefaults();
+  const customizePanel = useCustomizeLabPanel();
+  const resetPanel = useResetLabPanelToDefaults();
+
+  const customizeMutation = isPanel ? customizePanel : customizeTest;
+  const resetMutation = isPanel ? resetPanel : resetTest;
+
+  // Form state
+  const [formData, setFormData] = useState({
+    price: "",
+    tat_hours: "",
+    is_active: true,
+    reference_ranges: {},
+  });
+
+  const [errors, setErrors] = useState({});
+
+  // Reference range editing state (for tests only)
+  const [referenceRangeText, setReferenceRangeText] = useState("");
+
+  // Initialize form when item changes
+  useEffect(() => {
+    if (item) {
+      setFormData({
+        price: item.price || "",
+        tat_hours: item.tat_hours || "",
+        is_active: item.is_active !== false,
+        reference_ranges: item.reference_ranges || {},
+      });
+
+      // Convert reference ranges to editable text format
+      if (item.reference_ranges && !isPanel) {
+        const rangeText = Object.entries(item.reference_ranges)
+          .map(([key, value]) => {
+            if (typeof value === "object") {
+              return `${key}: ${value.min || ""}-${value.max || ""} ${value.unit || ""}`;
+            }
+            return `${key}: ${value}`;
+          })
+          .join("\n");
+        setReferenceRangeText(rangeText);
+      } else {
+        setReferenceRangeText("");
+      }
+
+      setErrors({});
+    }
+  }, [item, isPanel]);
+
+  // Handle input change
+  const handleChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+
+    // Clear error for this field
+    if (errors[field]) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // Validate form
+  const validate = () => {
+    const newErrors = {};
+
+    if (formData.price && isNaN(parseFloat(formData.price))) {
+      newErrors.price = "Price must be a valid number";
+    }
+
+    if (formData.price && parseFloat(formData.price) < 0) {
+      newErrors.price = "Price cannot be negative";
+    }
+
+    if (formData.tat_hours && isNaN(parseInt(formData.tat_hours))) {
+      newErrors.tat_hours = "TAT must be a valid number";
+    }
+
+    if (formData.tat_hours && parseInt(formData.tat_hours) < 1) {
+      newErrors.tat_hours = "TAT must be at least 1 hour";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Parse reference ranges from text
+  const parseReferenceRanges = () => {
+    if (!referenceRangeText.trim()) return {};
+
+    const ranges = {};
+    const lines = referenceRangeText.split("\n").filter((l) => l.trim());
+
+    for (const line of lines) {
+      const [key, ...valueParts] = line.split(":");
+      if (key && valueParts.length) {
+        const value = valueParts.join(":").trim();
+        // Try to parse range format "min-max unit"
+        const rangeMatch = value.match(/^([\d.]+)?\s*-\s*([\d.]+)?\s*(.*)$/);
+        if (rangeMatch) {
+          ranges[key.trim()] = {
+            min: rangeMatch[1] ? parseFloat(rangeMatch[1]) : null,
+            max: rangeMatch[2] ? parseFloat(rangeMatch[2]) : null,
+            unit: rangeMatch[3]?.trim() || "",
+          };
+        } else {
+          ranges[key.trim()] = value;
+        }
+      }
+    }
+
+    return ranges;
+  };
+
+  // Handle submit
+  const handleSubmit = async () => {
+    if (!validate()) return;
+
+    const data = {};
+
+    // Only include changed values
+    if (formData.price !== "") {
+      data.price = parseFloat(formData.price);
+    }
+
+    if (!isPanel && formData.tat_hours !== "") {
+      data.tat_hours = parseInt(formData.tat_hours);
+    }
+
+    data.is_active = formData.is_active;
+
+    // Parse and include reference ranges for tests
+    if (!isPanel && referenceRangeText.trim()) {
+      data.reference_ranges = parseReferenceRanges();
+    }
+
+    try {
+      await customizeMutation.mutateAsync({
+        id: item.id,
+        data,
+      });
+
+      toast.success(
+        `${isPanel ? "Panel" : "Test"} customized successfully`
+      );
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      console.error("Failed to customize:", err);
+      toast.error(err.message || `Failed to customize ${isPanel ? "panel" : "test"}`);
+    }
+  };
+
+  // Handle reset to defaults
+  const handleReset = async () => {
+    if (!item.is_system_default) {
+      toast.error("Only system tests/panels can be reset");
+      return;
+    }
+
+    try {
+      await resetMutation.mutateAsync(item.id);
+      toast.success("Reset to system defaults");
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      console.error("Failed to reset:", err);
+      toast.error(err.message || "Failed to reset to defaults");
+    }
+  };
+
+  // Get system default values for comparison
+  const systemDefaults = item?.system_defaults || {};
+
+  // Format price for display
+  const formatPrice = (price) => {
+    if (!price && price !== 0) return "Not set";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(price);
+  };
+
+  if (!item) return null;
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "transform transition-transform duration-300 ease-in-out",
+        "flex flex-col shadow-2xl",
+        open ? "translate-x-0" : "translate-x-full"
+      )}
+    >
+      {/* Header */}
+      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "p-2 rounded-lg",
+              isPanel
+                ? "bg-amber-100 dark:bg-amber-900/30"
+                : "bg-sky-100 dark:bg-sky-900/30"
+            )}
+          >
+            <TestTube2
+              className={cn(
+                "h-5 w-5",
+                isPanel
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-sky-600 dark:text-sky-400"
+              )}
+            />
+          </div>
+          <div>
+            <h2 className="font-display text-xl text-foreground">
+              Customize {isPanel ? "Panel" : "Test"}
+            </h2>
+            <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate max-w-[300px]">
+              {item.name}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={onClose}
+          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+        >
+          <X className="h-4 w-4 mr-1.5" />
+          Close
+        </Button>
+      </header>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
+        <div className="space-y-6">
+          {/* System vs Modified indicator */}
+          {item.is_system_default && (
+            <Alert className="bg-muted/50 border-border">
+              <Info className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                This is a system {isPanel ? "panel" : "test"}.{" "}
+                {item.is_facility_modified
+                  ? "Your facility has customized it. You can reset to defaults anytime."
+                  : "Customize it for your facility's needs."}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Price */}
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <DollarSign className="h-3.5 w-3.5 text-sky-600" />
+              Price
+            </Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Enter price"
+              value={formData.price}
+              onChange={(e) => handleChange("price", e.target.value)}
+              className={cn("font-mono", errors.price && "border-red-500")}
+            />
+            {systemDefaults.price !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                System default: {formatPrice(systemDefaults.price)}
+              </p>
+            )}
+            {errors.price && (
+              <p className="text-xs text-red-500">{errors.price}</p>
+            )}
+          </div>
+
+          {/* TAT (tests only) */}
+          {!isPanel && (
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 text-sky-600" />
+                Turnaround Time (hours)
+              </Label>
+              <Input
+                type="number"
+                min="1"
+                placeholder="Enter TAT in hours"
+                value={formData.tat_hours}
+                onChange={(e) => handleChange("tat_hours", e.target.value)}
+                className={cn(
+                  "font-mono",
+                  errors.tat_hours && "border-red-500"
+                )}
+              />
+              {systemDefaults.tat_hours !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  System default: {systemDefaults.tat_hours}h
+                </p>
+              )}
+              {errors.tat_hours && (
+                <p className="text-xs text-red-500">{errors.tat_hours}</p>
+              )}
+            </div>
+          )}
+
+          {/* Reference Ranges (tests only) */}
+          {!isPanel && (
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Reference Ranges
+              </Label>
+              <Textarea
+                placeholder={`Enter reference ranges, one per line:\nadult_male: 4.5-5.5 M/uL\nadult_female: 4.0-5.0 M/uL\nchild: 4.0-5.5 M/uL`}
+                value={referenceRangeText}
+                onChange={(e) => setReferenceRangeText(e.target.value)}
+                className="font-mono min-h-[120px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Format: name: min-max unit (e.g., "adult: 4.5-5.5 mg/dL")
+              </p>
+              {systemDefaults.reference_ranges && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer hover:text-foreground">
+                    View system defaults
+                  </summary>
+                  <pre className="mt-2 p-2 bg-muted rounded text-[10px] overflow-x-auto">
+                    {JSON.stringify(systemDefaults.reference_ranges, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+
+          {/* Active Status */}
+          <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+            <div>
+              <Label className="font-mono text-sm font-medium">
+                Active Status
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Inactive tests won't appear in lab order forms
+              </p>
+            </div>
+            <Switch
+              checked={formData.is_active}
+              onCheckedChange={(checked) => handleChange("is_active", checked)}
+            />
+          </div>
+
+          {/* Current item info */}
+          <div className="p-4 bg-muted/30 rounded-lg border border-border/50">
+            <h3 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">
+              Current Values
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">LOINC Code:</span>
+                <span className="font-mono">{item.loinc_code || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Category:</span>
+                <span className="font-mono capitalize">{item.category || "—"}</span>
+              </div>
+              {!isPanel && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Specimen:</span>
+                  <span className="font-mono">{item.specimen_type || "—"}</span>
+                </div>
+              )}
+              {isPanel && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Tests:</span>
+                  <span className="font-mono">
+                    {item.tests?.length || item.tests_count || 0}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="px-6 py-4 border-t border-border bg-card">
+        <div className="flex items-center justify-between">
+          {/* Reset button (only for modified system items) */}
+          <div>
+            {item.is_system_default && item.is_facility_modified && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReset}
+                disabled={resetMutation.isPending}
+                className="font-mono text-xs"
+              >
+                {resetMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Reset to Defaults
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              className="font-mono text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={customizeMutation.isPending}
+              className="font-mono text-xs"
+            >
+              {customizeMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default LabTestCustomizeSlideOver;
+export { LabTestCustomizeSlideOver };
