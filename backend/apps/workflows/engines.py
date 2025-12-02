@@ -6,6 +6,43 @@ from django.utils import timezone
 from typing import Dict, Any, Optional, List
 import logging
 
+def _extract_string_value(value, preferred_keys=None) -> str:
+    """
+    Extract a string value from a field that may be a string or dict.
+    Used to safely get string values for FHIR resources.
+
+    Args:
+        value: The field value (string or dict)
+        preferred_keys: List of keys to try if value is a dict
+
+    Returns:
+        A string representation of the value
+    """
+    if not value:
+        return ''
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, dict):
+        # Try preferred keys first
+        if preferred_keys:
+            for key in preferred_keys:
+                if key in value and value[key]:
+                    return str(value[key])
+
+        # Fall back to first non-empty string value
+        for v in value.values():
+            if v and isinstance(v, str):
+                return v
+
+        # Last resort: join all string values
+        parts = [str(v) for v in value.values() if v]
+        return '; '.join(parts) if parts else ''
+
+    return str(value)
+
+
 from .models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
     WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
@@ -314,58 +351,107 @@ class ConsultationEngine(BaseWorkflowEngine):
         Returns:
             Dictionary with encounter_id and generated artifacts
         """
+        from apps.clinical_notes.models import NoteTemplate
+        from apps.users.models import PractitionerProfile
+        from apps.wards.services import get_or_create_active_encounter
+
         context = workflow.context_data
         consultation_data = workflow.consultation_data
 
-        # Create FHIR Encounter
-        try:
-            encounter = EncounterProxy.create(
-                patient_id=workflow.patient.fhir_patient_id,
-                practitioner_id=workflow.user.practitionerprofile.fhir_practitioner_id if hasattr(workflow.user, 'practitionerprofile') else None,
-                encounter_type=encounter_type,
-                status=encounter_status,
-                reason=consultation_data.chief_complaint or context.get('chief_complaint', ''),
-                service_type=context.get('service_type'),
-                start_time=workflow.created_at,
-                appointment_id=consultation_data.appointment_id,
-            )
+        # Get practitioner profile
+        practitioner = None
+        if hasattr(workflow.user, 'practitionerprofile'):
+            practitioner = workflow.user.practitionerprofile
+        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
+            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
 
-            encounter_id = encounter.get('id')
+        if not practitioner:
+            try:
+                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
+            except PractitionerProfile.DoesNotExist:
+                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
+                practitioner = None
 
-            logger.info(f"Created FHIR encounter {encounter_id} for workflow {workflow.id}")
+        # Get reason for encounter
+        reason = _extract_string_value(
+            consultation_data.chief_complaint or context.get('chief_complaint', ''),
+            ['chief_complaint']
+        )
 
-        except Exception as e:
-            logger.error(f"Failed to create encounter for workflow {workflow.id}: {str(e)}")
-            raise
+        # Get or create Django Encounter (local model)
+        encounter, encounter_created = get_or_create_active_encounter(
+            patient=workflow.patient,
+            practitioner=practitioner,
+            encounter_type=encounter_type,
+            reason=reason
+        )
 
-        # Create clinical note
-        try:
-            note_content = ConsultationEngine._format_consultation_note(consultation_data, context)
+        logger.info(f"{'Created' if encounter_created else 'Found existing'} encounter {encounter.id} for workflow {workflow.id}")
 
-            note = NoteEntry.objects.create(
-                encounter_id=encounter_id,
-                author=workflow.user,
-                content=note_content,
-                note_type='consultation',
-                title=f'Consultation Note - {workflow.patient.user.get_full_name()}',
-            )
+        # Create clinical note if we have a practitioner
+        note = None
+        if practitioner:
+            try:
+                # Get or create a consultation template
+                template = NoteTemplate.objects.filter(
+                    category='consultation',
+                    is_active=True
+                ).first()
 
-            logger.info(f"Created clinical note {note.id} for workflow {workflow.id}")
+                if not template:
+                    # Create a default consultation template if none exists
+                    template = NoteTemplate.objects.create(
+                        title='Consultation Note',
+                        category='consultation',
+                        visibility='public',
+                        is_active=True,
+                        structure={
+                            'sections': [
+                                {'name': 'Chief Complaint', 'type': 'text'},
+                                {'name': 'History of Present Illness', 'type': 'text'},
+                                {'name': 'Review of Systems', 'type': 'text'},
+                                {'name': 'Physical Examination', 'type': 'text'},
+                                {'name': 'Assessment', 'type': 'text'},
+                                {'name': 'Plan', 'type': 'text'},
+                            ]
+                        }
+                    )
+                    logger.info(f"Created default consultation template {template.id}")
 
-        except Exception as e:
-            logger.error(f"Failed to create clinical note for workflow {workflow.id}: {str(e)}")
-            note = None
+                # Build note data from consultation fields
+                note_data = {
+                    'Chief Complaint': _extract_string_value(consultation_data.chief_complaint, ['chief_complaint']),
+                    'History of Present Illness': _extract_string_value(consultation_data.hpi, ['hpi']),
+                    'Review of Systems': _extract_string_value(consultation_data.ros, ['ros']),
+                    'Physical Examination': _extract_string_value(consultation_data.physical_exam, ['physical_exam']),
+                    'Assessment': _extract_string_value(consultation_data.assessment, ['assessment']),
+                    'Plan': _extract_string_value(consultation_data.plan, ['plan']),
+                }
+
+                note = NoteEntry.objects.create(
+                    template=template,
+                    patient=workflow.patient,
+                    encounter=encounter,
+                    practitioner=practitioner,
+                    data=note_data,
+                )
+
+                logger.info(f"Created clinical note {note.id} for workflow {workflow.id}")
+
+            except Exception as e:
+                logger.error(f"Failed to create clinical note for workflow {workflow.id}: {str(e)}")
+                # Don't fail the workflow if note creation fails
 
         # Mark workflow complete
-        workflow.encounter_id = encounter_id
+        workflow.encounter_id = str(encounter.id)
         workflow.complete_workflow()
 
         artifacts = [
-            {'type': 'encounter', 'id': encounter_id},
+            {'type': 'encounter', 'id': str(encounter.id)},
         ]
 
         if note:
-            artifacts.append({'type': 'note', 'id': note.id})
+            artifacts.append({'type': 'note', 'id': str(note.id)})
 
         # Auto-complete linked referral if this consultation was started from a referral
         if workflow.source_referral:
@@ -551,6 +637,10 @@ class WardRoundEngine(BaseWorkflowEngine):
     @transaction.atomic
     def complete(workflow, final_data) -> Dict[str, Any]:
         """Complete ward round and create progress note"""
+        from apps.clinical_notes.models import NoteTemplate
+        from apps.users.models import PractitionerProfile
+        from apps.wards.services import get_or_create_active_encounter
+
         ward_round_data = workflow.ward_round_data
 
         # Update final data
@@ -559,44 +649,96 @@ class WardRoundEngine(BaseWorkflowEngine):
                 setattr(ward_round_data, field, value)
         ward_round_data.save()
 
-        # Create progress note
-        note_content = f"""Ward Round - {workflow.patient.user.get_full_name()}
+        # Get practitioner profile
+        practitioner = None
+        if hasattr(workflow.user, 'practitionerprofile'):
+            practitioner = workflow.user.practitionerprofile
+        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
+            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
 
-Date: {timezone.now().strftime('%Y-%m-%d %H:%M')}
-Day {workflow.context_data.get('prep_data', {}).get('admission_days', 'N/A')} of admission
+        if not practitioner:
+            try:
+                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
+            except PractitionerProfile.DoesNotExist:
+                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
+                practitioner = None
 
-Overnight Events:
-{ward_round_data.overnight_events or 'None reported'}
-
-Nursing Concerns:
-{ward_round_data.nursing_concerns or 'None'}
-
-Examination Findings:
-{ward_round_data.examination_findings}
-
-Assessment:
-{ward_round_data.assessment}
-
-Plan:
-{ward_round_data.plan_notes}
-"""
-
-        note = NoteEntry.objects.create(
-            encounter_id=workflow.encounter_id,
-            author=workflow.user,
-            content=note_content,
-            note_type='progress_note',
-            title=f'Ward Round - {workflow.patient.user.get_full_name()}',
+        # Get or create encounter for the ward round
+        encounter, _ = get_or_create_active_encounter(
+            patient=workflow.patient,
+            practitioner=practitioner,
+            encounter_type='inpatient',
+            reason='Ward Round'
         )
 
+        # Create progress note with proper model fields
+        note = None
+        if practitioner:
+            try:
+                # Get or create a progress note template
+                template = NoteTemplate.objects.filter(
+                    category='progress',
+                    is_active=True
+                ).first()
+
+                if not template:
+                    template = NoteTemplate.objects.create(
+                        title='Progress Note',
+                        category='progress',
+                        visibility='public',
+                        is_active=True,
+                        structure={
+                            'sections': [
+                                {'name': 'Overnight Events', 'type': 'text'},
+                                {'name': 'Nursing Concerns', 'type': 'text'},
+                                {'name': 'Examination Findings', 'type': 'text'},
+                                {'name': 'Assessment', 'type': 'text'},
+                                {'name': 'Plan', 'type': 'text'},
+                            ]
+                        }
+                    )
+                    logger.info(f"Created default progress note template {template.id}")
+
+                # Build note data
+                note_data = {
+                    'Overnight Events': ward_round_data.overnight_events or 'None reported',
+                    'Nursing Concerns': ward_round_data.nursing_concerns or 'None',
+                    'Examination Findings': ward_round_data.examination_findings or '',
+                    'Assessment': ward_round_data.assessment or '',
+                    'Plan': ward_round_data.plan_notes or '',
+                    '_metadata': {
+                        'admission_days': workflow.context_data.get('prep_data', {}).get('admission_days', 'N/A'),
+                        'date': timezone.now().strftime('%Y-%m-%d %H:%M'),
+                    }
+                }
+
+                note = NoteEntry.objects.create(
+                    template=template,
+                    patient=workflow.patient,
+                    encounter=encounter,
+                    practitioner=practitioner,
+                    data=note_data,
+                )
+
+                logger.info(f"Created ward round note {note.id} for workflow {workflow.id}")
+
+            except Exception as e:
+                logger.error(f"Failed to create ward round note for workflow {workflow.id}: {str(e)}")
+
+        workflow.encounter_id = str(encounter.id)
         workflow.complete_workflow()
 
         logger.info(f"Completed ward round workflow {workflow.id}")
 
+        artifacts = [{'type': 'encounter', 'id': str(encounter.id)}]
+        if note:
+            artifacts.append({'type': 'note', 'id': str(note.id)})
+
         return {
             'success': True,
             'workflow_id': str(workflow.id),
-            'artifacts': [{'type': 'note', 'id': str(note.id)}],
+            'encounter_id': str(encounter.id),
+            'artifacts': artifacts,
         }
 
 
@@ -696,6 +838,10 @@ class AdmissionEngine(BaseWorkflowEngine):
     @transaction.atomic
     def complete(workflow, final_data) -> Dict[str, Any]:
         """Complete admission and create admission record"""
+        from apps.clinical_notes.models import NoteTemplate
+        from apps.users.models import PractitionerProfile
+        from apps.wards.models import Encounter
+
         admission_data = workflow.admission_data
 
         # Update final data
@@ -704,10 +850,24 @@ class AdmissionEngine(BaseWorkflowEngine):
                 setattr(admission_data, field, value)
         admission_data.save()
 
+        # Get practitioner profile
+        practitioner = None
+        if hasattr(workflow.user, 'practitionerprofile'):
+            practitioner = workflow.user.practitionerprofile
+        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
+            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
+
+        if not practitioner:
+            try:
+                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
+            except PractitionerProfile.DoesNotExist:
+                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
+                practitioner = None
+
         # Create Admission record
         admission = Admission.objects.create(
             patient=workflow.patient,
-            admitting_doctor=workflow.user.practitionerprofile if hasattr(workflow.user, 'practitionerprofile') else None,
+            admitting_doctor=practitioner,
             ward_id=admission_data.ward_id,
             bed_id=admission_data.bed_id,
             admission_date=timezone.now(),
@@ -725,39 +885,93 @@ class AdmissionEngine(BaseWorkflowEngine):
             except Bed.DoesNotExist:
                 logger.warning(f"Bed {admission_data.bed_id} not found")
 
-        # Create FHIR encounter
-        encounter = EncounterProxy.create(
-            patient_id=str(workflow.patient.fhir_patient_id),
-            practitioner_id=str(workflow.user.practitionerprofile.fhir_practitioner_id) if hasattr(workflow.user, 'practitionerprofile') and workflow.user.practitionerprofile.fhir_practitioner_id else None,
+        # Create local Django Encounter for the admission
+        reason = _extract_string_value(
+            admission_data.admission_reason,
+            ['admission_reason', 'reason', 'chief_complaint']
+        )
+
+        encounter = Encounter.objects.create(
+            patient=workflow.patient,
+            practitioner=practitioner,
             encounter_type='inpatient',
-            reason=admission_data.admission_reason,
-            start_date=timezone.now(),
+            status='in-progress',
+            start_time=timezone.now(),
+            reason=reason,
+            admission=admission,
         )
 
-        workflow.encounter_id = encounter.get('id') if encounter else None
+        workflow.encounter_id = str(encounter.id)
 
-        # Create admission note
-        note = NoteEntry.objects.create(
-            encounter_id=workflow.encounter_id,
-            author=workflow.user,
-            content=admission_data.admission_note,
-            note_type='admission',
-            title=f'Admission Note - {workflow.patient.user.get_full_name()}',
-        )
+        # Create admission note with proper model fields
+        note = None
+        if practitioner:
+            try:
+                # Get or create an admission template
+                template = NoteTemplate.objects.filter(
+                    category='admission',
+                    is_active=True
+                ).first()
+
+                if not template:
+                    template = NoteTemplate.objects.create(
+                        title='Admission Note',
+                        category='admission',
+                        visibility='public',
+                        is_active=True,
+                        structure={
+                            'sections': [
+                                {'name': 'Admission Reason', 'type': 'text'},
+                                {'name': 'History of Present Illness', 'type': 'text'},
+                                {'name': 'Past Medical History', 'type': 'text'},
+                                {'name': 'Physical Examination', 'type': 'text'},
+                                {'name': 'Assessment and Plan', 'type': 'text'},
+                            ]
+                        }
+                    )
+                    logger.info(f"Created default admission template {template.id}")
+
+                # Build note data
+                note_data = {
+                    'Admission Reason': reason,
+                    'Admission Note': admission_data.admission_note or '',
+                    '_metadata': {
+                        'ward': str(admission_data.ward_id) if admission_data.ward_id else None,
+                        'bed': str(admission_data.bed_id) if admission_data.bed_id else None,
+                        'admission_type': admission_data.admission_type,
+                    }
+                }
+
+                note = NoteEntry.objects.create(
+                    template=template,
+                    patient=workflow.patient,
+                    encounter=encounter,
+                    practitioner=practitioner,
+                    data=note_data,
+                )
+
+                logger.info(f"Created admission note {note.id} for workflow {workflow.id}")
+
+            except Exception as e:
+                logger.error(f"Failed to create admission note for workflow {workflow.id}: {str(e)}")
 
         workflow.complete_workflow()
 
         logger.info(f"Completed admission workflow {workflow.id}, created admission {admission.id}")
 
+        artifacts = [
+            {'type': 'encounter', 'id': str(encounter.id)},
+            {'type': 'admission_record', 'id': str(admission.id)},
+        ]
+        if note:
+            artifacts.append({'type': 'note', 'id': str(note.id)})
+
         return {
             'success': True,
             'workflow_id': str(workflow.id),
             'admission_id': str(admission.id),
-            'artifacts': [
-                {'type': 'encounter', 'id': workflow.encounter_id},
-                {'type': 'admission_record', 'id': str(admission.id)},
-                {'type': 'note', 'id': str(note.id)},
-            ],
+            'encounter_id': str(encounter.id),
+            'artifacts': artifacts,
         }
 
 
@@ -867,6 +1081,10 @@ class DischargeEngine(BaseWorkflowEngine):
     @transaction.atomic
     def complete(workflow, final_data) -> Dict[str, Any]:
         """Complete discharge and update admission record"""
+        from apps.clinical_notes.models import NoteTemplate
+        from apps.users.models import PractitionerProfile
+        from apps.wards.services import get_or_create_active_encounter
+
         discharge_data = workflow.discharge_data
 
         # Update final data
@@ -875,8 +1093,23 @@ class DischargeEngine(BaseWorkflowEngine):
                 setattr(discharge_data, field, value)
         discharge_data.save()
 
+        # Get practitioner profile
+        practitioner = None
+        if hasattr(workflow.user, 'practitionerprofile'):
+            practitioner = workflow.user.practitionerprofile
+        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
+            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
+
+        if not practitioner:
+            try:
+                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
+            except PractitionerProfile.DoesNotExist:
+                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
+                practitioner = None
+
         # Update Admission record
         admission_id = workflow.context_data.get('admission_id')
+        admission = None
         if admission_id:
             try:
                 admission = Admission.objects.get(id=admission_id)
@@ -894,28 +1127,88 @@ class DischargeEngine(BaseWorkflowEngine):
             except Admission.DoesNotExist:
                 logger.warning(f"Admission {admission_id} not found")
 
-        # Create discharge note
-        note = NoteEntry.objects.create(
-            encounter_id=workflow.encounter_id,
-            author=workflow.user,
-            content=discharge_data.discharge_summary,
-            note_type='discharge',
-            title=f'Discharge Summary - {workflow.patient.user.get_full_name()}',
+        # Get or create encounter
+        encounter, _ = get_or_create_active_encounter(
+            patient=workflow.patient,
+            practitioner=practitioner,
+            encounter_type='inpatient',
+            reason='Discharge'
         )
 
+        # Update encounter status to finished
+        encounter.status = 'finished'
+        encounter.end_time = timezone.now()
+        encounter.discharge_disposition = discharge_data.discharge_disposition if hasattr(discharge_data, 'discharge_disposition') else None
+        encounter.save()
+
+        # Create discharge note with proper model fields
+        note = None
+        if practitioner:
+            try:
+                # Get or create a discharge template
+                template = NoteTemplate.objects.filter(
+                    category='discharge',
+                    is_active=True
+                ).first()
+
+                if not template:
+                    template = NoteTemplate.objects.create(
+                        title='Discharge Summary',
+                        category='discharge',
+                        visibility='public',
+                        is_active=True,
+                        structure={
+                            'sections': [
+                                {'name': 'Hospital Course', 'type': 'text'},
+                                {'name': 'Discharge Diagnosis', 'type': 'text'},
+                                {'name': 'Discharge Medications', 'type': 'text'},
+                                {'name': 'Follow-up Instructions', 'type': 'text'},
+                            ]
+                        }
+                    )
+                    logger.info(f"Created default discharge template {template.id}")
+
+                # Build note data
+                note_data = {
+                    'Discharge Summary': discharge_data.discharge_summary or '',
+                    'Follow-up Instructions': discharge_data.follow_up_instructions or '' if hasattr(discharge_data, 'follow_up_instructions') else '',
+                    '_metadata': {
+                        'discharge_date': (discharge_data.discharge_date or timezone.now()).isoformat() if discharge_data.discharge_date else timezone.now().isoformat(),
+                        'admission_id': str(admission_id) if admission_id else None,
+                    }
+                }
+
+                note = NoteEntry.objects.create(
+                    template=template,
+                    patient=workflow.patient,
+                    encounter=encounter,
+                    practitioner=practitioner,
+                    data=note_data,
+                )
+
+                logger.info(f"Created discharge note {note.id} for workflow {workflow.id}")
+
+            except Exception as e:
+                logger.error(f"Failed to create discharge note for workflow {workflow.id}: {str(e)}")
+
+        workflow.encounter_id = str(encounter.id)
         workflow.complete_workflow()
 
         logger.info(f"Completed discharge workflow {workflow.id}")
+
+        artifacts = [
+            {'type': 'encounter_update', 'id': str(encounter.id)},
+            {'type': 'discharge_record', 'id': admission_id},
+        ]
+        if note:
+            artifacts.append({'type': 'note', 'id': str(note.id)})
 
         return {
             'success': True,
             'workflow_id': str(workflow.id),
             'admission_id': admission_id,
-            'artifacts': [
-                {'type': 'encounter_update', 'id': workflow.encounter_id},
-                {'type': 'note', 'id': str(note.id)},
-                {'type': 'discharge_record', 'id': admission_id},
-            ],
+            'encounter_id': str(encounter.id),
+            'artifacts': artifacts,
         }
 
 
@@ -1104,7 +1397,8 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         workflow: ClinicalWorkflow,
         final_data: Dict[str, Any],
         encounter_type: str = 'outpatient',
-        encounter_status: str = 'finished'
+        encounter_status: str = 'finished',
+        template_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Complete clinical note workflow and generate artifacts
@@ -1114,10 +1408,15 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             final_data: Final workflow data
             encounter_type: Type of encounter to create
             encounter_status: Status of encounter
+            template_id: UUID of the template to use for the note
 
         Returns:
             Dictionary with encounter_id and generated artifacts
         """
+        from apps.clinical_notes.models import NoteTemplate
+        from apps.users.models import PractitionerProfile
+        from apps.wards.services import get_or_create_active_encounter
+
         context = workflow.context_data
         clinical_note_data = workflow.clinical_note_data
 
@@ -1128,80 +1427,118 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
                     setattr(clinical_note_data, field, value)
             clinical_note_data.save()
 
-        # Create FHIR Encounter
+        # Get template_id from parameter or context
+        if not template_id:
+            template_id = context.get('template_id')
+
+        # Get template
+        template = None
+        if template_id:
+            template = NoteTemplate.objects.filter(id=template_id).first()
+
+        if not template:
+            logger.error(f"No template found for workflow {workflow.id}, template_id={template_id}")
+            raise ValueError("Template is required to create a clinical note")
+
+        # Get practitioner profile
+        practitioner = None
+        if hasattr(workflow.user, 'practitionerprofile'):
+            practitioner = workflow.user.practitionerprofile
+        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
+            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
+
+        if not practitioner:
+            # Try to get or create practitioner profile
+            try:
+                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
+            except PractitionerProfile.DoesNotExist:
+                logger.error(f"No practitioner profile found for user {workflow.user.id}")
+                raise ValueError("User must have a practitioner profile to create clinical notes")
+
+        # Get or create Django Encounter (local model, not just FHIR ID)
+        reason = ClinicalNoteEngine._get_encounter_reason(clinical_note_data, context)
+        encounter, encounter_created = get_or_create_active_encounter(
+            patient=workflow.patient,
+            practitioner=practitioner,
+            encounter_type=encounter_type,
+            reason=reason
+        )
+
+        logger.info(f"{'Created' if encounter_created else 'Found existing'} encounter {encounter.id} for clinical note workflow {workflow.id}")
+
+        # Build note data from final_data (which contains the actual form data)
+        # The final_data is structured by step IDs from the template
+        note_data = final_data if final_data else {}
+
+        # Create clinical note entry with correct model fields
         try:
-            # Determine reason based on note type
-            reason = ClinicalNoteEngine._get_encounter_reason(clinical_note_data, context)
-
-            encounter = EncounterProxy.create(
-                patient_id=workflow.patient.fhir_patient_id,
-                practitioner_id=workflow.user.practitionerprofile.fhir_practitioner_id if hasattr(workflow.user, 'practitionerprofile') else None,
-                encounter_type=encounter_type,
-                status=encounter_status,
-                reason=reason,
-                service_type=context.get('service_type'),
-                start_time=workflow.created_at,
-            )
-
-            encounter_id = encounter.get('id')
-            logger.info(f"Created FHIR encounter {encounter_id} for clinical note workflow {workflow.id}")
-
-        except Exception as e:
-            logger.error(f"Failed to create encounter for workflow {workflow.id}: {str(e)}")
-            raise
-
-        # Create clinical note entry
-        try:
-            note_content = ClinicalNoteEngine._format_note_content(clinical_note_data, context)
-            note_type_display = clinical_note_data.get_note_type_display()
-
             note = NoteEntry.objects.create(
-                encounter_id=encounter_id,
-                author=workflow.user,
-                content=note_content,
-                note_type=clinical_note_data.note_type,
-                title=f'{note_type_display} - {workflow.patient.user.get_full_name()}',
+                template=template,
+                patient=workflow.patient,
+                encounter=encounter,
+                practitioner=practitioner,
+                data=note_data,
             )
 
             logger.info(f"Created clinical note {note.id} for workflow {workflow.id}")
 
         except Exception as e:
             logger.error(f"Failed to create clinical note for workflow {workflow.id}: {str(e)}")
-            note = None
+            raise  # Re-raise instead of silently continuing
 
         # Mark workflow complete
-        workflow.encounter_id = encounter_id
+        workflow.encounter_id = str(encounter.id)
         workflow.complete_workflow()
 
         artifacts = [
-            {'type': 'encounter', 'id': encounter_id},
+            {'type': 'encounter', 'id': str(encounter.id)},
+            {'type': 'note', 'id': str(note.id)},
         ]
-
-        if note:
-            artifacts.append({'type': 'note', 'id': note.id})
 
         return {
             'success': True,
-            'workflow_id': workflow.id,
-            'encounter_id': encounter_id,
+            'workflow_id': str(workflow.id),
+            'encounter_id': str(encounter.id),
+            'note_id': str(note.id),
             'artifacts': artifacts,
         }
 
     @staticmethod
     def _get_encounter_reason(clinical_note_data: ClinicalNoteWorkflow, context: Dict) -> str:
         """
-        Get reason for encounter based on note type
+        Get reason for encounter based on note type.
+        Handles both string and dict field values.
         """
         note_type = clinical_note_data.note_type
 
         if note_type == 'progress':
-            return clinical_note_data.chief_complaint or 'Progress Note'
+            reason = _extract_string_value(
+                clinical_note_data.chief_complaint,
+                ['chief_complaint']
+            )
+            return reason or 'Progress Note'
         elif note_type == 'soap':
-            return clinical_note_data.chief_complaint or clinical_note_data.subjective or 'SOAP Note'
+            reason = _extract_string_value(
+                clinical_note_data.chief_complaint,
+                ['chief_complaint']
+            ) or _extract_string_value(
+                clinical_note_data.subjective,
+                ['chief_complaint', 'history_of_present_illness', 'hpi']
+            )
+            return reason or 'SOAP Note'
         elif note_type == 'procedure':
-            return clinical_note_data.procedure_name or clinical_note_data.indication or 'Procedure'
+            reason = _extract_string_value(
+                clinical_note_data.procedure_name
+            ) or _extract_string_value(
+                clinical_note_data.indication
+            )
+            return reason or 'Procedure'
         elif note_type == 'phone':
-            return clinical_note_data.reason_for_call or 'Phone Note'
+            reason = _extract_string_value(
+                clinical_note_data.reason_for_call,
+                ['reason_for_call', 'reason']
+            )
+            return reason or 'Phone Note'
         else:
             return 'Clinical Note'
 

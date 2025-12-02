@@ -324,11 +324,16 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            # Include template_id in initial_data so it's stored in context
+            initial_data = serializer.validated_data.get('initial_data', {})
+            if serializer.validated_data.get('template_id'):
+                initial_data['template_id'] = str(serializer.validated_data['template_id'])
+
             result = ClinicalNoteEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
                 note_type=serializer.validated_data['note_type'],
-                initial_data=serializer.validated_data.get('initial_data', {}),
+                initial_data=initial_data,
             )
 
             workflow = result['workflow']
@@ -434,11 +439,17 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            # Get template_id from request or workflow context
+            template_id = serializer.validated_data.get('template_id')
+            if not template_id:
+                template_id = workflow.context_data.get('template_id')
+
             result = ClinicalNoteEngine.complete(
                 workflow=workflow,
                 final_data=serializer.validated_data.get('final_data', {}),
                 encounter_type=serializer.validated_data.get('encounter_type', 'outpatient'),
                 encounter_status=serializer.validated_data.get('encounter_status', 'finished'),
+                template_id=template_id,
             )
 
             return Response(result)

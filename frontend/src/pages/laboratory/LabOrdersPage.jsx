@@ -3,8 +3,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -24,17 +22,19 @@ import {
   List,
   RefreshCw,
   X,
-  Filter,
+  UserRound,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLabOrders } from "@/hooks/useLabQueries";
+import { usePractitioners } from "@/hooks/useStaffQueries";
 
 /**
  * LabOrdersPage - Lab orders list for clinicians
  *
  * Features:
  * - Chronicle-style order cards
- * - "My Orders" toggle for doctors (default on)
+ * - Doctors automatically see only their orders
+ * - Lab staff/admins can filter by ordering doctor
  * - Search and filter by status, priority
  * - Stats header showing order counts
  * - Grid/list view toggle
@@ -42,22 +42,28 @@ import { useLabOrders } from "@/hooks/useLabQueries";
 export default function LabOrdersPage() {
   const { user } = useAuth();
   const userRole = user?.role || "";
-  const userId = user?.id;
 
-  // Determine if user is a doctor (should see "My Orders" toggle)
+  // Determine user type
   const isDoctor = ["doctor", "physician", "practitioner", "inpatient_doctor"].includes(userRole);
-  const isLabTech = ["lab_technician"].includes(userRole);
+  const isLabStaff = ["lab_technician", "lab_tech", "laboratory", "admin"].includes(userRole);
 
   // State
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  const [myOrdersOnly, setMyOrdersOnly] = useState(isDoctor); // Default ON for doctors
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState("all");
   const [viewMode, setViewMode] = useState("grid");
 
   // Slide-over state
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [slideOverOpen, setSlideOverOpen] = useState(false);
+
+  // Fetch practitioners for the doctor filter dropdown (only for lab staff)
+  const { data: practitionersData } = usePractitioners({ user_type: "doctor" });
+  const practitioners = useMemo(() => {
+    const data = practitionersData?.results || practitionersData || [];
+    return Array.isArray(data) ? data : [];
+  }, [practitionersData]);
 
   // Build query filters
   const queryFilters = useMemo(() => {
@@ -71,14 +77,18 @@ export default function LabOrdersPage() {
       filters.priority = priorityFilter;
     }
 
-    // For "My Orders" - filter by ordering provider
-    // Note: Backend may need to support this filter
-    if (myOrdersOnly && userId) {
-      filters.ordering_provider = userId;
+    // Doctors automatically see only their orders
+    if (isDoctor) {
+      filters.my_orders = "true";
+    }
+
+    // Lab staff can filter by specific doctor
+    if (isLabStaff && selectedDoctorFilter !== "all") {
+      filters.ordering_provider = selectedDoctorFilter;
     }
 
     return filters;
-  }, [statusFilter, priorityFilter, myOrdersOnly, userId]);
+  }, [statusFilter, priorityFilter, isDoctor, isLabStaff, selectedDoctorFilter]);
 
   // Fetch orders
   const {
@@ -131,9 +141,7 @@ export default function LabOrdersPage() {
     setSearchQuery("");
     setStatusFilter("all");
     setPriorityFilter("all");
-    if (!isDoctor) {
-      setMyOrdersOnly(false);
-    }
+    setSelectedDoctorFilter("all");
   };
 
   const handleOrderClick = (order) => {
@@ -154,7 +162,7 @@ export default function LabOrdersPage() {
     searchQuery ||
     statusFilter !== "all" ||
     priorityFilter !== "all" ||
-    (myOrdersOnly && !isDoctor);
+    selectedDoctorFilter !== "all";
 
   // Status options
   const statusOptions = [
@@ -186,7 +194,7 @@ export default function LabOrdersPage() {
               Lab Orders
             </h1>
             <p className="text-sm text-muted-foreground">
-              {stats.total} orders
+              {stats.total} {isDoctor ? "of your orders" : "orders"}
               {stats.critical > 0 && (
                 <span className="text-rose-600 ml-2">
                   ({stats.critical} critical)
@@ -252,19 +260,24 @@ export default function LabOrdersPage() {
 
           {/* Filters row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* My Orders toggle (for doctors) */}
-            {isDoctor && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-background rounded-md border">
-                <Switch
-                  id="my-orders"
-                  checked={myOrdersOnly}
-                  onCheckedChange={setMyOrdersOnly}
-                  className="scale-90"
-                />
-                <Label htmlFor="my-orders" className="text-sm cursor-pointer">
-                  My Orders
-                </Label>
-              </div>
+            {/* Ordering Doctor filter (for lab staff/admins only) */}
+            {isLabStaff && (
+              <Select value={selectedDoctorFilter} onValueChange={setSelectedDoctorFilter}>
+                <SelectTrigger className="w-[180px] sm:w-[200px] text-sm">
+                  <div className="flex items-center gap-2">
+                    <UserRound className="h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Ordering Doctor" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Doctors</SelectItem>
+                  {practitioners.map((doc) => (
+                    <SelectItem key={doc.id} value={doc.id}>
+                      {doc.name || `Dr. ${doc.staff?.user?.last_name || "Unknown"}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
 
             {/* Status filter */}
@@ -369,9 +382,9 @@ export default function LabOrdersPage() {
               No orders found
             </h3>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              {searchQuery || statusFilter !== "all" || priorityFilter !== "all"
+              {searchQuery || statusFilter !== "all" || priorityFilter !== "all" || selectedDoctorFilter !== "all"
                 ? "Try adjusting your filters to see more orders."
-                : myOrdersOnly
+                : isDoctor
                 ? "You haven't placed any lab orders yet."
                 : "No lab orders have been placed yet."}
             </p>

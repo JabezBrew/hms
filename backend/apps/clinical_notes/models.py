@@ -179,6 +179,79 @@ class NoteEntry(models.Model):
         return f"{self.template.title} for {patient_name}"
 
 
+class NoteEntryVersion(models.Model):
+    """
+    Model for storing historical versions of clinical notes.
+    Created automatically when a NoteEntry is updated.
+    Provides full audit trail of all changes to clinical documentation.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    note_entry = models.ForeignKey(
+        NoteEntry,
+        on_delete=models.CASCADE,
+        related_name='versions',
+        help_text="The note entry this version belongs to"
+    )
+    version_number = models.PositiveIntegerField(
+        help_text="Sequential version number (1 = first version)"
+    )
+    data = models.JSONField(
+        help_text="Snapshot of the note data at this version"
+    )
+    edited_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='note_edits',
+        help_text="User who made the edit that created this version"
+    )
+    edit_reason = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Optional reason for the edit"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-version_number']
+        verbose_name = 'Note Entry Version'
+        verbose_name_plural = 'Note Entry Versions'
+        unique_together = ('note_entry', 'version_number')
+        indexes = [
+            models.Index(fields=['note_entry', '-version_number']),
+            models.Index(fields=['note_entry', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Version {self.version_number} of {self.note_entry}"
+
+    @classmethod
+    def create_version(cls, note_entry, edited_by=None, edit_reason=''):
+        """
+        Create a new version snapshot of a note entry.
+        Should be called BEFORE updating the note_entry.data field.
+
+        Args:
+            note_entry: The NoteEntry being edited
+            edited_by: User making the edit
+            edit_reason: Optional reason for the edit
+
+        Returns:
+            The created NoteEntryVersion instance
+        """
+        # Get the next version number
+        latest_version = cls.objects.filter(note_entry=note_entry).order_by('-version_number').first()
+        next_version = (latest_version.version_number + 1) if latest_version else 1
+
+        return cls.objects.create(
+            note_entry=note_entry,
+            version_number=next_version,
+            data=note_entry.data,  # Snapshot current data before update
+            edited_by=edited_by,
+            edit_reason=edit_reason,
+        )
+
+
 class Prescription(models.Model):
     """
     Model for medication prescriptions.

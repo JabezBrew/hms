@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
@@ -282,9 +282,14 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Validate the data according to the registration rules.
         """
-        # Check if email is already in use
-        if User.objects.filter(email=data['email']).exists():
-            raise serializers.ValidationError({"email": "This email is already in use."})
+        # Check if email is already in use by an active staff member
+        existing_user = User.objects.filter(email=data['email']).first()
+        if existing_user:
+            # Check if this user has an active staff record
+            if hasattr(existing_user, 'staff') and existing_user.staff:
+                raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+            # Otherwise, we'll reuse this orphaned user - store it for create()
+            data['_existing_user'] = existing_user
 
         # Check if user_type is doctor or nurse, then practitioner fields are required
         if data.get('user_type') in ['doctor', 'nurse']:
@@ -301,6 +306,9 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Create a new staff member with both local and FHIR resources.
         """
+        # Check if we're reusing an existing user
+        existing_user = validated_data.pop('_existing_user', None)
+
         # Extract address fields
         address_fields = {
             'address_line1': validated_data.pop('address_line1', ''),
@@ -321,17 +329,29 @@ class StaffRegistrationSerializer(serializers.Serializer):
         # Generate a secure password for the staff
         generated_password = generate_secure_password()
 
-        # Create User
-        user = User.objects.create_user(
-            email=validated_data['email'],
-            username=validated_data['email'],  # Use email as username
-            password=generated_password,
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name'],
-            phone_number=validated_data.get('phone_number', ''),
-            date_of_birth=validated_data['date_of_birth'],
-            user_type=validated_data['user_type']
-        )
+        if existing_user:
+            # Reuse and update the existing orphaned user
+            user = existing_user
+            user.first_name = validated_data['first_name']
+            user.last_name = validated_data['last_name']
+            user.phone_number = validated_data.get('phone_number', '')
+            user.date_of_birth = validated_data['date_of_birth']
+            user.user_type = validated_data['user_type']
+            user.is_active = True
+            user.set_password(generated_password)
+            user.save()
+        else:
+            # Create new User
+            user = User.objects.create_user(
+                email=validated_data['email'],
+                username=validated_data['email'],  # Use email as username
+                password=generated_password,
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                phone_number=validated_data.get('phone_number', ''),
+                date_of_birth=validated_data['date_of_birth'],
+                user_type=validated_data['user_type']
+            )
 
         # Generate a unique employee ID
         employee_id = generate_unique_employee_id()
@@ -347,25 +367,19 @@ class StaffRegistrationSerializer(serializers.Serializer):
             updated_by=self.context['request'].user
         )
 
-        # Send credentials via email (password should not be logged)
-        message = f"""
-        Dear {user.first_name} {user.last_name},
-
-        Your account has been created in the Hospital Management System.
-
-        Your login credentials are:
-        Email: {user.email}
-        Password: {generated_password}
-        Employee ID: {employee_id}
-
-        Please log in and change your password immediately.
-
-        Best regards,
-        Hospital Management Team
-        """
-
-        # TODO: Send email to user with credentials
-        # send_mail(subject, message, from_email, [user.email])
+        # Send credentials via email (runs sync in DEBUG mode via CELERY_TASK_ALWAYS_EAGER)
+        from .tasks import send_welcome_credentials_email
+        try:
+            send_welcome_credentials_email.delay(
+                user_email=user.email,
+                user_name=f"{user.first_name} {user.last_name}",
+                password=generated_password,
+                employee_id=employee_id,
+                department=validated_data['department'],
+                position=validated_data['position'],
+            )
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to {user.email}: {e}")
 
         logger.info(f"Staff account created for {user.email} with employee ID: {employee_id}")
 
@@ -668,3 +682,51 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         if admission:
             return admission.admission_date
         return None
+
+
+# =============================================================================
+# USER PATIENT LIST SERIALIZERS - My Patients feature
+# =============================================================================
+
+class UserPatientListSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for user's personal patient list.
+    Includes patient details for display.
+    """
+    patient_details = PatientProfileListSerializer(source='patient', read_only=True)
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+
+    class Meta:
+        model = UserPatientList
+        fields = [
+            'id', 'user', 'patient', 'patient_details', 'patient_name', 'patient_mrn',
+            'notes', 'is_pinned', 'added_at'
+        ]
+        read_only_fields = ['id', 'user', 'added_at']
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return None
+
+
+class UserPatientListCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for adding a patient to user's list.
+    Only requires patient ID.
+    """
+    class Meta:
+        model = UserPatientList
+        fields = ['patient', 'notes', 'is_pinned']
+
+    def validate_patient(self, value):
+        """Ensure patient isn't already in user's list."""
+        user = self.context['request'].user
+        if UserPatientList.objects.filter(user=user, patient=value).exists():
+            raise serializers.ValidationError("This patient is already in your list.")
+        return value
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)

@@ -40,7 +40,6 @@ import { format } from "date-fns";
 import {
   useLabOrders,
   useCollectLabOrder,
-  useReceiveLabOrder,
   useStartProcessingLabOrder,
   useCompleteLabOrder,
   useCreateLabResult,
@@ -51,8 +50,8 @@ import { toast } from "sonner";
  * LabTechnicianDashboard - Lab technician worklist and workflow management
  *
  * Features:
- * - Orders grouped by status (submitted, collected, received, processing)
- * - Quick actions for status transitions
+ * - Orders grouped by status (collected, processing)
+ * - Quick actions for status transitions (Start Processing skips RECEIVED status)
  * - Result entry form for completed tests
  * - Patient and order search
  * - Priority highlighting
@@ -60,7 +59,7 @@ import { toast } from "sonner";
  * - Chronicle design system styling
  */
 const LabTechnicianDashboard = () => {
-  const [activeTab, setActiveTab] = useState("submitted");
+  const [activeTab, setActiveTab] = useState("collected");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
@@ -80,15 +79,13 @@ const LabTechnicianDashboard = () => {
     reference_range: { low: "", high: "", unit: "" },
   });
 
-  // API queries
-  const { data: submittedOrders } = useLabOrders({ status: "submitted" });
-  const { data: collectedOrders } = useLabOrders({ status: "collected" });
-  const { data: receivedOrders } = useLabOrders({ status: "received" });
-  const { data: processingOrders } = useLabOrders({ status: "processing" });
+  // API queries - Lab worklist only shows collected onwards (not submitted/ordered)
+  // Include expand=tests to get full order_tests array with test details
+  const { data: collectedOrders } = useLabOrders({ status: "collected", expand: "tests,specimens" });
+  const { data: processingOrders } = useLabOrders({ status: "processing", expand: "tests,specimens" });
 
   // Mutations
   const collectOrder = useCollectLabOrder();
-  const receiveOrder = useReceiveLabOrder();
   const startProcessing = useStartProcessingLabOrder();
   const completeOrder = useCompleteLabOrder();
   const createResult = useCreateLabResult();
@@ -96,14 +93,10 @@ const LabTechnicianDashboard = () => {
   // Get orders for active tab
   const getActiveOrders = () => {
     switch (activeTab) {
-      case "submitted":
-        return submittedOrders?.results || [];
       case "collected":
-        return collectedOrders?.results || [];
-      case "received":
-        return receivedOrders?.results || [];
+        return collectedOrders?.results || collectedOrders || [];
       case "processing":
-        return processingOrders?.results || [];
+        return processingOrders?.results || processingOrders || [];
       default:
         return [];
     }
@@ -114,9 +107,8 @@ const LabTechnicianDashboard = () => {
     if (!searchQuery) return true;
 
     const query = searchQuery.toLowerCase();
-    const patientName =
-      `${order.patient_details?.first_name} ${order.patient_details?.last_name}`.toLowerCase();
-    const mrn = order.patient_details?.medical_record_number?.toLowerCase() || "";
+    const patientName = order.patient_name?.toLowerCase() || "";
+    const mrn = order.patient_mrn?.toLowerCase() || "";
     const orderNumber = order.order_number?.toLowerCase() || "";
 
     return (
@@ -150,14 +142,8 @@ const LabTechnicianDashboard = () => {
           });
           break;
 
-        case "receive":
-          await receiveOrder.mutateAsync(selectedOrder.id);
-          toast.success("Specimen received", {
-            description: `Order #${selectedOrder.order_number}`,
-          });
-          break;
-
         case "start":
+          // Start processing directly from collected (skip received status)
           await startProcessing.mutateAsync(selectedOrder.id);
           toast.success("Processing started", {
             description: `Order #${selectedOrder.order_number}`,
@@ -251,16 +237,9 @@ const LabTechnicianDashboard = () => {
       buttonLabel: "Collect Specimen",
       icon: TestTube2,
     },
-    receive: {
-      title: "Receive Specimen",
-      description: "Confirm that the specimen has been received in the laboratory",
-      needsBarcode: false,
-      buttonLabel: "Receive Specimen",
-      icon: CheckCircle2,
-    },
     start: {
       title: "Start Processing",
-      description: "Begin processing and analysis of the specimen",
+      description: "Receive the specimen in the lab and begin processing",
       needsBarcode: false,
       buttonLabel: "Start Processing",
       icon: Play,
@@ -269,9 +248,7 @@ const LabTechnicianDashboard = () => {
 
   // Get order counts for tabs
   const orderCounts = {
-    submitted: submittedOrders?.count || 0,
     collected: collectedOrders?.count || 0,
-    received: receivedOrders?.count || 0,
     processing: processingOrders?.count || 0,
   };
 
@@ -302,23 +279,11 @@ const LabTechnicianDashboard = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="submitted" className="relative">
-            Submitted
-            {orderCounts.submitted > 0 && (
-              <Badge className="ml-2 bg-sky-600">{orderCounts.submitted}</Badge>
-            )}
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="collected" className="relative">
             Collected
             {orderCounts.collected > 0 && (
               <Badge className="ml-2 bg-amber-600">{orderCounts.collected}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="received" className="relative">
-            Received
-            {orderCounts.received > 0 && (
-              <Badge className="ml-2 bg-violet-600">{orderCounts.received}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="processing" className="relative">
@@ -330,7 +295,7 @@ const LabTechnicianDashboard = () => {
         </TabsList>
 
         {/* Tab Content */}
-        {["submitted", "collected", "received", "processing"].map((tab) => (
+        {["collected", "processing"].map((tab) => (
           <TabsContent key={tab} value={tab} className="mt-6 space-y-4">
             {filteredOrders.length === 0 ? (
               <Card>
@@ -361,12 +326,11 @@ const LabTechnicianDashboard = () => {
                             <div className="flex items-center gap-4">
                               <span className="flex items-center gap-1">
                                 <User className="h-3 w-3" />
-                                {order.patient_details?.first_name}{" "}
-                                {order.patient_details?.last_name}
+                                {order.patient_name}
                               </span>
-                              {order.patient_details?.medical_record_number && (
+                              {order.patient_mrn && (
                                 <span className="font-mono text-stone-500">
-                                  MRN: {order.patient_details.medical_record_number}
+                                  MRN: {order.patient_mrn}
                                 </span>
                               )}
                               <span className="flex items-center gap-1">
@@ -457,25 +421,7 @@ const LabTechnicianDashboard = () => {
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 pt-2">
-                        {tab === "submitted" && (
-                          <Button
-                            onClick={() => handleActionClick(order, "collect")}
-                            className="bg-amber-600 hover:bg-amber-700"
-                          >
-                            <TestTube2 className="h-4 w-4 mr-2" />
-                            Collect Specimen
-                          </Button>
-                        )}
                         {tab === "collected" && (
-                          <Button
-                            onClick={() => handleActionClick(order, "receive")}
-                            className="bg-violet-600 hover:bg-violet-700"
-                          >
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Receive in Lab
-                          </Button>
-                        )}
-                        {tab === "received" && (
                           <Button
                             onClick={() => handleActionClick(order, "start")}
                             className="bg-indigo-600 hover:bg-indigo-700"
@@ -517,8 +463,7 @@ const LabTechnicianDashboard = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-stone-600">Patient:</span>
                     <span className="font-semibold text-stone-900">
-                      {selectedOrder.patient_details?.first_name}{" "}
-                      {selectedOrder.patient_details?.last_name}
+                      {selectedOrder.patient_name}
                     </span>
                   </div>
                 </div>
@@ -558,7 +503,6 @@ const LabTechnicianDashboard = () => {
               onClick={() => setActionDialogOpen(false)}
               disabled={
                 collectOrder.isPending ||
-                receiveOrder.isPending ||
                 startProcessing.isPending
               }
             >
@@ -569,12 +513,10 @@ const LabTechnicianDashboard = () => {
               disabled={
                 (actionConfig[currentAction]?.needsBarcode && !specimenBarcode) ||
                 collectOrder.isPending ||
-                receiveOrder.isPending ||
                 startProcessing.isPending
               }
             >
               {collectOrder.isPending ||
-              receiveOrder.isPending ||
               startProcessing.isPending
                 ? "Processing..."
                 : actionConfig[currentAction]?.buttonLabel}
@@ -606,8 +548,7 @@ const LabTechnicianDashboard = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-stone-600">Patient:</span>
                   <span className="font-semibold text-stone-900">
-                    {selectedOrder?.patient_details?.first_name}{" "}
-                    {selectedOrder?.patient_details?.last_name}
+                    {selectedOrder?.patient_name}
                   </span>
                 </div>
               </div>

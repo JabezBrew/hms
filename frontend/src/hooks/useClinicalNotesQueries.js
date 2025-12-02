@@ -12,6 +12,8 @@ export const clinicalNotesKeys = {
   entries: () => [...clinicalNotesKeys.all, 'entries'],
   entry: (id) => [...clinicalNotesKeys.entries(), id],
   entriesByEncounter: (encounterId) => [...clinicalNotesKeys.entries(), 'encounter', encounterId],
+  entryHistory: (id) => [...clinicalNotesKeys.entry(id), 'history'],
+  entryVersion: (id, version) => [...clinicalNotesKeys.entry(id), 'version', version],
 };
 
 /**
@@ -290,5 +292,81 @@ export function useCloneNoteEntry() {
         });
       }
     },
+  });
+}
+
+/**
+ * Update a note entry with version tracking
+ * @returns {Object} Mutation result
+ */
+export function useUpdateNoteEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data, editReason }) =>
+      clinicalNotesApi.updateNoteEntry(id, data, editReason),
+    onSuccess: (data, variables) => {
+      // Invalidate the entry query to reflect updates
+      queryClient.invalidateQueries({
+        queryKey: clinicalNotesKeys.entry(variables.id)
+      });
+      // Invalidate history since a new version was created
+      queryClient.invalidateQueries({
+        queryKey: clinicalNotesKeys.entryHistory(variables.id)
+      });
+      // Invalidate entries list
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+      // Invalidate timeline queries
+      queryClient.invalidateQueries({ queryKey: ['patient-timeline'] });
+      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+    },
+  });
+}
+
+/**
+ * Get version history for a note entry
+ * @param {string} id - Note entry ID
+ * @param {Object} options - Query options
+ * @returns {Object} Query result with version history
+ */
+export function useNoteEntryHistory(id, options = {}) {
+  return useQuery({
+    queryKey: clinicalNotesKeys.entryHistory(id),
+    queryFn: () => clinicalNotesApi.getNoteEntryHistory(id),
+    enabled: !!id && options.enabled !== false,
+    ...options,
+  });
+}
+
+/**
+ * Get a specific version of a note entry
+ * @param {string} id - Note entry ID
+ * @param {number} versionNumber - Version number
+ * @param {Object} options - Query options
+ * @returns {Object} Query result with version data
+ */
+export function useNoteEntryVersion(id, versionNumber, options = {}) {
+  return useQuery({
+    queryKey: clinicalNotesKeys.entryVersion(id, versionNumber),
+    queryFn: () => clinicalNotesApi.getNoteEntryVersion(id, versionNumber),
+    enabled: !!id && !!versionNumber && options.enabled !== false,
+    ...options,
+  });
+}
+
+/**
+ * Compare two versions of a note entry
+ * @param {string} id - Note entry ID
+ * @param {number} versionA - First version number (0 for current)
+ * @param {number} versionB - Second version number (0 for current)
+ * @param {Object} options - Query options
+ * @returns {Object} Query result with comparison data
+ */
+export function useCompareNoteVersions(id, versionA, versionB, options = {}) {
+  return useQuery({
+    queryKey: [...clinicalNotesKeys.entry(id), 'compare', versionA, versionB],
+    queryFn: () => clinicalNotesApi.compareNoteVersions(id, versionA, versionB),
+    enabled: !!id && versionA !== undefined && versionB !== undefined && options.enabled !== false,
+    ...options,
   });
 }

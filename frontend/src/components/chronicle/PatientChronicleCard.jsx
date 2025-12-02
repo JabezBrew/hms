@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Activity, AlertTriangle, Clock, ChevronRight } from "lucide-react";
+import { Activity, AlertTriangle, Clock, ChevronRight, Star, StarOff, UserPlus, UserMinus } from "lucide-react";
 
 /**
  * PatientChronicleCard - A magazine-style patient card for the Chronicle design system
@@ -17,6 +17,11 @@ const PatientChronicleCard = ({
   patient,
   index = 0,
   onStartRound,
+  onAddToMyPatients,
+  onRemoveFromMyPatients,
+  onTogglePin,
+  showMyPatientsActions = false,
+  isInMyPatients = false,
   className
 }) => {
   const navigate = useNavigate();
@@ -203,6 +208,30 @@ const PatientChronicleCard = ({
     }
   };
 
+  const handleAddToMyPatients = (e) => {
+    e.stopPropagation();
+    if (onAddToMyPatients) {
+      onAddToMyPatients(patientId);
+    }
+  };
+
+  const handleRemoveFromMyPatients = (e) => {
+    e.stopPropagation();
+    if (onRemoveFromMyPatients) {
+      onRemoveFromMyPatients(patientId);
+    }
+  };
+
+  const handleTogglePin = (e) => {
+    e.stopPropagation();
+    if (onTogglePin && patient?._listEntryId) {
+      onTogglePin(patient._listEntryId);
+    }
+  };
+
+  // Check if patient is pinned (from My Patients data)
+  const isPinned = patient?._isPinned;
+
   // ============================================
   // Render
   // ============================================
@@ -327,13 +356,20 @@ const PatientChronicleCard = ({
       {/* Action Footer - Always visible on mobile */}
       <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 sm:pt-4 border-t border-border">
         <div className="flex items-center gap-2 text-muted-foreground">
-          {pendingOrders > 0 && (
+          {/* Pinned indicator for My Patients */}
+          {isPinned && (
+            <span className="flex items-center gap-1 text-primary">
+              <Star className="h-3 w-3 fill-current" />
+              <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
+            </span>
+          )}
+          {!isPinned && pendingOrders > 0 && (
             <>
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
             </>
           )}
-          {pendingOrders === 0 && (
+          {!isPinned && pendingOrders === 0 && (
             <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
               <Clock className="h-3 w-3" />
               No pending items
@@ -343,6 +379,49 @@ const PatientChronicleCard = ({
 
         {/* Always show on mobile, hover on desktop */}
         <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          {/* My Patients actions */}
+          {showMyPatientsActions && !isInMyPatients && onAddToMyPatients && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="font-mono text-[10px] sm:text-xs h-8"
+              onClick={handleAddToMyPatients}
+            >
+              <UserPlus className="h-3 w-3 mr-1" />
+              Add to List
+            </Button>
+          )}
+          {showMyPatientsActions && isInMyPatients && (
+            <>
+              {onTogglePin && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "font-mono text-[10px] sm:text-xs h-8",
+                    isPinned && "text-primary"
+                  )}
+                  onClick={handleTogglePin}
+                >
+                  {isPinned ? (
+                    <StarOff className="h-3 w-3" />
+                  ) : (
+                    <Star className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+              {onRemoveFromMyPatients && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="font-mono text-[10px] sm:text-xs h-8 text-destructive hover:text-destructive"
+                  onClick={handleRemoveFromMyPatients}
+                >
+                  <UserMinus className="h-3 w-3" />
+                </Button>
+              )}
+            </>
+          )}
           <Button
             variant="secondary"
             size="sm"

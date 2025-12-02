@@ -708,6 +708,7 @@ const PatientChroniclePage = () => {
                           entry={entry}
                           index={index}
                           onCopyNote={handleCopyNote}
+                          onNoteUpdated={refetchTimeline}
                         />
                       ))}
                     </div>
@@ -759,6 +760,7 @@ const PatientChroniclePage = () => {
                         entry={entry}
                         index={index}
                         onCopyNote={handleCopyNote}
+                        onNoteUpdated={refetchTimeline}
                       />
                     ))}
                   </div>

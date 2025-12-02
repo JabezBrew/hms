@@ -80,6 +80,21 @@ class IsPatient(permissions.BasePermission):
         return request.user.is_authenticated and request.user.user_type == 'patient'
 
 
+class IsClinicalProvider(permissions.BasePermission):
+    """
+    Permission class for clinical providers.
+    Includes doctors, nurses, lab technicians, and pharmacists.
+    Used for features like "My Patients" that are specific to clinical staff.
+    """
+    CLINICAL_ROLES = ['doctor', 'nurse', 'lab_technician', 'pharmacist']
+
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated and
+            request.user.user_type in self.CLINICAL_ROLES
+        )
+
+
 # Define custom permissions for specific actions
 def create_custom_permissions():
     """

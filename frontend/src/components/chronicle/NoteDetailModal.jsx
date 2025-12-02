@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { XIcon } from "lucide-react";
+import { XIcon, Pencil, History } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import {
   FileText,
   Pill,
@@ -12,6 +14,8 @@ import {
   UserPlus,
   LogOut,
 } from "lucide-react";
+import EditNoteSlideOver from "./EditNoteSlideOver";
+import NoteHistoryModal from "./NoteHistoryModal";
 
 /**
  * NoteDetailModal - A generic modal for viewing full note content
@@ -19,8 +23,17 @@ import {
  * Renders any note data structure in a scrollable dialog.
  * Works with SOAP notes, progress notes, or any structured clinical data.
  */
-const NoteDetailModal = ({ open, onOpenChange, entry }) => {
+const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
+  const [editOpen, setEditOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   if (!entry) return null;
+
+  // Check if this is an editable note type (has an id and data)
+  const isEditableNote = entry.id && entry.data && [
+    'progress_note', 'soap_note', 'nursing_note', 'admission_note',
+    'discharge_note', 'consult_note', 'consult', 'procedure'
+  ].includes(entry.type);
 
   const entryConfig = {
     progress_note: { icon: FileText, label: 'Progress Note', color: 'text-amber-600' },
@@ -87,11 +100,41 @@ const NoteDetailModal = ({ open, onOpenChange, entry }) => {
         >
           {/* Header */}
           <div className="flex flex-col gap-2 text-center sm:text-left flex-shrink-0">
-            <div className="flex items-center gap-2 mb-1">
-              <Icon className={cn("h-5 w-5", config.color)} />
-              <DialogPrimitive.Title className="text-lg leading-none font-semibold">
-                {entry.title || config.label}
-              </DialogPrimitive.Title>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Icon className={cn("h-5 w-5", config.color)} />
+                <DialogPrimitive.Title className="text-lg leading-none font-semibold">
+                  {entry.title || config.label}
+                </DialogPrimitive.Title>
+              </div>
+              {/* Edit and History buttons */}
+              {isEditableNote && (
+                <div className="flex items-center gap-1 mr-8">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs"
+                    onClick={() => setHistoryOpen(true)}
+                  >
+                    <History className="h-3.5 w-3.5 mr-1" />
+                    History
+                    {entry.version_count > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-muted rounded-full text-[10px]">
+                        {entry.version_count}
+                      </span>
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs"
+                    onClick={() => setEditOpen(true)}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    Edit
+                  </Button>
+                </div>
+              )}
             </div>
             <DialogPrimitive.Description className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="font-mono">{formatDateTime(entry.timestamp)}</span>
@@ -99,6 +142,12 @@ const NoteDetailModal = ({ open, onOpenChange, entry }) => {
                 <>
                   <span className="text-muted-foreground">•</span>
                   <span>{entry.author}</span>
+                </>
+              )}
+              {entry.has_edits && (
+                <>
+                  <span className="text-muted-foreground">•</span>
+                  <span className="text-amber-600">Edited</span>
                 </>
               )}
             </DialogPrimitive.Description>
@@ -130,6 +179,29 @@ const NoteDetailModal = ({ open, onOpenChange, entry }) => {
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
+
+      {/* Edit Note SlideOver */}
+      {isEditableNote && (
+        <EditNoteSlideOver
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          entry={entry}
+          onSuccess={() => {
+            setEditOpen(false);
+            onNoteUpdated?.();
+          }}
+        />
+      )}
+
+      {/* Version History Modal */}
+      {isEditableNote && (
+        <NoteHistoryModal
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          noteId={entry.id}
+          noteTitle={entry.title || config.label}
+        />
+      )}
     </DialogPrimitive.Root>
   );
 };

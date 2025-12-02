@@ -601,6 +601,10 @@ class LabOrderListSerializer(serializers.ModelSerializer):
     Lightweight serializer for lab order lists.
     Removes nested order_tests, panels, specimens - uses counts instead.
 
+    Supports expansion via context:
+    - context={'expand_tests': True} includes full order_tests
+    - context={'expand_specimens': True} includes full specimens
+
     Payload reduction: ~87% (~2KB vs ~15KB per item)
     """
     patient_name = serializers.SerializerMethodField()
@@ -611,13 +615,19 @@ class LabOrderListSerializer(serializers.ModelSerializer):
     test_count = serializers.SerializerMethodField()
     has_critical_results = serializers.SerializerMethodField()
 
+    # Optional expanded fields
+    order_tests = serializers.SerializerMethodField()
+    panels = serializers.SerializerMethodField()
+    specimens = serializers.SerializerMethodField()
+
     class Meta:
         model = LabOrder
         fields = [
             'id', 'order_number', 'patient', 'patient_name', 'patient_mrn',
             'ordering_provider_name', 'priority', 'priority_display',
             'status', 'status_display', 'test_count', 'has_critical_results',
-            'fasting_required', 'ordered_at', 'created_at'
+            'fasting_required', 'ordered_at', 'created_at',
+            'order_tests', 'panels', 'specimens', 'clinical_notes'
         ]
 
     def get_patient_name(self, obj):
@@ -637,6 +647,24 @@ class LabOrderListSerializer(serializers.ModelSerializer):
         return obj.order_tests.filter(
             result__flag__in=['critical_low', 'critical_high']
         ).exists()
+
+    def get_order_tests(self, obj):
+        """Include order_tests if expand_tests is True in context."""
+        if self.context.get('expand_tests', False):
+            return LabOrderTestSerializer(obj.order_tests.all(), many=True).data
+        return None
+
+    def get_panels(self, obj):
+        """Include panels if expand_tests is True in context."""
+        if self.context.get('expand_tests', False):
+            return LabPanelSerializer(obj.panels.all(), many=True).data
+        return None
+
+    def get_specimens(self, obj):
+        """Include specimens if expand_specimens is True in context."""
+        if self.context.get('expand_specimens', False):
+            return LabSpecimenSerializer(obj.specimens.all(), many=True).data
+        return None
 
 
 class LabResultListSerializer(serializers.ModelSerializer):

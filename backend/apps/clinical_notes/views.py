@@ -10,10 +10,10 @@ from operator import attrgetter
 import copy
 import logging
 
-from .models import NoteTemplate, NoteEntry, Prescription
+from .models import NoteTemplate, NoteEntry, NoteEntryVersion, Prescription
 from .serializers import (
     NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
-    NoteEntryCloneSerializer,
+    NoteEntryCloneSerializer, NoteEntryVersionSerializer, NoteEntryUpdateSerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
     PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer
 )
@@ -523,6 +523,156 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """
+        Update a note entry with version tracking.
+        Creates a version snapshot before applying changes.
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        # Get edit reason from request
+        edit_reason = request.data.get('edit_reason', '')
+
+        # Create version snapshot BEFORE updating
+        NoteEntryVersion.create_version(
+            note_entry=instance,
+            edited_by=request.user,
+            edit_reason=edit_reason
+        )
+
+        # Validate and update the note data
+        data = request.data.get('data', instance.data)
+
+        # Update the instance
+        instance.data = data
+        instance.save()
+
+        # Audit log - clinical note updated
+        AuditService.log(
+            request=request,
+            action=AuditAction.NOTE_UPDATE,
+            category=AuditCategory.CLINICAL,
+            resource_type='NoteEntry',
+            resource_id=instance.id,
+            resource_name=f"{instance.template.title}",
+            description=f"Updated clinical note '{instance.template.title}'. "
+                        f"Reason: {edit_reason or 'Not specified'}",
+            changes={'edit_reason': edit_reason}
+        )
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def partial_update(self, request, *args, **kwargs):
+        """Partial update with version tracking."""
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['get'])
+    def history(self, request, pk=None):
+        """
+        Get version history for a clinical note.
+
+        Returns all previous versions sorted by version number (newest first).
+        """
+        note = self.get_object()
+        versions = note.versions.select_related('edited_by').all()
+
+        serializer = NoteEntryVersionSerializer(versions, many=True)
+        return Response({
+            'note_id': str(note.id),
+            'current_data': note.data,
+            'created_at': note.created_at.isoformat(),
+            'updated_at': note.updated_at.isoformat(),
+            'version_count': versions.count(),
+            'versions': serializer.data
+        })
+
+    @action(detail=True, methods=['get'], url_path='history/(?P<version_number>[0-9]+)')
+    def version_detail(self, request, pk=None, version_number=None):
+        """
+        Get a specific version of a clinical note.
+
+        Args:
+            version_number: The version number to retrieve (1-indexed)
+
+        Returns the data snapshot for that version.
+        """
+        note = self.get_object()
+
+        try:
+            version = note.versions.select_related('edited_by').get(version_number=int(version_number))
+        except NoteEntryVersion.DoesNotExist:
+            return Response(
+                {"error": f"Version {version_number} not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = NoteEntryVersionSerializer(version)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='compare/(?P<version_a>[0-9]+)/(?P<version_b>[0-9]+)')
+    def compare_versions(self, request, pk=None, version_a=None, version_b=None):
+        """
+        Compare two versions of a clinical note.
+
+        Args:
+            version_a: First version number to compare
+            version_b: Second version number to compare
+
+        Returns both versions' data for comparison.
+        Use 0 for version_a or version_b to compare against current version.
+        """
+        note = self.get_object()
+
+        # Get version A data
+        if int(version_a) == 0:
+            data_a = note.data
+            version_a_info = {
+                'version_number': 'current',
+                'created_at': note.updated_at.isoformat(),
+                'edited_by_name': 'Current'
+            }
+        else:
+            try:
+                ver_a = note.versions.select_related('edited_by').get(version_number=int(version_a))
+                data_a = ver_a.data
+                version_a_info = NoteEntryVersionSerializer(ver_a).data
+            except NoteEntryVersion.DoesNotExist:
+                return Response(
+                    {"error": f"Version {version_a} not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        # Get version B data
+        if int(version_b) == 0:
+            data_b = note.data
+            version_b_info = {
+                'version_number': 'current',
+                'created_at': note.updated_at.isoformat(),
+                'edited_by_name': 'Current'
+            }
+        else:
+            try:
+                ver_b = note.versions.select_related('edited_by').get(version_number=int(version_b))
+                data_b = ver_b.data
+                version_b_info = NoteEntryVersionSerializer(ver_b).data
+            except NoteEntryVersion.DoesNotExist:
+                return Response(
+                    {"error": f"Version {version_b} not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        return Response({
+            'note_id': str(note.id),
+            'version_a': version_a_info,
+            'version_b': version_b_info,
+            'data_a': data_a,
+            'data_b': data_b
+        })
+
     def _create_fhir_resources(self, template, encounter_id, data):
         """
         Create FHIR resources based on template sections.
@@ -540,9 +690,18 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Create a reference to the encounter
         encounter_reference = create_reference("Encounter", encounter_id)
 
+        # Handle both list and dict structure formats
+        template_structure = template.structure
+        if isinstance(template_structure, dict):
+            sections_list = template_structure.get('sections', [])
+        elif isinstance(template_structure, list):
+            sections_list = template_structure
+        else:
+            sections_list = []
+
         # Process each section in the template
-        for section in template.structure:
-            section_name = section['section']
+        for section in sections_list:
+            section_name = section.get('name') or section.get('section', '')
             section_type = section.get('type')
             section_data = data.get(section_name)
 
@@ -1013,9 +1172,18 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             "section": []
         }
 
+        # Handle both list and dict structure formats
+        template_structure = template.structure
+        if isinstance(template_structure, dict):
+            sections_list = template_structure.get('sections', [])
+        elif isinstance(template_structure, list):
+            sections_list = template_structure
+        else:
+            sections_list = []
+
         # Add sections based on template structure
-        for section in template.structure:
-            section_name = section['section']
+        for section in sections_list:
+            section_name = section.get('name') or section.get('section', '')
             section_type = section.get('type')
             section_data = data.get(section_name)
 
@@ -1691,12 +1859,15 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
     """
     # Get notes for this patient using the patient FK
     # Also include legacy notes where patient is NULL (backwards compatibility)
+    from django.db.models import Count
     notes_queryset = NoteEntry.objects.filter(
         Q(patient=patient) | Q(patient__isnull=True)
     ).select_related(
         'template', 'practitioner', 'practitioner__staff', 'practitioner__staff__user',
         'encounter', 'encounter__practitioner', 'encounter__practitioner__staff',
         'encounter__practitioner__staff__user'
+    ).annotate(
+        version_count=Count('versions')
     )
 
     # Filter by encounter if specified
@@ -1764,6 +1935,7 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
             'type': note_type,
             'entry_type': 'note',
             'timestamp': note.created_at.isoformat(),
+            'updated_at': note.updated_at.isoformat() if note.updated_at else None,
             'title': title,
             'content': content_summary,
             'author': author_name,
@@ -1773,6 +1945,8 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
             'template': template_info,
             'encounter_id': str(note.encounter_id) if note.encounter_id else None,
             'encounter': _format_encounter_details(note.encounter),
+            'version_count': note.version_count,
+            'has_edits': note.version_count > 0,
         })
 
     return entries

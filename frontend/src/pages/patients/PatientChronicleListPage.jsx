@@ -1,6 +1,13 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePatients, useSearchPatients } from "@/hooks/usePatientQueries";
+import {
+  useMyPatients,
+  useAddToMyPatients,
+  useRemoveFromMyPatients,
+  useToggleMyPatientPin
+} from "@/hooks/useMyPatientsQueries";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PatientChronicleCard } from "@/components/chronicle";
 import {
   Search,
@@ -21,8 +29,13 @@ import {
   LayoutGrid,
   List,
   RefreshCw,
-  X
+  X,
+  Star,
+  UserCheck
 } from "lucide-react";
+
+// Clinical provider roles that can access "My Patients" feature
+const CLINICAL_PROVIDER_ROLES = ['doctor', 'nurse', 'lab_technician', 'pharmacist'];
 
 /**
  * PatientChronicleListPage - Magazine-style patient list
@@ -35,9 +48,14 @@ import {
  */
 const PatientChronicleListPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWard, setSelectedWard] = useState("all");
   const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
+  const [activeTab, setActiveTab] = useState("all"); // 'all' or 'my-patients'
+
+  // Check if user is a clinical provider (can access My Patients)
+  const isClinicalProvider = CLINICAL_PROVIDER_ROLES.includes(user?.role);
 
   // Fetch patients
   const {
@@ -53,7 +71,21 @@ const PatientChronicleListPage = () => {
     refetch
   } = usePatients();
 
-  const isLoading = isSearchLoading || isAllPatientsLoading;
+  // Fetch user's personal patient list (only for clinical providers)
+  const {
+    data: myPatientsData,
+    isLoading: isMyPatientsLoading,
+    refetch: refetchMyPatients
+  } = useMyPatients({ enabled: isClinicalProvider });
+
+  // My Patients mutations
+  const addToMyPatients = useAddToMyPatients();
+  const removeFromMyPatients = useRemoveFromMyPatients();
+  const togglePin = useToggleMyPatientPin();
+
+  const isLoading = activeTab === "my-patients"
+    ? isMyPatientsLoading
+    : (isSearchLoading || isAllPatientsLoading);
 
   // ============================================
   // Data processing
@@ -61,12 +93,28 @@ const PatientChronicleListPage = () => {
 
   // Get patients array from response
   const displayedPatients = useMemo(() => {
+    // Handle My Patients tab
+    if (activeTab === "my-patients") {
+      const entries = myPatientsData?.results || myPatientsData || [];
+      // Extract patient details from list entries, preserving entry metadata
+      return Array.isArray(entries)
+        ? entries.map(entry => ({
+            ...entry.patient_details,
+            _listEntryId: entry.id,
+            _isPinned: entry.is_pinned,
+            _listNotes: entry.notes,
+            _addedAt: entry.added_at
+          }))
+        : [];
+    }
+
+    // Handle All Patients tab (with search)
     const patients = debouncedSearchTerm
       ? (searchResults?.results || searchResults?.patients || [])
       : (allPatientsData?.results || allPatientsData?.patients || allPatientsData || []);
 
     return Array.isArray(patients) ? patients : [];
-  }, [searchResults, allPatientsData, debouncedSearchTerm]);
+  }, [searchResults, allPatientsData, debouncedSearchTerm, activeTab, myPatientsData]);
 
   // Extract unique wards for filter
   const uniqueWards = useMemo(() => {
@@ -119,6 +167,27 @@ const PatientChronicleListPage = () => {
     setSearchTerm("");
   };
 
+  const handleRefresh = () => {
+    if (activeTab === "my-patients") {
+      refetchMyPatients();
+    } else {
+      refetch();
+    }
+  };
+
+  // My Patients action handlers
+  const handleAddToMyPatients = (patientId) => {
+    addToMyPatients.mutate({ patientId });
+  };
+
+  const handleRemoveFromMyPatients = (patientId) => {
+    removeFromMyPatients.mutate(patientId);
+  };
+
+  const handleTogglePin = (entryId) => {
+    togglePin.mutate(entryId);
+  };
+
   const handleAddPatient = () => {
     navigate('/patients/create');
   };
@@ -165,6 +234,24 @@ const PatientChronicleListPage = () => {
             Register Patient
           </Button>
         </div>
+
+        {/* Tabs - My Patients tab only visible for clinical providers */}
+        {isClinicalProvider ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
+            <TabsList className="grid w-full sm:w-auto grid-cols-2 sm:inline-flex">
+              <TabsTrigger value="all" className="font-mono text-xs">
+                <Users className="h-4 w-4 mr-2" />
+                All Patients
+              </TabsTrigger>
+              <TabsTrigger value="my-patients" className="font-mono text-xs">
+                <Star className="h-4 w-4 mr-2" />
+                My Patients
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : (
+          <div className="mb-4" /> /* Spacer when tabs are hidden */
+        )}
 
         {/* Search and Filters */}
         <div className="flex flex-col gap-3">
@@ -227,7 +314,7 @@ const PatientChronicleListPage = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => refetch()}
+              onClick={handleRefresh}
               className="shrink-0 h-9 w-9"
             >
               <RefreshCw className="h-4 w-4" />
@@ -254,7 +341,11 @@ const PatientChronicleListPage = () => {
         {isLoading ? (
           <LoadingSkeleton viewMode={viewMode} />
         ) : filteredPatients.length === 0 ? (
-          <EmptyState hasFilters={hasActiveFilters} onClear={handleClearFilters} />
+          <EmptyState
+            hasFilters={hasActiveFilters}
+            onClear={handleClearFilters}
+            isMyPatients={activeTab === "my-patients"}
+          />
         ) : (
           <div className={cn(
             viewMode === 'grid'
@@ -267,6 +358,11 @@ const PatientChronicleListPage = () => {
                 patient={patient}
                 index={index}
                 onStartRound={handleStartRound}
+                showMyPatientsActions={isClinicalProvider}
+                isInMyPatients={activeTab === "my-patients"}
+                onAddToMyPatients={handleAddToMyPatients}
+                onRemoveFromMyPatients={handleRemoveFromMyPatients}
+                onTogglePin={handleTogglePin}
                 className={viewMode === 'list' ? 'max-w-none' : ''}
               />
             ))}
@@ -320,21 +416,44 @@ const LoadingSkeleton = ({ viewMode }) => {
 /**
  * EmptyState - No patients found state
  */
-const EmptyState = ({ hasFilters, onClear }) => {
+const EmptyState = ({ hasFilters, onClear, isMyPatients = false }) => {
+  // Determine content based on context
+  const getContent = () => {
+    if (isMyPatients) {
+      return {
+        icon: <Star className="h-8 w-8 text-muted-foreground" />,
+        title: 'No patients in your list',
+        description: 'Add patients to your personal list for quick access during ward rounds.'
+      };
+    }
+    if (hasFilters) {
+      return {
+        icon: <Users className="h-8 w-8 text-muted-foreground" />,
+        title: 'No matching patients',
+        description: 'Try adjusting your search or filter criteria.'
+      };
+    }
+    return {
+      icon: <Users className="h-8 w-8 text-muted-foreground" />,
+      title: 'No patients registered',
+      description: 'Start by registering a new patient to see them appear here.'
+    };
+  };
+
+  const content = getContent();
+
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Users className="h-8 w-8 text-muted-foreground" />
+        {content.icon}
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">
-        {hasFilters ? 'No matching patients' : 'No patients registered'}
+        {content.title}
       </h3>
       <p className="text-muted-foreground text-sm mb-4 max-w-md">
-        {hasFilters
-          ? 'Try adjusting your search or filter criteria.'
-          : 'Start by registering a new patient to see them appear here.'}
+        {content.description}
       </p>
-      {hasFilters && (
+      {hasFilters && !isMyPatients && (
         <Button variant="outline" size="sm" onClick={onClear}>
           <X className="h-4 w-4 mr-2" />
           Clear Filters

@@ -349,6 +349,25 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             return LabOrderListSerializer
         return LabOrderSerializer
 
+    def get_serializer_context(self):
+        """
+        Add expand flags to serializer context based on query parameters.
+        Supports:
+        - expand=tests - Include full order_tests and panels
+        - expand=specimens - Include full specimens
+        - expand=all - Include everything
+        """
+        context = super().get_serializer_context()
+        expand = self.request.query_params.get('expand', '')
+        expand_list = [e.strip() for e in expand.split(',')]
+
+        if 'tests' in expand_list or 'all' in expand_list:
+            context['expand_tests'] = True
+        if 'specimens' in expand_list or 'all' in expand_list:
+            context['expand_specimens'] = True
+
+        return context
+
     def get_queryset(self):
         """
         Filter orders with optimized queries.
@@ -398,6 +417,21 @@ class LabOrderViewSet(viewsets.ModelViewSet):
                     LabOrderStatus.PROCESSING
                 ]
             )
+
+        # Filter by specific ordering provider (practitioner ID)
+        ordering_provider = self.request.query_params.get('ordering_provider')
+        if ordering_provider:
+            queryset = queryset.filter(ordering_provider_id=ordering_provider)
+
+        # Filter for current user's orders only (for doctors viewing their own orders)
+        my_orders = self.request.query_params.get('my_orders')
+        if my_orders and my_orders.lower() == 'true':
+            try:
+                practitioner = self.request.user.staff_profile.practitioner_profile
+                queryset = queryset.filter(ordering_provider=practitioner)
+            except AttributeError:
+                # User is not a practitioner, return empty queryset
+                queryset = queryset.none()
 
         return queryset.order_by('-created_at')
 

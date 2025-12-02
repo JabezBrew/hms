@@ -80,6 +80,45 @@ def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_
         raise self.retry(exc=e, countdown=60)
 
 
+@shared_task(bind=True, max_retries=3)
+def send_welcome_credentials_email(self, user_email, user_name, password, employee_id, department, position):
+    """
+    Send welcome email with login credentials to newly created staff.
+    """
+    try:
+        login_url = f"{settings.FRONTEND_URL}/login"
+
+        context = {
+            'user_name': user_name,
+            'email': user_email,
+            'password': password,
+            'employee_id': employee_id,
+            'department': department,
+            'position': position,
+            'login_url': login_url,
+            'hospital_name': 'HMS Hospital',
+        }
+
+        html_content = render_to_string('emails/welcome_credentials.html', context)
+        text_content = render_to_string('emails/welcome_credentials.txt', context)
+
+        email = EmailMultiAlternatives(
+            subject='Welcome to HMS - Your Login Credentials',
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email],
+        )
+        email.attach_alternative(html_content, 'text/html')
+        email.send(fail_silently=False)
+
+        logger.info(f"Welcome credentials email sent to {user_email}")
+        return {"status": "success", "email": user_email}
+
+    except Exception as e:
+        logger.error(f"Failed to send welcome credentials email to {user_email}: {str(e)}")
+        raise self.retry(exc=e, countdown=60)
+
+
 @shared_task
 def cleanup_expired_tokens():
     """

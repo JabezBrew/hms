@@ -27,6 +27,7 @@ import {
   PlayCircle,
   RefreshCw,
   Copy,
+  Pencil,
 } from "lucide-react";
 import NoteDetailModal from "./NoteDetailModal";
 import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
@@ -53,6 +54,7 @@ const TimelineEntry = ({
   isRecent = false,
   className,
   onCopyNote,  // Callback when user confirms copy: (copyData) => void
+  onNoteUpdated, // Callback when a note is updated (for edit feature)
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
@@ -209,6 +211,31 @@ const TimelineEntry = ({
     }
   };
 
+  const formatRelativeTime = (timestamp) => {
+    if (!timestamp) return '';
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return 'just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays === 1) return 'yesterday';
+      if (diffDays < 7) return `${diffDays}d ago`;
+
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return '';
+    }
+  };
+
   // ============================================
   // Badge color mapping
   // ============================================
@@ -313,6 +340,18 @@ const TimelineEntry = ({
               <Icon className="h-3 w-3 mr-1 inline" />
               {config.label}
             </span>
+            {/* Edited indicator with last edited time */}
+            {entry.has_edits && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <Pencil className="h-2.5 w-2.5" />
+                Edited
+                {entry.updated_at && (
+                  <span className="text-amber-500/70 ml-1">
+                    · {formatRelativeTime(entry.updated_at)}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
           {entry.author && (
             <span className="font-mono text-xs text-muted-foreground">
@@ -358,6 +397,7 @@ const TimelineEntry = ({
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         entry={entry}
+        onNoteUpdated={onNoteUpdated}
       />
 
       {/* Copy note modal */}

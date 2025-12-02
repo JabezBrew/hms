@@ -388,6 +388,7 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+
 # Celery Beat Schedule
 CELERY_BEAT_SCHEDULE = {
     'generate-slots-weekly': {

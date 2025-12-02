@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import NoteTemplate, NoteEntry, Prescription
+from .models import NoteTemplate, NoteEntry, NoteEntryVersion, Prescription
 from ..users.models import PractitionerProfile, PatientProfile
 
 
@@ -137,6 +137,8 @@ class NoteEntrySerializer(serializers.ModelSerializer):
     patient_name = serializers.SerializerMethodField()
     copied_from_id = serializers.UUIDField(source='copied_from.id', read_only=True)
     copied_from_date = serializers.DateTimeField(source='copied_from.created_at', read_only=True)
+    version_count = serializers.SerializerMethodField()
+    has_edits = serializers.SerializerMethodField()
 
     class Meta:
         model = NoteEntry
@@ -144,10 +146,12 @@ class NoteEntrySerializer(serializers.ModelSerializer):
             'id', 'template', 'template_title', 'patient', 'patient_name',
             'encounter', 'practitioner', 'practitioner_name', 'composition_fhir_id',
             'data', 'copied_from', 'copied_from_id', 'copied_from_date',
+            'version_count', 'has_edits',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'composition_fhir_id', 'copied_from_id', 'copied_from_date',
+            'version_count', 'has_edits',
             'created_at', 'updated_at'
         ]
 
@@ -164,6 +168,14 @@ class NoteEntrySerializer(serializers.ModelSerializer):
             return obj.practitioner.staff.user.get_full_name() or obj.practitioner.staff.user.username
         return None
 
+    def get_version_count(self, obj):
+        """Return the number of versions (edits) for this note."""
+        return obj.versions.count()
+
+    def get_has_edits(self, obj):
+        """Return whether this note has been edited."""
+        return obj.versions.exists()
+
     def validate(self, data):
         # Validate that the template is active
         if not data['template'].is_active:
@@ -173,15 +185,33 @@ class NoteEntrySerializer(serializers.ModelSerializer):
         template_structure = data['template'].structure
         entry_data = data['data']
 
-        # Basic validation - check that all required sections are present
-        template_sections = [section['section'] for section in template_structure]
+        # Handle both list and dict structure formats
+        if isinstance(template_structure, dict):
+            sections_list = template_structure.get('sections', [])
+        elif isinstance(template_structure, list):
+            sections_list = template_structure
+        else:
+            sections_list = []
+
+        # Extract section names - handle both 'name' and 'section' keys
+        template_sections = []
+        for section in sections_list:
+            section_name = section.get('name') or section.get('section', '')
+            if section_name:
+                template_sections.append(section_name)
+
         entry_sections = entry_data.keys()
 
-        missing_sections = set(template_sections) - set(entry_sections)
-        if missing_sections:
-            raise serializers.ValidationError(f"Missing data for sections: {', '.join(missing_sections)}")
+        # Only validate required sections
+        required_sections = []
+        for section in sections_list:
+            section_name = section.get('name') or section.get('section', '')
+            if section_name and section.get('required', False):
+                required_sections.append(section_name)
 
-        # Additional validation could be added here based on section types
+        missing_sections = set(required_sections) - set(entry_sections)
+        if missing_sections:
+            raise serializers.ValidationError(f"Missing data for required sections: {', '.join(missing_sections)}")
 
         return data
 
@@ -217,6 +247,44 @@ class NoteEntryCloneSerializer(serializers.Serializer):
                     unique_sections.append(section)
             return unique_sections
         return value
+
+
+class NoteEntryVersionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for reading NoteEntryVersion data.
+    Provides version history information for clinical notes.
+    """
+    edited_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoteEntryVersion
+        fields = [
+            'id', 'note_entry', 'version_number', 'data',
+            'edited_by', 'edited_by_name', 'edit_reason', 'created_at'
+        ]
+        read_only_fields = ['id', 'note_entry', 'version_number', 'data', 'created_at']
+
+    def get_edited_by_name(self, obj):
+        if obj.edited_by:
+            return obj.edited_by.get_full_name() or obj.edited_by.email
+        return 'Unknown'
+
+
+class NoteEntryUpdateSerializer(serializers.Serializer):
+    """
+    Input serializer for updating a note entry with version tracking.
+    """
+    data = serializers.JSONField(
+        required=True,
+        help_text="Updated note data"
+    )
+    edit_reason = serializers.CharField(
+        required=False,
+        max_length=500,
+        allow_blank=True,
+        default='',
+        help_text="Optional reason for the edit"
+    )
 
 
 class PrescriptionSerializer(serializers.ModelSerializer):

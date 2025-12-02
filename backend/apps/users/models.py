@@ -257,3 +257,33 @@ class PasswordResetToken(models.Model):
 
     def __str__(self):
         return f"Password reset token for {self.user.email} ({'used' if self.is_used else 'active'})"
+
+
+class UserPatientList(models.Model):
+    """
+    Personal patient list for clinicians.
+    Allows users to maintain a quick-access list of patients they are actively managing.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='patient_lists')
+    patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='in_user_lists')
+
+    # Optional organization
+    notes = models.CharField(max_length=255, blank=True)
+    is_pinned = models.BooleanField(default=False)
+
+    # Timestamps
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'patient')
+        ordering = ['-is_pinned', '-added_at']
+        indexes = [
+            models.Index(fields=['user', '-added_at']),
+            models.Index(fields=['user', '-is_pinned', '-added_at']),
+        ]
+        verbose_name = 'User Patient List'
+        verbose_name_plural = 'User Patient Lists'
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.patient.medical_record_number}"
