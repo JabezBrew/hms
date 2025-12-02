@@ -21,6 +21,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { OfflineIndicator } from './components/OfflineIndicator'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
 import { CriticalAlertsMonitor } from './components/dashboard'
+import { PWAPrompt } from './components/pwa'
 
 // Lazy load page components for code splitting
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
@@ -601,6 +602,7 @@ function App() {
                     <Toaster />
                     <OfflineIndicator />
                     <SessionTimeoutWarning />
+                    <PWAPrompt />
                   </WorkflowProvider>
                 </ViewModeProvider>
               </BreadcrumbProvider>

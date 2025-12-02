@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#1c1917"/>
+
+  <!-- Medical Cross -->
+  <path d="M192 144H320V192H368V320H320V368H192V320H144V192H192V144Z" fill="#f59e0b"/>
+
+  <!-- HMS Text -->
+  <text x="256" y="448" text-anchor="middle" fill="#fafaf9" font-family="system-ui, sans-serif" font-weight="700" font-size="72">HMS</text>
+</svg>
