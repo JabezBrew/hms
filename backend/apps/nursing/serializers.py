@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from .models import VitalSigns, NursingTask, NursingAlert, MedicationAdministration, ShiftHandoff
+from .models import (
+    VitalSigns, NursingTask, NursingAlert, MedicationAdministration,
+    ShiftHandoff, TreatmentSheetEntry, SupplyRequest
+)
 from ..users.serializers import PatientProfileSerializer, PractitionerProfileSerializer, UserSerializer
 
 
@@ -502,3 +505,240 @@ class PatientMonitoringListSerializer(serializers.Serializer):
     def get_medications_due_count(self, obj):
         meds = obj.get('medications_due') if isinstance(obj, dict) else getattr(obj, 'medications_due', [])
         return len(meds) if meds else 0
+
+
+# ============================================================================
+# Treatment Sheet Serializers
+# ============================================================================
+
+
+class TreatmentSheetEntrySerializer(serializers.ModelSerializer):
+    """
+    Full serializer for TreatmentSheetEntry with nested relationships.
+    """
+    patient_details = PatientProfileSerializer(source='patient', read_only=True)
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+
+    ordered_by_details = PractitionerProfileSerializer(source='ordered_by', read_only=True)
+    ordered_by_name = serializers.SerializerMethodField()
+
+    discontinued_by_details = PractitionerProfileSerializer(source='discontinued_by', read_only=True)
+
+    # Supply tracking computed fields
+    supply_remaining = serializers.ReadOnlyField()
+    days_of_supply_remaining = serializers.ReadOnlyField()
+
+    # Aggregate counts
+    pending_supply_requests_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TreatmentSheetEntry
+        fields = [
+            'id', 'patient', 'patient_details', 'patient_name', 'patient_mrn',
+            'admission', 'encounter',
+            'medication_name', 'dosage', 'route', 'frequency',
+            'start_datetime', 'duration_days', 'end_datetime',
+            'status', 'ordered_by', 'ordered_by_details', 'ordered_by_name',
+            'total_doses_ordered', 'total_doses_dispensed', 'total_doses_administered',
+            'supply_remaining', 'days_of_supply_remaining',
+            'prescription', 'discontinued_at', 'discontinued_by',
+            'discontinued_by_details', 'discontinuation_reason',
+            'pending_supply_requests_count',
+            'created_at', 'updated_at', 'created_by'
+        ]
+        read_only_fields = [
+            'id', 'total_doses_ordered', 'total_doses_dispensed',
+            'total_doses_administered', 'created_at', 'updated_at'
+        ]
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return 'Unknown Patient'
+
+    def get_patient_mrn(self, obj):
+        if obj.patient:
+            return obj.patient.medical_record_number
+        return None
+
+    def get_ordered_by_name(self, obj):
+        if obj.ordered_by and obj.ordered_by.staff and obj.ordered_by.staff.user:
+            return f"Dr. {obj.ordered_by.staff.user.get_full_name()}"
+        return 'Unknown'
+
+    def get_pending_supply_requests_count(self, obj):
+        return obj.supply_requests.filter(status='pending').count()
+
+
+class TreatmentSheetEntryListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for list views (following CLAUDE.md API optimization).
+    """
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+    ordered_by_name = serializers.SerializerMethodField()
+    supply_remaining = serializers.ReadOnlyField()
+    days_of_supply_remaining = serializers.ReadOnlyField()
+
+    class Meta:
+        model = TreatmentSheetEntry
+        fields = [
+            'id', 'patient', 'patient_name', 'patient_mrn',
+            'admission', 'medication_name', 'dosage', 'route', 'frequency',
+            'start_datetime', 'status', 'ordered_by_name',
+            'total_doses_ordered', 'total_doses_dispensed', 'total_doses_administered',
+            'supply_remaining', 'days_of_supply_remaining',
+            'created_at'
+        ]
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return 'Unknown Patient'
+
+    def get_patient_mrn(self, obj):
+        if obj.patient:
+            return obj.patient.medical_record_number
+        return None
+
+    def get_ordered_by_name(self, obj):
+        if obj.ordered_by and obj.ordered_by.staff and obj.ordered_by.staff.user:
+            return f"Dr. {obj.ordered_by.staff.user.get_full_name()}"
+        return 'Unknown'
+
+
+class TreatmentSheetEntryCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating treatment sheet entries.
+    """
+    class Meta:
+        model = TreatmentSheetEntry
+        fields = [
+            'patient', 'admission', 'encounter',
+            'medication_name', 'dosage', 'route', 'frequency',
+            'start_datetime', 'duration_days', 'end_datetime',
+            'ordered_by', 'prescription'
+        ]
+
+    def validate(self, data):
+        # Ensure admission belongs to patient
+        if data['admission'].patient != data['patient']:
+            raise serializers.ValidationError("Admission must belong to the specified patient.")
+
+        # Ensure end_datetime is after start_datetime
+        if data.get('end_datetime') and data['end_datetime'] <= data['start_datetime']:
+            raise serializers.ValidationError("End datetime must be after start datetime.")
+
+        return data
+
+
+class SupplyRequestSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for SupplyRequest with nested relationships.
+    """
+    treatment_entry_details = TreatmentSheetEntrySerializer(source='treatment_entry', read_only=True)
+    medication_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+    ward_name = serializers.SerializerMethodField()
+
+    requested_by_details = PractitionerProfileSerializer(source='requested_by', read_only=True)
+    requested_by_name = serializers.SerializerMethodField()
+
+    dispensed_by_details = UserSerializer(source='dispensed_by', read_only=True)
+
+    class Meta:
+        model = SupplyRequest
+        fields = [
+            'id', 'treatment_entry', 'treatment_entry_details',
+            'medication_name', 'patient_name', 'patient_mrn', 'ward_name',
+            'quantity_requested', 'quantity_dispensed', 'status',
+            'requested_by', 'requested_by_details', 'requested_by_name', 'requested_at',
+            'dispensed_by', 'dispensed_by_details', 'dispensed_at',
+            'rejection_reason', 'notes'
+        ]
+        read_only_fields = ['id', 'requested_at', 'dispensed_at']
+
+    def get_medication_name(self, obj):
+        return obj.treatment_entry.medication_name
+
+    def get_patient_name(self, obj):
+        if obj.treatment_entry.patient and obj.treatment_entry.patient.user:
+            return obj.treatment_entry.patient.user.get_full_name()
+        return 'Unknown Patient'
+
+    def get_patient_mrn(self, obj):
+        if obj.treatment_entry.patient:
+            return obj.treatment_entry.patient.medical_record_number
+        return None
+
+    def get_ward_name(self, obj):
+        if obj.treatment_entry.admission and obj.treatment_entry.admission.bed:
+            return obj.treatment_entry.admission.bed.ward.name
+        return 'Unknown'
+
+    def get_requested_by_name(self, obj):
+        if obj.requested_by and obj.requested_by.staff and obj.requested_by.staff.user:
+            return obj.requested_by.staff.user.get_full_name()
+        return 'Unknown'
+
+
+class SupplyRequestListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for supply request lists (API optimization).
+    """
+    medication_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+    ward_name = serializers.SerializerMethodField()
+    requested_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplyRequest
+        fields = [
+            'id', 'treatment_entry', 'medication_name',
+            'patient_name', 'patient_mrn', 'ward_name',
+            'quantity_requested', 'quantity_dispensed', 'status',
+            'requested_by_name', 'requested_at'
+        ]
+
+    def get_medication_name(self, obj):
+        return obj.treatment_entry.medication_name
+
+    def get_patient_name(self, obj):
+        if obj.treatment_entry.patient and obj.treatment_entry.patient.user:
+            return obj.treatment_entry.patient.user.get_full_name()
+        return 'Unknown Patient'
+
+    def get_patient_mrn(self, obj):
+        if obj.treatment_entry.patient:
+            return obj.treatment_entry.patient.medical_record_number
+        return None
+
+    def get_ward_name(self, obj):
+        if obj.treatment_entry.admission and obj.treatment_entry.admission.bed:
+            return obj.treatment_entry.admission.bed.ward.name
+        return 'Unknown'
+
+    def get_requested_by_name(self, obj):
+        if obj.requested_by and obj.requested_by.staff and obj.requested_by.staff.user:
+            return obj.requested_by.staff.user.get_full_name()
+        return 'Unknown'
+
+
+class SupplyRequestCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating supply requests.
+    """
+    class Meta:
+        model = SupplyRequest
+        fields = [
+            'treatment_entry', 'quantity_requested',
+            'requested_by', 'notes'
+        ]
+
+    def validate_quantity_requested(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Quantity requested must be greater than 0.")
+        return value

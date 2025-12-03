@@ -414,6 +414,21 @@ const PatientChroniclePage = () => {
     navigate(`/appointments/create?patient=${id}`);
   }, [navigate, id]);
 
+  // View Treatment Sheet handler (for admitted patients)
+  const handleViewTreatmentSheet = useCallback(() => {
+    // Get admission ID from active encounter or patient data
+    const admissionId = activeEncounter?.admission_id ||
+                        activeEncounter?.id || // Use encounter ID as fallback
+                        patient?.local_data?.current_admission_id ||
+                        patient?.current_admission_id;
+
+    if (admissionId) {
+      navigate(`/nursing/treatment-sheet?admission=${admissionId}`);
+    } else {
+      toast.error('No active admission found for this patient');
+    }
+  }, [navigate, activeEncounter, patient]);
+
   // ============================================
   // Loading state
   // ============================================
@@ -483,6 +498,8 @@ const PatientChroniclePage = () => {
         onOrderLabs={handleOrderLabs}
         onRequestConsult={handleRequestConsult}
         onScheduleFollowUp={handleScheduleFollowUp}
+        onViewTreatmentSheet={handleViewTreatmentSheet}
+        activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
 
       {/* Main Content: Sidebar + Timeline */}

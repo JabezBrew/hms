@@ -1,0 +1,541 @@
+/**
+ * MSW request handlers for API mocking.
+ *
+ * These handlers intercept API requests and return mock responses.
+ * Organized by API domain (auth, patients, nursing, etc.)
+ */
+import { http, HttpResponse } from 'msw'
+import { faker } from '@faker-js/faker'
+
+const API_BASE = '/api'
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Generate a paginated response.
+ */
+function paginatedResponse(results, total = null) {
+  const count = total ?? results.length
+  return {
+    count,
+    next: null,
+    previous: null,
+    results,
+  }
+}
+
+/**
+ * Generate a mock UUID.
+ */
+function mockUUID() {
+  return faker.string.uuid()
+}
+
+// =============================================================================
+// Mock Data Generators
+// =============================================================================
+
+function generateMockUser(overrides = {}) {
+  return {
+    id: mockUUID(),
+    email: faker.internet.email(),
+    username: faker.internet.userName(),
+    first_name: faker.person.firstName(),
+    last_name: faker.person.lastName(),
+    user_type: 'doctor',
+    phone_number: faker.phone.number(),
+    is_active: true,
+    ...overrides,
+  }
+}
+
+function generateMockPatient(overrides = {}) {
+  return {
+    id: mockUUID(),
+    user: generateMockUser({ user_type: 'patient' }),
+    medical_record_number: `MRN${faker.string.numeric(6)}`,
+    blood_group: faker.helpers.arrayElement(['A+', 'B+', 'O+', 'AB+']),
+    allergies: faker.helpers.maybe(() => 'Penicillin', { probability: 0.3 }),
+    emergency_contact_name: faker.person.fullName(),
+    emergency_contact_phone: faker.phone.number(),
+    ...overrides,
+  }
+}
+
+function generateMockVitalSigns(overrides = {}) {
+  return {
+    id: mockUUID(),
+    temperature: faker.number.float({ min: 36.5, max: 37.5, fractionDigits: 1 }),
+    heart_rate: faker.number.int({ min: 60, max: 100 }),
+    blood_pressure_systolic: faker.number.int({ min: 110, max: 130 }),
+    blood_pressure_diastolic: faker.number.int({ min: 70, max: 85 }),
+    respiratory_rate: faker.number.int({ min: 14, max: 18 }),
+    oxygen_saturation: faker.number.int({ min: 96, max: 100 }),
+    pain_level: faker.number.int({ min: 0, max: 3 }),
+    recorded_at: new Date().toISOString(),
+    is_critical: false,
+    ...overrides,
+  }
+}
+
+function generateMockWard(overrides = {}) {
+  return {
+    id: mockUUID(),
+    name: `${faker.word.adjective()} Ward`,
+    ward_type: 'general',
+    is_active: true,
+    total_beds: 20,
+    available_beds_count: 8,
+    ...overrides,
+  }
+}
+
+function generateMockNursingTask(overrides = {}) {
+  return {
+    id: mockUUID(),
+    task_type: 'medication',
+    priority: 'medium',
+    status: 'pending',
+    description: faker.lorem.sentence(),
+    due_time: faker.date.future().toISOString(),
+    ...overrides,
+  }
+}
+
+// =============================================================================
+// Authentication Handlers
+// =============================================================================
+
+export const authHandlers = [
+  // Login
+  http.post(`${API_BASE}/auth/login/`, async ({ request }) => {
+    const body = await request.json()
+
+    // Simulate validation
+    if (!body.email || !body.password) {
+      return HttpResponse.json(
+        { detail: 'Email and password are required' },
+        { status: 400 }
+      )
+    }
+
+    // Simulate invalid credentials
+    if (body.password === 'wrongpassword') {
+      return HttpResponse.json(
+        { detail: 'Invalid credentials' },
+        { status: 401 }
+      )
+    }
+
+    return HttpResponse.json({
+      access: 'mock-access-token',
+      refresh: 'mock-refresh-token',
+      user: generateMockUser({ email: body.email }),
+    })
+  }),
+
+  // Logout
+  http.post(`${API_BASE}/auth/logout/`, () => {
+    return HttpResponse.json({ detail: 'Successfully logged out' })
+  }),
+
+  // Token refresh
+  http.post(`${API_BASE}/auth/token/refresh/`, () => {
+    return HttpResponse.json({
+      access: 'new-mock-access-token',
+    })
+  }),
+
+  // Current user
+  http.get(`${API_BASE}/auth/me/`, () => {
+    return HttpResponse.json(generateMockUser())
+  }),
+
+  // Password reset request
+  http.post(`${API_BASE}/auth/password-reset/`, async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({
+      detail: `Password reset email sent to ${body.email}`,
+    })
+  }),
+
+  // Password reset confirm
+  http.post(`${API_BASE}/auth/password-reset/confirm/`, () => {
+    return HttpResponse.json({
+      detail: 'Password has been reset successfully',
+    })
+  }),
+]
+
+// =============================================================================
+// Patient Handlers
+// =============================================================================
+
+const mockPatients = Array.from({ length: 10 }, () => generateMockPatient())
+
+export const patientHandlers = [
+  // List patients
+  http.get(`${API_BASE}/patients/`, ({ request }) => {
+    const url = new URL(request.url)
+    const search = url.searchParams.get('search')
+    const page = parseInt(url.searchParams.get('page') || '1', 10)
+    const pageSize = parseInt(url.searchParams.get('page_size') || '10', 10)
+
+    let filtered = mockPatients
+    if (search) {
+      const searchLower = search.toLowerCase()
+      filtered = mockPatients.filter(
+        (p) =>
+          p.user.first_name.toLowerCase().includes(searchLower) ||
+          p.user.last_name.toLowerCase().includes(searchLower) ||
+          p.medical_record_number.toLowerCase().includes(searchLower)
+      )
+    }
+
+    const start = (page - 1) * pageSize
+    const results = filtered.slice(start, start + pageSize)
+
+    return HttpResponse.json(paginatedResponse(results, filtered.length))
+  }),
+
+  // Get patient detail
+  http.get(`${API_BASE}/patients/:id/`, ({ params }) => {
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json(patient)
+  }),
+
+  // Create patient
+  http.post(`${API_BASE}/patients/`, async ({ request }) => {
+    const body = await request.json()
+    const newPatient = generateMockPatient({
+      user: {
+        ...generateMockUser({ user_type: 'patient' }),
+        first_name: body.first_name,
+        last_name: body.last_name,
+        email: body.email,
+      },
+      medical_record_number: `MRN${faker.string.numeric(6)}`,
+    })
+    return HttpResponse.json(newPatient, { status: 201 })
+  }),
+
+  // Update patient
+  http.patch(`${API_BASE}/patients/:id/`, async ({ params, request }) => {
+    const body = await request.json()
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json({ ...patient, ...body })
+  }),
+
+  // Search patients
+  http.get(`${API_BASE}/patients/search/`, ({ request }) => {
+    const url = new URL(request.url)
+    const query = url.searchParams.get('q') || ''
+    const queryLower = query.toLowerCase()
+
+    const results = mockPatients.filter(
+      (p) =>
+        p.user.first_name.toLowerCase().includes(queryLower) ||
+        p.user.last_name.toLowerCase().includes(queryLower) ||
+        p.medical_record_number.toLowerCase().includes(queryLower)
+    )
+
+    return HttpResponse.json(results.slice(0, 10))
+  }),
+]
+
+// =============================================================================
+// Nursing Handlers
+// =============================================================================
+
+export const nursingHandlers = [
+  // List vital signs
+  http.get(`${API_BASE}/nursing/vital-signs/`, ({ request }) => {
+    const url = new URL(request.url)
+    const patientId = url.searchParams.get('patient')
+
+    const vitals = Array.from({ length: 5 }, () =>
+      generateMockVitalSigns({ patient: patientId || mockUUID() })
+    )
+
+    return HttpResponse.json(paginatedResponse(vitals))
+  }),
+
+  // Create vital signs
+  http.post(`${API_BASE}/nursing/vital-signs/`, async ({ request }) => {
+    const body = await request.json()
+    const newVitals = generateMockVitalSigns(body)
+
+    // Check for critical values
+    if (
+      body.temperature > 39 ||
+      body.temperature < 36 ||
+      body.heart_rate > 120 ||
+      body.heart_rate < 50 ||
+      body.oxygen_saturation < 92
+    ) {
+      newVitals.is_critical = true
+    }
+
+    return HttpResponse.json(newVitals, { status: 201 })
+  }),
+
+  // List nursing tasks
+  http.get(`${API_BASE}/nursing/tasks/`, ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+
+    let tasks = Array.from({ length: 8 }, () => generateMockNursingTask())
+    if (status) {
+      tasks = tasks.filter((t) => t.status === status)
+    }
+
+    return HttpResponse.json(paginatedResponse(tasks))
+  }),
+
+  // Update nursing task
+  http.patch(`${API_BASE}/nursing/tasks/:id/`, async ({ params, request }) => {
+    const body = await request.json()
+    return HttpResponse.json({
+      id: params.id,
+      ...generateMockNursingTask(),
+      ...body,
+    })
+  }),
+
+  // Complete nursing task
+  http.post(`${API_BASE}/nursing/tasks/:id/complete/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      ...generateMockNursingTask({ status: 'completed' }),
+      completed_at: new Date().toISOString(),
+    })
+  }),
+
+  // List nursing alerts
+  http.get(`${API_BASE}/nursing/alerts/`, () => {
+    const alerts = Array.from({ length: 3 }, () => ({
+      id: mockUUID(),
+      patient: mockUUID(),
+      alert_type: faker.helpers.arrayElement(['vital_signs', 'medication_due', 'task_overdue']),
+      severity: faker.helpers.arrayElement(['low', 'medium', 'high']),
+      message: faker.lorem.sentence(),
+      is_acknowledged: false,
+      created_at: faker.date.recent().toISOString(),
+    }))
+
+    return HttpResponse.json(paginatedResponse(alerts))
+  }),
+
+  // Acknowledge alert
+  http.post(`${API_BASE}/nursing/alerts/:id/acknowledge/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      is_acknowledged: true,
+      acknowledged_at: new Date().toISOString(),
+    })
+  }),
+
+  // MAR entries
+  http.get(`${API_BASE}/nursing/mar/`, ({ request }) => {
+    const url = new URL(request.url)
+    const patientId = url.searchParams.get('patient')
+
+    const entries = Array.from({ length: 6 }, () => ({
+      id: mockUUID(),
+      patient: patientId || mockUUID(),
+      medication_name: faker.helpers.arrayElement(['Amoxicillin', 'Metformin', 'Lisinopril']),
+      dosage: faker.helpers.arrayElement(['500mg', '250mg', '10mg']),
+      scheduled_time: faker.date.recent().toISOString(),
+      status: faker.helpers.arrayElement(['scheduled', 'administered', 'missed']),
+    }))
+
+    return HttpResponse.json(paginatedResponse(entries))
+  }),
+
+  // Administer medication
+  http.post(`${API_BASE}/nursing/mar/:id/administer/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      status: 'administered',
+      administered_at: new Date().toISOString(),
+    })
+  }),
+]
+
+// =============================================================================
+// Ward Handlers
+// =============================================================================
+
+export const wardHandlers = [
+  // List wards
+  http.get(`${API_BASE}/wards/`, () => {
+    const wards = Array.from({ length: 5 }, () => generateMockWard())
+    return HttpResponse.json(paginatedResponse(wards))
+  }),
+
+  // Get ward detail
+  http.get(`${API_BASE}/wards/:id/`, ({ params }) => {
+    return HttpResponse.json(generateMockWard({ id: params.id }))
+  }),
+
+  // Ward beds
+  http.get(`${API_BASE}/wards/:id/beds/`, ({ params }) => {
+    const beds = Array.from({ length: 10 }, (_, i) => ({
+      id: mockUUID(),
+      ward: params.id,
+      bed_number: `B-${i + 1}`,
+      bed_type: 'standard',
+      status: faker.helpers.arrayElement(['available', 'occupied', 'reserved']),
+    }))
+    return HttpResponse.json(beds)
+  }),
+]
+
+// =============================================================================
+// Appointment Handlers
+// =============================================================================
+
+export const appointmentHandlers = [
+  // List appointments
+  http.get(`${API_BASE}/appointments/`, ({ request }) => {
+    const url = new URL(request.url)
+    const date = url.searchParams.get('date')
+
+    const appointments = Array.from({ length: 8 }, () => ({
+      id: mockUUID(),
+      patient: generateMockPatient(),
+      practitioner: generateMockUser({ user_type: 'doctor' }),
+      appointment_type: 'consultation',
+      status: faker.helpers.arrayElement(['scheduled', 'confirmed', 'completed']),
+      start_time: faker.date.future().toISOString(),
+      end_time: faker.date.future().toISOString(),
+      reason: faker.lorem.sentence(),
+    }))
+
+    return HttpResponse.json(paginatedResponse(appointments))
+  }),
+
+  // Create appointment
+  http.post(`${API_BASE}/appointments/`, async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json(
+      {
+        id: mockUUID(),
+        ...body,
+        status: 'scheduled',
+      },
+      { status: 201 }
+    )
+  }),
+
+  // Cancel appointment
+  http.post(`${API_BASE}/appointments/:id/cancel/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      status: 'cancelled',
+    })
+  }),
+]
+
+// =============================================================================
+// Dashboard Handlers
+// =============================================================================
+
+export const dashboardHandlers = [
+  // Nurse dashboard
+  http.get(`${API_BASE}/dashboards/nurse/`, () => {
+    return HttpResponse.json({
+      shift_patients: Array.from({ length: 5 }, () => generateMockPatient()),
+      overdue_medications: faker.number.int({ min: 0, max: 5 }),
+      critical_alerts: faker.number.int({ min: 0, max: 3 }),
+      pending_tasks: faker.number.int({ min: 0, max: 10 }),
+    })
+  }),
+
+  // Doctor dashboard
+  http.get(`${API_BASE}/dashboards/doctor/`, () => {
+    return HttpResponse.json({
+      todays_appointments: faker.number.int({ min: 0, max: 15 }),
+      pending_results: faker.number.int({ min: 0, max: 8 }),
+      active_patients: faker.number.int({ min: 0, max: 20 }),
+    })
+  }),
+]
+
+// =============================================================================
+// Workflow Handlers
+// =============================================================================
+
+export const workflowHandlers = [
+  // Start workflow
+  http.post(`${API_BASE}/workflows/:type/start/`, async ({ params, request }) => {
+    const body = await request.json()
+    return HttpResponse.json(
+      {
+        id: mockUUID(),
+        workflow_type: params.type,
+        status: 'in_progress',
+        current_step: 1,
+        context_data: body,
+        created_at: new Date().toISOString(),
+      },
+      { status: 201 }
+    )
+  }),
+
+  // Get workflow state
+  http.get(`${API_BASE}/workflows/:type/:id/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      workflow_type: params.type,
+      status: 'in_progress',
+      current_step: 1,
+      steps_completed: [],
+      context_data: {},
+    })
+  }),
+
+  // Update workflow step
+  http.patch(`${API_BASE}/workflows/:type/:id/step/`, async ({ params, request }) => {
+    const body = await request.json()
+    return HttpResponse.json({
+      id: params.id,
+      workflow_type: params.type,
+      status: 'in_progress',
+      current_step: body.step || 2,
+      context_data: body.data || {},
+    })
+  }),
+
+  // Complete workflow
+  http.post(`${API_BASE}/workflows/:type/:id/complete/`, ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      workflow_type: params.type,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    })
+  }),
+]
+
+// =============================================================================
+// Combined Handlers Export
+// =============================================================================
+
+export const handlers = [
+  ...authHandlers,
+  ...patientHandlers,
+  ...nursingHandlers,
+  ...wardHandlers,
+  ...appointmentHandlers,
+  ...dashboardHandlers,
+  ...workflowHandlers,
+]

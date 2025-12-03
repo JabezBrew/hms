@@ -8,7 +8,10 @@ from django.utils import timezone
 from datetime import timedelta
 import logging
 
-from .models import VitalSigns, NursingTask, NursingAlert, MedicationAdministration, ShiftHandoff
+from .models import (
+    VitalSigns, NursingTask, NursingAlert, MedicationAdministration,
+    ShiftHandoff, TreatmentSheetEntry, SupplyRequest
+)
 from .serializers import (
     VitalSignsSerializer, VitalSignsCreateSerializer, VitalSignsListSerializer,
     NursingTaskSerializer, NursingTaskCreateSerializer, NursingTaskUpdateSerializer,
@@ -18,7 +21,10 @@ from .serializers import (
     MedicationAdministrationUpdateSerializer, MedicationAdministrationListSerializer,
     MedicationDispensingListSerializer,
     ShiftHandoffSerializer, ShiftHandoffListSerializer,
-    PatientMonitoringSerializer, PatientMonitoringListSerializer
+    PatientMonitoringSerializer, PatientMonitoringListSerializer,
+    TreatmentSheetEntrySerializer, TreatmentSheetEntryListSerializer,
+    TreatmentSheetEntryCreateSerializer,
+    SupplyRequestSerializer, SupplyRequestListSerializer, SupplyRequestCreateSerializer
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
@@ -566,6 +572,343 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             }
         })
 
+    @action(detail=False, methods=['post'], url_path='create-and-administer')
+    def create_and_administer(self, request):
+        """
+        Create a new MAR entry and immediately mark it as administered.
+        Used when clicking on a dose slot that doesn't have a MAR entry yet.
+
+        Required fields:
+        - prescription_id: UUID of prescription (required - patient is derived from this)
+        - scheduled_time: ISO datetime string
+
+        Optional:
+        - notes: administration notes
+        """
+        from apps.clinical_notes.models import Prescription
+
+        prescription_id = request.data.get('prescription_id')
+        scheduled_time_str = request.data.get('scheduled_time')
+
+        if not prescription_id:
+            return Response(
+                {'error': 'prescription_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not scheduled_time_str:
+            return Response(
+                {'error': 'scheduled_time is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get prescription and patient from it
+        try:
+            prescription = Prescription.objects.select_related('patient', 'prescribed_by').get(id=prescription_id)
+            patient = prescription.patient
+            medication_name = prescription.medication_name
+            dosage = prescription.dosage
+            route = prescription.route
+            frequency = prescription.frequency
+            prescribed_by = prescription.prescribed_by
+        except Prescription.DoesNotExist:
+            return Response(
+                {'error': 'Prescription not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Parse scheduled time
+        try:
+            scheduled_time = timezone.datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
+            if timezone.is_naive(scheduled_time):
+                scheduled_time = timezone.make_aware(scheduled_time)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid scheduled_time format'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get practitioner profile
+        practitioner = getattr(request.user, 'practitioner_profile', None)
+
+        # Create and immediately administer
+        med_admin = MedicationAdministration.objects.create(
+            patient=patient,
+            medication_name=medication_name,
+            dosage=dosage,
+            route=route,
+            frequency=frequency,
+            scheduled_time=scheduled_time,
+            status='administered',
+            administered_time=timezone.now(),
+            administered_by=practitioner,
+            prescribed_by=prescribed_by,
+            prescription=prescription,
+            created_by=request.user,
+            administration_notes=request.data.get('notes', '')
+        )
+
+        return Response(MedicationAdministrationSerializer(med_admin).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='mar-grid')
+    def mar_grid(self, request):
+        """
+        Get MAR grid data for a patient/admission over a date range.
+        Returns medications grouped with time slots for each day.
+
+        Query params:
+        - admission_id: UUID of admission (required)
+        - start_date: Start date (default: today)
+        - days: Number of days to show (default: 7)
+        """
+        from apps.wards.models import Admission, Encounter
+        from apps.clinical_notes.models import Prescription
+        from datetime import datetime, time
+        from collections import defaultdict
+
+        admission_id = request.query_params.get('admission_id')
+        if not admission_id:
+            return Response(
+                {'error': 'admission_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Find admission (try admission ID first, then encounter ID)
+        admission = None
+        try:
+            admission = Admission.objects.select_related('patient', 'patient__user').get(id=admission_id)
+        except Admission.DoesNotExist:
+            try:
+                encounter = Encounter.objects.select_related('admission', 'patient').get(id=admission_id)
+                if encounter.admission:
+                    admission = encounter.admission
+                elif encounter.patient:
+                    admission = Admission.objects.filter(
+                        patient=encounter.patient,
+                        status='admitted'
+                    ).select_related('patient', 'patient__user').first()
+            except Encounter.DoesNotExist:
+                pass
+
+        if not admission:
+            return Response(
+                {'error': 'Admission not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Parse date range
+        start_date_str = request.query_params.get('start_date')
+        days = int(request.query_params.get('days', 7))
+
+        if start_date_str:
+            try:
+                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00')).date()
+            except ValueError:
+                start_date = timezone.now().date()
+        else:
+            start_date = timezone.now().date()
+
+        end_date = start_date + timedelta(days=days - 1)
+
+        # Time slots (4 hours apart, 12-hour format)
+        TIME_SLOTS = [
+            ('12 AM', time(0, 0)),
+            ('4 AM', time(4, 0)),
+            ('8 AM', time(8, 0)),
+            ('12 PM', time(12, 0)),
+            ('4 PM', time(16, 0)),
+            ('8 PM', time(20, 0)),
+        ]
+
+        # Get all encounters for this admission
+        admission_encounters = Encounter.objects.filter(
+            admission=admission
+        ).values_list('id', flat=True)
+
+        # Get active prescriptions for this admission
+        prescriptions = Prescription.objects.filter(
+            patient=admission.patient,
+            encounter_id__in=admission_encounters,
+            status='active'
+        ).select_related('prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user')
+
+        # Get all MAR entries for this patient in the date range
+        start_datetime = timezone.make_aware(datetime.combine(start_date, time.min))
+        end_datetime = timezone.make_aware(datetime.combine(end_date, time.max))
+
+        mar_entries = MedicationAdministration.objects.filter(
+            patient=admission.patient,
+            scheduled_time__gte=start_datetime,
+            scheduled_time__lte=end_datetime
+        ).select_related('administered_by', 'administered_by__staff', 'administered_by__staff__user')
+
+        # Group MAR entries by medication name -> date -> time slot
+        mar_by_med = defaultdict(lambda: defaultdict(dict))
+        for entry in mar_entries:
+            med_key = entry.medication_name.lower().strip()
+            entry_date = entry.scheduled_time.date()
+            entry_time = entry.scheduled_time.time()
+
+            # Find closest time slot
+            closest_slot = '12 AM'
+            for slot_label, slot_time in TIME_SLOTS:
+                if entry_time >= slot_time:
+                    closest_slot = slot_label
+
+            administered_by_name = None
+            if entry.administered_by and entry.administered_by.staff and entry.administered_by.staff.user:
+                u = entry.administered_by.staff.user
+                administered_by_name = f"{u.first_name} {u.last_name}".strip()
+
+            mar_by_med[med_key][str(entry_date)][closest_slot] = {
+                'id': str(entry.id),
+                'status': entry.status,
+                'scheduled_time': entry.scheduled_time.isoformat(),
+                'administered_time': entry.administered_time.isoformat() if entry.administered_time else None,
+                'administered_by': administered_by_name,
+                'notes': entry.notes or '',
+            }
+
+        # Build response
+        medications_data = []
+        for rx in prescriptions:
+            prescriber_name = 'Unknown'
+            if rx.prescribed_by and rx.prescribed_by.staff and rx.prescribed_by.staff.user:
+                u = rx.prescribed_by.staff.user
+                prescriber_name = f"Dr. {u.first_name} {u.last_name}".strip()
+
+            # Determine which time slots this medication uses based on frequency
+            freq = rx.frequency.lower() if rx.frequency else 'daily'
+            active_slots = self._get_time_slots_for_frequency(freq)
+
+            med_key = rx.medication_name.lower().strip()
+
+            # Build days data
+            days_data = {}
+            current_date = start_date
+            while current_date <= end_date:
+                date_str = str(current_date)
+                slots_data = {}
+
+                for slot_label in active_slots:
+                    # Check if we have a MAR entry for this slot
+                    mar_entry = mar_by_med.get(med_key, {}).get(date_str, {}).get(slot_label)
+
+                    if mar_entry:
+                        slots_data[slot_label] = mar_entry
+                    else:
+                        # Determine if this slot is scheduled, in the past (missed), or future
+                        slot_time = dict(TIME_SLOTS)[slot_label]
+                        slot_datetime = timezone.make_aware(datetime.combine(current_date, slot_time))
+                        now = timezone.now()
+
+                        if slot_datetime < now - timedelta(hours=2):
+                            slot_status = 'missed'  # Past and not administered
+                        elif slot_datetime <= now:
+                            slot_status = 'due'  # Within window
+                        else:
+                            slot_status = 'scheduled'  # Future
+
+                        # Only show slots within prescription date range
+                        if rx.start_date and current_date < rx.start_date:
+                            slot_status = 'not_started'
+                        elif rx.end_date and current_date > rx.end_date:
+                            slot_status = 'completed'
+
+                        slots_data[slot_label] = {
+                            'id': None,
+                            'status': slot_status,
+                            'scheduled_time': slot_datetime.isoformat(),
+                            'administered_time': None,
+                            'administered_by': None,
+                            'notes': '',
+                        }
+
+                days_data[date_str] = slots_data
+                current_date += timedelta(days=1)
+
+            medications_data.append({
+                'id': str(rx.id),
+                'medication_name': rx.medication_name,
+                'dosage': rx.dosage,
+                'route': rx.route,
+                'route_display': rx.get_route_display(),
+                'frequency': rx.frequency,
+                'frequency_display': rx.get_frequency_display(),
+                'instructions': rx.instructions,
+                'prescribed_by': prescriber_name,
+                'start_date': rx.start_date.isoformat() if rx.start_date else None,
+                'end_date': rx.end_date.isoformat() if rx.end_date else None,
+                'time_slots': active_slots,
+                'days': days_data,
+            })
+
+        # Generate date headers
+        date_headers = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_headers.append({
+                'date': str(current_date),
+                'day_name': current_date.strftime('%a'),
+                'day_num': current_date.day,
+                'month': current_date.strftime('%b'),
+                'is_today': current_date == timezone.now().date(),
+            })
+            current_date += timedelta(days=1)
+
+        return Response({
+            'admission_id': str(admission.id),
+            'patient_name': f"{admission.patient.user.first_name} {admission.patient.user.last_name}",
+            'patient_mrn': admission.patient.medical_record_number,
+            'date_range': {
+                'start': str(start_date),
+                'end': str(end_date),
+                'days': days,
+            },
+            'date_headers': date_headers,
+            'time_slots': [slot[0] for slot in TIME_SLOTS],
+            'medications': medications_data,
+        })
+
+    def _get_time_slots_for_frequency(self, frequency):
+        """Map medication frequency to time slots."""
+        freq = frequency.lower()
+
+        # QHS - at bedtime
+        if 'qhs' in freq or 'bedtime' in freq or 'hs' in freq:
+            return ['8 PM']
+
+        # QAM - morning
+        if 'qam' in freq or 'morning' in freq:
+            return ['8 AM']
+
+        # Daily/Once daily
+        if freq in ['daily', 'once', 'qd'] or 'once daily' in freq:
+            return ['8 AM']
+
+        # BID - twice daily
+        if 'bid' in freq or 'twice' in freq or 'q12h' in freq:
+            return ['8 AM', '8 PM']
+
+        # TID - three times daily
+        if 'tid' in freq or 'three' in freq or 'q8h' in freq:
+            return ['8 AM', '12 PM', '8 PM']
+
+        # QID - four times daily
+        if 'qid' in freq or 'four' in freq or 'q6h' in freq:
+            return ['8 AM', '12 PM', '4 PM', '8 PM']
+
+        # Q4H - every 4 hours
+        if 'q4h' in freq:
+            return ['12 AM', '4 AM', '8 AM', '12 PM', '4 PM', '8 PM']
+
+        # PRN - as needed (show all slots as potential)
+        if 'prn' in freq or 'as needed' in freq:
+            return ['8 AM', '12 PM', '4 PM', '8 PM']
+
+        # Default to daily
+        return ['8 AM']
+
 
 class ShiftHandoffViewSet(viewsets.ModelViewSet):
     """
@@ -814,3 +1157,576 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         }
 
         return Response(response_data)
+
+
+# ============================================================================
+# Treatment Sheet ViewSets
+# ============================================================================
+
+
+class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for Treatment Sheet Entry management.
+
+    Supports CRUD operations plus custom actions for:
+    - Requesting supply from pharmacy
+    - Discontinuing medication orders
+    - Checking supply status
+    """
+    queryset = TreatmentSheetEntry.objects.select_related(
+        'patient', 'patient__user', 'ordered_by', 'ordered_by__staff',
+        'ordered_by__staff__user', 'admission'
+    ).prefetch_related('supply_requests', 'dose_administrations').all()
+    permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
+    filterset_fields = ['patient', 'admission', 'status', 'ordered_by']
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action == 'create':
+            return TreatmentSheetEntryCreateSerializer
+        elif self.action == 'list':
+            return TreatmentSheetEntryListSerializer
+        return TreatmentSheetEntrySerializer
+
+    def get_queryset(self):
+        """Override to add filtering."""
+        queryset = super().get_queryset()
+
+        # Filter by admission
+        admission_id = self.request.query_params.get('admission_id')
+        if admission_id:
+            queryset = queryset.filter(admission_id=admission_id)
+
+        # Filter by active status
+        active_only = self.request.query_params.get('active_only')
+        if active_only and active_only.lower() == 'true':
+            queryset = queryset.filter(status='active')
+
+        return queryset.order_by('-start_datetime')
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """
+        Create treatment sheet entry and generate initial MAR entries.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Use service to create entry with MAR generation
+        from .services import create_treatment_entry_with_mar
+
+        treatment_data = serializer.validated_data
+        entry = create_treatment_entry_with_mar(treatment_data, created_by=request.user)
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.CREATE,
+            category=AuditCategory.NURSING,
+            resource_type='TreatmentSheetEntry',
+            resource_id=str(entry.id),
+            details=f"Created treatment entry for {entry.medication_name}"
+        )
+
+        # Return full serializer
+        output_serializer = TreatmentSheetEntrySerializer(entry)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='by-admission')
+    def by_admission(self, request):
+        """
+        Get all treatment sheet entries for a specific admission.
+        Also includes active prescriptions from the admission's encounter that don't have treatment entries.
+
+        Query params:
+        - admission_id: UUID of the admission OR encounter ID (will lookup admission from encounter)
+        """
+        admission_id = request.query_params.get('admission_id')
+        if not admission_id:
+            return Response(
+                {'error': 'admission_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from apps.wards.models import Admission, Encounter
+
+        # Try to find admission directly first
+        admission = None
+        try:
+            admission = Admission.objects.select_related('patient', 'patient__user', 'bed', 'bed__ward').get(id=admission_id)
+        except Admission.DoesNotExist:
+            # Maybe it's an encounter ID - try to find admission via encounter
+            try:
+                encounter = Encounter.objects.select_related('admission').get(id=admission_id)
+                if encounter.admission:
+                    admission = Admission.objects.select_related('patient', 'patient__user', 'bed', 'bed__ward').get(id=encounter.admission.id)
+            except Encounter.DoesNotExist:
+                pass
+
+        if not admission:
+            # Last resort: find active admission for patient via encounter's patient
+            try:
+                encounter = Encounter.objects.select_related('patient').get(id=admission_id)
+                admission = Admission.objects.filter(
+                    patient=encounter.patient,
+                    status='admitted'
+                ).select_related('patient', 'patient__user', 'bed', 'bed__ward').first()
+            except Encounter.DoesNotExist:
+                pass
+
+        if not admission:
+            return Response(
+                {'error': 'Admission not found. Please ensure patient is currently admitted.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get treatment entries from the new system (use resolved admission ID)
+        from .services import get_treatment_sheet_by_admission
+        entries = get_treatment_sheet_by_admission(admission.id)
+
+        # Also get active prescriptions from the admission's encounter(s) that aren't tracked as entries
+        from apps.clinical_notes.models import Prescription
+
+        # Get all encounters for this admission (Encounter already imported above)
+        admission_encounters = Encounter.objects.filter(
+            admission=admission
+        ).values_list('id', flat=True)
+
+        # Get active prescriptions from these encounters
+        # Don't filter by end_date - show all prescriptions from this admission that are still 'active' status
+        # Even if the course has ended, it's relevant for the treatment sheet during the admission
+        active_prescriptions = Prescription.objects.filter(
+            patient=admission.patient,
+            encounter_id__in=admission_encounters,
+            status='active'
+        ).exclude(
+            # Exclude prescriptions that already have treatment entries
+            id__in=entries.values_list('prescription_id', flat=True)
+        ).select_related(
+            'prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user'
+        )
+
+        # Combine both into serializer
+        serializer = TreatmentSheetEntryListSerializer(entries, many=True)
+        entries_data = serializer.data
+
+        # Convert prescriptions to treatment entry format
+        for rx in active_prescriptions:
+            prescriber_name = 'Unknown'
+            if rx.prescribed_by and rx.prescribed_by.staff and rx.prescribed_by.staff.user:
+                user = rx.prescribed_by.staff.user
+                prescriber_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+            # Calculate basic dose counts from prescription duration
+            total_doses = 0
+            if rx.duration_days and rx.frequency:
+                # Parse frequency to get doses per day
+                freq = rx.frequency.lower()
+                doses_per_day = 1
+                if 'bid' in freq or 'q12h' in freq:
+                    doses_per_day = 2
+                elif 'tid' in freq or 'q8h' in freq:
+                    doses_per_day = 3
+                elif 'qid' in freq or 'q6h' in freq:
+                    doses_per_day = 4
+
+                total_doses = rx.duration_days * doses_per_day
+
+            entries_data.append({
+                'id': str(rx.id),
+                'prescription_id': str(rx.id),
+                'patient_name': f"{admission.patient.user.first_name} {admission.patient.user.last_name}",
+                'patient_mrn': admission.patient.medical_record_number,
+                'admission_ward': admission.bed.ward.name if admission.bed else None,
+                'admission_bed': admission.bed.bed_number if admission.bed else None,
+                'medication_name': rx.medication_name,
+                'dosage': rx.dosage,
+                'route': rx.route,
+                'route_display': rx.get_route_display(),
+                'frequency': rx.frequency,
+                'frequency_display': rx.get_frequency_display(),
+                'start_datetime': rx.start_date.isoformat() if rx.start_date else None,
+                'duration_days': rx.duration_days,
+                'status': rx.status,
+                'ordered_by_name': prescriber_name,
+                'total_doses_ordered': total_doses,
+                'total_doses_dispensed': 0,  # No tracking for legacy prescriptions
+                'total_doses_administered': 0,
+                'days_of_supply_remaining': None,  # Can't calculate without tracking
+                'is_legacy_prescription': True,  # Flag to indicate this is from Prescription, not TreatmentSheetEntry
+            })
+
+        return Response(entries_data)
+
+    @action(detail=True, methods=['post'])
+    def discontinue(self, request, pk=None):
+        """
+        Discontinue a treatment sheet entry.
+
+        Request body:
+        - reason: Reason for discontinuation (required)
+        """
+        entry = self.get_object()
+
+        if entry.status == 'discontinued':
+            return Response(
+                {'error': 'Entry is already discontinued'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reason = request.data.get('reason')
+        if not reason:
+            return Response(
+                {'error': 'Reason for discontinuation is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get practitioner profile
+        try:
+            practitioner = PractitionerProfile.objects.get(staff__user=request.user)
+        except PractitionerProfile.DoesNotExist:
+            return Response(
+                {'error': 'User does not have a practitioner profile'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        entry.status = 'discontinued'
+        entry.discontinued_at = timezone.now()
+        entry.discontinued_by = practitioner
+        entry.discontinuation_reason = reason
+        entry.save()
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.NURSING,
+            resource_type='TreatmentSheetEntry',
+            resource_id=str(entry.id),
+            details=f"Discontinued {entry.medication_name}: {reason}"
+        )
+
+        serializer = TreatmentSheetEntrySerializer(entry)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='request-supply')
+    def request_supply(self, request, pk=None):
+        """
+        Create a supply request for this treatment entry.
+
+        Request body:
+        - quantity: Number of doses requested (required)
+        - notes: Optional notes
+        """
+        entry = self.get_object()
+
+        if entry.status != 'active':
+            return Response(
+                {'error': 'Can only request supply for active entries'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        quantity = request.data.get('quantity')
+        if not quantity:
+            return Response(
+                {'error': 'Quantity is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Quantity must be a positive integer'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get practitioner profile
+        try:
+            practitioner = PractitionerProfile.objects.get(staff__user=request.user)
+        except PractitionerProfile.DoesNotExist:
+            return Response(
+                {'error': 'User does not have a practitioner profile'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Create supply request using service
+        from .services import create_supply_request
+
+        notes = request.data.get('notes', '')
+        supply_request = create_supply_request(
+            treatment_entry=entry,
+            quantity=quantity,
+            requested_by=practitioner,
+            notes=notes
+        )
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.CREATE,
+            category=AuditCategory.NURSING,
+            resource_type='SupplyRequest',
+            resource_id=str(supply_request.id),
+            details=f"Requested {quantity} doses of {entry.medication_name}"
+        )
+
+        serializer = SupplyRequestSerializer(supply_request)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='supply-status')
+    def supply_status(self, request, pk=None):
+        """
+        Get detailed supply status for this treatment entry.
+        """
+        entry = self.get_object()
+
+        data = {
+            'total_doses_ordered': entry.total_doses_ordered,
+            'total_doses_dispensed': entry.total_doses_dispensed,
+            'total_doses_administered': entry.total_doses_administered,
+            'supply_remaining': entry.supply_remaining,
+            'days_of_supply_remaining': entry.days_of_supply_remaining,
+            'pending_supply_requests': entry.supply_requests.filter(status='pending').count(),
+            'recent_supply_requests': SupplyRequestListSerializer(
+                entry.supply_requests.all()[:5], many=True
+            ).data
+        }
+
+        return Response(data)
+
+    @action(detail=False, methods=['get'], url_path='low-supply')
+    def low_supply(self, request):
+        """
+        Get treatment entries with low supply (< 2 days remaining).
+        Useful for nursing dashboard alerts.
+        """
+        from django.db.models import F, ExpressionWrapper, FloatField
+
+        # Get active entries with low supply
+        entries = TreatmentSheetEntry.objects.filter(
+            status='active'
+        ).select_related(
+            'patient', 'patient__user', 'admission', 'admission__bed', 'admission__bed__ward'
+        )
+
+        # Filter in Python since days_of_supply_remaining is a property
+        low_supply_entries = [
+            entry for entry in entries
+            if entry.days_of_supply_remaining < 2
+        ]
+
+        serializer = TreatmentSheetEntryListSerializer(low_supply_entries, many=True)
+        return Response(serializer.data)
+
+
+class SupplyRequestViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for Supply Request management.
+
+    Supports operations for:
+    - Creating supply requests (nurses)
+    - Viewing pending requests (pharmacy)
+    - Dispensing supplies (pharmacy)
+    - Rejecting requests (pharmacy)
+    """
+    queryset = SupplyRequest.objects.select_related(
+        'treatment_entry', 'treatment_entry__patient', 'treatment_entry__patient__user',
+        'treatment_entry__admission', 'treatment_entry__admission__bed',
+        'treatment_entry__admission__bed__ward',
+        'requested_by', 'requested_by__staff', 'requested_by__staff__user'
+    ).all()
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['status', 'treatment_entry', 'requested_by']
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action == 'create':
+            return SupplyRequestCreateSerializer
+        elif self.action == 'list':
+            return SupplyRequestListSerializer
+        return SupplyRequestSerializer
+
+    def get_queryset(self):
+        """Override to add filtering."""
+        queryset = super().get_queryset()
+
+        # Filter by patient
+        patient_id = self.request.query_params.get('patient_id')
+        if patient_id:
+            queryset = queryset.filter(treatment_entry__patient_id=patient_id)
+
+        # Filter by admission
+        admission_id = self.request.query_params.get('admission_id')
+        if admission_id:
+            queryset = queryset.filter(treatment_entry__admission_id=admission_id)
+
+        return queryset.order_by('-requested_at')
+
+    @action(detail=False, methods=['get'], url_path='pending-queue')
+    def pending_queue(self, request):
+        """
+        Get all pending supply requests.
+        Used by pharmacy to see what needs to be dispensed.
+        """
+        from .services import get_pending_supply_requests
+
+        patient_id = request.query_params.get('patient_id')
+        admission_id = request.query_params.get('admission_id')
+
+        requests = get_pending_supply_requests(
+            patient_id=patient_id,
+            admission_id=admission_id
+        )
+
+        serializer = SupplyRequestListSerializer(requests, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def dispense(self, request, pk=None):
+        """
+        Dispense a supply request (pharmacy action).
+
+        Request body:
+        - quantity_dispensed: Actual quantity dispensed (optional, defaults to quantity_requested)
+        """
+        supply_request = self.get_object()
+
+        if supply_request.status != 'pending':
+            return Response(
+                {'error': 'Can only dispense pending requests'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        quantity_dispensed = request.data.get('quantity_dispensed')
+        if quantity_dispensed is None:
+            quantity_dispensed = supply_request.quantity_requested
+
+        try:
+            quantity_dispensed = int(quantity_dispensed)
+            if quantity_dispensed <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Quantity dispensed must be a positive integer'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Dispense using service
+        from .services import dispense_supply_request
+
+        supply_request = dispense_supply_request(
+            supply_request=supply_request,
+            quantity_dispensed=quantity_dispensed,
+            dispensed_by=request.user
+        )
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PHARMACY,
+            resource_type='SupplyRequest',
+            resource_id=str(supply_request.id),
+            details=f"Dispensed {quantity_dispensed} doses of {supply_request.treatment_entry.medication_name}"
+        )
+
+        serializer = SupplyRequestSerializer(supply_request)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """
+        Reject a supply request (pharmacy action).
+
+        Request body:
+        - reason: Reason for rejection (required)
+        """
+        supply_request = self.get_object()
+
+        if supply_request.status != 'pending':
+            return Response(
+                {'error': 'Can only reject pending requests'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reason = request.data.get('reason')
+        if not reason:
+            return Response(
+                {'error': 'Reason for rejection is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Reject using service
+        from .services import reject_supply_request
+
+        supply_request = reject_supply_request(
+            supply_request=supply_request,
+            rejection_reason=reason,
+            rejected_by=request.user
+        )
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PHARMACY,
+            resource_type='SupplyRequest',
+            resource_id=str(supply_request.id),
+            details=f"Rejected supply request for {supply_request.treatment_entry.medication_name}: {reason}"
+        )
+
+        serializer = SupplyRequestSerializer(supply_request)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='bulk-dispense')
+    def bulk_dispense(self, request):
+        """
+        Dispense multiple supply requests at once.
+
+        Request body:
+        - request_ids: List of supply request IDs
+        """
+        request_ids = request.data.get('request_ids', [])
+        if not request_ids:
+            return Response(
+                {'error': 'request_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        dispensed_count = 0
+        errors = []
+
+        for request_id in request_ids:
+            try:
+                supply_request = SupplyRequest.objects.get(id=request_id, status='pending')
+
+                from .services import dispense_supply_request
+                dispense_supply_request(
+                    supply_request=supply_request,
+                    quantity_dispensed=supply_request.quantity_requested,
+                    dispensed_by=request.user
+                )
+
+                dispensed_count += 1
+            except SupplyRequest.DoesNotExist:
+                errors.append(f"Request {request_id} not found or not pending")
+            except Exception as e:
+                errors.append(f"Error dispensing {request_id}: {str(e)}")
+
+        # Audit log
+        AuditService.log_action(
+            user=request.user,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.PHARMACY,
+            resource_type='SupplyRequest',
+            resource_id='bulk',
+            details=f"Bulk dispensed {dispensed_count} supply requests"
+        )
+
+        return Response({
+            'dispensed_count': dispensed_count,
+            'errors': errors
+        })

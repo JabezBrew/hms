@@ -8,7 +8,8 @@ import {
   FileText,
   Activity,
   Pill,
-  MoreHorizontal
+  MoreHorizontal,
+  ClipboardList
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -35,6 +36,8 @@ const PatientIdentityHero = ({
   onOrderLabs,
   onRequestConsult,
   onScheduleFollowUp,
+  onViewTreatmentSheet,
+  activeAdmission,
   className
 }) => {
   // ============================================
@@ -331,6 +334,18 @@ const PatientIdentityHero = ({
             <Pill className="h-3.5 w-3.5 mr-1.5" />
             Prescribe
           </Button>
+
+          {activeAdmission && onViewTreatmentSheet && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="font-mono text-xs"
+              onClick={onViewTreatmentSheet}
+            >
+              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+              Treatment Sheet
+            </Button>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

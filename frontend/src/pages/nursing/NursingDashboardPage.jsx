@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
@@ -6,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { RefreshCw, AlertTriangle, Activity, Users, ShieldAlert } from 'lucide-react';
-import { usePatientMonitoring, useActiveAlerts } from '@/hooks/useNursingQueries';
+import { RefreshCw, AlertTriangle, Activity, Users, ShieldAlert, Package } from 'lucide-react';
+import { usePatientMonitoring, useActiveAlerts, useLowSupplyEntries } from '@/hooks/useNursingQueries';
 import { useWards } from '@/hooks/useWardQueries';
 import { PatientMonitoringCard } from '@/components/nursing/PatientMonitoringCard';
 import { AlertsPanel } from '@/components/nursing/AlertsPanel';
@@ -15,6 +16,7 @@ import { Layout } from '@/components/layout/layout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 
 export default function NursingDashboardPage() {
+  const navigate = useNavigate();
   const [selectedWard, setSelectedWard] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [wardSearchQuery, setWardSearchQuery] = useState('');
@@ -24,6 +26,7 @@ export default function NursingDashboardPage() {
   const { data: wards, isLoading: wardsLoading } = useWards();
   const { data: monitoringResponse, isLoading: monitoringLoading, refetch, isFetching, error: monitoringError } = usePatientMonitoring(selectedWard, currentPage, pageSize);
   const { data: activeAlerts, isLoading: alertsLoading, error: alertsError } = useActiveAlerts();
+  const { data: lowSupplyEntries = [], isLoading: lowSupplyLoading } = useLowSupplyEntries();
 
   // Extract monitoring data from paginated response
   const monitoringData = monitoringResponse?.results || [];
@@ -172,7 +175,7 @@ export default function NursingDashboardPage() {
         )}
 
         {/* Statistics Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
@@ -214,6 +217,20 @@ export default function NursingDashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">{stats.pendingTasks}</div>
               <p className="text-xs text-muted-foreground">Tasks to complete</p>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer hover:border-amber-500/50 transition-colors"
+            onClick={() => navigate('/pharmacy/supply-queue')}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Low Supply</CardTitle>
+              <Package className="h-4 w-4 text-amber-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600">{lowSupplyEntries.length}</div>
+              <p className="text-xs text-muted-foreground">Medications &lt; 2 days</p>
             </CardContent>
           </Card>
         </div>

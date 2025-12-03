@@ -314,6 +314,26 @@ export const useAdministerMedication = () => {
       queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
       queryClient.invalidateQueries({ queryKey: ['medications-overdue'] });
       queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: ['mar-grid'] });
+    },
+  });
+};
+
+export const useCreateAndAdminister = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      // data: { patient_id, prescription_id, scheduled_time, notes? }
+      const response = await apiClient.post('/nursing/medications/create-and-administer/', data);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
+      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
+      queryClient.invalidateQueries({ queryKey: ['medications-overdue'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: ['mar-grid'] });
     },
   });
 };
@@ -468,6 +488,205 @@ export const useUpdateShiftHandoff = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shift-handoffs'] });
       queryClient.invalidateQueries({ queryKey: ['shift-handoffs-today'] });
+    },
+  });
+};
+
+// ========== MAR Grid ==========
+
+export const useMARGrid = (admissionId, startDate = null, days = 7) => {
+  return useQuery({
+    queryKey: ['mar-grid', admissionId, startDate, days],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('admission_id', admissionId);
+      if (startDate) params.append('start_date', startDate);
+      params.append('days', days.toString());
+
+      const response = await apiClient.get(`/nursing/medications/mar-grid/?${params.toString()}`);
+      return response || { medications: [], date_headers: [], time_slots: [] };
+    },
+    enabled: !!admissionId,
+    refetchInterval: (data) => !document.hidden ? 60000 : false, // 1 minute
+    refetchOnWindowFocus: true,
+    staleTime: 30000, // 30 seconds
+  });
+};
+
+// ========== Treatment Sheet ==========
+
+export const useTreatmentSheetByAdmission = (admissionId) => {
+  return useQuery({
+    queryKey: ['treatment-sheet', admissionId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/nursing/treatment-sheet/by-admission/?admission_id=${admissionId}`);
+      // Ensure we always return an array
+      return response.data || response || [];
+    },
+    enabled: !!admissionId,
+    refetchInterval: (data) => !document.hidden ? 120000 : false, // 2 minutes
+    refetchOnWindowFocus: true,
+    staleTime: 60000, // 1 minute
+  });
+};
+
+export const useTreatmentSheetEntry = (entryId) => {
+  return useQuery({
+    queryKey: ['treatment-sheet-entry', entryId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`);
+      return response.data;
+    },
+    enabled: !!entryId,
+  });
+};
+
+export const useLowSupplyEntries = () => {
+  return useQuery({
+    queryKey: ['treatment-sheet-low-supply'],
+    queryFn: async () => {
+      const response = await apiClient.get('/nursing/treatment-sheet/low-supply/');
+      return response.data || response || [];
+    },
+    refetchInterval: (data) => !document.hidden ? 120000 : false, // 2 minutes
+    refetchOnWindowFocus: true,
+  });
+};
+
+export const useSupplyStatus = (entryId) => {
+  return useQuery({
+    queryKey: ['supply-status', entryId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/supply-status/`);
+      return response.data;
+    },
+    enabled: !!entryId,
+  });
+};
+
+export const useCreateTreatmentEntry = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await apiClient.post('/nursing/treatment-sheet/', data);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet', data.admission] });
+    },
+  });
+};
+
+export const useDiscontinueTreatmentEntry = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ entryId, reason }) => {
+      const response = await apiClient.post(`/nursing/treatment-sheet/${entryId}/discontinue/`, { reason });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-entry', data.id] });
+    },
+  });
+};
+
+export const useRequestSupply = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ entryId, quantity, notes }) => {
+      const response = await apiClient.post(`/nursing/treatment-sheet/${entryId}/request-supply/`, {
+        quantity,
+        notes
+      });
+      return response.data;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-entry', variables.entryId] });
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['supply-status', variables.entryId] });
+    },
+  });
+};
+
+// ========== Supply Requests ==========
+
+export const usePendingSupplyRequests = () => {
+  return useQuery({
+    queryKey: ['supply-requests', 'pending'],
+    queryFn: async () => {
+      const response = await apiClient.get('/nursing/supply-requests/pending-queue/');
+      return response.data || response || [];
+    },
+    refetchInterval: (data) => !document.hidden ? 60000 : false, // 1 minute for pharmacy
+    refetchOnWindowFocus: true,
+  });
+};
+
+export const useSupplyRequest = (requestId) => {
+  return useQuery({
+    queryKey: ['supply-request', requestId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/nursing/supply-requests/${requestId}/`);
+      return response.data;
+    },
+    enabled: !!requestId,
+  });
+};
+
+export const useDispenseSupply = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ requestId, quantityDispensed }) => {
+      const response = await apiClient.post(`/nursing/supply-requests/${requestId}/dispense/`, {
+        quantity_dispensed: quantityDispensed
+      });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['supply-request', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-low-supply'] });
+    },
+  });
+};
+
+export const useRejectSupplyRequest = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ requestId, reason }) => {
+      const response = await apiClient.post(`/nursing/supply-requests/${requestId}/reject/`, { reason });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['supply-request', data.id] });
+    },
+  });
+};
+
+export const useBulkDispenseSupply = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (requestIds) => {
+      const response = await apiClient.post('/nursing/supply-requests/bulk-dispense/', {
+        request_ids: requestIds
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-low-supply'] });
     },
   });
 };

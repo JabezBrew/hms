@@ -2236,12 +2236,11 @@ def patient_clinical_summary(request, patient_id):
         )
 
     # Get active prescriptions
+    # Show all prescriptions with status='active' regardless of end_date
+    # If a medication course is completed, its status should be changed to 'completed'
     active_prescriptions = Prescription.objects.filter(
         patient=patient,
         status='active'
-    ).filter(
-        models.Q(end_date__gte=timezone.now().date()) |
-        models.Q(end_date__isnull=True)
     ).select_related('prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user')
 
     medications = []

@@ -54,6 +54,8 @@ const EncounterEditPage = lazy(() => import('./pages/encounters/EncounterEditPag
 const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateClinicalNotePage'))
 const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
+const TreatmentSheetPage = lazy(() => import('./pages/nursing/TreatmentSheetPage'))
+const SupplyQueuePage = lazy(() => import('./pages/pharmacy/SupplyQueuePage'))
 const DoctorDashboard = lazy(() => import('./pages/dashboards/DoctorDashboard'))
 const ProviderDashboard = lazy(() => import('./pages/dashboards/ProviderDashboard'))
 const NurseDashboard = lazy(() => import('./pages/dashboards/NurseDashboard'))
@@ -442,11 +444,27 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          <Route path="/nursing/treatment-sheet" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'doctor', 'head_nurse', 'nurse_practitioner']}>
+              <Layout>
+                <TreatmentSheetPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
           {/* Pharmacy routes */}
           <Route path="/pharmacy/dispensing" element={
             <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
               <Layout>
                 <PharmacyDispensingPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/pharmacy/supply-queue" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
+              <Layout>
+                <SupplyQueuePage />
               </Layout>
             </RoleBasedRoute>
           } />

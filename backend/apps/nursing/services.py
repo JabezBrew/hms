@@ -4,7 +4,7 @@ Nursing services for medication administration workflow.
 from datetime import datetime, timedelta, time
 from django.utils import timezone
 from django.db import transaction
-from .models import MedicationAdministration
+from .models import MedicationAdministration, TreatmentSheetEntry, SupplyRequest
 
 
 # Default administration times for different frequencies
@@ -253,3 +253,275 @@ def get_dispensed_ready_for_admin(patient_id=None):
         queryset = queryset.filter(patient_id=patient_id)
 
     return queryset.order_by('scheduled_time')
+
+
+# ============================================================================
+# Treatment Sheet Services
+# ============================================================================
+
+
+def calculate_daily_doses(frequency):
+    """
+    Calculate the number of daily doses based on frequency string.
+
+    Args:
+        frequency: Frequency string (e.g., 'bid', 'tid', 'q6h')
+
+    Returns:
+        Integer number of daily doses
+    """
+    frequency_lower = frequency.lower()
+
+    if 'bid' in frequency_lower or 'twice' in frequency_lower:
+        return 2
+    elif 'tid' in frequency_lower or 'three' in frequency_lower:
+        return 3
+    elif 'qid' in frequency_lower or 'four' in frequency_lower:
+        return 4
+    elif 'q4h' in frequency_lower:
+        return 6
+    elif 'q6h' in frequency_lower:
+        return 4
+    elif 'q8h' in frequency_lower:
+        return 3
+    elif 'q12h' in frequency_lower:
+        return 2
+    elif 'daily' in frequency_lower or 'once' in frequency_lower:
+        return 1
+
+    return 1  # Default to once daily
+
+
+def create_treatment_entry_with_mar(treatment_data, created_by=None):
+    """
+    Create a treatment sheet entry and generate initial MAR entries.
+
+    Args:
+        treatment_data: Dictionary of treatment entry fields
+        created_by: User who created the entry
+
+    Returns:
+        Created TreatmentSheetEntry instance
+    """
+    with transaction.atomic():
+        # Create treatment entry
+        entry = TreatmentSheetEntry.objects.create(**treatment_data, created_by=created_by)
+
+        # Generate MAR entries using existing logic
+        # If linked to prescription, use that; otherwise create a mock object
+        if entry.prescription:
+            mar_entries = generate_mar_entries_for_prescription(
+                entry.prescription,
+                days=entry.duration_days or 3,
+                start_date=entry.start_datetime.date(),
+                created_by=created_by
+            )
+        else:
+            # Create MAR entries directly for treatment entry without prescription
+            frequency_lower = entry.frequency.lower()
+            scheduled_times = get_scheduled_times_for_frequency(frequency_lower)
+
+            days = entry.duration_days or 3
+            start_date = entry.start_datetime.date()
+            mar_entries = []
+
+            for day_offset in range(days):
+                current_date = start_date + timedelta(days=day_offset)
+
+                # Check if we've passed end date
+                if entry.end_datetime and current_date > entry.end_datetime.date():
+                    break
+
+                for sched_time in scheduled_times:
+                    scheduled_datetime = timezone.make_aware(
+                        datetime.combine(current_date, sched_time)
+                    ) if timezone.is_naive(datetime.combine(current_date, sched_time)) else datetime.combine(current_date, sched_time)
+
+                    mar_entry = MedicationAdministration.objects.create(
+                        patient=entry.patient,
+                        medication_name=entry.medication_name,
+                        dosage=entry.dosage,
+                        route=entry.route,
+                        frequency=entry.frequency,
+                        scheduled_time=scheduled_datetime,
+                        status='scheduled',
+                        prescribed_by=entry.ordered_by,
+                        treatment_entry=entry,
+                        created_by=created_by,
+                        is_dispensed=False,
+                    )
+                    mar_entries.append(mar_entry)
+
+        # Link MAR entries to treatment entry (if they were created from prescription)
+        if entry.prescription:
+            for mar_entry in mar_entries:
+                mar_entry.treatment_entry = entry
+                mar_entry.save()
+
+        # Update total_doses_ordered
+        entry.total_doses_ordered = len(mar_entries)
+        entry.save()
+
+        return entry
+
+
+def calculate_supply_needed(entry, days=3):
+    """
+    Calculate doses needed for next N days based on treatment entry frequency.
+
+    Args:
+        entry: TreatmentSheetEntry instance
+        days: Number of days to calculate for
+
+    Returns:
+        Integer number of doses needed
+    """
+    daily_doses = calculate_daily_doses(entry.frequency)
+    return daily_doses * days
+
+
+def create_supply_request(treatment_entry, quantity, requested_by, notes=''):
+    """
+    Create a supply request for a treatment entry.
+
+    Args:
+        treatment_entry: TreatmentSheetEntry instance
+        quantity: Number of doses requested
+        requested_by: PractitionerProfile who requested
+        notes: Optional notes
+
+    Returns:
+        Created SupplyRequest instance
+    """
+    supply_request = SupplyRequest.objects.create(
+        treatment_entry=treatment_entry,
+        quantity_requested=quantity,
+        requested_by=requested_by,
+        notes=notes
+    )
+    return supply_request
+
+
+def dispense_supply_request(supply_request, quantity_dispensed, dispensed_by):
+    """
+    Mark a supply request as dispensed and update treatment entry counts.
+
+    Args:
+        supply_request: SupplyRequest instance
+        quantity_dispensed: Actual quantity dispensed
+        dispensed_by: User (pharmacist) who dispensed
+
+    Returns:
+        Updated SupplyRequest instance
+    """
+    with transaction.atomic():
+        # Update supply request
+        supply_request.status = 'dispensed'
+        supply_request.quantity_dispensed = quantity_dispensed
+        supply_request.dispensed_by = dispensed_by
+        supply_request.dispensed_at = timezone.now()
+        supply_request.save()
+
+        # Update treatment entry aggregate counts
+        entry = supply_request.treatment_entry
+        entry.total_doses_dispensed += quantity_dispensed
+        entry.save()
+
+        return supply_request
+
+
+def reject_supply_request(supply_request, rejection_reason, rejected_by):
+    """
+    Reject a supply request.
+
+    Args:
+        supply_request: SupplyRequest instance
+        rejection_reason: Reason for rejection
+        rejected_by: User who rejected
+
+    Returns:
+        Updated SupplyRequest instance
+    """
+    supply_request.status = 'rejected'
+    supply_request.rejection_reason = rejection_reason
+    supply_request.save()
+    return supply_request
+
+
+def get_pending_supply_requests(patient_id=None, admission_id=None):
+    """
+    Get pending supply requests, optionally filtered.
+
+    Args:
+        patient_id: Optional filter by patient
+        admission_id: Optional filter by admission
+
+    Returns:
+        QuerySet of SupplyRequest entries
+    """
+    queryset = SupplyRequest.objects.filter(
+        status='pending'
+    ).select_related(
+        'treatment_entry',
+        'treatment_entry__patient',
+        'treatment_entry__patient__user',
+        'treatment_entry__admission',
+        'requested_by',
+        'requested_by__staff',
+        'requested_by__staff__user'
+    ).order_by('-requested_at')
+
+    if patient_id:
+        queryset = queryset.filter(treatment_entry__patient_id=patient_id)
+
+    if admission_id:
+        queryset = queryset.filter(treatment_entry__admission_id=admission_id)
+
+    return queryset
+
+
+def get_treatment_sheet_by_admission(admission_id):
+    """
+    Get all active treatment sheet entries for an admission.
+
+    Args:
+        admission_id: Admission UUID
+
+    Returns:
+        QuerySet of TreatmentSheetEntry entries
+    """
+    return TreatmentSheetEntry.objects.filter(
+        admission_id=admission_id,
+        status='active'
+    ).select_related(
+        'patient',
+        'patient__user',
+        'ordered_by',
+        'ordered_by__staff',
+        'ordered_by__staff__user'
+    ).prefetch_related(
+        'supply_requests',
+        'dose_administrations'
+    ).order_by('-start_datetime')
+
+
+def update_administered_count(treatment_entry):
+    """
+    Update the total_doses_administered count for a treatment entry.
+    Should be called after a MAR entry is marked as administered.
+
+    Args:
+        treatment_entry: TreatmentSheetEntry instance
+
+    Returns:
+        Updated count
+    """
+    administered_count = MedicationAdministration.objects.filter(
+        treatment_entry=treatment_entry,
+        status='administered'
+    ).count()
+
+    treatment_entry.total_doses_administered = administered_count
+    treatment_entry.save()
+
+    return administered_count
