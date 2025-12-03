@@ -28,6 +28,47 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_joined']
 
 
+class UserWithAccessContextSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the User model that includes access context (off-site status).
+    Used for the /users/me/ endpoint to provide the frontend with read-only mode info.
+    """
+    is_offsite = serializers.SerializerMethodField()
+    offsite_mode = serializers.SerializerMethodField()
+    readonly_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
+                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
+                  'is_offsite', 'offsite_mode', 'readonly_message']
+        read_only_fields = ['id', 'date_joined']
+
+    def get_is_offsite(self, obj):
+        """Return whether the user is accessing from off-site."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'is_offsite'):
+            return request.is_offsite
+        return False
+
+    def get_offsite_mode(self, obj):
+        """Return the configured off-site access mode."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'offsite_mode'):
+            return request.offsite_mode
+        return 'allow'
+
+    def get_readonly_message(self, obj):
+        """Return the read-only message if user is off-site in readonly mode."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'is_offsite') and request.is_offsite:
+            if hasattr(request, 'offsite_mode') and request.offsite_mode == 'readonly':
+                from apps.core.models import OffSiteAccessSettings
+                settings = OffSiteAccessSettings.get_settings()
+                return settings.readonly_message
+        return None
+
+
 class UserCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating a new user.

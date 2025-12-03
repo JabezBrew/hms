@@ -2,12 +2,92 @@ import logging
 import time
 import json
 from django.utils.deprecation import MiddlewareMixin
+from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework.response import Response
 from rest_framework import status as http_status
 
 logger = logging.getLogger('django.request')
+
+
+def get_client_ip(request):
+    """
+    Get the client's real IP address from the request.
+    Handles X-Forwarded-For header for reverse proxy setups.
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        # X-Forwarded-For can contain multiple IPs; the first is the client's
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+class OffSiteDetectionMiddleware(MiddlewareMixin):
+    """
+    Middleware to detect off-site access and enforce read-only mode.
+
+    Adds the following attributes to the request:
+    - request.is_offsite: Boolean indicating if user is accessing from off-site
+    - request.offsite_mode: The configured mode ('readonly', 'deny', 'allow')
+    - request.client_ip: The client's IP address
+    """
+
+    def process_request(self, request):
+        """Check if request is from off-site and handle accordingly."""
+        from apps.core.models import SiteNetwork, OffSiteAccessSettings
+
+        # Get client IP
+        client_ip = get_client_ip(request)
+        request.client_ip = client_ip
+
+        # Check if IP is on-site
+        is_on_site = SiteNetwork.is_ip_on_site(client_ip)
+        request.is_offsite = not is_on_site
+
+        # Get settings
+        settings = OffSiteAccessSettings.get_settings()
+        request.offsite_mode = settings.offsite_mode
+
+        # If on-site or mode is 'allow', proceed normally
+        if is_on_site or settings.offsite_mode == 'allow':
+            return None
+
+        # Skip checks for certain endpoints
+        skip_paths = ['/api/auth/', '/admin/', '/static/', '/media/', '/api/users/me/']
+        if any(request.path.startswith(path) for path in skip_paths):
+            return None
+
+        # Check if admin override is allowed
+        if settings.allow_admin_override:
+            # Need to check if user is admin - but user might not be authenticated yet
+            # This will be handled in the permission class instead
+            pass
+
+        # If mode is 'deny', block all off-site access
+        if settings.offsite_mode == 'deny':
+            return JsonResponse(
+                {
+                    'detail': settings.deny_message,
+                    'code': 'offsite_access_denied'
+                },
+                status=403
+            )
+
+        # For 'readonly' mode, block write operations
+        if settings.offsite_mode == 'readonly' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            return JsonResponse(
+                {
+                    'detail': settings.readonly_message,
+                    'code': 'offsite_readonly',
+                    'is_offsite': True
+                },
+                status=403
+            )
+
+        return None
 
 class RequestLoggingMiddleware(MiddlewareMixin):
     """

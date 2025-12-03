@@ -87,6 +87,9 @@ class AuditService:
             description = f"Failed login attempt for {email or 'unknown email'}"
         elif action == AuditAction.PASSWORD_CHANGE:
             description = f"User {user.email if user else email} changed their password"
+        elif action == AuditAction.OFFSITE_ACCESS:
+            ip = cls.get_client_ip(request) if request else 'unknown'
+            description = f"Off-site access by {user.email if user else 'unknown'} from IP {ip}"
 
         return cls.log(
             request=request,

@@ -128,6 +128,29 @@ class LoginView(APIView):
     authentication_classes = []  # Disable authentication for login endpoint
     throttle_classes = [LoginRateThrottle]
 
+    def _get_client_ip(self, request):
+        """Get the client's real IP address from the request."""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+    def _get_access_context(self, request):
+        """Get off-site access context for the response."""
+        from apps.core.models import SiteNetwork, OffSiteAccessSettings
+
+        client_ip = self._get_client_ip(request)
+        is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
+        settings_obj = OffSiteAccessSettings.get_settings()
+
+        return {
+            'is_offsite': is_offsite,
+            'offsite_mode': settings_obj.offsite_mode,
+            'readonly_message': settings_obj.readonly_message if is_offsite and settings_obj.offsite_mode == 'readonly' else None,
+        }
+
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -146,13 +169,29 @@ class LoginView(APIView):
             # Generate tokens with custom claims
             tokens = get_tokens_for_user(user)
 
+            # Get off-site access context
+            access_context = self._get_access_context(request)
+
+            # Log off-site access if applicable
+            if access_context['is_offsite']:
+                try:
+                    AuditService.log_authentication(
+                        request,
+                        AuditAction.OFFSITE_ACCESS,
+                        success=True,
+                        user=user
+                    )
+                except Exception:
+                    pass  # Don't let audit logging break login
+
             response = Response({
                 'access': tokens['access'],
                 'user': {
                     'email': user.email,
                     'id': user.id,
                     'user_type': user.user_type,
-                }
+                },
+                'access_context': access_context,
             })
 
             response.set_cookie(

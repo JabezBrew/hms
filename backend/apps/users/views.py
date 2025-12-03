@@ -8,6 +8,7 @@ from django.db.models import Q
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
 from .serializers import (
     UserSerializer, UserListSerializer, UserCreateSerializer,
+    UserWithAccessContextSerializer,
     StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
@@ -81,9 +82,10 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def me(self, request):
         """
-        Get the current user's profile.
+        Get the current user's profile with access context.
+        Includes off-site status and read-only mode information.
         """
-        serializer = self.get_serializer(request.user)
+        serializer = UserWithAccessContextSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'])

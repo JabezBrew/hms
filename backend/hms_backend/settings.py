@@ -79,6 +79,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'hms_backend.middleware.JWTUserTypeValidationMiddleware',  # Validate JWT claims
+    'hms_backend.middleware.OffSiteDetectionMiddleware',  # Off-site read-only mode detection
     'apps.audit.middleware.AuditMiddleware',  # Audit logging context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',

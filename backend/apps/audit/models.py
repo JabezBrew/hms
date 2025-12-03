@@ -43,6 +43,7 @@ class AuditAction:
     LOGOUT = 'LOGOUT'
     LOGIN_FAILED = 'LOGIN_FAILED'
     PASSWORD_CHANGE = 'PASSWORD_CHANGE'
+    OFFSITE_ACCESS = 'OFFSITE_ACCESS'
 
     # CRUD
     CREATE = 'CREATE'
@@ -111,6 +112,7 @@ class AuditAction:
         (LOGOUT, 'Logout'),
         (LOGIN_FAILED, 'Login Failed'),
         (PASSWORD_CHANGE, 'Password Change'),
+        (OFFSITE_ACCESS, 'Off-Site Access'),
         (CREATE, 'Create'),
         (READ, 'Read'),
         (UPDATE, 'Update'),

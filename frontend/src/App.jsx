@@ -4,6 +4,7 @@ import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { ViewModeProvider } from './contexts/ViewModeContext'
 import { WorkflowProvider } from './contexts/WorkflowContext'
+import { ReadOnlyModeProvider } from './contexts/ReadOnlyModeContext'
 import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -22,6 +23,7 @@ import { OfflineIndicator } from './components/OfflineIndicator'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
 import { CriticalAlertsMonitor } from './components/dashboard'
 import { PWAPrompt } from './components/pwa'
+import { ReadOnlyBanner } from './components/readonly'
 
 // Lazy load page components for code splitting
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
@@ -170,8 +172,10 @@ function AppContent() {
 
   return (
     <ErrorBoundary>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
+      <ReadOnlyModeProvider>
+        <ReadOnlyBanner />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
           {/* Dashboard - accessible to all authenticated users */}
           <Route path="/" element={
             <Layout>
@@ -581,9 +585,10 @@ function AppContent() {
 
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
-      </Suspense>
-      {/* Mount critical alerts monitor only for authenticated users */}
-      <CriticalAlertsMonitor />
+        </Suspense>
+        {/* Mount critical alerts monitor only for authenticated users */}
+        <CriticalAlertsMonitor />
+      </ReadOnlyModeProvider>
     </ErrorBoundary>
   )
 }
