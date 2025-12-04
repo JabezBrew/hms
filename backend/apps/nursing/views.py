@@ -654,7 +654,11 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
     def mar_grid(self, request):
         """
         Get MAR grid data for a patient/admission over a date range.
-        Returns medications grouped with time slots for each day.
+
+        Dose-based approach:
+        - Course completion based on total doses given vs required, not calendar days
+        - No predefined time slots - records actual administration time
+        - Each day shows dose indicators based on frequency (1 for daily, 3 for TID, etc.)
 
         Query params:
         - admission_id: UUID of admission (required)
@@ -698,7 +702,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         # Parse date range
         start_date_str = request.query_params.get('start_date')
-        days = int(request.query_params.get('days', 7))
+        days_to_show = int(request.query_params.get('days', 7))
 
         if start_date_str:
             try:
@@ -708,17 +712,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         else:
             start_date = timezone.now().date()
 
-        end_date = start_date + timedelta(days=days - 1)
-
-        # Time slots (4 hours apart, 12-hour format)
-        TIME_SLOTS = [
-            ('12 AM', time(0, 0)),
-            ('4 AM', time(4, 0)),
-            ('8 AM', time(8, 0)),
-            ('12 PM', time(12, 0)),
-            ('4 PM', time(16, 0)),
-            ('8 PM', time(20, 0)),
-        ]
+        end_date = start_date + timedelta(days=days_to_show - 1)
 
         # Get all encounters for this admission
         admission_encounters = Encounter.objects.filter(
@@ -732,99 +726,126 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             status='active'
         ).select_related('prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user')
 
-        # Get all MAR entries for this patient in the date range
-        start_datetime = timezone.make_aware(datetime.combine(start_date, time.min))
-        end_datetime = timezone.make_aware(datetime.combine(end_date, time.max))
-
-        mar_entries = MedicationAdministration.objects.filter(
+        # Get ALL MAR entries for this patient (not date-limited, for total dose counting)
+        all_mar_entries = MedicationAdministration.objects.filter(
             patient=admission.patient,
-            scheduled_time__gte=start_datetime,
-            scheduled_time__lte=end_datetime
         ).select_related('administered_by', 'administered_by__staff', 'administered_by__staff__user')
 
-        # Group MAR entries by medication name -> date -> time slot
-        mar_by_med = defaultdict(lambda: defaultdict(dict))
-        for entry in mar_entries:
-            med_key = entry.medication_name.lower().strip()
-            entry_date = entry.scheduled_time.date()
-            entry_time = entry.scheduled_time.time()
+        # Group MAR entries by prescription_id -> date -> list of doses
+        mar_by_prescription = defaultdict(lambda: defaultdict(list))
+        mar_totals_by_prescription = defaultdict(int)
 
-            # Find closest time slot
-            closest_slot = '12 AM'
-            for slot_label, slot_time in TIME_SLOTS:
-                if entry_time >= slot_time:
-                    closest_slot = slot_label
+        for entry in all_mar_entries:
+            if entry.prescription_id:
+                rx_id = str(entry.prescription_id)
+                entry_date = entry.administered_time.date() if entry.administered_time else entry.scheduled_time.date()
 
-            administered_by_name = None
-            if entry.administered_by and entry.administered_by.staff and entry.administered_by.staff.user:
-                u = entry.administered_by.staff.user
-                administered_by_name = f"{u.first_name} {u.last_name}".strip()
+                # Count total administered doses
+                if entry.status == 'administered':
+                    mar_totals_by_prescription[rx_id] += 1
 
-            mar_by_med[med_key][str(entry_date)][closest_slot] = {
-                'id': str(entry.id),
-                'status': entry.status,
-                'scheduled_time': entry.scheduled_time.isoformat(),
-                'administered_time': entry.administered_time.isoformat() if entry.administered_time else None,
-                'administered_by': administered_by_name,
-                'notes': entry.notes or '',
-            }
+                # Group by date for the grid view
+                administered_by_name = None
+                if entry.administered_by and entry.administered_by.staff and entry.administered_by.staff.user:
+                    u = entry.administered_by.staff.user
+                    administered_by_name = f"{u.first_name} {u.last_name}".strip()
+
+                mar_by_prescription[rx_id][str(entry_date)].append({
+                    'id': str(entry.id),
+                    'status': entry.status,
+                    'administered_time': entry.administered_time.isoformat() if entry.administered_time else None,
+                    'administered_by': administered_by_name,
+                    'notes': entry.notes or '',
+                })
 
         # Build response
         medications_data = []
+        today = timezone.now().date()
+
         for rx in prescriptions:
             prescriber_name = 'Unknown'
             if rx.prescribed_by and rx.prescribed_by.staff and rx.prescribed_by.staff.user:
                 u = rx.prescribed_by.staff.user
                 prescriber_name = f"Dr. {u.first_name} {u.last_name}".strip()
 
-            # Determine which time slots this medication uses based on frequency
-            freq = rx.frequency.lower() if rx.frequency else 'daily'
-            active_slots = self._get_time_slots_for_frequency(freq)
+            # Calculate doses per day from frequency
+            doses_per_day = self._get_doses_per_day(rx.frequency)
 
-            med_key = rx.medication_name.lower().strip()
+            # Calculate total doses required
+            # If prescription has duration_days, use it; otherwise calculate from start/end dates
+            if rx.start_date and rx.end_date:
+                duration_days = (rx.end_date - rx.start_date).days + 1
+            else:
+                duration_days = 0  # Ongoing prescription
+
+            total_doses_required = doses_per_day * duration_days if duration_days > 0 else 0
+
+            # Get total doses administered for this prescription
+            rx_id = str(rx.id)
+            total_doses_administered = mar_totals_by_prescription.get(rx_id, 0)
+
+            # Course is complete when all required doses are given
+            # (only if there's a defined total; ongoing prescriptions are never "complete")
+            course_complete = total_doses_required > 0 and total_doses_administered >= total_doses_required
 
             # Build days data
             days_data = {}
             current_date = start_date
+
             while current_date <= end_date:
                 date_str = str(current_date)
-                slots_data = {}
 
-                for slot_label in active_slots:
-                    # Check if we have a MAR entry for this slot
-                    mar_entry = mar_by_med.get(med_key, {}).get(date_str, {}).get(slot_label)
+                # Get administered doses for this day
+                day_mar_entries = mar_by_prescription.get(rx_id, {}).get(date_str, [])
+                administered_doses = [e for e in day_mar_entries if e['status'] == 'administered']
 
-                    if mar_entry:
-                        slots_data[slot_label] = mar_entry
+                # Determine day status
+                is_before_start = rx.start_date and current_date < rx.start_date
+                is_after_course_complete = course_complete
+                is_today = current_date == today
+                is_past = current_date < today
+
+                # Build dose slots for this day
+                doses = []
+                for dose_num in range(1, doses_per_day + 1):
+                    # Check if this dose was administered
+                    if dose_num <= len(administered_doses):
+                        dose_entry = administered_doses[dose_num - 1]
+                        doses.append({
+                            'dose_number': dose_num,
+                            'status': 'administered',
+                            'id': dose_entry['id'],
+                            'administered_time': dose_entry['administered_time'],
+                            'administered_by': dose_entry['administered_by'],
+                            'notes': dose_entry['notes'],
+                        })
                     else:
-                        # Determine if this slot is scheduled, in the past (missed), or future
-                        slot_time = dict(TIME_SLOTS)[slot_label]
-                        slot_datetime = timezone.make_aware(datetime.combine(current_date, slot_time))
-                        now = timezone.now()
-
-                        if slot_datetime < now - timedelta(hours=2):
-                            slot_status = 'missed'  # Past and not administered
-                        elif slot_datetime <= now:
-                            slot_status = 'due'  # Within window
+                        # Dose not yet given
+                        if is_before_start:
+                            dose_status = 'not_started'
+                        elif is_after_course_complete:
+                            dose_status = 'completed'
+                        elif is_past:
+                            dose_status = 'missed'
+                        elif is_today:
+                            dose_status = 'due'
                         else:
-                            slot_status = 'scheduled'  # Future
+                            dose_status = 'scheduled'
 
-                        # Only show slots within prescription date range
-                        if rx.start_date and current_date < rx.start_date:
-                            slot_status = 'not_started'
-                        elif rx.end_date and current_date > rx.end_date:
-                            slot_status = 'completed'
-
-                        slots_data[slot_label] = {
+                        doses.append({
+                            'dose_number': dose_num,
+                            'status': dose_status,
                             'id': None,
-                            'status': slot_status,
-                            'scheduled_time': slot_datetime.isoformat(),
                             'administered_time': None,
                             'administered_by': None,
                             'notes': '',
-                        }
+                        })
 
-                days_data[date_str] = slots_data
+                days_data[date_str] = {
+                    'doses': doses,
+                    'doses_given': len(administered_doses),
+                    'doses_required': doses_per_day,
+                }
                 current_date += timedelta(days=1)
 
             medications_data.append({
@@ -835,11 +856,15 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 'route_display': rx.get_route_display(),
                 'frequency': rx.frequency,
                 'frequency_display': rx.get_frequency_display(),
+                'duration_days': rx.duration_days,
                 'instructions': rx.instructions,
                 'prescribed_by': prescriber_name,
                 'start_date': rx.start_date.isoformat() if rx.start_date else None,
                 'end_date': rx.end_date.isoformat() if rx.end_date else None,
-                'time_slots': active_slots,
+                'doses_per_day': doses_per_day,
+                'total_doses_required': total_doses_required,
+                'total_doses_administered': total_doses_administered,
+                'course_complete': course_complete,
                 'days': days_data,
             })
 
@@ -852,7 +877,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 'day_name': current_date.strftime('%a'),
                 'day_num': current_date.day,
                 'month': current_date.strftime('%b'),
-                'is_today': current_date == timezone.now().date(),
+                'is_today': current_date == today,
             })
             current_date += timedelta(days=1)
 
@@ -863,51 +888,45 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             'date_range': {
                 'start': str(start_date),
                 'end': str(end_date),
-                'days': days,
+                'days': days_to_show,
             },
             'date_headers': date_headers,
-            'time_slots': [slot[0] for slot in TIME_SLOTS],
             'medications': medications_data,
         })
 
-    def _get_time_slots_for_frequency(self, frequency):
-        """Map medication frequency to time slots."""
+    def _get_doses_per_day(self, frequency):
+        """Calculate doses per day from frequency string."""
+        if not frequency:
+            return 1
+
         freq = frequency.lower()
 
-        # QHS - at bedtime
-        if 'qhs' in freq or 'bedtime' in freq or 'hs' in freq:
-            return ['8 PM']
+        # Once daily variations
+        if any(x in freq for x in ['qd', 'daily', 'once', 'qhs', 'qam', 'bedtime', 'morning']):
+            return 1
 
-        # QAM - morning
-        if 'qam' in freq or 'morning' in freq:
-            return ['8 AM']
+        # Twice daily
+        if any(x in freq for x in ['bid', 'twice', 'q12h', '2 times', '2x']):
+            return 2
 
-        # Daily/Once daily
-        if freq in ['daily', 'once', 'qd'] or 'once daily' in freq:
-            return ['8 AM']
+        # Three times daily
+        if any(x in freq for x in ['tid', 'three', 'q8h', '3 times', '3x']):
+            return 3
 
-        # BID - twice daily
-        if 'bid' in freq or 'twice' in freq or 'q12h' in freq:
-            return ['8 AM', '8 PM']
+        # Four times daily
+        if any(x in freq for x in ['qid', 'four', 'q6h', '4 times', '4x']):
+            return 4
 
-        # TID - three times daily
-        if 'tid' in freq or 'three' in freq or 'q8h' in freq:
-            return ['8 AM', '12 PM', '8 PM']
-
-        # QID - four times daily
-        if 'qid' in freq or 'four' in freq or 'q6h' in freq:
-            return ['8 AM', '12 PM', '4 PM', '8 PM']
-
-        # Q4H - every 4 hours
+        # Every 4 hours (6 times daily)
         if 'q4h' in freq:
-            return ['12 AM', '4 AM', '8 AM', '12 PM', '4 PM', '8 PM']
+            return 6
 
-        # PRN - as needed (show all slots as potential)
-        if 'prn' in freq or 'as needed' in freq:
-            return ['8 AM', '12 PM', '4 PM', '8 PM']
+        # PRN - as needed (count as 4 potential doses per day)
+        if any(x in freq for x in ['prn', 'as needed']):
+            return 4
 
-        # Default to daily
-        return ['8 AM']
+        # Default to once daily
+        return 1
 
 
 class ShiftHandoffViewSet(viewsets.ModelViewSet):
