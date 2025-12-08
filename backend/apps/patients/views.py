@@ -365,34 +365,27 @@ class PatientViewSet(viewsets.ViewSet):
         """
         Get a patient by ID.
         """
-        try:
-            patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = get_object_or_404(PatientProfile, id=pk)
 
-            # Add to recent patients
-            RecentPatient.objects.get_or_create(
-                user=request.user,
-                patient_profile=patient_profile
-            )
+        # Add to recent patients
+        RecentPatient.objects.get_or_create(
+            user=request.user,
+            patient_profile=patient_profile
+        )
 
-            # Get FHIR data if available
-            fhir_data = None
-            if patient_profile.fhir_patient_id:
-                try:
-                    fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
-                except Exception as e:
-                    # Just log the error but continue
-                    print(f"Failed to get FHIR data: {str(e)}")
+        # Get FHIR data if available
+        fhir_data = None
+        if patient_profile.fhir_patient_id:
+            try:
+                fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
+            except Exception as e:
+                # Just log the error but continue
+                print(f"Failed to get FHIR data: {str(e)}")
 
-            return Response({
-                "local_data": PatientProfileSerializer(patient_profile).data,
-                "fhir_data": fhir_data
-            })
-
-        except Exception as e:
-            return Response(
-                {"error": f"Failed to get patient: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({
+            "local_data": PatientProfileSerializer(patient_profile).data,
+            "fhir_data": fhir_data
+        })
 
     @action(detail=True, methods=['put'])
     def update_patient(self, request, pk=None):

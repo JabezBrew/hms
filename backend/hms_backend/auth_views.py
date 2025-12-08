@@ -155,6 +155,18 @@ class LoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
+        # Validate required fields before authentication (and before rate limiting counts)
+        if not email:
+            return Response(
+                {"email": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not password:
+            return Response(
+                {"password": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         user = authenticate(request, username=email, password=password)
 
         if user is not None:
@@ -190,6 +202,8 @@ class LoginView(APIView):
                     'email': user.email,
                     'id': user.id,
                     'user_type': user.user_type,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
                 },
                 'access_context': access_context,
             })

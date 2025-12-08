@@ -176,7 +176,31 @@ export const authHandlers = [
 const mockPatients = Array.from({ length: 10 }, () => generateMockPatient())
 
 export const patientHandlers = [
-  // List patients
+  // List patients (from users app endpoint)
+  http.get(`${API_BASE}/users/patients/`, ({ request }) => {
+    const url = new URL(request.url)
+    const search = url.searchParams.get('search')
+    const page = parseInt(url.searchParams.get('page') || '1', 10)
+    const pageSize = parseInt(url.searchParams.get('page_size') || '10', 10)
+
+    let filtered = mockPatients
+    if (search) {
+      const searchLower = search.toLowerCase()
+      filtered = mockPatients.filter(
+        (p) =>
+          p.user.first_name.toLowerCase().includes(searchLower) ||
+          p.user.last_name.toLowerCase().includes(searchLower) ||
+          p.medical_record_number.toLowerCase().includes(searchLower)
+      )
+    }
+
+    const start = (page - 1) * pageSize
+    const results = filtered.slice(start, start + pageSize)
+
+    return HttpResponse.json(paginatedResponse(results, filtered.length))
+  }),
+
+  // List patients (legacy endpoint)
   http.get(`${API_BASE}/patients/`, ({ request }) => {
     const url = new URL(request.url)
     const search = url.searchParams.get('search')
@@ -200,7 +224,16 @@ export const patientHandlers = [
     return HttpResponse.json(paginatedResponse(results, filtered.length))
   }),
 
-  // Get patient detail
+  // Get patient detail (new endpoint)
+  http.get(`${API_BASE}/patients/:id/get_patient/`, ({ params }) => {
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json(patient)
+  }),
+
+  // Get patient detail (legacy endpoint)
   http.get(`${API_BASE}/patients/:id/`, ({ params }) => {
     const patient = mockPatients.find((p) => p.id === params.id)
     if (!patient) {
@@ -224,7 +257,17 @@ export const patientHandlers = [
     return HttpResponse.json(newPatient, { status: 201 })
   }),
 
-  // Update patient
+  // Update patient (PUT)
+  http.put(`${API_BASE}/patients/:id/`, async ({ params, request }) => {
+    const body = await request.json()
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json({ ...patient, ...body })
+  }),
+
+  // Update patient (PATCH)
   http.patch(`${API_BASE}/patients/:id/`, async ({ params, request }) => {
     const body = await request.json()
     const patient = mockPatients.find((p) => p.id === params.id)
@@ -234,10 +277,19 @@ export const patientHandlers = [
     return HttpResponse.json({ ...patient, ...body })
   }),
 
+  // Delete patient
+  http.delete(`${API_BASE}/patients/:id/delete_patient/`, ({ params }) => {
+    const patientIndex = mockPatients.findIndex((p) => p.id === params.id)
+    if (patientIndex === -1) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json({ detail: 'Patient deleted successfully' })
+  }),
+
   // Search patients
   http.get(`${API_BASE}/patients/search/`, ({ request }) => {
     const url = new URL(request.url)
-    const query = url.searchParams.get('q') || ''
+    const query = url.searchParams.get('query') || url.searchParams.get('q') || ''
     const queryLower = query.toLowerCase()
 
     const results = mockPatients.filter(
@@ -248,6 +300,56 @@ export const patientHandlers = [
     )
 
     return HttpResponse.json(results.slice(0, 10))
+  }),
+
+  // Recent patients
+  http.get(`${API_BASE}/patients/recent/`, () => {
+    return HttpResponse.json(mockPatients.slice(0, 5))
+  }),
+
+  // Register patient
+  http.post(`${API_BASE}/patients/register/`, async ({ request }) => {
+    const body = await request.json()
+    const newPatient = generateMockPatient({
+      user: {
+        ...generateMockUser({ user_type: 'patient' }),
+        first_name: body.first_name,
+        last_name: body.last_name,
+        email: body.email,
+      },
+      medical_record_number: `MRN${faker.string.numeric(6)}`,
+    })
+    return HttpResponse.json(newPatient, { status: 201 })
+  }),
+
+  // Update patient with FHIR
+  http.put(`${API_BASE}/patients/:id/update_patient/`, async ({ params, request }) => {
+    const body = await request.json()
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json({ ...patient, ...body })
+  }),
+
+  // Patient history
+  http.get(`${API_BASE}/patients/:id/history/`, ({ params }) => {
+    const patient = mockPatients.find((p) => p.id === params.id)
+    if (!patient) {
+      return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    }
+    return HttpResponse.json([
+      { type: 'encounter', date: faker.date.past().toISOString(), description: 'General checkup' },
+      { type: 'lab_result', date: faker.date.past().toISOString(), description: 'Blood test' },
+    ])
+  }),
+
+  // Validation rules
+  http.get(`${API_BASE}/patients/validation-rules/`, () => {
+    return HttpResponse.json({
+      required_fields: ['first_name', 'last_name', 'date_of_birth'],
+      optional_fields: ['blood_group', 'allergies'],
+    })
   }),
 ]
 
@@ -374,28 +476,121 @@ export const nursingHandlers = [
 // Ward Handlers
 // =============================================================================
 
+const mockWards = Array.from({ length: 5 }, () => generateMockWard())
+
 export const wardHandlers = [
-  // List wards
+  // Root endpoint for wards API
   http.get(`${API_BASE}/wards/`, () => {
-    const wards = Array.from({ length: 5 }, () => generateMockWard())
-    return HttpResponse.json(paginatedResponse(wards))
+    return HttpResponse.json({
+      id: 'wards',
+      wards: `${API_BASE}/wards/wards/`,
+      beds: `${API_BASE}/wards/beds/`,
+      admissions: `${API_BASE}/wards/admissions/`,
+    })
+  }),
+
+  // List wards (nested under /wards/wards/)
+  http.get(`${API_BASE}/wards/wards/`, ({ request }) => {
+    const url = new URL(request.url)
+    const isActive = url.searchParams.get('is_active')
+    const wardType = url.searchParams.get('ward_type')
+
+    let filtered = mockWards
+    if (isActive !== null) {
+      filtered = filtered.filter(w => w.is_active === (isActive === 'true'))
+    }
+    if (wardType) {
+      filtered = filtered.filter(w => w.ward_type === wardType)
+    }
+
+    return HttpResponse.json(paginatedResponse(filtered))
   }),
 
   // Get ward detail
-  http.get(`${API_BASE}/wards/:id/`, ({ params }) => {
+  http.get(`${API_BASE}/wards/wards/:id/`, ({ params }) => {
+    const ward = mockWards.find(w => w.id === params.id)
+    if (ward) {
+      return HttpResponse.json(ward)
+    }
     return HttpResponse.json(generateMockWard({ id: params.id }))
   }),
 
-  // Ward beds
-  http.get(`${API_BASE}/wards/:id/beds/`, ({ params }) => {
+  // Create ward
+  http.post(`${API_BASE}/wards/wards/`, async ({ request }) => {
+    const body = await request.json()
+    const newWard = generateMockWard({
+      name: body.name,
+      ward_type: body.ward_type,
+      total_beds: 0,
+      available_beds_count: 0,
+    })
+    return HttpResponse.json(newWard, { status: 201 })
+  }),
+
+  // Update ward (PUT)
+  http.put(`${API_BASE}/wards/wards/:id/`, async ({ params, request }) => {
+    const body = await request.json()
+    const ward = mockWards.find(w => w.id === params.id) || generateMockWard({ id: params.id })
+    return HttpResponse.json({ ...ward, ...body })
+  }),
+
+  // Update ward (PATCH)
+  http.patch(`${API_BASE}/wards/wards/:id/`, async ({ params, request }) => {
+    const body = await request.json()
+    const ward = mockWards.find(w => w.id === params.id) || generateMockWard({ id: params.id })
+    return HttpResponse.json({ ...ward, ...body })
+  }),
+
+  // Delete ward
+  http.delete(`${API_BASE}/wards/wards/:id/`, () => {
+    return HttpResponse.json({ detail: 'Deleted successfully' })
+  }),
+
+  // Get beds for a specific ward (nested)
+  http.get(`${API_BASE}/wards/wards/:wardId/beds/`, ({ params }) => {
     const beds = Array.from({ length: 10 }, (_, i) => ({
       id: mockUUID(),
-      ward: params.id,
+      ward: params.wardId,
       bed_number: `B-${i + 1}`,
       bed_type: 'standard',
       status: faker.helpers.arrayElement(['available', 'occupied', 'reserved']),
     }))
-    return HttpResponse.json(beds)
+
+    return HttpResponse.json(paginatedResponse(beds))
+  }),
+
+  // List all beds
+  http.get(`${API_BASE}/wards/beds/`, ({ request }) => {
+    const url = new URL(request.url)
+    const wardId = url.searchParams.get('ward')
+
+    const beds = Array.from({ length: 10 }, (_, i) => ({
+      id: mockUUID(),
+      ward: wardId || mockUUID(),
+      bed_number: `B-${i + 1}`,
+      bed_type: 'standard',
+      status: faker.helpers.arrayElement(['available', 'occupied', 'reserved']),
+    }))
+
+    return HttpResponse.json(paginatedResponse(beds))
+  }),
+
+  // Admissions list
+  http.get(`${API_BASE}/wards/admissions/`, ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+
+    const admissions = Array.from({ length: 5 }, () => ({
+      id: mockUUID(),
+      patient: mockUUID(),
+      ward: mockUUID(),
+      bed: mockUUID(),
+      admission_type: faker.helpers.arrayElement(['emergency', 'elective', 'transfer']),
+      status: status || faker.helpers.arrayElement(['active', 'discharged', 'transferred']),
+      admission_date: faker.date.past().toISOString(),
+    }))
+
+    return HttpResponse.json(paginatedResponse(admissions))
   }),
 ]
 

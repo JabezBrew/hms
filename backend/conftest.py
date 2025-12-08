@@ -10,21 +10,30 @@ This module provides comprehensive fixtures for:
 - Mock Celery task fixtures
 """
 import os
+import sys
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 import django
 import pytest
+
+# Add backend directory to Python path
+BACKEND_DIR = Path(__file__).parent.resolve()
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+# Configure Django settings BEFORE importing Django/DRF modules
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
+django.setup()
+
+# Import Django/DRF modules after setup
 from django.conf import settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-
-# Configure Django settings
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
-django.setup()
 
 # Import models after Django setup
 from django.contrib.auth import get_user_model

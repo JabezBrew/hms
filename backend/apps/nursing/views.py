@@ -755,7 +755,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                     'status': entry.status,
                     'administered_time': entry.administered_time.isoformat() if entry.administered_time else None,
                     'administered_by': administered_by_name,
-                    'notes': entry.notes or '',
+                    'notes': entry.administration_notes or '',
                 })
 
         # Build response
@@ -771,14 +771,9 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             # Calculate doses per day from frequency
             doses_per_day = self._get_doses_per_day(rx.frequency)
 
-            # Calculate total doses required
-            # If prescription has duration_days, use it; otherwise calculate from start/end dates
-            if rx.start_date and rx.end_date:
-                duration_days = (rx.end_date - rx.start_date).days + 1
-            else:
-                duration_days = 0  # Ongoing prescription
-
-            total_doses_required = doses_per_day * duration_days if duration_days > 0 else 0
+            # Calculate total doses required using duration_days from prescription
+            duration_days = rx.duration_days or 0
+            total_doses_required = doses_per_day * duration_days
 
             # Get total doses administered for this prescription
             rx_id = str(rx.id)

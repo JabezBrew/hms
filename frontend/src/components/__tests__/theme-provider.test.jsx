@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { vi } from 'vitest';
 import { ThemeProvider, useTheme } from '../theme-provider';
 
 // Test component that uses the useTheme hook
@@ -25,8 +26,8 @@ describe('ThemeProvider', () => {
       writable: true,
       value: {
         classList: {
-          add: jest.fn(),
-          remove: jest.fn(),
+          add: vi.fn(),
+          remove: vi.fn(),
         },
       },
     });

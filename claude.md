@@ -246,6 +246,62 @@ import {
 
 ---
 
+## Testing Requirements
+
+**Always run tests after making code changes** to ensure no breaking changes.
+
+### Core Rules
+1. **Write tests for every new feature** - No feature is complete without tests
+2. **Run tests at the end of implementation** - Verify the feature works as expected
+3. **Fix failing tests before moving on** - Never leave broken tests behind
+
+### When to Run Tests
+- **Bug fixes**: Run the specific test + related tests in the same module
+- **New features**: Write new tests, then run them + existing tests for the module
+- **Refactoring**: Run full test suite for affected areas
+- **Before committing**: Run at minimum the tests for changed files
+
+### Test Commands
+
+```bash
+# Backend (from backend/ directory)
+source .venv/bin/activate
+
+# Run specific test file
+python -m pytest path/to/test_file.py -v --tb=short
+
+# Run specific test class
+python -m pytest path/to/test_file.py::TestClassName -v --tb=short
+
+# Run specific test method
+python -m pytest path/to/test_file.py::TestClassName::test_method -v --tb=short
+
+# Run tests for an app
+python -m pytest apps/app_name/tests/ -v --tb=short
+
+# Run full backend suite
+python -m pytest -v --tb=short
+```
+
+```bash
+# Frontend (from frontend/ directory)
+# Run unit tests
+npm run test
+
+# Run specific test file
+npm run test -- path/to/test.test.jsx
+
+# Run E2E tests (requires dev server)
+npm run test:e2e
+```
+
+### Test Markers (Backend)
+- `@pytest.mark.tier1` - Critical tests, run frequently
+- `@pytest.mark.integration` - Integration tests
+- `@pytest.mark.rbac` - Role-based access control tests
+
+---
+
 ## Workflow Design Checklist
 
 Before implementing a new workflow:
@@ -275,3 +331,4 @@ Before implementing a new workflow:
 ---
 
 **Success = Clinical staff focus on patient care, not navigating software.**
+- let's do test driven development from now!
