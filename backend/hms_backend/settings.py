@@ -134,27 +134,41 @@ else:
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
+#
+# Supports two configuration methods:
+# 1. DATABASE_URL (Railway, Heroku, Render, etc.)
+# 2. Individual DB_* variables (Docker, traditional hosting)
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DB_NAME'),
-        'USER': env('DB_USER'),
-        'PASSWORD': env('DB_PASSWORD'),
-        'HOST': env('DB_HOST'),
-        'PORT': env('DB_PORT'),
-        # Connection pooling - persistent connections for 10 minutes
-        # This prevents creating/destroying connections per request
-        'CONN_MAX_AGE': 600,
-        # Health checks ensure stale connections are recycled (Django 4.1+)
-        'CONN_HEALTH_CHECKS': True,
-        'OPTIONS': {
-            'connect_timeout': 10,
-            # Query timeout of 30 seconds to prevent long-running queries
-            'options': '-c statement_timeout=30000',
-        },
+if env('DATABASE_URL', default=None):
+    # Parse DATABASE_URL (e.g., postgresql://user:pass@host:5432/dbname)
+    DATABASES = {
+        'default': env.db('DATABASE_URL')
     }
-}
+else:
+    # Use individual environment variables
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': env('DB_NAME'),
+            'USER': env('DB_USER'),
+            'PASSWORD': env('DB_PASSWORD'),
+            'HOST': env('DB_HOST'),
+            'PORT': env('DB_PORT'),
+        }
+    }
+
+# Add connection pooling and health checks
+DATABASES['default'].update({
+    # Connection pooling - persistent connections for 10 minutes
+    'CONN_MAX_AGE': 600,
+    # Health checks ensure stale connections are recycled (Django 4.1+)
+    'CONN_HEALTH_CHECKS': True,
+    'OPTIONS': {
+        'connect_timeout': 10,
+        # Query timeout of 30 seconds to prevent long-running queries
+        'options': '-c statement_timeout=30000',
+    },
+})
 
 # Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
 # Routes read queries to replica for horizontal scaling
