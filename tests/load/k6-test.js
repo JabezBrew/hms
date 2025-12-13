@@ -215,9 +215,9 @@ export function setup() {
 
   // Store credentials for token refresh during test
   const credentials = {
-    nurse: { email: 'nurse@hms.local', password: 'testpass123' },
-    doctor: { email: 'doctor@hms.local', password: 'testpass123' },
-    admin: { email: 'admin@example.com', password: 'AdminPassword123' },
+    nurse: { email: 'nurse@hms.com', password: 'TestPass123!' },
+    doctor: { email: 'doctor@hms.com', password: 'TestPass123!' },
+    admin: { email: 'admin@hms.com', password: 'Admin123!' },
   };
 
   // Get initial tokens

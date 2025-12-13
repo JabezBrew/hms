@@ -14,11 +14,11 @@ from apps.users.models import User, Staff, PractitionerProfile, PatientProfile
 from datetime import date
 
 
-# Test users configuration - matches E2E test expectations
+# Test users configuration - matches E2E test and load test expectations
 TEST_USERS = [
     {
-        'email': 'doctor@hms.local',
-        'password': 'testpass123',
+        'email': 'doctor@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'Test',
         'last_name': 'Doctor',
         'user_type': 'doctor',
@@ -36,8 +36,8 @@ TEST_USERS = [
         },
     },
     {
-        'email': 'nurse@hms.local',
-        'password': 'testpass123',
+        'email': 'nurse@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'Test',
         'last_name': 'Nurse',
         'user_type': 'nurse',
@@ -55,8 +55,8 @@ TEST_USERS = [
         },
     },
     {
-        'email': 'receptionist@hms.local',
-        'password': 'testpass123',
+        'email': 'receptionist@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'Test',
         'last_name': 'Receptionist',
         'user_type': 'receptionist',
@@ -69,18 +69,8 @@ TEST_USERS = [
         },
     },
     {
-        'email': 'admin@hms.local',
-        'password': 'testpass123',
-        'first_name': 'Test',
-        'last_name': 'Admin',
-        'user_type': 'admin',
-        'username': 'test_admin',
-        'is_staff': True,
-        'is_superuser': True,
-    },
-    {
-        'email': 'lab_tech@hms.local',
-        'password': 'testpass123',
+        'email': 'lab_tech@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'Test',
         'last_name': 'LabTech',
         'user_type': 'lab_technician',
@@ -93,8 +83,8 @@ TEST_USERS = [
         },
     },
     {
-        'email': 'pharmacist@hms.local',
-        'password': 'testpass123',
+        'email': 'pharmacist@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'Test',
         'last_name': 'Pharmacist',
         'user_type': 'pharmacist',
@@ -107,8 +97,8 @@ TEST_USERS = [
         },
     },
     {
-        'email': 'patient@hms.local',
-        'password': 'testpass123',
+        'email': 'patient@hms.com',
+        'password': 'TestPass123!',
         'first_name': 'John',
         'last_name': 'Doe',
         'user_type': 'patient',
@@ -213,4 +203,4 @@ class Command(BaseCommand):
         self.stdout.write('')
         self.stdout.write('Test users available:')
         for user_data in TEST_USERS:
-            self.stdout.write(f"  - {user_data['email']} / testpass123 ({user_data['user_type']})")
+            self.stdout.write(f"  - {user_data['email']} / TestPass123! ({user_data['user_type']})")
