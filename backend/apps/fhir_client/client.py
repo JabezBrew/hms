@@ -5,6 +5,7 @@ import os
 import json
 import logging
 import time
+import uuid
 from typing import Dict, List, Optional, Union, Any
 
 import google.auth
@@ -102,13 +103,14 @@ class FHIRClient:
                         "entry": []
                     }
             elif method in ['POST', 'PUT']:
-                # For POST/PUT requests, return the input data with a mock ID
+                # For POST/PUT requests, return the input data with a unique mock ID
+                mock_id = f"mock-{uuid.uuid4().hex[:12]}"
                 if json_data:
                     result = json_data.copy()
-                    result["id"] = "mock-id"
+                    result["id"] = mock_id
                     result["meta"] = {"versionId": "1"}
                     return result
-                return {"id": "mock-id", "meta": {"versionId": "1"}}
+                return {"id": mock_id, "meta": {"versionId": "1"}}
             elif method == 'DELETE':
                 # For DELETE requests, return an empty dict
                 return {}
