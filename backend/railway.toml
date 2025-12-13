@@ -8,4 +8,4 @@ builder = "nixpacks"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
-startCommand = "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn hms_backend.wsgi:application --bind 0.0.0.0:$PORT"
+startCommand = "python manage.py collectstatic --noinput && python manage.py migrate && python manage.py set_admin && gunicorn hms_backend.wsgi:application --bind 0.0.0.0:$PORT"
