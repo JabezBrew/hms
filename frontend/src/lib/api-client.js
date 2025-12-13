@@ -4,8 +4,9 @@
 import { toast } from 'sonner';
 
 // Base URL for API requests
-// Use relative path by default to work with Vite's proxy in both dev and preview modes
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+// In production, use the backend URL. In development, use Vite's proxy.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD ? 'https://backend-production-d15a.up.railway.app/api' : '/api');
 
 const AUTH_ENDPOINTS = [
   '/auth/login/',
