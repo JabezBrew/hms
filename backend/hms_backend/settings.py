@@ -368,7 +368,7 @@ JWT_AUTH_COOKIE = None  # Don't store access token in cookie
 JWT_AUTH_REFRESH_COOKIE = 'refresh_token'  # Store refresh token in cookie
 JWT_AUTH_SECURE = env.bool('JWT_AUTH_SECURE', default=False if DEBUG else True)  # Secure cookie in prod, not in local dev
 JWT_AUTH_HTTPONLY = True  # Use HttpOnly cookie for refresh token
-JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='Lax')  # SameSite cookie setting
+JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='None' if not DEBUG else 'Lax')  # Cross-origin requires 'None'; local dev uses 'Lax'
 
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
