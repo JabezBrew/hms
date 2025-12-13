@@ -979,7 +979,6 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         """
         return self.dashboard(request)
 
-    @method_decorator(cache_page(30))  # Cache for 30 seconds (frequent updates needed)
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
         """
@@ -988,7 +987,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         Supports pagination with page and page_size query params.
 
         OPTIMIZED: Uses Prefetch to reduce queries from 81 to 5-6 for 20 patients.
-        CACHED: Results cached for 30 seconds to reduce database load while staying fresh.
+        CACHED: Full response cached for 30 seconds via Redis, shared across all users.
         """
         try:
             # Get query parameters with error handling
@@ -1001,6 +1000,13 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             except (ValueError, TypeError):
                 page = 1
                 page_size = 20
+
+            # Check cache first - key based on query params only (not cookies/user)
+            # This allows sharing cached responses across all authenticated users
+            cache_key = f'nursing_dashboard:{ward_id or "all"}:p{page}:ps{page_size}'
+            cached_response = cache.get(cache_key)
+            if cached_response is not None:
+                return Response(cached_response)
 
             # Calculate time boundaries for prefetch filters
             now = timezone.now()
@@ -1058,12 +1064,8 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             if ward_id:
                 admissions = admissions.filter(bed__ward_id=ward_id)
 
-            # Get total count with caching (avoid expensive count on every request)
-            cache_key = f'nursing_dashboard_count_{ward_id or "all"}'
-            total_count = cache.get(cache_key)
-            if total_count is None:
-                total_count = admissions.count()
-                cache.set(cache_key, total_count, 60)  # Cache count for 60 seconds
+            # Get total count
+            total_count = admissions.count()
 
             # Apply pagination
             start = (page - 1) * page_size
@@ -1095,14 +1097,19 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             # Use lightweight list serializer for dashboard (97% payload reduction)
             serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
 
-            # Return paginated response
-            return Response({
+            # Build response data
+            response_data = {
                 'count': total_count,
                 'page': page,
                 'page_size': page_size,
-                'total_pages': (total_count + page_size - 1) // page_size,
+                'total_pages': (total_count + page_size - 1) // page_size if total_count > 0 else 0,
                 'results': serializer.data
-            })
+            }
+
+            # Cache for 30 seconds - shared across all users
+            cache.set(cache_key, response_data, 30)
+
+            return Response(response_data)
 
         except Exception as e:
             # Log the error and return a proper error response
