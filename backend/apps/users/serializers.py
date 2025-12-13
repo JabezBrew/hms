@@ -545,29 +545,23 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 ]
 
             # Create the FHIR resource
-            try:
-                fhir_practitioner = fhir_client.create_resource("Practitioner", fhir_practitioner_data)
+            # Note: No try/except with manual cleanup needed here.
+            # The view wraps this in transaction.atomic(), so any exception
+            # will automatically rollback all DB changes (User, Staff, PractitionerProfile).
+            fhir_practitioner = fhir_client.create_resource("Practitioner", fhir_practitioner_data)
 
-                # Create the mapping
-                PractitionerFHIRMapping.objects.create(
-                    practitioner_profile=practitioner_profile,
-                    fhir_practitioner_id=fhir_practitioner["id"],
-                    fhir_resource_version=fhir_practitioner.get("meta", {}).get("versionId"),
-                    created_by=self.context['request'].user,
-                    updated_by=self.context['request'].user
-                )
+            # Create the mapping
+            PractitionerFHIRMapping.objects.create(
+                practitioner_profile=practitioner_profile,
+                fhir_practitioner_id=fhir_practitioner["id"],
+                fhir_resource_version=fhir_practitioner.get("meta", {}).get("versionId"),
+                created_by=self.context['request'].user,
+                updated_by=self.context['request'].user
+            )
 
-                # Update the practitioner profile with the FHIR ID
-                practitioner_profile.fhir_practitioner_id = fhir_practitioner["id"]
-                practitioner_profile.save()
-
-            except Exception as e:
-                # If FHIR creation fails, delete the local resources and raise the error
-                if practitioner_profile:
-                    practitioner_profile.delete()
-                staff.delete()
-                user.delete()
-                raise serializers.ValidationError(f"Failed to create FHIR Practitioner resource: {str(e)}")
+            # Update the practitioner profile with the FHIR ID
+            practitioner_profile.fhir_practitioner_id = fhir_practitioner["id"]
+            practitioner_profile.save()
 
         return staff
 
