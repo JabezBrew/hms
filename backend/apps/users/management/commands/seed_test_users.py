@@ -113,6 +113,22 @@ TEST_USERS = [
             'emergency_contact_relationship': 'Spouse',
         },
     },
+    {
+        'email': 'admin@hms.com',
+        'password': 'Admin123!',
+        'first_name': 'Test',
+        'last_name': 'Admin',
+        'user_type': 'admin',
+        'username': 'test_admin',
+        'is_staff': True,
+        'is_superuser': True,
+        'staff': {
+            'employee_id': 'EMP-ADM-001',
+            'department': 'Administration',
+            'position': 'System Administrator',
+            'hire_date': date(2019, 1, 1),
+        },
+    },
 ]
 
 

@@ -211,33 +211,31 @@ function getValidToken(userType, credentials) {
 
 // Setup function - runs once (shared across all VUs)
 export function setup() {
-  console.log('Setting up test - logging in test users...');
+  console.log('Setting up test - logging in test user...');
 
-  // Store credentials for token refresh during test
+  // Use admin account for all workflows (has access to all endpoints)
+  // In production, test users were created via registration API with auto-generated passwords
   const credentials = {
-    nurse: { email: 'nurse@hms.com', password: 'TestPass123!' },
-    doctor: { email: 'doctor@hms.com', password: 'TestPass123!' },
+    nurse: { email: 'admin@hms.com', password: 'Admin123!' },
+    doctor: { email: 'admin@hms.com', password: 'Admin123!' },
     admin: { email: 'admin@hms.com', password: 'Admin123!' },
   };
 
-  // Get initial tokens
-  const nurseTokens = login(credentials.nurse.email, credentials.nurse.password);
-  const doctorTokens = login(credentials.doctor.email, credentials.doctor.password);
+  // Get initial token (same for all user types)
   const adminTokens = login(credentials.admin.email, credentials.admin.password);
 
-  // Validate tokens
-  if (!nurseTokens) console.error('SETUP ERROR: Nurse tokens are null');
-  if (!doctorTokens) console.error('SETUP ERROR: Doctor tokens are null');
-  if (!adminTokens) console.error('SETUP ERROR: Admin tokens are null');
-
-  const validTokenCount = [nurseTokens, doctorTokens, adminTokens].filter(t => t).length;
-  console.log(`Setup complete: ${validTokenCount}/3 token pairs obtained`);
+  // Validate token
+  if (!adminTokens) {
+    console.error('SETUP ERROR: Admin token is null - cannot proceed');
+  } else {
+    console.log('Setup complete: Admin token obtained for all workflows');
+  }
 
   return {
     credentials,
     initialTokens: {
-      nurse: nurseTokens,
-      doctor: doctorTokens,
+      nurse: adminTokens,
+      doctor: adminTokens,
       admin: adminTokens,
     },
   };
