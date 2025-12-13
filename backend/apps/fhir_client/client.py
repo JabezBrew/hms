@@ -31,17 +31,35 @@ class FHIRClient:
 
         # Set up authentication
         self.credentials = None
-        if settings.GOOGLE_APPLICATION_CREDENTIALS and os.path.exists(settings.GOOGLE_APPLICATION_CREDENTIALS):
-            try:
-                self.credentials = service_account.Credentials.from_service_account_file(
-                    settings.GOOGLE_APPLICATION_CREDENTIALS,
-                    scopes=['https://www.googleapis.com/auth/cloud-platform']
-                )
-            except Exception as e:
-                logger.warning(f"Failed to load credentials from file: {str(e)}")
+        creds_value = settings.GOOGLE_APPLICATION_CREDENTIALS
+
+        if creds_value:
+            # Option 1: It's a file path that exists
+            if os.path.exists(creds_value):
+                try:
+                    self.credentials = service_account.Credentials.from_service_account_file(
+                        creds_value,
+                        scopes=['https://www.googleapis.com/auth/cloud-platform']
+                    )
+                    logger.info("Loaded Google Cloud credentials from file")
+                except Exception as e:
+                    logger.warning(f"Failed to load credentials from file: {str(e)}")
+
+            # Option 2: It's JSON content (common in Railway/Heroku)
+            elif creds_value.strip().startswith('{'):
+                try:
+                    creds_info = json.loads(creds_value)
+                    self.credentials = service_account.Credentials.from_service_account_info(
+                        creds_info,
+                        scopes=['https://www.googleapis.com/auth/cloud-platform']
+                    )
+                    logger.info("Loaded Google Cloud credentials from JSON env var")
+                except Exception as e:
+                    logger.warning(f"Failed to load credentials from JSON: {str(e)}")
+            else:
+                logger.warning(f"GOOGLE_APPLICATION_CREDENTIALS is set but not a valid file path or JSON")
         else:
-            # Use default credentials
-            logger.warning("Google cloud authentication not configured - FHIR client will operate in mock mode")
+            logger.warning("GOOGLE_APPLICATION_CREDENTIALS not configured - FHIR client will operate in mock mode")
 
         # Create session if credentials are available
         if self.credentials:
