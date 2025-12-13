@@ -285,11 +285,18 @@ REST_FRAMEWORK = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+# Filter out invalid origins (e.g., empty or just "https://")
+_cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+CORS_ALLOWED_ORIGINS = [origin for origin in _cors_origins if origin and '://' in origin and len(origin) > 8]
+if not CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings
-CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+_csrf_origins = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins if origin and '://' in origin and len(origin) > 8]
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
 
 # Security Headers
 SECURE_BROWSER_XSS_FILTER = True
