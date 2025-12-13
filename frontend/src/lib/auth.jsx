@@ -120,37 +120,45 @@ export function AuthProvider({ children }) {
 
   // Check if user is already logged in on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser)
+    const initializeAuth = async () => {
+      const storedUser = localStorage.getItem("user")
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser)
 
-        // Validate session before restoring user
-        if (!isSessionValid()) {
-          // Session expired, clear everything
+          // Validate session before restoring user
+          if (!isSessionValid()) {
+            // Session expired, clear everything
+            localStorage.removeItem("user")
+            localStorage.removeItem("sessionStartTime")
+            localStorage.removeItem("refreshTokenIssuedAt")
+            setLoading(false)
+            return
+          }
+
+          setUser(userData)
+          // Only refresh token if user wasn't just logged in AND we don't have a token
+          if (!justLoggedInRef.current && !accessTokenRef.current) {
+            // IMPORTANT: Wait for token refresh before setting loading=false
+            // This prevents API calls from firing before we have an access token
+            try {
+              await refreshAccessToken()
+            } catch {
+              // Silent fail - user will be redirected to login if needed
+            }
+          }
+        } catch (e) {
+          // Failed to parse stored user
           localStorage.removeItem("user")
           localStorage.removeItem("sessionStartTime")
           localStorage.removeItem("refreshTokenIssuedAt")
-          setLoading(false)
-          return
         }
-
-        setUser(userData)
-        // Only refresh token if user wasn't just logged in AND we don't have a token
-        if (!justLoggedInRef.current && !accessTokenRef.current) {
-          refreshAccessToken().catch(() => {
-            // Silent fail - user will be redirected to login if needed
-          })
-        }
-      } catch (e) {
-        // Failed to parse stored user
-        localStorage.removeItem("user")
-        localStorage.removeItem("sessionStartTime")
-        localStorage.removeItem("refreshTokenIssuedAt")
       }
+      setLoading(false)
     }
-    setLoading(false)
-  }, [isSessionValid])
+
+    initializeAuth()
+  }, [isSessionValid, refreshAccessToken])
 
   // Connect auth context to api-client
   useEffect(() => {
