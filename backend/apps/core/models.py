@@ -170,3 +170,70 @@ class OffSiteAccessSettings(models.Model):
             settings, _ = cls.objects.get_or_create(pk=1)
             cache.set('offsite_settings', settings, 300)  # Cache for 5 minutes
         return settings
+
+
+class FacilityFluidBalanceSettings(models.Model):
+    """
+    Singleton model for facility-level fluid balance alert thresholds.
+
+    Configurable per facility to support different clinical protocols.
+    Allows facilities to set their own thresholds for monitoring patient
+    fluid intake/output and triggering alerts when values exceed limits.
+    """
+
+    # Alert thresholds (all in ml)
+    min_daily_intake_target = models.PositiveIntegerField(
+        default=1500,
+        help_text="Minimum daily intake target in ml. Alert when patient intake is below this."
+    )
+    max_daily_output_threshold = models.PositiveIntegerField(
+        default=3000,
+        help_text="Maximum daily output threshold in ml. Alert when output exceeds this."
+    )
+    negative_balance_alert_threshold = models.IntegerField(
+        default=-500,
+        help_text="Alert when daily balance (intake - output) falls below this value in ml."
+    )
+    positive_balance_alert_threshold = models.PositiveIntegerField(
+        default=2000,
+        help_text="Alert when daily balance exceeds this value in ml (indicates fluid retention)."
+    )
+
+    # Enable/disable individual alert types
+    enable_intake_alerts = models.BooleanField(
+        default=True,
+        help_text="Enable alerts for low daily intake."
+    )
+    enable_output_alerts = models.BooleanField(
+        default=True,
+        help_text="Enable alerts for high daily output."
+    )
+    enable_balance_alerts = models.BooleanField(
+        default=True,
+        help_text="Enable alerts for abnormal fluid balance."
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Facility Fluid Balance Settings"
+        verbose_name_plural = "Facility Fluid Balance Settings"
+
+    def __str__(self):
+        return "Facility Fluid Balance Settings"
+
+    def save(self, *args, **kwargs):
+        # Ensure only one instance exists (singleton pattern)
+        self.pk = 1
+        super().save(*args, **kwargs)
+        # Clear cache when settings change
+        cache.delete('facility_fluid_balance_settings')
+
+    @classmethod
+    def get_settings(cls):
+        """Get settings with caching."""
+        settings = cache.get('facility_fluid_balance_settings')
+        if settings is None:
+            settings, _ = cls.objects.get_or_create(pk=1)
+            cache.set('facility_fluid_balance_settings', settings, 300)  # Cache for 5 minutes
+        return settings

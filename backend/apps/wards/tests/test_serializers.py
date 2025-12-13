@@ -299,8 +299,8 @@ class TestTransferRequestSerializer:
         dest_bed = BedFactory(status='available')
 
         data = {
-            'from_admission': str(admission.id),
-            'to_bed': str(dest_bed.id),
+            'from_admission_id': str(admission.id),
+            'to_bed_id': str(dest_bed.id),
             'reason': 'Patient requires ICU'
         }
         serializer = TransferRequestSerializer(data=data)
@@ -312,8 +312,8 @@ class TestTransferRequestSerializer:
         dest_bed = BedFactory(status='occupied')
 
         data = {
-            'from_admission': str(admission.id),
-            'to_bed': str(dest_bed.id),
+            'from_admission_id': str(admission.id),
+            'to_bed_id': str(dest_bed.id),
             'reason': 'Transfer request'
         }
         serializer = TransferRequestSerializer(data=data)

@@ -35,7 +35,7 @@ class TestAppointmentTypeViewSet:
         AppointmentTypeFactory.create_batch(3)
         response = admin_client.get(f'{BASE_URL}/types/')
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 3
+        assert response.data['count'] == 3
 
     def test_create_appointment_type(self, admin_client, db):
         """Test creating a new appointment type."""

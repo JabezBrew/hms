@@ -17,10 +17,17 @@ import {
   TimelineGroup,
   AddNoteSlideOver,
   AddVitalsSlideOver,
-  AddPrescriptionSlideOver
+  AddPrescriptionSlideOver,
+  AddFluidBalanceSlideOver
 } from "@/components/chronicle";
+import {
+  AddChartSlideOver,
+  ChartEntryForm,
+  ChartAssignmentCard,
+} from "@/components/charts";
 import LabOrderForm from "@/components/laboratory/LabOrderForm";
 import ReferralForm from "@/components/referrals/ReferralForm";
+import { useChartAssignments } from "@/hooks/useChartQueries";
 import {
   Clock,
   FileText,
@@ -35,7 +42,8 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  ClipboardList,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -63,7 +71,10 @@ const PatientChroniclePage = () => {
   const referralIdParam = searchParams.get('referral_id');
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral']);
+  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry']);
+
+  // Chart entry state - which assignment is being recorded
+  const [activeChartAssignment, setActiveChartAssignment] = useState(null);
 
   // Auto-open slide-over based on action query param
   useEffect(() => {
@@ -101,6 +112,12 @@ const PatientChroniclePage = () => {
     refetch: refetchClinical,
   } = useClinicalSummary(id, patient?.local_data || patient, {
     enabled: !!id, // Use URL id to start immediately
+  });
+
+  // Fetch active chart assignments for this patient
+  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments({
+    patient: patientLocalId,
+    status: 'active',
   });
 
   // Map filter to API type
@@ -355,6 +372,7 @@ const PatientChroniclePage = () => {
   const handlePrescribe = useCallback(() => slideOvers.open('prescription'), [slideOvers]);
   const handleOrderLabs = useCallback(() => slideOvers.open('labs'), [slideOvers]);
   const handleRequestConsult = useCallback(() => slideOvers.open('referral'), [slideOvers]);
+  const handleRecordFluids = useCallback(() => slideOvers.open('fluids'), [slideOvers]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -408,6 +426,31 @@ const PatientChroniclePage = () => {
     refreshData();
     slideOvers.close();
   }, [refreshData, slideOvers]);
+
+  // Chart handlers
+  const handleAssignChart = useCallback(() => slideOvers.open('charts'), [slideOvers]);
+
+  const handleChartAssigned = useCallback(() => {
+    refetchCharts();
+    slideOvers.close();
+  }, [refetchCharts, slideOvers]);
+
+  const handleRecordChartEntry = useCallback((assignment) => {
+    setActiveChartAssignment(assignment);
+    slideOvers.open('chartEntry');
+  }, [slideOvers]);
+
+  const handleChartEntryRecorded = useCallback(() => {
+    refetchCharts();
+    refreshData();
+    slideOvers.close();
+    setActiveChartAssignment(null);
+  }, [refetchCharts, refreshData, slideOvers]);
+
+  const handleChartSlideOverClose = useCallback(() => {
+    slideOvers.close();
+    setActiveChartAssignment(null);
+  }, [slideOvers]);
 
   // Schedule Follow-up handler (navigate to appointments page)
   const handleScheduleFollowUp = useCallback(() => {
@@ -499,6 +542,8 @@ const PatientChroniclePage = () => {
         onRequestConsult={handleRequestConsult}
         onScheduleFollowUp={handleScheduleFollowUp}
         onViewTreatmentSheet={handleViewTreatmentSheet}
+        onRecordFluids={handleRecordFluids}
+        onAssignChart={handleAssignChart}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
 
@@ -522,6 +567,42 @@ const PatientChroniclePage = () => {
 
         {/* Timeline Chronicle */}
         <main className="flex-1 p-6 transition-all duration-300">
+          {/* Active Charts Section - Show if patient has assigned charts */}
+          {chartAssignments?.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-amber-600" />
+                  <h3 className="font-mono text-sm font-medium text-foreground">
+                    Active Charts
+                  </h3>
+                  <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {chartAssignments.length}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAssignChart}
+                  className="font-mono text-xs"
+                >
+                  + Assign Chart
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {chartAssignments.slice(0, 6).map((assignment, index) => (
+                  <ChartAssignmentCard
+                    key={assignment.id}
+                    assignment={assignment}
+                    index={index}
+                    onRecordEntry={handleRecordChartEntry}
+                    compact
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Timeline Header with Search and Filters */}
           <div className="space-y-4 mb-6">
             {/* Title and count */}
@@ -883,6 +964,47 @@ const PatientChroniclePage = () => {
           patient={patient}
           encounter={activeEncounter}
           onReferralCreated={handleReferralCreated}
+        />
+
+        {/* Fluid Balance Slide-Over */}
+        <AddFluidBalanceSlideOver
+          open={slideOvers.isOpen('fluids')}
+          onClose={handleSlideOverClose}
+          patient={patient}
+          admission={
+            // Use actual WardAdmission ID, not encounter ID
+            // The admission prop expects a WardAdmission object with id
+            patient?.local_data?.current_admission_id
+              ? { id: patient.local_data.current_admission_id }
+              : patient?.current_admission_id
+                ? { id: patient.current_admission_id }
+                : null
+          }
+          onFluidRecorded={refreshData}
+        />
+
+        {/* Chart Assignment Slide-Over */}
+        <AddChartSlideOver
+          open={slideOvers.isOpen('charts')}
+          onClose={handleChartSlideOverClose}
+          patient={patient}
+          admission={
+            patient?.local_data?.current_admission_id
+              ? { id: patient.local_data.current_admission_id }
+              : patient?.current_admission_id
+                ? { id: patient.current_admission_id }
+                : null
+          }
+          onChartAssigned={handleChartAssigned}
+        />
+
+        {/* Chart Entry Form Slide-Over */}
+        <ChartEntryForm
+          open={slideOvers.isOpen('chartEntry')}
+          onClose={handleChartSlideOverClose}
+          assignmentId={activeChartAssignment?.id}
+          patient={patient}
+          onEntryRecorded={handleChartEntryRecorded}
         />
       </div>
     </div>

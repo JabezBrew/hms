@@ -55,6 +55,8 @@ const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateC
 const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
 const TreatmentSheetPage = lazy(() => import('./pages/nursing/TreatmentSheetPage'))
+const ShiftHandoffPage = lazy(() => import('./pages/nursing/ShiftHandoffPage'))
+const NursingTasksPage = lazy(() => import('./pages/nursing/NursingTasksPage'))
 const SupplyQueuePage = lazy(() => import('./pages/pharmacy/SupplyQueuePage'))
 const DoctorDashboard = lazy(() => import('./pages/dashboards/DoctorDashboard'))
 const ProviderDashboard = lazy(() => import('./pages/dashboards/ProviderDashboard'))
@@ -88,6 +90,10 @@ const LabDashboardPage = lazy(() => import('./pages/laboratory/LabDashboardPage'
 const LabOrdersPage = lazy(() => import('./pages/laboratory/LabOrdersPage'))
 const LabResultsPage = lazy(() => import('./pages/laboratory/LabResultsPage'))
 const LabCollectionWorklistPage = lazy(() => import('./pages/laboratory/LabCollectionWorklistPage'))
+
+// Chart Builder Pages
+const ChartBuilderPage = lazy(() => import('./pages/charts/ChartBuilderPage'))
+const ChartTemplateListPage = lazy(() => import('./pages/charts/ChartTemplateListPage'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -452,6 +458,18 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          <Route path="/nursing/shift-handoff" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+              <ShiftHandoffPage />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/nursing/tasks" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+              <NursingTasksPage />
+            </RoleBasedRoute>
+          } />
+
           {/* Pharmacy routes */}
           <Route path="/pharmacy/dispensing" element={
             <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
@@ -598,6 +616,27 @@ function AppContent() {
               <Layout>
                 <AuditLogsPage />
               </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Chart Builder routes */}
+          <Route path="/charts/templates" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+              <Layout>
+                <ChartTemplateListPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/charts/builder" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+              <ChartBuilderPage />
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/charts/builder/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+              <ChartBuilderPage />
             </RoleBasedRoute>
           } />
 

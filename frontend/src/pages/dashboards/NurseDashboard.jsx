@@ -37,7 +37,7 @@ import { useWards } from '@/hooks/useWardQueries';
 
 export default function NurseDashboard() {
   const navigate = useNavigate();
-  const [selectedWard, setSelectedWard] = useState('');
+  const [selectedWard, setSelectedWard] = useState('all');
 
   // Fetch ward list
   const { data: wardsData } = useWards();
@@ -51,7 +51,7 @@ export default function NurseDashboard() {
     refetch,
     isFetching,
   } = useNurseDashboard(
-    selectedWard ? { ward: selectedWard } : {},
+    selectedWard && selectedWard !== 'all' ? { ward: selectedWard } : {},
     { refetchInterval: 30000 }
   );
 
@@ -124,7 +124,7 @@ export default function NurseDashboard() {
                 <SelectValue placeholder="All Wards" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Wards</SelectItem>
+                <SelectItem value="all">All Wards</SelectItem>
                 {wards.map((ward) => (
                   <SelectItem key={ward.id} value={ward.id}>
                     {ward.name}

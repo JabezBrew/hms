@@ -152,15 +152,21 @@ class BlockedTimeSerializer(serializers.ModelSerializer):
         """
         Validate blocked time fields.
         """
+        # For partial updates, get existing instance values as defaults
+        instance = getattr(self, 'instance', None)
+        is_all_day = data.get('is_all_day', getattr(instance, 'is_all_day', False) if instance else False)
+        start_time = data.get('start_time', getattr(instance, 'start_time', None) if instance else None)
+        end_time = data.get('end_time', getattr(instance, 'end_time', None) if instance else None)
+
         # If not all day, ensure start_time and end_time are provided
-        if not data.get('is_all_day', False):
-            if not data.get('start_time') or not data.get('end_time'):
+        if not is_all_day:
+            if not start_time or not end_time:
                 raise serializers.ValidationError(
                     "start_time and end_time are required when is_all_day is False"
                 )
 
             # Ensure end_time is after start_time
-            if data.get('start_time') >= data.get('end_time'):
+            if start_time >= end_time:
                 raise serializers.ValidationError(
                     "end_time must be after start_time"
                 )

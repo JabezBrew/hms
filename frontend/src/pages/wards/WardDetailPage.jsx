@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WardDashboard } from '@/components/wards/WardDashboard';
 import { SectionManagement } from '@/components/wards/SectionManagement';
+import { WardStaffManagement } from '@/components/wards/WardStaffManagement';
 import { useWard, useDeleteWard } from '@/hooks/useWardQueries';
 import {
   ChevronLeft,
@@ -14,7 +15,8 @@ import {
   Building2,
   RefreshCw,
   LayoutGrid,
-  Settings
+  Settings,
+  Users
 } from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { toast } from 'sonner';
@@ -214,6 +216,12 @@ export default function WardDetailPage() {
               Ward Overview
             </TabsTrigger>
             {isAdmin && (
+              <TabsTrigger value="staff" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Ward Staff
+              </TabsTrigger>
+            )}
+            {isAdmin && (
               <TabsTrigger value="sections" className="flex items-center gap-2">
                 <Settings className="h-4 w-4" />
                 Manage Sections
@@ -224,6 +232,12 @@ export default function WardDetailPage() {
           <TabsContent value="overview" className="space-y-6">
             <WardDashboard />
           </TabsContent>
+
+          {isAdmin && (
+            <TabsContent value="staff" className="space-y-6">
+              <WardStaffManagement wardId={wardId} />
+            </TabsContent>
+          )}
 
           {isAdmin && (
             <TabsContent value="sections" className="space-y-6">

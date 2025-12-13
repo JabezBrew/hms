@@ -28,6 +28,14 @@ export const wardKeys = {
   amenities: () => [...wardKeys.all, 'amenities'],
   amenitiesList: (filters) => [...wardKeys.amenities(), 'list', { filters }],
   amenity: (id) => [...wardKeys.amenities(), id],
+  staff: () => [...wardKeys.all, 'staff'],
+  wardStaff: (wardId, category) => [...wardKeys.detail(wardId), 'staff', { category }],
+  staffAssignments: () => [...wardKeys.all, 'staffAssignments'],
+  staffAssignmentsList: (filters) => [...wardKeys.staffAssignments(), 'list', { filters }],
+  staffAssignment: (id) => [...wardKeys.staffAssignments(), id],
+  practitionerAssignments: (practitionerId) => [...wardKeys.staffAssignments(), 'practitioner', practitionerId],
+  staffRoles: () => [...wardKeys.all, 'staffRoles'],
+  staffRolesList: (filters) => [...wardKeys.staffRoles(), 'list', { filters }],
 };
 
 /**
@@ -637,5 +645,155 @@ export function useAvailableBeds(filters = {}, options = {}) {
     queryKey: wardKeys.availableBeds(filters),
     queryFn: () => wardsApi.getAvailableBeds(filters),
     ...options,
+  });
+}
+
+// =============================================================================
+// WARD STAFF HOOKS
+// =============================================================================
+
+/**
+ * Get staff assigned to a ward
+ * @param {string} wardId - Ward ID
+ * @param {string|null} category - Optional role category filter ('nursing', 'medical', 'allied')
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result with staff list containing id, full_name, role_name
+ */
+export function useWardStaff(wardId, category = null, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.wardStaff(wardId, category),
+    queryFn: () => {
+      const params = category ? { category } : {};
+      return wardsApi.getWardStaff(wardId, params);
+    },
+    enabled: !!wardId,
+    placeholderData: [],
+    ...options,
+  });
+}
+
+/**
+ * Get detailed staff assignments (for management UI)
+ * @param {Object} filters - Query parameters (ward, practitioner, category, show_inactive)
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result with detailed assignment data
+ */
+export function useStaffAssignments(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.staffAssignmentsList(filters),
+    queryFn: () => wardsApi.getStaffAssignments(filters),
+    ...options,
+  });
+}
+
+/**
+ * Get ward assignments for a specific practitioner
+ * @param {string} practitionerId - Practitioner ID
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result with practitioner's ward assignments
+ */
+export function usePractitionerAssignments(practitionerId, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.practitionerAssignments(practitionerId),
+    queryFn: () => wardsApi.getStaffAssignmentsByPractitioner(practitionerId),
+    enabled: !!practitionerId,
+    placeholderData: [],
+    ...options,
+  });
+}
+
+/**
+ * Get staff roles (for assignment forms)
+ * @param {Object} filters - Query parameters (category, show_inactive)
+ * @param {Object} options - Additional query options
+ * @returns {Object} Query result with staff roles
+ */
+export function useStaffRoles(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: wardKeys.staffRolesList(filters),
+    queryFn: () => wardsApi.getStaffRoles(filters),
+    ...options,
+  });
+}
+
+/**
+ * Create a new staff assignment
+ * @returns {Object} Mutation result
+ */
+export function useCreateStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => wardsApi.createStaffAssignment(data),
+    onSuccess: (responseData, variables) => {
+      // Invalidate staff assignments list
+      queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
+
+      // Invalidate ward staff (lightweight endpoint)
+      if (variables.ward) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.wardStaff(variables.ward, null)
+        });
+      }
+
+      // Invalidate practitioner assignments
+      if (variables.practitioner) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.practitionerAssignments(variables.practitioner)
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Update an existing staff assignment
+ * @returns {Object} Mutation result
+ */
+export function useUpdateStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => wardsApi.updateStaffAssignment(id, data),
+    onSuccess: (responseData, variables) => {
+      // Invalidate the specific assignment
+      queryClient.invalidateQueries({
+        queryKey: wardKeys.staffAssignment(variables.id)
+      });
+
+      // Invalidate staff assignments list
+      queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
+
+      // Invalidate ward staff queries
+      if (responseData?.ward) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.wardStaff(responseData.ward, null)
+        });
+      }
+
+      // Invalidate practitioner assignments
+      if (responseData?.practitioner) {
+        queryClient.invalidateQueries({
+          queryKey: wardKeys.practitionerAssignments(responseData.practitioner)
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Delete a staff assignment
+ * @returns {Object} Mutation result
+ */
+export function useDeleteStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => wardsApi.deleteStaffAssignment(id),
+    onSuccess: () => {
+      // Invalidate all staff assignment related queries
+      queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
+      queryClient.invalidateQueries({ queryKey: wardKeys.staff() });
+    },
   });
 }

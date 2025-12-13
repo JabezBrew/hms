@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
-import { AlertTriangle, ChevronRight, Pill, Activity, FileWarning } from "lucide-react";
+import { AlertTriangle, ChevronRight, Pill, Activity, FileWarning, Droplet, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { useTodayFluidBalance } from "@/hooks/useNursingQueries";
 
 /**
  * ClinicalSummarySidebar - Always-visible patient context panel
@@ -18,6 +19,18 @@ const ClinicalSummarySidebar = ({
   labResults = [],
   className
 }) => {
+  // Check if patient is admitted (has active admission)
+  // Check multiple fields for backward compatibility
+  const isAdmitted = patient?.local_data?.current_admission_id ||
+                     patient?.current_admission_id ||
+                     patient?.local_data?.admission_status === 'admitted' ||
+                     patient?.admission_status === 'admitted' ||
+                     // Fallback: check if current_ward_id exists (means patient has a bed)
+                     patient?.local_data?.current_ward_id ||
+                     patient?.current_ward_id;
+
+  const patientId = patient?.local_data?.id || patient?.id;
+
   return (
     <aside className={cn(
       "w-80 bg-background border-r border-border p-6 space-y-6",
@@ -45,6 +58,14 @@ const ClinicalSummarySidebar = ({
 
       {/* Section: Recent Labs */}
       <LabResultsSection results={labResults} />
+
+      {/* Section: Fluid Balance - Only for admitted patients */}
+      {isAdmitted && patientId && (
+        <>
+          <div className="divider-gradient" />
+          <FluidBalanceSection patientId={patientId} />
+        </>
+      )}
     </aside>
   );
 };
@@ -307,9 +328,111 @@ const LabResultsSection = ({ results, maxVisible = 4 }) => {
 };
 
 /**
+ * FluidBalanceSection - Today's fluid balance for admitted patients
+ */
+const FluidBalanceSection = ({ patientId }) => {
+  const { data: fluidData, isLoading } = useTodayFluidBalance(patientId);
+
+  if (isLoading) {
+    return (
+      <section>
+        <header className="flex items-center justify-between mb-4">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Fluid Balance
+          </h3>
+        </header>
+        <div className="animate-pulse space-y-2">
+          <div className="h-16 bg-muted rounded-lg" />
+        </div>
+      </section>
+    );
+  }
+
+  const intake = fluidData?.total_intake || 0;
+  const output = fluidData?.total_output || 0;
+  const balance = fluidData?.balance || (intake - output);
+
+  return (
+    <section>
+      <header className="flex items-center justify-between mb-4">
+        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          Fluid Balance (Today)
+        </h3>
+        <Droplet className="h-3.5 w-3.5 text-sky-500" />
+      </header>
+
+      <div className="grid grid-cols-3 gap-2">
+        {/* Intake */}
+        <div className="p-3 rounded-lg bg-sky-500/10 border border-sky-500/20">
+          <div className="flex items-center gap-1 mb-1">
+            <ArrowDownCircle className="h-3 w-3 text-sky-500" />
+            <span className="font-mono text-[10px] text-sky-600">IN</span>
+          </div>
+          <div className="font-mono text-sm font-medium text-sky-600">
+            {intake}
+            <span className="text-[10px] ml-0.5">ml</span>
+          </div>
+        </div>
+
+        {/* Output */}
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <div className="flex items-center gap-1 mb-1">
+            <ArrowUpCircle className="h-3 w-3 text-amber-500" />
+            <span className="font-mono text-[10px] text-amber-600">OUT</span>
+          </div>
+          <div className="font-mono text-sm font-medium text-amber-600">
+            {output}
+            <span className="text-[10px] ml-0.5">ml</span>
+          </div>
+        </div>
+
+        {/* Balance */}
+        <div className={cn(
+          "p-3 rounded-lg border",
+          balance > 0 && "bg-emerald-500/10 border-emerald-500/20",
+          balance < 0 && "bg-rose-500/10 border-rose-500/20",
+          balance === 0 && "bg-muted border-border"
+        )}>
+          <div className="flex items-center gap-1 mb-1">
+            <Droplet className={cn(
+              "h-3 w-3",
+              balance > 0 && "text-emerald-500",
+              balance < 0 && "text-rose-500",
+              balance === 0 && "text-muted-foreground"
+            )} />
+            <span className={cn(
+              "font-mono text-[10px]",
+              balance > 0 && "text-emerald-600",
+              balance < 0 && "text-rose-600",
+              balance === 0 && "text-muted-foreground"
+            )}>BAL</span>
+          </div>
+          <div className={cn(
+            "font-mono text-sm font-medium",
+            balance > 0 && "text-emerald-600",
+            balance < 0 && "text-rose-600",
+            balance === 0 && "text-muted-foreground"
+          )}>
+            {balance > 0 ? '+' : ''}{balance}
+            <span className="text-[10px] ml-0.5">ml</span>
+          </div>
+        </div>
+      </div>
+
+      {/* No data message */}
+      {intake === 0 && output === 0 && (
+        <p className="text-xs text-muted-foreground mt-2 text-center">
+          No fluid entries recorded today
+        </p>
+      )}
+    </section>
+  );
+};
+
+/**
  * MiniClinicalSummary - Compact version for inline use
  */
-const MiniClinicalSummary = ({ patient, allergies = [], problems = [] }) => {
+const MiniClinicalSummary = ({ allergies = [], problems = [] }) => {
   const topProblems = problems.slice(0, 3);
 
   return (
@@ -359,5 +482,6 @@ export {
   MedicationsSection,
   AllergiesSection,
   LabResultsSection,
+  FluidBalanceSection,
   MiniClinicalSummary
 };

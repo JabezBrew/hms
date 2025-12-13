@@ -100,3 +100,23 @@ class MinimalLabTestSerializer(serializers.Serializer):
     short_name = serializers.CharField(read_only=True)
     category = serializers.CharField(read_only=True)
     specimen_type = serializers.CharField(read_only=True)
+
+
+class FacilityFluidBalanceSettingsSerializer(serializers.Serializer):
+    """
+    Serializer for facility-level fluid balance alert threshold settings.
+    Used by the settings API to expose and update alert thresholds.
+    """
+    # Alert thresholds (all in ml)
+    min_daily_intake_target = serializers.IntegerField(min_value=0, max_value=10000)
+    max_daily_output_threshold = serializers.IntegerField(min_value=0, max_value=20000)
+    negative_balance_alert_threshold = serializers.IntegerField(min_value=-10000, max_value=0)
+    positive_balance_alert_threshold = serializers.IntegerField(min_value=0, max_value=10000)
+
+    # Enable/disable toggles
+    enable_intake_alerts = serializers.BooleanField()
+    enable_output_alerts = serializers.BooleanField()
+    enable_balance_alerts = serializers.BooleanField()
+
+    # Read-only metadata
+    updated_at = serializers.DateTimeField(read_only=True)

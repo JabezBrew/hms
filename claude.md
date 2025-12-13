@@ -330,5 +330,23 @@ Before implementing a new workflow:
 
 ---
 
+## Architectural Rules
+
+### Patient Clinical Data Location
+**CRITICAL:** All patient clinical information (vitals, fluid balance, clinical notes, medications, labs, etc.) MUST be accessible ONLY from the `PatientChroniclePage`. Never scatter patient clinical data across different pages or dashboards.
+
+- **Correct**: Add clinical features as slide-overs/panels within PatientChroniclePage
+- **Incorrect**: Creating standalone pages for patient-specific clinical data (e.g., `/nursing/fluid-balance/:patientId`)
+
+This ensures:
+1. Single source of truth for patient clinical data
+2. Consistent user experience - clinicians always know where to find patient info
+3. Proper context - patient identity hero and clinical sidebar are always visible
+4. Audit trail - all clinical actions happen within patient context
+
+---
+
 **Success = Clinical staff focus on patient care, not navigating software.**
 - let's do test driven development from now!
+- Because the system would be used by facilities with different approaches, most features should be configurable instead of hardcoding
+- Always take into account the fact that the system will deploy in large hospitals that will have large numbers of staff, patients etc so in places where a selection needs to be made, it would be ideal and efficient to use a search mechanism than loading all entiities and displaying in a drop-down list

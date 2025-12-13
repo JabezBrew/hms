@@ -53,7 +53,7 @@ class TestWardViewSet:
     def test_list_wards_search(self, admin_client, db):
         """Test searching wards by name."""
         WardFactory(name='General Ward A')
-        WardFactory(name='ICU Ward')
+        WardFactory(name='ICU Ward', ward_type='icu')
         WardFactory(name='General Ward B')
 
         response = admin_client.get(f'{BASE_URL}/wards/', {'search': 'General'})
@@ -475,8 +475,8 @@ class TestWardTransferViewSet:
         dest_bed = BedFactory(status='available')
 
         data = {
-            'from_admission': str(admission.id),
-            'to_bed': str(dest_bed.id),
+            'from_admission_id': str(admission.id),
+            'to_bed_id': str(dest_bed.id),
             'reason': 'Patient requires ICU care'
         }
         response = admin_client.post(

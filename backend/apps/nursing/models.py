@@ -720,3 +720,152 @@ class SupplyRequest(models.Model):
 
     def __str__(self):
         return f"{self.treatment_entry.medication_name} - {self.quantity_requested} doses - {self.status}"
+
+
+class FluidBalance(models.Model):
+    """
+    Model for tracking patient fluid intake and output.
+
+    Used by nurses to monitor fluid balance for inpatients.
+    Tracks both intake (oral, IV, enteral, blood products) and
+    output (urine, vomit, stool, drain, N.G. suction).
+    Output entries can include colour descriptions for clinical assessment.
+    """
+    ENTRY_TYPE_CHOICES = (
+        ('intake', 'Intake'),
+        ('output', 'Output'),
+    )
+
+    # Intake categories
+    INTAKE_CATEGORY_CHOICES = (
+        ('oral', 'Oral'),
+        ('iv', 'IV Fluids'),
+        ('enteral', 'Enteral Feed'),
+        ('blood', 'Blood Products'),
+    )
+
+    # Output categories
+    OUTPUT_CATEGORY_CHOICES = (
+        ('urine', 'Urine'),
+        ('vomit', 'Vomit'),
+        ('stool', 'Stool'),
+        ('drain', 'Drain'),
+        ('ng_suction', 'N.G. Suction'),
+        ('other', 'Other'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='fluid_balance_records'
+    )
+    admission = models.ForeignKey(
+        'wards.Admission',
+        on_delete=models.CASCADE,
+        related_name='fluid_balance_records',
+        null=True,
+        blank=True,
+        help_text="Admission for inpatient tracking. Null for outpatient."
+    )
+
+    # Entry type and category
+    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPE_CHOICES)
+    category = models.CharField(
+        max_length=20,
+        help_text="Category based on entry type (oral/iv/etc for intake, urine/vomit/etc for output)"
+    )
+    subcategory = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Optional subcategory, e.g., Water, Normal Saline, Foley, JP Drain"
+    )
+
+    # Volume
+    volume_ml = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10000)],
+        help_text="Volume in milliliters"
+    )
+
+    # Recording details
+    recorded_at = models.DateTimeField(default=timezone.now)
+    recorded_by = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='recorded_fluid_entries'
+    )
+
+    # Notes
+    notes = models.TextField(blank=True, null=True)
+
+    # Colour (for output entries - urine, stool, vomit, drain, ng_suction, etc.)
+    colour = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Colour description for output entries (e.g., 'dark amber', 'clear', 'bloody')"
+    )
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_fluid_balance_entries'
+    )
+    modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_fluid_balance_entries',
+        help_text="User who last modified this entry"
+    )
+
+    # Soft delete support
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deleted_fluid_balance_entries',
+        help_text="User who deleted this entry"
+    )
+    deletion_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['patient', '-recorded_at']),
+            models.Index(fields=['patient', 'entry_type', '-recorded_at']),
+            models.Index(fields=['admission', '-recorded_at']),
+            models.Index(fields=['is_deleted', '-recorded_at']),
+        ]
+        verbose_name = 'Fluid Balance Entry'
+        verbose_name_plural = 'Fluid Balance Entries'
+
+    def __str__(self):
+        return f"{self.patient.user.get_full_name()} - {self.entry_type} - {self.volume_ml}ml - {self.recorded_at.strftime('%Y-%m-%d %H:%M')}"
+
+    def clean(self):
+        """Validate category matches entry type."""
+        from django.core.exceptions import ValidationError
+
+        valid_intake_categories = [c[0] for c in self.INTAKE_CATEGORY_CHOICES]
+        valid_output_categories = [c[0] for c in self.OUTPUT_CATEGORY_CHOICES]
+
+        if self.entry_type == 'intake' and self.category not in valid_intake_categories:
+            raise ValidationError({
+                'category': f"For intake, category must be one of: {', '.join(valid_intake_categories)}"
+            })
+
+        if self.entry_type == 'output' and self.category not in valid_output_categories:
+            raise ValidationError({
+                'category': f"For output, category must be one of: {', '.join(valid_output_categories)}"
+            })

@@ -19,6 +19,7 @@ class AuditCategory:
     REFERRAL = 'REFERRAL'
     PRESCRIPTION = 'PRESCRIPTION'
     VITALS = 'VITALS'
+    NURSING = 'NURSING'
 
     CHOICES = [
         (AUTHENTICATION, 'Authentication'),
@@ -33,6 +34,7 @@ class AuditCategory:
         (REFERRAL, 'Referral'),
         (PRESCRIPTION, 'Prescription'),
         (VITALS, 'Vital Signs'),
+        (NURSING, 'Nursing'),
     ]
 
 
@@ -107,6 +109,12 @@ class AuditAction:
     VITALS_RECORD = 'VITALS_RECORD'
     VITALS_UPDATE = 'VITALS_UPDATE'
 
+    # Fluid Balance specific
+    FLUID_INTAKE_RECORD = 'FLUID_INTAKE_RECORD'
+    FLUID_OUTPUT_RECORD = 'FLUID_OUTPUT_RECORD'
+    FLUID_BALANCE_UPDATE = 'FLUID_BALANCE_UPDATE'
+    FLUID_BALANCE_DELETE = 'FLUID_BALANCE_DELETE'
+
     CHOICES = [
         (LOGIN, 'Login'),
         (LOGOUT, 'Logout'),
@@ -158,6 +166,11 @@ class AuditAction:
         # Vital Signs
         (VITALS_RECORD, 'Vital Signs Recorded'),
         (VITALS_UPDATE, 'Vital Signs Updated'),
+        # Fluid Balance
+        (FLUID_INTAKE_RECORD, 'Fluid Intake Recorded'),
+        (FLUID_OUTPUT_RECORD, 'Fluid Output Recorded'),
+        (FLUID_BALANCE_UPDATE, 'Fluid Balance Updated'),
+        (FLUID_BALANCE_DELETE, 'Fluid Balance Deleted'),
     ]
 
 

@@ -48,7 +48,7 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
       total_pages: 0,
       results: []
     },
-    refetchInterval: (data) => {
+    refetchInterval: () => {
       // Only refetch if window is focused
       if (!document.hidden) {
         return 60000; // 1 minute when focused
@@ -67,10 +67,13 @@ export const usePatientDetail = (patientId) => {
     queryKey: ['patient-detail', patientId],
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/monitoring/patient_detail/?patient=${patientId}`);
-      return response.data;
+      // Ensure we always return an object
+      const data = response?.data ?? response;
+      return data || {};
     },
     enabled: !!patientId,
-    refetchInterval: (data) => !document.hidden ? 60000 : false,
+    placeholderData: {},
+    refetchInterval: () => !document.hidden ? 60000 : false,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     staleTime: 30000,
@@ -85,8 +88,11 @@ export const useVitalSigns = (filters = {}) => {
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? [];
     },
+    placeholderData: [],
   });
 };
 
@@ -95,9 +101,12 @@ export const useVitalSignsTrends = (patientId, days = 7) => {
     queryKey: ['vital-signs-trends', patientId, days],
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? [];
     },
     enabled: !!patientId,
+    placeholderData: [],
   });
 };
 
@@ -127,8 +136,11 @@ export const useNursingTasks = (filters = {}) => {
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/tasks/?${params.toString()}`);
-      return response.data;
+      // Ensure we always return an array
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
   });
 };
 
@@ -137,8 +149,11 @@ export const useTodayTasks = () => {
     queryKey: ['nursing-tasks-today'],
     queryFn: async () => {
       const response = await apiClient.get('/nursing/tasks/today/');
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
     refetchInterval: 60000, // Refetch every minute
   });
 };
@@ -198,9 +213,12 @@ export const useNursingAlerts = (filters = {}) => {
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`);
-      return response.data;
+      // Ensure we always return an array
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
-    refetchInterval: (data) => !document.hidden ? 45000 : false, // 45 seconds when focused
+    placeholderData: [],
+    refetchInterval: () => !document.hidden ? 45000 : false, // 45 seconds when focused
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     staleTime: 20000,
@@ -224,7 +242,7 @@ export const useActiveAlerts = () => {
     },
     // Provide placeholder data while loading to prevent undefined
     placeholderData: [],
-    refetchInterval: (data) => !document.hidden ? 45000 : false, // 45 seconds when focused
+    refetchInterval: () => !document.hidden ? 45000 : false, // 45 seconds when focused
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     staleTime: 20000,
@@ -258,8 +276,11 @@ export const useMedicationAdministrations = (filters = {}) => {
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/medications/?${params.toString()}`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
   });
 };
 
@@ -268,8 +289,11 @@ export const useMedicationsDueNow = () => {
     queryKey: ['medications-due-now'],
     queryFn: async () => {
       const response = await apiClient.get('/nursing/medications/due_now/');
-      return response.data;
+      // Ensure we always return an array
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
     refetchInterval: 60000, // Refetch every minute
   });
 };
@@ -279,8 +303,11 @@ export const useOverdueMedications = () => {
     queryKey: ['medications-overdue'],
     queryFn: async () => {
       const response = await apiClient.get('/nursing/medications/overdue/');
-      return response.data;
+      // Ensure we always return an array
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
     refetchInterval: 60000, // Refetch every minute
   });
 };
@@ -366,7 +393,7 @@ export const useGenerateMAR = () => {
       const response = await apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/generate_mar/`, data);
       return response;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
       queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
       queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
@@ -447,8 +474,11 @@ export const useShiftHandoffs = (filters = {}) => {
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/handoffs/?${params.toString()}`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
   });
 };
 
@@ -457,8 +487,12 @@ export const useTodayHandoffs = () => {
     queryKey: ['shift-handoffs-today'],
     queryFn: async () => {
       const response = await apiClient.get('/nursing/handoffs/today/');
-      return response.data;
+      // apiClient.get returns data directly or response.data depending on implementation
+      // Ensure we always return an array (not undefined)
+      const data = response?.data ?? response;
+      return Array.isArray(data) ? data : [];
     },
+    placeholderData: [],
   });
 };
 
@@ -507,7 +541,7 @@ export const useMARGrid = (admissionId, startDate = null, days = 7) => {
       return response || { medications: [], date_headers: [], time_slots: [] };
     },
     enabled: !!admissionId,
-    refetchInterval: (data) => !document.hidden ? 60000 : false, // 1 minute
+    refetchInterval: () => !document.hidden ? 60000 : false, // 1 minute
     refetchOnWindowFocus: true,
     staleTime: 30000, // 30 seconds
   });
@@ -524,7 +558,7 @@ export const useTreatmentSheetByAdmission = (admissionId) => {
       return response.data || response || [];
     },
     enabled: !!admissionId,
-    refetchInterval: (data) => !document.hidden ? 120000 : false, // 2 minutes
+    refetchInterval: () => !document.hidden ? 120000 : false, // 2 minutes
     refetchOnWindowFocus: true,
     staleTime: 60000, // 1 minute
   });
@@ -535,9 +569,12 @@ export const useTreatmentSheetEntry = (entryId) => {
     queryKey: ['treatment-sheet-entry', entryId],
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? {};
     },
     enabled: !!entryId,
+    placeholderData: {},
   });
 };
 
@@ -548,7 +585,7 @@ export const useLowSupplyEntries = () => {
       const response = await apiClient.get('/nursing/treatment-sheet/low-supply/');
       return response.data || response || [];
     },
-    refetchInterval: (data) => !document.hidden ? 120000 : false, // 2 minutes
+    refetchInterval: () => !document.hidden ? 120000 : false, // 2 minutes
     refetchOnWindowFocus: true,
   });
 };
@@ -558,9 +595,12 @@ export const useSupplyStatus = (entryId) => {
     queryKey: ['supply-status', entryId],
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/supply-status/`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? {};
     },
     enabled: !!entryId,
+    placeholderData: {},
   });
 };
 
@@ -623,7 +663,7 @@ export const usePendingSupplyRequests = () => {
       const response = await apiClient.get('/nursing/supply-requests/pending-queue/');
       return response.data || response || [];
     },
-    refetchInterval: (data) => !document.hidden ? 60000 : false, // 1 minute for pharmacy
+    refetchInterval: () => !document.hidden ? 60000 : false, // 1 minute for pharmacy
     refetchOnWindowFocus: true,
   });
 };
@@ -633,9 +673,12 @@ export const useSupplyRequest = (requestId) => {
     queryKey: ['supply-request', requestId],
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/supply-requests/${requestId}/`);
-      return response.data;
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? {};
     },
     enabled: !!requestId,
+    placeholderData: {},
   });
 };
 
@@ -688,5 +731,182 @@ export const useBulkDispenseSupply = () => {
       queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
       queryClient.invalidateQueries({ queryKey: ['treatment-sheet-low-supply'] });
     },
+  });
+};
+
+// ========== Fluid Balance ==========
+
+/**
+ * Get fluid balance entries for a patient
+ * @param {string} patientId - Patient ID
+ * @param {Object} filters - Optional filters (entry_type, date, start_date, end_date)
+ */
+export const useFluidBalance = (patientId, filters = {}) => {
+  return useQuery({
+    queryKey: ['fluid-balance', patientId, filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (patientId) params.append('patient', patientId);
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
+      const response = await apiClient.get(`/nursing/fluid-balance/?${params.toString()}`);
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      // Handle paginated response (results array) or direct array
+      return data?.results ?? data ?? [];
+    },
+    enabled: !!patientId,
+    refetchInterval: () => !document.hidden ? 60000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
+    placeholderData: [],
+  });
+};
+
+/**
+ * Get fluid balance summary/totals for a patient on a specific date
+ * @param {string} patientId - Patient ID
+ * @param {string} date - Optional date (YYYY-MM-DD format, defaults to today)
+ */
+export const useFluidBalanceSummary = (patientId, date = null) => {
+  return useQuery({
+    queryKey: ['fluid-balance-summary', patientId, date],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('patient', patientId);
+      if (date) params.append('date', date);
+      const response = await apiClient.get(`/nursing/fluid-balance/patient_summary/?${params.toString()}`);
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? { total_intake: 0, total_output: 0, balance: 0 };
+    },
+    enabled: !!patientId,
+    refetchInterval: () => !document.hidden ? 60000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
+    placeholderData: {
+      total_intake: 0,
+      total_output: 0,
+      balance: 0,
+      intake_breakdown: {},
+      output_breakdown: {},
+    },
+  });
+};
+
+/**
+ * Get today's fluid balance for a patient
+ * @param {string} patientId - Patient ID
+ */
+export const useTodayFluidBalance = (patientId) => {
+  return useQuery({
+    queryKey: ['fluid-balance-today', patientId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`);
+      // apiClient.get returns data directly, not response.data
+      const data = response?.data ?? response;
+      return data ?? { total_intake: 0, total_output: 0, balance: 0 };
+    },
+    enabled: !!patientId,
+    refetchInterval: () => !document.hidden ? 60000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
+    placeholderData: {
+      total_intake: 0,
+      total_output: 0,
+      balance: 0,
+    },
+  });
+};
+
+/**
+ * Create a new fluid balance entry
+ */
+export const useCreateFluidBalance = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await apiClient.post('/nursing/fluid-balance/', data);
+      // apiClient.post returns data directly, not response.data
+      return response?.data ?? response;
+    },
+    onSuccess: (data) => {
+      // Invalidate all fluid balance queries for this patient
+      if (data?.patient) {
+        queryClient.invalidateQueries({ queryKey: ['fluid-balance', data.patient] });
+        queryClient.invalidateQueries({ queryKey: ['fluid-balance-summary', data.patient] });
+        queryClient.invalidateQueries({ queryKey: ['fluid-balance-today', data.patient] });
+      }
+      // Also invalidate general fluid balance queries
+      queryClient.invalidateQueries({ queryKey: ['fluid-balance'] });
+    },
+  });
+};
+
+/**
+ * Delete a fluid balance entry
+ */
+export const useDeleteFluidBalance = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (entryId) => {
+      await apiClient.delete(`/nursing/fluid-balance/${entryId}/`);
+      return entryId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fluid-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['fluid-balance-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['fluid-balance-today'] });
+    },
+  });
+};
+
+/**
+ * Get fluid balance alert settings (facility-level thresholds)
+ */
+export const useFluidBalanceSettings = () => {
+  return useQuery({
+    queryKey: ['fluid-balance-settings'],
+    queryFn: async () => {
+      const response = await apiClient.get('/settings/fluid-balance/');
+      const data = response?.data ?? response;
+      return data ?? {
+        min_daily_intake_target: 1500,
+        max_daily_output_threshold: 3000,
+        negative_balance_alert_threshold: -500,
+        positive_balance_alert_threshold: 2000,
+        enable_intake_alerts: true,
+        enable_output_alerts: true,
+        enable_balance_alerts: true,
+      };
+    },
+    staleTime: 300000, // 5 minutes - settings don't change often
+    refetchOnWindowFocus: false,
+  });
+};
+
+/**
+ * Check fluid balance alerts for a patient
+ * @param {string} patientId - Patient ID
+ * @param {string} date - Optional date (YYYY-MM-DD format, defaults to today)
+ */
+export const useFluidBalanceAlerts = (patientId, date = null) => {
+  return useQuery({
+    queryKey: ['fluid-balance-alerts', patientId, date],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('patient', patientId);
+      if (date) params.append('date', date);
+      const response = await apiClient.get(`/nursing/fluid-balance/check_alerts/?${params.toString()}`);
+      const data = response?.data ?? response;
+      return data ?? { alerts: [], thresholds: {}, summary: {} };
+    },
+    enabled: !!patientId,
+    refetchInterval: () => !document.hidden ? 60000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
   });
 };

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,146 +8,56 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { apiClient } from '@/lib/api';
-import { format, startOfDay, endOfDay, parseISO } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ReferenceLine } from 'recharts';
-import { Droplet, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, startOfDay, endOfDay, addDays, subDays, isToday as checkIsToday } from 'date-fns';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { Droplet, ArrowDownCircle, ArrowUpCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, CalendarIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import {
+  useFluidBalance,
+  useTodayFluidBalance,
+  useFluidBalanceSummary,
+  useCreateFluidBalance,
+} from '@/hooks/useNursingQueries';
 
-export function FluidBalanceTracker({ patient }) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [fluidRecords, setFluidRecords] = useState([]);
-  const [dailySummaries, setDailySummaries] = useState([]);
+export function FluidBalanceTracker({ patient, admission }) {
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const isToday = checkIsToday(selectedDate);
+  const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+
   const [formData, setFormData] = useState({
     type: 'intake',
     category: '',
+    subcategory: '',
     amount: '',
-    route: '',
+    colour: '',
     notes: ''
   });
 
-  // Fetch fluid balance records
-  useEffect(() => {
-    const fetchFluidRecords = async () => {
-      try {
-        setLoading(true);
-        // In a real application, this would fetch from an API endpoint
-        // For demo purposes, we'll generate some sample data
-        const sampleData = generateSampleFluidRecords(patient.id);
-        setFluidRecords(sampleData);
-        
-        // Generate daily summaries
-        const summaries = generateDailySummaries(sampleData);
-        setDailySummaries(summaries);
-        
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching fluid records:', err);
-        setError('Failed to load fluid balance records. Please try again.');
-        setLoading(false);
-      }
-    };
+  // Fetch fluid balance data from API (all records for history/trends)
+  const {
+    data: fluidRecords = [],
+    isLoading: recordsLoading,
+    error: recordsError,
+    refetch: refetchRecords
+  } = useFluidBalance(patient?.id);
 
-    fetchFluidRecords();
-  }, [patient.id]);
+  // Fetch selected date's summary from API
+  const {
+    data: dateSummary,
+    isLoading: summaryLoading,
+  } = useFluidBalanceSummary(patient?.id, formattedDate);
 
-  // Generate sample fluid records for demo purposes
-  const generateSampleFluidRecords = (patientId) => {
-    const now = new Date();
-    const records = [];
-    
-    // Generate data for the last 3 days
-    for (let day = 0; day < 3; day++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - day);
-      
-      // Generate intake records
-      const intakeCategories = ['Oral', 'IV Fluids', 'Enteral Feed', 'Blood Products'];
-      const intakeRoutes = {
-        'Oral': ['Water', 'Juice', 'Tea', 'Coffee', 'Milk'],
-        'IV Fluids': ['Normal Saline', 'Lactated Ringers', 'D5W'],
-        'Enteral Feed': ['Nasogastric', 'PEG Tube'],
-        'Blood Products': ['Packed RBCs', 'Platelets', 'Plasma']
-      };
-      
-      // Generate 4-6 intake records per day
-      const intakeCount = Math.floor(Math.random() * 3) + 4;
-      for (let i = 0; i < intakeCount; i++) {
-        const hour = Math.floor(Math.random() * 24);
-        const timestamp = new Date(date);
-        timestamp.setHours(hour, Math.floor(Math.random() * 60));
-        
-        const category = intakeCategories[Math.floor(Math.random() * intakeCategories.length)];
-        const routes = intakeRoutes[category];
-        const route = routes[Math.floor(Math.random() * routes.length)];
-        
-        records.push({
-          id: `fluid-${patientId}-intake-${day}-${i}`,
-          type: 'intake',
-          category: category,
-          route: route,
-          amount: Math.floor(Math.random() * 300) + 50, // 50-350 ml
-          timestamp: timestamp.toISOString(),
-          notes: '',
-          recorded_by: 'Nurse Johnson'
-        });
-      }
-      
-      // Generate output records
-      const outputCategories = ['Urine', 'Vomit', 'Stool', 'Drain', 'Other'];
-      
-      // Generate 3-5 output records per day
-      const outputCount = Math.floor(Math.random() * 3) + 3;
-      for (let i = 0; i < outputCount; i++) {
-        const hour = Math.floor(Math.random() * 24);
-        const timestamp = new Date(date);
-        timestamp.setHours(hour, Math.floor(Math.random() * 60));
-        
-        const category = outputCategories[Math.floor(Math.random() * outputCategories.length)];
-        
-        records.push({
-          id: `fluid-${patientId}-output-${day}-${i}`,
-          type: 'output',
-          category: category,
-          route: category === 'Drain' ? ['Chest Tube', 'Surgical Drain', 'Nasogastric Tube'][Math.floor(Math.random() * 3)] : '',
-          amount: Math.floor(Math.random() * 400) + 100, // 100-500 ml
-          timestamp: timestamp.toISOString(),
-          notes: '',
-          recorded_by: 'Nurse Johnson'
-        });
-      }
-    }
-    
-    return records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  };
+  // For backwards compatibility, also fetch today's summary
+  const {
+    data: todaySummary,
+  } = useTodayFluidBalance(patient?.id);
 
-  // Generate daily summaries from fluid records
-  const generateDailySummaries = (records) => {
-    const summaries = {};
-    
-    records.forEach(record => {
-      const date = format(new Date(record.timestamp), 'yyyy-MM-dd');
-      
-      if (!summaries[date]) {
-        summaries[date] = {
-          date,
-          intake: 0,
-          output: 0,
-          balance: 0
-        };
-      }
-      
-      if (record.type === 'intake') {
-        summaries[date].intake += record.amount;
-      } else {
-        summaries[date].output += record.amount;
-      }
-      
-      summaries[date].balance = summaries[date].intake - summaries[date].output;
-    });
-    
-    return Object.values(summaries).sort((a, b) => new Date(b.date) - new Date(a.date));
-  };
+  // Mutation for creating new entries
+  const createMutation = useCreateFluidBalance();
 
   // Handle input changes
   const handleInputChange = (e) => {
@@ -158,44 +68,45 @@ export function FluidBalanceTracker({ patient }) {
   // Handle select changes
   const handleSelectChange = (name, value) => {
     if (name === 'type') {
-      // Reset category and route when type changes
-      setFormData(prev => ({ 
-        ...prev, 
+      // Reset category and subcategory when type changes
+      setFormData(prev => ({
+        ...prev,
         [name]: value,
         category: '',
-        route: ''
+        subcategory: ''
       }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
-  // Get category options based on selected type
+  // Category options based on entry type (matching backend choices)
   const getCategoryOptions = () => {
     if (formData.type === 'intake') {
       return [
-        { label: 'Oral', value: 'Oral' },
-        { label: 'IV Fluids', value: 'IV Fluids' },
-        { label: 'Enteral Feed', value: 'Enteral Feed' },
-        { label: 'Blood Products', value: 'Blood Products' }
+        { label: 'Oral', value: 'oral' },
+        { label: 'IV Fluids', value: 'iv' },
+        { label: 'Enteral Feed', value: 'enteral' },
+        { label: 'Blood Products', value: 'blood' }
       ];
     } else {
       return [
-        { label: 'Urine', value: 'Urine' },
-        { label: 'Vomit', value: 'Vomit' },
-        { label: 'Stool', value: 'Stool' },
-        { label: 'Drain', value: 'Drain' },
-        { label: 'Other', value: 'Other' }
+        { label: 'Urine', value: 'urine' },
+        { label: 'Vomit', value: 'vomit' },
+        { label: 'Stool', value: 'stool' },
+        { label: 'Drain', value: 'drain' },
+        { label: 'N.G. Suction', value: 'ng_suction' },
+        { label: 'Other', value: 'other' }
       ];
     }
   };
 
-  // Get route options based on selected category
-  const getRouteOptions = () => {
+  // Subcategory options based on selected category
+  const getSubcategoryOptions = () => {
     if (!formData.category) return [];
-    
-    const routeMap = {
-      'Oral': [
+
+    const subcategoryMap = {
+      'oral': [
         { label: 'Water', value: 'Water' },
         { label: 'Juice', value: 'Juice' },
         { label: 'Tea', value: 'Tea' },
@@ -203,80 +114,86 @@ export function FluidBalanceTracker({ patient }) {
         { label: 'Milk', value: 'Milk' },
         { label: 'Other', value: 'Other' }
       ],
-      'IV Fluids': [
+      'iv': [
         { label: 'Normal Saline', value: 'Normal Saline' },
         { label: 'Lactated Ringers', value: 'Lactated Ringers' },
         { label: 'D5W', value: 'D5W' },
         { label: 'Other', value: 'Other' }
       ],
-      'Enteral Feed': [
+      'enteral': [
         { label: 'Nasogastric', value: 'Nasogastric' },
         { label: 'PEG Tube', value: 'PEG Tube' },
         { label: 'Other', value: 'Other' }
       ],
-      'Blood Products': [
+      'blood': [
         { label: 'Packed RBCs', value: 'Packed RBCs' },
         { label: 'Platelets', value: 'Platelets' },
         { label: 'Plasma', value: 'Plasma' },
         { label: 'Other', value: 'Other' }
       ],
-      'Drain': [
+      'drain': [
         { label: 'Chest Tube', value: 'Chest Tube' },
         { label: 'Surgical Drain', value: 'Surgical Drain' },
+        { label: 'JP Drain', value: 'JP Drain' },
         { label: 'Nasogastric Tube', value: 'Nasogastric Tube' },
+        { label: 'Other', value: 'Other' }
+      ],
+      'urine': [
+        { label: 'Voided', value: 'Voided' },
+        { label: 'Foley Catheter', value: 'Foley Catheter' },
+      ],
+      'ng_suction': [
+        { label: 'Aspirate', value: 'Aspirate' },
+        { label: 'Drainage', value: 'Drainage' },
         { label: 'Other', value: 'Other' }
       ]
     };
-    
-    return routeMap[formData.category] || [];
+
+    return subcategoryMap[formData.category] || [];
   };
 
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
+    // Validate amount
+    const amount = parseInt(formData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    if (!formData.category) {
+      toast.error('Please select a category');
+      return;
+    }
+
     try {
-      // Validate amount
-      const amount = parseInt(formData.amount);
-      if (isNaN(amount) || amount <= 0) {
-        alert('Please enter a valid amount');
-        return;
-      }
-      
-      // In a real application, this would send data to an API endpoint
-      // For demo purposes, we'll just add it to the local state
-      const newRecord = {
-        id: `fluid-${patient.id}-${formData.type}-${Date.now()}`,
-        type: formData.type,
+      await createMutation.mutateAsync({
+        patient: patient.id,
+        admission: admission?.id || null,
+        entry_type: formData.type,
         category: formData.category,
-        route: formData.route,
-        amount: amount,
-        timestamp: new Date().toISOString(),
-        notes: formData.notes,
-        recorded_by: 'Current Nurse'
-      };
-      
-      const updatedRecords = [newRecord, ...fluidRecords];
-      setFluidRecords(updatedRecords);
-      
-      // Update daily summaries
-      const updatedSummaries = generateDailySummaries(updatedRecords);
-      setDailySummaries(updatedSummaries);
-      
+        subcategory: formData.subcategory || null,
+        volume_ml: amount,
+        colour: formData.type === 'output' && formData.colour ? formData.colour : null,
+        notes: formData.notes || null,
+      });
+
+      toast.success('Fluid balance entry recorded successfully');
+
       // Reset form
       setFormData({
         type: 'intake',
         category: '',
+        subcategory: '',
         amount: '',
-        route: '',
+        colour: '',
         notes: ''
       });
-      
-      // Show success message (in a real app)
-      alert('Fluid record added successfully');
     } catch (err) {
       console.error('Error recording fluid balance:', err);
-      setError('Failed to record fluid balance. Please try again.');
+      toast.error('Failed to record fluid balance. Please try again.');
     }
   };
 
@@ -285,43 +202,54 @@ export function FluidBalanceTracker({ patient }) {
     return format(new Date(timestamp), 'MMM d, yyyy h:mm a');
   };
 
-  // Format date for display
-  const formatDate = (dateString) => {
-    return format(new Date(dateString), 'MMM d, yyyy');
-  };
-
   // Get today's records
   const getTodayRecords = () => {
     const today = new Date();
     const startOfToday = startOfDay(today);
     const endOfToday = endOfDay(today);
-    
-    return fluidRecords.filter(record => {
-      const recordDate = new Date(record.timestamp);
+
+    // Handle both array and paginated responses
+    const records = Array.isArray(fluidRecords) ? fluidRecords : (fluidRecords?.results || []);
+
+    return records.filter(record => {
+      const recordDate = new Date(record.recorded_at);
       return recordDate >= startOfToday && recordDate <= endOfToday;
     });
   };
 
-  // Calculate today's totals
-  const calculateTodayTotals = () => {
-    const todayRecords = getTodayRecords();
-    
-    const intake = todayRecords
-      .filter(record => record.type === 'intake')
-      .reduce((sum, record) => sum + record.amount, 0);
-      
-    const output = todayRecords
-      .filter(record => record.type === 'output')
-      .reduce((sum, record) => sum + record.amount, 0);
-      
-    const balance = intake - output;
-    
-    return { intake, output, balance };
+  // Calculate daily summaries from records
+  const calculateDailySummaries = () => {
+    const records = Array.isArray(fluidRecords) ? fluidRecords : (fluidRecords?.results || []);
+    const summaries = {};
+
+    records.forEach(record => {
+      const date = format(new Date(record.recorded_at), 'yyyy-MM-dd');
+
+      if (!summaries[date]) {
+        summaries[date] = {
+          date,
+          intake: 0,
+          output: 0,
+          balance: 0
+        };
+      }
+
+      if (record.entry_type === 'intake') {
+        summaries[date].intake += record.volume_ml;
+      } else {
+        summaries[date].output += record.volume_ml;
+      }
+
+      summaries[date].balance = summaries[date].intake - summaries[date].output;
+    });
+
+    return Object.values(summaries).sort((a, b) => new Date(b.date) - new Date(a.date));
   };
 
   // Prepare chart data
   const prepareChartData = () => {
-    return dailySummaries.map(summary => ({
+    const summaries = calculateDailySummaries();
+    return summaries.map(summary => ({
       date: format(new Date(summary.date), 'MMM d'),
       intake: summary.intake,
       output: summary.output,
@@ -329,7 +257,41 @@ export function FluidBalanceTracker({ patient }) {
     })).reverse();
   };
 
-  if (loading) {
+  // Get display label for category
+  const getCategoryLabel = (category) => {
+    const labels = {
+      oral: 'Oral',
+      iv: 'IV Fluids',
+      enteral: 'Enteral Feed',
+      blood: 'Blood Products',
+      urine: 'Urine',
+      vomit: 'Vomit',
+      stool: 'Stool',
+      drain: 'Drain',
+      ng_suction: 'N.G. Suction',
+      other: 'Other'
+    };
+    return labels[category] || category;
+  };
+
+  // Date navigation helpers
+  const goToPreviousDay = () => setSelectedDate(prev => subDays(prev, 1));
+  const goToNextDay = () => setSelectedDate(prev => addDays(prev, 1));
+  const goToToday = () => setSelectedDate(new Date());
+
+  // Get records for selected date
+  const getSelectedDateRecords = () => {
+    const startOfSelected = startOfDay(selectedDate);
+    const endOfSelected = endOfDay(selectedDate);
+    const records = Array.isArray(fluidRecords) ? fluidRecords : (fluidRecords?.results || []);
+    return records.filter(record => {
+      const recordDate = new Date(record.recorded_at);
+      return recordDate >= startOfSelected && recordDate <= endOfSelected;
+    });
+  };
+
+  // Loading state
+  if (recordsLoading && !fluidRecords.length) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-12 w-full" />
@@ -338,18 +300,24 @@ export function FluidBalanceTracker({ patient }) {
     );
   }
 
-  if (error) {
+  // Error state
+  if (recordsError) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="text-red-500">Error</CardTitle>
         </CardHeader>
         <CardContent>
-          <p>{error}</p>
-          <Button 
-            variant="outline" 
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load fluid balance records. Please try again.
+            </AlertDescription>
+          </Alert>
+          <Button
+            variant="outline"
             className="mt-4"
-            onClick={() => window.location.reload()}
+            onClick={() => refetchRecords()}
           >
             Try Again
           </Button>
@@ -358,24 +326,86 @@ export function FluidBalanceTracker({ patient }) {
     );
   }
 
-  const todayTotals = calculateTodayTotals();
+  // Use selected date's summary, fallback to today's summary for backwards compat
+  const displaySummary = dateSummary || todaySummary || { total_intake: 0, total_output: 0, balance: 0 };
+  const records = Array.isArray(fluidRecords) ? fluidRecords : (fluidRecords?.results || []);
 
   return (
     <div className="space-y-6">
+      {/* Date Navigation Bar */}
+      <div className="flex items-center justify-between border-b pb-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToPreviousDay}
+            title="Previous day"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "min-w-[200px] justify-start text-left font-normal",
+                  !selectedDate && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => date && setSelectedDate(date)}
+                disabled={(date) => date > new Date()}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={goToNextDay}
+            disabled={isToday}
+            title="Next day"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+
+          {!isToday && (
+            <Button variant="secondary" size="sm" onClick={goToToday}>
+              Today
+            </Button>
+          )}
+        </div>
+
+        {isToday && (
+          <span className="text-sm text-muted-foreground bg-green-100 text-green-700 px-2 py-1 rounded">
+            Viewing Today
+          </span>
+        )}
+      </div>
+
       <Tabs defaultValue="record">
         <TabsList>
           <TabsTrigger value="record">Record Fluid</TabsTrigger>
-          <TabsTrigger value="today">Today's Balance</TabsTrigger>
+          <TabsTrigger value="today">{isToday ? "Today's Balance" : format(selectedDate, 'MMM d') + ' Balance'}</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="trends">Trends</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="record" className="mt-4">
           <Card>
             <CardHeader>
               <CardTitle>Record Fluid Balance</CardTitle>
               <CardDescription>
-                Enter fluid intake or output for {patient.user.full_name}
+                Enter fluid intake or output for {patient?.user?.full_name || patient?.patient_name || 'this patient'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -396,7 +426,7 @@ export function FluidBalanceTracker({ patient }) {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="category">Category</Label>
                     <Select
@@ -415,19 +445,19 @@ export function FluidBalanceTracker({ patient }) {
                       </SelectContent>
                     </Select>
                   </div>
-                  
-                  {formData.category && getRouteOptions().length > 0 && (
+
+                  {formData.category && getSubcategoryOptions().length > 0 && (
                     <div className="space-y-2">
-                      <Label htmlFor="route">Route/Type</Label>
+                      <Label htmlFor="subcategory">Subcategory</Label>
                       <Select
-                        value={formData.route}
-                        onValueChange={(value) => handleSelectChange('route', value)}
+                        value={formData.subcategory}
+                        onValueChange={(value) => handleSelectChange('subcategory', value)}
                       >
-                        <SelectTrigger id="route">
-                          <SelectValue placeholder="Select route" />
+                        <SelectTrigger id="subcategory">
+                          <SelectValue placeholder="Select subcategory (optional)" />
                         </SelectTrigger>
                         <SelectContent>
-                          {getRouteOptions().map(option => (
+                          {getSubcategoryOptions().map(option => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -436,7 +466,7 @@ export function FluidBalanceTracker({ patient }) {
                       </Select>
                     </div>
                   )}
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="amount">Amount (ml)</Label>
                     <Input
@@ -446,11 +476,27 @@ export function FluidBalanceTracker({ patient }) {
                       placeholder="Enter amount in ml"
                       value={formData.amount}
                       onChange={handleInputChange}
+                      min="1"
+                      max="10000"
                       required
                     />
                   </div>
+
+                  {/* Colour field for output entries */}
+                  {formData.type === 'output' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="colour">Colour</Label>
+                      <Input
+                        id="colour"
+                        name="colour"
+                        placeholder="e.g., dark amber, clear, bloody"
+                        value={formData.colour}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                  )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
                   <Input
@@ -461,61 +507,82 @@ export function FluidBalanceTracker({ patient }) {
                     onChange={handleInputChange}
                   />
                 </div>
-                
-                <Button type="submit" className="w-full">Record Fluid</Button>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={createMutation.isPending}
+                >
+                  {createMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Recording...
+                    </>
+                  ) : (
+                    'Record Fluid'
+                  )}
+                </Button>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="today" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Today's Fluid Balance</CardTitle>
+              <CardTitle>{isToday ? "Today's" : format(selectedDate, 'MMM d, yyyy')} Fluid Balance</CardTitle>
               <CardDescription>
-                Summary of fluid intake and output for today
+                Summary of fluid intake and output for {isToday ? 'today' : format(selectedDate, 'MMMM d, yyyy')}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="p-4 border rounded-md bg-blue-50">
-                  <div className="flex items-center mb-2">
-                    <ArrowDownCircle className="h-5 w-5 text-blue-500 mr-2" />
-                    <h3 className="text-lg font-medium">Total Intake</h3>
-                  </div>
-                  <p className="text-3xl font-bold text-blue-600">{todayTotals.intake} ml</p>
+              {summaryLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
                 </div>
-                
-                <div className="p-4 border rounded-md bg-amber-50">
-                  <div className="flex items-center mb-2">
-                    <ArrowUpCircle className="h-5 w-5 text-amber-500 mr-2" />
-                    <h3 className="text-lg font-medium">Total Output</h3>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="p-4 border rounded-md bg-blue-50">
+                    <div className="flex items-center mb-2">
+                      <ArrowDownCircle className="h-5 w-5 text-blue-500 mr-2" />
+                      <h3 className="text-lg font-medium">Total Intake</h3>
+                    </div>
+                    <p className="text-3xl font-bold text-blue-600">{displaySummary.total_intake} ml</p>
                   </div>
-                  <p className="text-3xl font-bold text-amber-600">{todayTotals.output} ml</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${
-                  todayTotals.balance > 0 ? 'bg-green-50' : 
-                  todayTotals.balance < 0 ? 'bg-red-50' : 'bg-gray-50'
-                }`}>
-                  <div className="flex items-center mb-2">
-                    <Droplet className={`h-5 w-5 mr-2 ${
-                      todayTotals.balance > 0 ? 'text-green-500' : 
-                      todayTotals.balance < 0 ? 'text-red-500' : 'text-gray-500'
-                    }`} />
-                    <h3 className="text-lg font-medium">Balance</h3>
+
+                  <div className="p-4 border rounded-md bg-amber-50">
+                    <div className="flex items-center mb-2">
+                      <ArrowUpCircle className="h-5 w-5 text-amber-500 mr-2" />
+                      <h3 className="text-lg font-medium">Total Output</h3>
+                    </div>
+                    <p className="text-3xl font-bold text-amber-600">{displaySummary.total_output} ml</p>
                   </div>
-                  <p className={`text-3xl font-bold ${
-                    todayTotals.balance > 0 ? 'text-green-600' : 
-                    todayTotals.balance < 0 ? 'text-red-600' : 'text-gray-600'
+
+                  <div className={`p-4 border rounded-md ${
+                    displaySummary.balance > 0 ? 'bg-green-50' :
+                    displaySummary.balance < 0 ? 'bg-red-50' : 'bg-gray-50'
                   }`}>
-                    {todayTotals.balance > 0 ? '+' : ''}{todayTotals.balance} ml
-                  </p>
+                    <div className="flex items-center mb-2">
+                      <Droplet className={`h-5 w-5 mr-2 ${
+                        displaySummary.balance > 0 ? 'text-green-500' :
+                        displaySummary.balance < 0 ? 'text-red-500' : 'text-gray-500'
+                      }`} />
+                      <h3 className="text-lg font-medium">Balance</h3>
+                    </div>
+                    <p className={`text-3xl font-bold ${
+                      displaySummary.balance > 0 ? 'text-green-600' :
+                      displaySummary.balance < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}>
+                      {displaySummary.balance > 0 ? '+' : ''}{displaySummary.balance} ml
+                    </p>
+                  </div>
                 </div>
-              </div>
-              
+              )}
+
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Today's Records</h3>
+                <h3 className="text-lg font-medium">{isToday ? "Today's" : format(selectedDate, 'MMM d')} Records</h3>
                 <ScrollArea className="h-[300px]">
                   <Table>
                     <TableHeader>
@@ -523,29 +590,31 @@ export function FluidBalanceTracker({ patient }) {
                         <TableHead>Time</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Route/Type</TableHead>
+                        <TableHead>Subcategory</TableHead>
                         <TableHead>Amount (ml)</TableHead>
+                        <TableHead>Colour</TableHead>
                         <TableHead>Notes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {getTodayRecords().map(record => (
+                      {getSelectedDateRecords().map(record => (
                         <TableRow key={record.id}>
-                          <TableCell>{format(new Date(record.timestamp), 'h:mm a')}</TableCell>
-                          <TableCell className="capitalize">{record.type}</TableCell>
-                          <TableCell>{record.category}</TableCell>
-                          <TableCell>{record.route}</TableCell>
-                          <TableCell className={record.type === 'intake' ? 'text-blue-600 font-medium' : 'text-amber-600 font-medium'}>
-                            {record.amount}
+                          <TableCell>{format(new Date(record.recorded_at), 'h:mm a')}</TableCell>
+                          <TableCell className="capitalize">{record.entry_type}</TableCell>
+                          <TableCell>{getCategoryLabel(record.category)}</TableCell>
+                          <TableCell>{record.subcategory || '-'}</TableCell>
+                          <TableCell className={record.entry_type === 'intake' ? 'text-blue-600 font-medium' : 'text-amber-600 font-medium'}>
+                            {record.volume_ml}
                           </TableCell>
-                          <TableCell>{record.notes}</TableCell>
+                          <TableCell>{record.entry_type === 'output' && record.colour ? record.colour : '-'}</TableCell>
+                          <TableCell>{record.notes || '-'}</TableCell>
                         </TableRow>
                       ))}
-                      
-                      {getTodayRecords().length === 0 && (
+
+                      {getSelectedDateRecords().length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-4">
-                            No records for today
+                          <TableCell colSpan={7} className="text-center py-4 text-muted-foreground">
+                            No records for {isToday ? 'today' : format(selectedDate, 'MMMM d, yyyy')}
                           </TableCell>
                         </TableRow>
                       )}
@@ -556,7 +625,7 @@ export function FluidBalanceTracker({ patient }) {
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader>
@@ -573,33 +642,43 @@ export function FluidBalanceTracker({ patient }) {
                       <TableHead>Date & Time</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead>Route/Type</TableHead>
+                      <TableHead>Subcategory</TableHead>
                       <TableHead>Amount (ml)</TableHead>
+                      <TableHead>Colour</TableHead>
                       <TableHead>Recorded By</TableHead>
                       <TableHead>Notes</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {fluidRecords.map(record => (
+                    {records.map(record => (
                       <TableRow key={record.id}>
-                        <TableCell>{formatTimestamp(record.timestamp)}</TableCell>
-                        <TableCell className="capitalize">{record.type}</TableCell>
-                        <TableCell>{record.category}</TableCell>
-                        <TableCell>{record.route}</TableCell>
-                        <TableCell className={record.type === 'intake' ? 'text-blue-600 font-medium' : 'text-amber-600 font-medium'}>
-                          {record.amount}
+                        <TableCell>{formatTimestamp(record.recorded_at)}</TableCell>
+                        <TableCell className="capitalize">{record.entry_type}</TableCell>
+                        <TableCell>{getCategoryLabel(record.category)}</TableCell>
+                        <TableCell>{record.subcategory || '-'}</TableCell>
+                        <TableCell className={record.entry_type === 'intake' ? 'text-blue-600 font-medium' : 'text-amber-600 font-medium'}>
+                          {record.volume_ml}
                         </TableCell>
-                        <TableCell>{record.recorded_by}</TableCell>
-                        <TableCell>{record.notes}</TableCell>
+                        <TableCell>{record.entry_type === 'output' && record.colour ? record.colour : '-'}</TableCell>
+                        <TableCell>{record.recorded_by_name || '-'}</TableCell>
+                        <TableCell>{record.notes || '-'}</TableCell>
                       </TableRow>
                     ))}
+
+                    {records.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
+                          No fluid balance records found
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="trends" className="mt-4">
           <Card>
             <CardHeader>
@@ -624,7 +703,7 @@ export function FluidBalanceTracker({ patient }) {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                
+
                 <div>
                   <h3 className="text-lg font-medium mb-2">Daily Fluid Balance</h3>
                   <ResponsiveContainer width="100%" height={300}>
@@ -639,7 +718,7 @@ export function FluidBalanceTracker({ patient }) {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                
+
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Daily Summaries</h3>
                   <Table>
@@ -652,19 +731,27 @@ export function FluidBalanceTracker({ patient }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dailySummaries.map(summary => (
+                      {calculateDailySummaries().map(summary => (
                         <TableRow key={summary.date}>
-                          <TableCell>{formatDate(summary.date)}</TableCell>
+                          <TableCell>{format(new Date(summary.date), 'MMM d, yyyy')}</TableCell>
                           <TableCell className="text-blue-600 font-medium">{summary.intake}</TableCell>
                           <TableCell className="text-amber-600 font-medium">{summary.output}</TableCell>
                           <TableCell className={
-                            summary.balance > 0 ? 'text-green-600 font-medium' : 
+                            summary.balance > 0 ? 'text-green-600 font-medium' :
                             summary.balance < 0 ? 'text-red-600 font-medium' : ''
                           }>
                             {summary.balance > 0 ? '+' : ''}{summary.balance}
                           </TableCell>
                         </TableRow>
                       ))}
+
+                      {calculateDailySummaries().length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
+                            No data available for trends
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>

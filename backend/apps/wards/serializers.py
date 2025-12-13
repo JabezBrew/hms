@@ -1,6 +1,137 @@
 from rest_framework import serializers
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, StaffRole, WardStaffAssignment
 from ..users.serializers import PatientProfileSerializer, StaffSerializer, UserSerializer, PractitionerProfileSerializer
+
+
+# ============================================================================
+# Ward Staff Assignment Serializers
+# ============================================================================
+
+class StaffRoleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for configurable staff roles.
+    """
+    class Meta:
+        model = StaffRole
+        fields = ['id', 'name', 'code', 'category', 'description', 'is_active']
+        read_only_fields = ['id']
+
+
+class WardStaffAssignmentSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for ward staff assignments.
+    """
+    practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
+    role_details = StaffRoleSerializer(source='role', read_only=True)
+    ward_name = serializers.CharField(source='ward.name', read_only=True)
+
+    class Meta:
+        model = WardStaffAssignment
+        fields = [
+            'id', 'ward', 'ward_name', 'practitioner', 'practitioner_details',
+            'role', 'role_details', 'is_active', 'is_primary', 'assigned_at'
+        ]
+        read_only_fields = ['id', 'assigned_at']
+
+
+class WardStaffAssignmentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for ward staff - optimized for dropdowns.
+
+    Returns minimal data needed for nurse selection in shift handoffs:
+    - id: practitioner ID (for form submission)
+    - full_name: display name
+    - role_name: role display
+    """
+    id = serializers.UUIDField(source='practitioner.id', read_only=True)
+    full_name = serializers.SerializerMethodField()
+    role_name = serializers.CharField(source='role.name', read_only=True)
+
+    class Meta:
+        model = WardStaffAssignment
+        fields = ['id', 'full_name', 'role_name']
+
+    def get_full_name(self, obj):
+        """Get practitioner's full name."""
+        if obj.practitioner and obj.practitioner.staff and obj.practitioner.staff.user:
+            return obj.practitioner.staff.user.get_full_name()
+        return 'Unknown'
+
+
+class WardStaffAssignmentDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for ward staff assignments - used for management UI.
+    Returns assignment ID (not practitioner ID) for edit/delete operations.
+    """
+    practitioner_id = serializers.UUIDField(source='practitioner.id', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+    role_id = serializers.UUIDField(source='role.id', read_only=True)
+    role_name = serializers.CharField(source='role.name', read_only=True)
+    role_category = serializers.CharField(source='role.category', read_only=True)
+    ward_name = serializers.CharField(source='ward.name', read_only=True)
+    assigned_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WardStaffAssignment
+        fields = [
+            'id', 'ward', 'ward_name',
+            'practitioner', 'practitioner_id', 'practitioner_name',
+            'role', 'role_id', 'role_name', 'role_category',
+            'is_active', 'is_primary',
+            'assigned_at', 'assigned_by', 'assigned_by_name'
+        ]
+        read_only_fields = ['id', 'assigned_at']
+
+    def get_practitioner_name(self, obj):
+        """Get practitioner's full name."""
+        if obj.practitioner and obj.practitioner.staff and obj.practitioner.staff.user:
+            return obj.practitioner.staff.user.get_full_name()
+        return 'Unknown'
+
+    def get_assigned_by_name(self, obj):
+        """Get assigner's name."""
+        if obj.assigned_by:
+            return obj.assigned_by.get_full_name()
+        return None
+
+
+class WardStaffAssignmentCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating/updating ward staff assignments.
+    """
+    class Meta:
+        model = WardStaffAssignment
+        fields = ['ward', 'practitioner', 'role', 'is_active', 'is_primary']
+
+    def validate(self, data):
+        """Validate the assignment data."""
+        ward = data.get('ward')
+        practitioner = data.get('practitioner')
+        role = data.get('role')
+
+        # Check if role is active
+        if role and not role.is_active:
+            raise serializers.ValidationError({
+                'role': 'This role is no longer active.'
+            })
+
+        # Check for duplicate assignment (only on create)
+        if not self.instance:
+            existing = WardStaffAssignment.objects.filter(
+                ward=ward,
+                practitioner=practitioner
+            ).exists()
+            if existing:
+                raise serializers.ValidationError({
+                    'practitioner': 'This staff member is already assigned to this ward.'
+                })
+
+        return data
+
+
+# ============================================================================
+# Existing Serializers
+# ============================================================================
 
 
 class BedAmenitySerializer(serializers.ModelSerializer):

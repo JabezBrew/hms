@@ -139,6 +139,8 @@ class PatientProfileSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     current_ward = serializers.SerializerMethodField()
     current_ward_id = serializers.SerializerMethodField()
+    current_admission_id = serializers.SerializerMethodField()
+    admission_status = serializers.SerializerMethodField()
     admission_date = serializers.SerializerMethodField()
 
     class Meta:
@@ -146,7 +148,8 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id',
                   'blood_group', 'allergies', 'emergency_contact_name',
                   'emergency_contact_phone', 'emergency_contact_relationship',
-                  'fhir_patient_id', 'current_ward', 'current_ward_id', 'admission_date',
+                  'fhir_patient_id', 'current_ward', 'current_ward_id',
+                  'current_admission_id', 'admission_status', 'admission_date',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
@@ -194,6 +197,44 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
         if admission and admission.bed:
             return str(admission.bed.ward.id)
+
+        return None
+
+    def get_current_admission_id(self, obj):
+        """
+        Get the ID of the current active admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return str(admission.id)
+
+        return None
+
+    def get_admission_status(self, obj):
+        """
+        Get the status of the current admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return admission.status
 
         return None
 

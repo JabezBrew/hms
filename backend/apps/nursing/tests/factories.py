@@ -419,6 +419,58 @@ class DispensedSupplyRequestFactory(SupplyRequestFactory):
 
 
 # =============================================================================
+# Fluid Balance Factories
+# =============================================================================
+
+class FluidBalanceFactory(factory.django.DjangoModelFactory):
+    """Factory for creating FluidBalance instances."""
+
+    class Meta:
+        model = 'nursing.FluidBalance'
+
+    patient = factory.SubFactory(PatientProfileFactory)
+    admission = factory.SubFactory(AdmissionFactory)
+    entry_type = factory.Faker('random_element', elements=['intake', 'output'])
+    category = factory.LazyAttribute(
+        lambda o: factory.Faker('random_element', elements=['oral', 'iv', 'enteral', 'blood']).evaluate(
+            None, None, {'locale': None}
+        ) if o.entry_type == 'intake' else factory.Faker('random_element', elements=['urine', 'vomit', 'stool', 'drain', 'other']).evaluate(
+            None, None, {'locale': None}
+        )
+    )
+    subcategory = factory.Faker('random_element', elements=['Water', 'Normal Saline', 'Juice', None])
+    volume_ml = factory.Faker('random_int', min=50, max=500)
+    recorded_at = factory.LazyFunction(timezone.now)
+    recorded_by = factory.SubFactory(PractitionerProfileFactory)
+    notes = factory.Faker('sentence')
+
+    @factory.lazy_attribute
+    def created_by(self):
+        from apps.users.models import User
+        admin = User.objects.filter(user_type='admin').first()
+        if not admin:
+            admin = AdminUserFactory()
+        return admin
+
+
+class FluidBalanceIntakeFactory(FluidBalanceFactory):
+    """Factory for creating fluid intake records."""
+
+    entry_type = 'intake'
+    category = factory.Faker('random_element', elements=['oral', 'iv', 'enteral', 'blood'])
+    subcategory = factory.Faker('random_element', elements=['Water', 'Normal Saline', 'D5W', 'Juice', 'Tea'])
+
+
+class FluidBalanceOutputFactory(FluidBalanceFactory):
+    """Factory for creating fluid output records."""
+
+    entry_type = 'output'
+    category = factory.Faker('random_element', elements=['urine', 'vomit', 'stool', 'drain', 'ng_suction', 'other'])
+    subcategory = factory.Faker('random_element', elements=['Foley', 'Void', 'JP Drain', 'Chest Tube', 'Aspirate', None])
+    colour = factory.Faker('random_element', elements=['clear', 'pale yellow', 'dark amber', 'cloudy', 'bloody', 'brown', None])
+
+
+# =============================================================================
 # Batch Creation Helpers
 # =============================================================================
 

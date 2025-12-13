@@ -9,7 +9,9 @@ import {
   Activity,
   Pill,
   MoreHorizontal,
-  ClipboardList
+  ClipboardList,
+  Droplets,
+  BarChart3,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -37,6 +39,8 @@ const PatientIdentityHero = ({
   onRequestConsult,
   onScheduleFollowUp,
   onViewTreatmentSheet,
+  onRecordFluids,
+  onAssignChart,
   activeAdmission,
   className
 }) => {
@@ -357,6 +361,21 @@ const PatientIdentityHero = ({
               <DropdownMenuItem onClick={onOrderLabs}>Order Labs</DropdownMenuItem>
               <DropdownMenuItem onClick={onRequestConsult}>Request Consult</DropdownMenuItem>
               <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
+              {onAssignChart && (
+                <DropdownMenuItem onClick={onAssignChart}>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Assign Chart
+                </DropdownMenuItem>
+              )}
+              {activeAdmission && onRecordFluids && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onRecordFluids}>
+                    <Droplets className="h-4 w-4 mr-2" />
+                    Record Fluids
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => window.print()}>Print Summary</DropdownMenuItem>
               <DropdownMenuItem>Export Record</DropdownMenuItem>

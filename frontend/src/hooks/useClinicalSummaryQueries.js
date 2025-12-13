@@ -194,7 +194,7 @@ export function parseAllergies(allergiesData) {
 export function useClinicalSummary(patientId, patientData = null, options = {}) {
   const { days = 7 } = options;
 
-  // Single query for both medications and vitals
+  // Single query for medications, vitals, and problems
   const summaryQuery = useQuery({
     queryKey: clinicalSummaryKeys.patient(patientId),
     queryFn: () => fetchClinicalSummary(patientId, days),
@@ -249,14 +249,15 @@ export function useClinicalSummary(patientId, patientData = null, options = {}) 
         }
 
         if (latestVitals.blood_pressure) {
-          const [systolic] = latestVitals.blood_pressure.split('/').map(Number);
+          const parts = latestVitals.blood_pressure.split('/');
+          const systolic = parts.length > 0 ? Number(parts[0]) : null;
           labResults.push({
             id: `bp-${latestVitals.id}`,
             name: 'BP',
             value: latestVitals.blood_pressure,
             unit: 'mmHg',
             timestamp: latestVitals.recorded_at,
-            is_abnormal: systolic > 140 || systolic < 90,
+            is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
             abnormal_direction: systolic > 140 ? 'high' : 'low',
           });
         }
@@ -288,15 +289,23 @@ export function useClinicalSummary(patientId, patientData = null, options = {}) 
         }
       }
 
-      return { medications, labResults };
+      // Transform problems to expected format
+      const problems = (data.problems || []).map(problem => ({
+        id: problem.id,
+        name: problem.name,
+        description: problem.name, // Alias for component compatibility
+        severity: problem.severity,
+        is_primary: problem.is_primary,
+        source: problem.source,
+        onset_date: problem.source_date?.split('T')[0], // Extract date part
+      }));
+
+      return { medications, labResults, problems };
     },
   });
 
   // Extract allergies from patient data
   const allergies = patientData?.allergies ? parseAllergies(patientData.allergies) : [];
-
-  // For problems, we'd need a dedicated endpoint - placeholder for now
-  const problems = [];
 
   return {
     medications: summaryQuery.data?.medications || [],
@@ -308,7 +317,7 @@ export function useClinicalSummary(patientId, patientData = null, options = {}) 
     labResultsError: summaryQuery.error,
 
     allergies,
-    problems,
+    problems: summaryQuery.data?.problems || [],
 
     isLoading: summaryQuery.isLoading,
     isError: summaryQuery.isError,

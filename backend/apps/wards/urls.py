@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     WardViewSet, BedViewSet, AdmissionViewSet,
     BedAllocationLogViewSet, WardTransferViewSet,
-    WardSectionViewSet, BedAmenityViewSet
+    WardSectionViewSet, BedAmenityViewSet,
+    StaffRoleViewSet, WardStaffAssignmentViewSet
 )
 from .encounters import EncounterViewSet
 
@@ -16,6 +17,8 @@ router.register(r'transfers', WardTransferViewSet)
 router.register(r'encounters', EncounterViewSet, basename='encounter')
 router.register(r'sections', WardSectionViewSet)
 router.register(r'amenities', BedAmenityViewSet)
+router.register(r'staff-roles', StaffRoleViewSet)
+router.register(r'staff-assignments', WardStaffAssignmentViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

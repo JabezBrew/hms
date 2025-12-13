@@ -27,6 +27,7 @@ import {
   Mail,
   Phone,
   Building,
+  Building2,
   Briefcase,
   Award,
   FileText,
@@ -43,6 +44,7 @@ import {
   History,
 } from 'lucide-react';
 import StaffActivityLog from './StaffActivityLog';
+import { StaffWardAssignments } from './StaffWardAssignments';
 
 /**
  * StaffDetail - Chronicle-style staff profile
@@ -458,6 +460,22 @@ const StaffDetail = ({ staff, practitioner, onBack, onEdit, onDeleted }) => {
                   </p>
                 </div>
               )}
+            </div>
+          </section>
+        )}
+
+        {/* Ward Assignments - Only for practitioners */}
+        {isPractitioner && practitioner?.id && (
+          <section>
+            <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-muted-foreground" />
+              Ward Assignments
+            </h2>
+            <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
+              <StaffWardAssignments
+                practitionerId={practitioner.id}
+                practitionerName={fullName}
+              />
             </div>
           </section>
         )}

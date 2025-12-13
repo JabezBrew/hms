@@ -200,6 +200,48 @@ class AuditService:
             'Bed': AuditCategory.WARD,
             'Ward': AuditCategory.WARD,
             'Appointment': AuditCategory.APPOINTMENT,
+            'FluidBalance': AuditCategory.NURSING,
+            'VitalSigns': AuditCategory.VITALS,
+            'NursingTask': AuditCategory.NURSING,
+            'MedicationAdministration': AuditCategory.NURSING,
         }
 
         return model_categories.get(model_name, AuditCategory.ADMIN)
+
+    @classmethod
+    def log_fluid_balance(cls, request, instance, action, changes=None):
+        """
+        Log fluid balance recording actions.
+
+        Args:
+            request: Django request object
+            instance: FluidBalance instance
+            action: FLUID_INTAKE_RECORD, FLUID_OUTPUT_RECORD, FLUID_BALANCE_UPDATE, or FLUID_BALANCE_DELETE
+            changes: Dict of field changes for updates
+        """
+        patient_name = instance.patient.user.get_full_name() if instance.patient else 'Unknown'
+        entry_type = instance.entry_type
+        volume = instance.volume_ml
+        category = instance.category
+
+        if action == AuditAction.FLUID_INTAKE_RECORD:
+            description = f"Recorded {volume}ml {category} intake for {patient_name}"
+        elif action == AuditAction.FLUID_OUTPUT_RECORD:
+            description = f"Recorded {volume}ml {category} output for {patient_name}"
+        elif action == AuditAction.FLUID_BALANCE_UPDATE:
+            description = f"Updated fluid balance entry ({entry_type}: {volume}ml {category}) for {patient_name}"
+        elif action == AuditAction.FLUID_BALANCE_DELETE:
+            description = f"Deleted fluid balance entry ({entry_type}: {volume}ml {category}) for {patient_name}"
+        else:
+            description = f"Fluid balance action on {patient_name}"
+
+        return cls.log(
+            request=request,
+            action=action,
+            category=AuditCategory.NURSING,
+            resource_type='FluidBalance',
+            resource_id=str(instance.pk),
+            resource_name=f"{patient_name} - {entry_type} - {volume}ml",
+            description=description,
+            changes=changes,
+        )

@@ -2224,12 +2224,21 @@ def patient_clinical_summary(request, patient_id):
     Returns:
     - Active medications/prescriptions
     - Recent vital signs (last 7 days)
+    - Active problems/diagnoses (from notes and admissions)
 
     This is an optimized endpoint that combines multiple API calls into one.
     """
     try:
-        patient = PatientProfile.objects.get(id=patient_id)
-    except PatientProfile.DoesNotExist:
+        # Try to find patient by local ID first, then by FHIR ID
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            patient = PatientProfile.objects.filter(fhir_patient_id=patient_id).first()
+        if not patient:
+            return Response(
+                {'error': 'Patient not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    except Exception:
         return Response(
             {'error': 'Patient not found'},
             status=status.HTTP_404_NOT_FOUND
@@ -2265,7 +2274,9 @@ def patient_clinical_summary(request, patient_id):
             'instructions': rx.instructions,
         })
 
-    # Get recent vitals (last 7 days)
+    # Get recent vitals
+    # First try to get vitals from the specified days window (default 7 days)
+    # If none found, get the most recent vitals regardless of date
     days = int(request.query_params.get('days', 7))
     start_date = timezone.now() - timezone.timedelta(days=days)
 
@@ -2273,6 +2284,15 @@ def patient_clinical_summary(request, patient_id):
         patient=patient,
         recorded_at__gte=start_date
     ).select_related('recorded_by').order_by('recorded_at')
+
+    # If no vitals in the time window, get the most recent ones (up to 5)
+    # Order ascending so the frontend can take the last element as most recent
+    if not vitals.exists():
+        recent_vitals = VitalSigns.objects.filter(
+            patient=patient
+        ).select_related('recorded_by').order_by('-recorded_at')[:5]
+        # Reverse to get ascending order (oldest first, newest last)
+        vitals = list(reversed(list(recent_vitals)))
 
     vitals_data = []
     for vital in vitals:
@@ -2287,9 +2307,100 @@ def patient_clinical_summary(request, patient_id):
             'is_critical': vital.is_critical,
         })
 
+    # Get active problems/diagnoses from multiple sources
+    problems = []
+    seen_problems = set()  # Track unique problems by name to avoid duplicates
+
+    # Source 1: Get diagnoses from recent clinical notes (Assessment section)
+    # Look at the last 30 days of notes for active problems
+    notes_start_date = timezone.now() - timezone.timedelta(days=30)
+    recent_notes = NoteEntry.objects.filter(
+        patient=patient,
+        created_at__gte=notes_start_date
+    ).select_related('template').order_by('-created_at')[:20]
+
+    for note in recent_notes:
+        note_data = note.data or {}
+        # Look for Assessment section with Primary Diagnosis or Differential Diagnoses
+        assessment = note_data.get('Assessment', {})
+
+        # Handle both dict format (SOAP template) and string format (simple notes)
+        if isinstance(assessment, dict):
+            # Extract primary diagnosis from structured SOAP notes
+            primary_dx = assessment.get('Primary Diagnosis', '')
+            if primary_dx and primary_dx.strip():
+                dx_text = primary_dx.strip()
+                if dx_text.lower() not in seen_problems:
+                    seen_problems.add(dx_text.lower())
+                    problems.append({
+                        'id': f'note-{note.id}-primary',
+                        'name': dx_text,
+                        'source': 'clinical_note',
+                        'source_date': note.created_at.isoformat(),
+                        'is_primary': True,
+                        'severity': 'medium',
+                    })
+
+            # Extract differential diagnoses (if present)
+            differential = assessment.get('Differential Diagnoses', '')
+            if differential and differential.strip():
+                # Split by common delimiters
+                for dx in differential.replace('\n', ',').split(','):
+                    dx_text = dx.strip().strip('-').strip('•').strip()
+                    if dx_text and dx_text.lower() not in seen_problems:
+                        seen_problems.add(dx_text.lower())
+                        problems.append({
+                            'id': f'note-{note.id}-diff-{len(problems)}',
+                            'name': dx_text,
+                            'source': 'clinical_note',
+                            'source_date': note.created_at.isoformat(),
+                            'is_primary': False,
+                            'severity': 'low',
+                        })
+        elif isinstance(assessment, str) and assessment.strip():
+            # Handle plain text Assessment (simple notes)
+            # Take the first sentence or line as the primary diagnosis
+            dx_text = assessment.strip().split('.')[0].split('\n')[0].strip()
+            if dx_text and dx_text.lower() not in seen_problems:
+                seen_problems.add(dx_text.lower())
+                problems.append({
+                    'id': f'note-{note.id}-assessment',
+                    'name': dx_text,
+                    'source': 'clinical_note',
+                    'source_date': note.created_at.isoformat(),
+                    'is_primary': True,
+                    'severity': 'medium',
+                })
+
+    # Source 2: Get initial diagnosis from active admission workflow
+    try:
+        from apps.workflows.models import AdmissionWorkflow
+        # AdmissionWorkflow is accessed through workflow.patient
+        # Only consider in_progress admissions (completed means discharged)
+        active_admission = AdmissionWorkflow.objects.filter(
+            workflow__patient=patient,
+            workflow__status='in_progress'
+        ).select_related('workflow').order_by('-workflow__created_at').first()
+
+        if active_admission and active_admission.initial_diagnosis:
+            dx_text = active_admission.initial_diagnosis.strip()
+            if dx_text and dx_text.lower() not in seen_problems:
+                seen_problems.add(dx_text.lower())
+                problems.insert(0, {  # Insert at beginning as it's the admission diagnosis
+                    'id': f'admission-{active_admission.id}',
+                    'name': dx_text,
+                    'source': 'admission',
+                    'source_date': active_admission.workflow.created_at.isoformat(),
+                    'is_primary': True,
+                    'severity': 'high',
+                })
+    except (ImportError, Exception):
+        pass  # workflows app not available
+
     return Response({
         'medications': medications,
         'vitals': vitals_data,
+        'problems': problems,
     })
 
 

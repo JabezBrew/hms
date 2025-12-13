@@ -16,6 +16,8 @@ import {
   FileSearch,
   TestTube2,
   Droplet,
+  ArrowLeftRight,
+  BarChart3,
 } from "lucide-react"
 
 import {
@@ -71,7 +73,9 @@ export function AppSidebar() {
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],
+      shiftHandoff: ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'],
       noteTemplates: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
+      chartTemplates: ['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'practitioner', 'physician'],
       inventory: ['admin', 'pharmacist'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
@@ -157,11 +161,29 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
+            {hasAccess(userRole, menuItems.management.shiftHandoff) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Shift Handoff" href="/nursing/shift-handoff">
+                  <ArrowLeftRight />
+                  <span>Shift Handoff</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
             {hasAccess(userRole, menuItems.management.noteTemplates) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Note Templates" href="/clinical-notes/templates">
                   <ClipboardList />
                   <span>Note Templates</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.chartTemplates) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Chart Builder" href="/charts/templates">
+                  <BarChart3 />
+                  <span>Chart Builder</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

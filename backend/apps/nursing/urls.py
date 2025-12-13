@@ -8,7 +8,8 @@ from .views import (
     ShiftHandoffViewSet,
     PatientMonitoringViewSet,
     TreatmentSheetEntryViewSet,
-    SupplyRequestViewSet
+    SupplyRequestViewSet,
+    FluidBalanceViewSet
 )
 
 router = DefaultRouter()
@@ -20,6 +21,7 @@ router.register(r'handoffs', ShiftHandoffViewSet, basename='shift-handoffs')
 router.register(r'monitoring', PatientMonitoringViewSet, basename='patient-monitoring')
 router.register(r'treatment-sheet', TreatmentSheetEntryViewSet, basename='treatment-sheet')
 router.register(r'supply-requests', SupplyRequestViewSet, basename='supply-requests')
+router.register(r'fluid-balance', FluidBalanceViewSet, basename='fluid-balance')
 
 urlpatterns = [
     path('', include(router.urls)),

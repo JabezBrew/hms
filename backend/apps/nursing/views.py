@@ -10,7 +10,7 @@ import logging
 
 from .models import (
     VitalSigns, NursingTask, NursingAlert, MedicationAdministration,
-    ShiftHandoff, TreatmentSheetEntry, SupplyRequest
+    ShiftHandoff, TreatmentSheetEntry, SupplyRequest, FluidBalance
 )
 from .serializers import (
     VitalSignsSerializer, VitalSignsCreateSerializer, VitalSignsListSerializer,
@@ -24,7 +24,9 @@ from .serializers import (
     PatientMonitoringSerializer, PatientMonitoringListSerializer,
     TreatmentSheetEntrySerializer, TreatmentSheetEntryListSerializer,
     TreatmentSheetEntryCreateSerializer,
-    SupplyRequestSerializer, SupplyRequestListSerializer, SupplyRequestCreateSerializer
+    SupplyRequestSerializer, SupplyRequestListSerializer, SupplyRequestCreateSerializer,
+    FluidBalanceSerializer, FluidBalanceListSerializer, FluidBalanceCreateSerializer,
+    FluidBalanceSummarySerializer
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
@@ -1172,6 +1174,72 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
 
         return Response(response_data)
 
+    @action(detail=False, methods=['get'])
+    def ward_nurses(self, request):
+        """
+        Get nurses who have worked on a specific ward.
+        Returns nurses who have performed nursing activities (vital signs, tasks,
+        medication administration) on patients in the specified ward within the
+        last 7 days, indicating they are familiar with ward patients.
+        """
+        ward_id = request.query_params.get('ward')
+        if not ward_id:
+            return Response(
+                {"error": "ward parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get patients currently admitted to this ward
+        ward_patients = PatientProfile.objects.filter(
+            admissions__bed__ward_id=ward_id,
+            admissions__status='admitted'
+        ).values_list('id', flat=True)
+
+        # Find nurses who have recorded activities for these patients in last 7 days
+        recent_cutoff = timezone.now() - timedelta(days=7)
+
+        # Get nurses from vital signs
+        vitals_nurses = VitalSigns.objects.filter(
+            patient_id__in=ward_patients,
+            recorded_at__gte=recent_cutoff
+        ).values_list('recorded_by_id', flat=True).distinct()
+
+        # Get nurses from completed tasks
+        task_nurses = NursingTask.objects.filter(
+            patient_id__in=ward_patients,
+            completed_at__gte=recent_cutoff
+        ).values_list('completed_by_id', flat=True).distinct()
+
+        # Get nurses from medication administrations
+        med_nurses = MedicationAdministration.objects.filter(
+            patient_id__in=ward_patients,
+            administered_at__gte=recent_cutoff
+        ).values_list('administered_by_id', flat=True).distinct()
+
+        # Combine all nurse IDs
+        all_nurse_ids = set(vitals_nurses) | set(task_nurses) | set(med_nurses)
+        all_nurse_ids.discard(None)  # Remove None if present
+
+        # Get practitioner profiles for these nurses
+        nurses = PractitionerProfile.objects.filter(
+            id__in=all_nurse_ids
+        ).select_related('staff', 'staff__user').order_by('staff__user__first_name')
+
+        # Format response
+        nurse_list = []
+        for nurse in nurses:
+            if nurse.staff and nurse.staff.user:
+                nurse_list.append({
+                    'id': str(nurse.id),
+                    'full_name': nurse.staff.user.get_full_name(),
+                    'name': nurse.staff.user.get_full_name(),  # Alias for compatibility
+                    'role': nurse.staff.user.user_type,
+                    'department': nurse.staff.department if nurse.staff else None,
+                    'employee_id': nurse.staff.employee_id if nurse.staff else None,
+                })
+
+        return Response(nurse_list)
+
 
 # ============================================================================
 # Treatment Sheet ViewSets
@@ -1743,4 +1811,361 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         return Response({
             'dispensed_count': dispensed_count,
             'errors': errors
+        })
+
+
+class FluidBalanceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for fluid balance tracking.
+
+    Endpoints:
+    - GET /api/nursing/fluid-balance/ - List entries (filtered by patient)
+    - POST /api/nursing/fluid-balance/ - Create entry
+    - GET /api/nursing/fluid-balance/{id}/ - Retrieve entry
+    - PUT/PATCH /api/nursing/fluid-balance/{id}/ - Update entry
+    - DELETE /api/nursing/fluid-balance/{id}/ - Soft delete entry
+    - GET /api/nursing/fluid-balance/patient_summary/ - Daily totals for patient
+    - GET /api/nursing/fluid-balance/today_balance/ - Today's balance for patient
+
+    All actions are fully audited for compliance.
+    """
+    queryset = FluidBalance.objects.select_related(
+        'patient', 'patient__user', 'recorded_by', 'admission', 'created_by', 'modified_by'
+    ).all()
+    permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
+    filterset_fields = ['patient', 'admission', 'entry_type', 'category']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return FluidBalanceCreateSerializer
+        elif self.action == 'list':
+            return FluidBalanceListSerializer
+        elif self.action in ['patient_summary', 'today_balance']:
+            return FluidBalanceSummarySerializer
+        return FluidBalanceSerializer
+
+    def get_queryset(self):
+        """Override to add date filtering and exclude soft-deleted entries."""
+        queryset = super().get_queryset()
+
+        # Exclude soft-deleted entries by default
+        include_deleted = self.request.query_params.get('include_deleted', 'false').lower() == 'true'
+        if not include_deleted:
+            queryset = queryset.filter(is_deleted=False)
+
+        # Filter by date
+        date_str = self.request.query_params.get('date')
+        if date_str:
+            try:
+                from datetime import datetime
+                filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                queryset = queryset.filter(recorded_at__date=filter_date)
+            except ValueError:
+                pass  # Invalid date format, ignore filter
+
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if start_date:
+            queryset = queryset.filter(recorded_at__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(recorded_at__lte=end_date)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        """Set recorded_by and created_by on creation, and log audit trail."""
+        recorded_by = None
+        try:
+            recorded_by = PractitionerProfile.objects.get(staff__user=self.request.user)
+        except PractitionerProfile.DoesNotExist:
+            pass
+
+        instance = serializer.save(
+            recorded_by=recorded_by,
+            created_by=self.request.user
+        )
+
+        # Audit logging
+        action = (AuditAction.FLUID_INTAKE_RECORD
+                  if instance.entry_type == 'intake'
+                  else AuditAction.FLUID_OUTPUT_RECORD)
+        AuditService.log_fluid_balance(self.request, instance, action)
+
+    def perform_update(self, serializer):
+        """Track modifications and log audit trail."""
+        # Capture old values for audit
+        instance = self.get_object()
+        old_values = {
+            'entry_type': instance.entry_type,
+            'category': instance.category,
+            'subcategory': instance.subcategory,
+            'volume_ml': instance.volume_ml,
+            'notes': instance.notes,
+        }
+
+        # Save with modified_by
+        instance = serializer.save(modified_by=self.request.user)
+
+        # Calculate changes
+        new_values = {
+            'entry_type': instance.entry_type,
+            'category': instance.category,
+            'subcategory': instance.subcategory,
+            'volume_ml': instance.volume_ml,
+            'notes': instance.notes,
+        }
+        changes = {
+            k: {'old': old_values[k], 'new': new_values[k]}
+            for k in old_values
+            if old_values[k] != new_values[k]
+        }
+
+        # Audit logging
+        AuditService.log_fluid_balance(
+            self.request, instance, AuditAction.FLUID_BALANCE_UPDATE, changes=changes
+        )
+
+    def perform_destroy(self, instance):
+        """Soft delete with audit trail instead of hard delete."""
+        # Audit logging before soft delete
+        AuditService.log_fluid_balance(
+            self.request, instance, AuditAction.FLUID_BALANCE_DELETE
+        )
+
+        # Soft delete
+        instance.is_deleted = True
+        instance.deleted_at = timezone.now()
+        instance.deleted_by = self.request.user
+        instance.deletion_reason = self.request.data.get('reason', 'No reason provided')
+        instance.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'deletion_reason'])
+
+    @action(detail=False, methods=['get'])
+    def patient_summary(self, request):
+        """
+        Get daily fluid balance summary for a patient.
+
+        Query params:
+        - patient (required): Patient ID
+        - date (optional): Date for summary (default: today)
+        """
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date (default to today)
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                from datetime import datetime
+                filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            filter_date = timezone.now().date()
+
+        # Calculate totals (excluding soft-deleted entries)
+        entries = FluidBalance.objects.filter(
+            patient_id=patient_id,
+            recorded_at__date=filter_date,
+            is_deleted=False
+        )
+
+        intake_entries = entries.filter(entry_type='intake')
+        output_entries = entries.filter(entry_type='output')
+
+        total_intake = sum(e.volume_ml for e in intake_entries)
+        total_output = sum(e.volume_ml for e in output_entries)
+        balance = total_intake - total_output
+
+        # Calculate breakdown by category
+        from django.db.models import Sum
+        intake_breakdown = dict(
+            intake_entries.values('category').annotate(
+                total=Sum('volume_ml')
+            ).values_list('category', 'total')
+        )
+        output_breakdown = dict(
+            output_entries.values('category').annotate(
+                total=Sum('volume_ml')
+            ).values_list('category', 'total')
+        )
+
+        return Response({
+            'patient': patient_id,
+            'date': filter_date,
+            'total_intake': total_intake,
+            'total_output': total_output,
+            'balance': balance,
+            'intake_breakdown': intake_breakdown,
+            'output_breakdown': output_breakdown
+        })
+
+    @action(detail=False, methods=['get'])
+    def today_balance(self, request):
+        """
+        Get today's fluid balance for a patient.
+        Convenience endpoint that defaults to today's date.
+
+        Query params:
+        - patient (required): Patient ID
+        """
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        today = timezone.now().date()
+
+        # Calculate totals (excluding soft-deleted entries)
+        entries = FluidBalance.objects.filter(
+            patient_id=patient_id,
+            recorded_at__date=today,
+            is_deleted=False
+        )
+
+        intake_entries = entries.filter(entry_type='intake')
+        output_entries = entries.filter(entry_type='output')
+
+        total_intake = sum(e.volume_ml for e in intake_entries)
+        total_output = sum(e.volume_ml for e in output_entries)
+        balance = total_intake - total_output
+
+        return Response({
+            'patient': patient_id,
+            'date': today,
+            'total_intake': total_intake,
+            'total_output': total_output,
+            'balance': balance
+        })
+
+    @action(detail=False, methods=['get'])
+    def check_alerts(self, request):
+        """
+        Check if patient's fluid balance triggers any configured alerts.
+
+        Query params:
+        - patient (required): Patient ID
+        - date (optional): Date to check (default: today)
+
+        Returns:
+        {
+            alerts: [
+                { type: 'low_intake', message: '...', severity: 'warning' },
+                { type: 'high_output', message: '...', severity: 'warning' },
+                { type: 'negative_balance', message: '...', severity: 'critical' },
+            ],
+            thresholds: { ... current facility thresholds ... },
+            summary: { total_intake, total_output, balance }
+        }
+        """
+        from apps.core.models import FacilityFluidBalanceSettings
+
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get date (default to today)
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                from datetime import datetime
+                filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            filter_date = timezone.now().date()
+
+        # Get facility settings
+        settings = FacilityFluidBalanceSettings.get_settings()
+
+        # Calculate totals (excluding soft-deleted entries)
+        entries = FluidBalance.objects.filter(
+            patient_id=patient_id,
+            recorded_at__date=filter_date,
+            is_deleted=False
+        )
+
+        intake_entries = entries.filter(entry_type='intake')
+        output_entries = entries.filter(entry_type='output')
+
+        total_intake = sum(e.volume_ml for e in intake_entries)
+        total_output = sum(e.volume_ml for e in output_entries)
+        balance = total_intake - total_output
+
+        # Check alerts based on thresholds
+        alerts = []
+
+        # Check low intake alert
+        if settings.enable_intake_alerts and total_intake < settings.min_daily_intake_target:
+            alerts.append({
+                'type': 'low_intake',
+                'message': f'Daily intake ({total_intake}ml) is below minimum target ({settings.min_daily_intake_target}ml)',
+                'severity': 'warning',
+                'value': total_intake,
+                'threshold': settings.min_daily_intake_target
+            })
+
+        # Check high output alert
+        if settings.enable_output_alerts and total_output > settings.max_daily_output_threshold:
+            alerts.append({
+                'type': 'high_output',
+                'message': f'Daily output ({total_output}ml) exceeds maximum threshold ({settings.max_daily_output_threshold}ml)',
+                'severity': 'warning',
+                'value': total_output,
+                'threshold': settings.max_daily_output_threshold
+            })
+
+        # Check balance alerts
+        if settings.enable_balance_alerts:
+            if balance < settings.negative_balance_alert_threshold:
+                alerts.append({
+                    'type': 'negative_balance',
+                    'message': f'Fluid balance ({balance}ml) is critically low (threshold: {settings.negative_balance_alert_threshold}ml)',
+                    'severity': 'critical',
+                    'value': balance,
+                    'threshold': settings.negative_balance_alert_threshold
+                })
+            elif balance > settings.positive_balance_alert_threshold:
+                alerts.append({
+                    'type': 'positive_balance',
+                    'message': f'Fluid balance ({balance}ml) exceeds retention threshold ({settings.positive_balance_alert_threshold}ml)',
+                    'severity': 'warning',
+                    'value': balance,
+                    'threshold': settings.positive_balance_alert_threshold
+                })
+
+        return Response({
+            'patient': patient_id,
+            'date': filter_date,
+            'alerts': alerts,
+            'thresholds': {
+                'min_daily_intake_target': settings.min_daily_intake_target,
+                'max_daily_output_threshold': settings.max_daily_output_threshold,
+                'negative_balance_alert_threshold': settings.negative_balance_alert_threshold,
+                'positive_balance_alert_threshold': settings.positive_balance_alert_threshold,
+                'enable_intake_alerts': settings.enable_intake_alerts,
+                'enable_output_alerts': settings.enable_output_alerts,
+                'enable_balance_alerts': settings.enable_balance_alerts,
+            },
+            'summary': {
+                'total_intake': total_intake,
+                'total_output': total_output,
+                'balance': balance
+            }
         })

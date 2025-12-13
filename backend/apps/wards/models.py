@@ -9,6 +9,112 @@ from ..users.models import PatientProfile, PractitionerProfile
 User = get_user_model()
 
 
+# ============================================================================
+# Ward Staff Assignment Models
+# ============================================================================
+
+class StaffRole(models.Model):
+    """
+    Configurable staff roles for ward assignments.
+
+    Facilities can customize roles to match their organizational structure.
+    Default roles include nursing and medical categories, but facilities
+    can add custom roles like 'Charge Nurse', 'Unit Manager', etc.
+    """
+    CATEGORY_CHOICES = (
+        ('nursing', 'Nursing'),
+        ('medical', 'Medical'),
+        ('allied', 'Allied Health'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True, help_text="Display name (e.g., 'Staff Nurse')")
+    code = models.CharField(max_length=30, unique=True, help_text="Unique code (e.g., 'staff_nurse')")
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default='nursing',
+        help_text="Role category for filtering"
+    )
+    description = models.TextField(blank=True, help_text="Optional description of the role")
+    is_active = models.BooleanField(default=True, help_text="Whether this role can be assigned")
+
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name = 'Staff Role'
+        verbose_name_plural = 'Staff Roles'
+
+    def __str__(self):
+        return self.name
+
+
+class WardStaffAssignment(models.Model):
+    """
+    Tracks staff (nurses, doctors) assigned to work on specific wards.
+
+    Supports many-to-many relationships - a practitioner can be assigned
+    to multiple wards, and a ward can have multiple practitioners.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ward = models.ForeignKey(
+        'Ward',
+        on_delete=models.CASCADE,
+        related_name='staff_assignments',
+        help_text="Ward this staff member is assigned to"
+    )
+    practitioner = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.CASCADE,
+        related_name='ward_assignments',
+        help_text="Practitioner assigned to this ward"
+    )
+    role = models.ForeignKey(
+        StaffRole,
+        on_delete=models.PROTECT,
+        related_name='assignments',
+        help_text="Staff role on this ward"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether currently assigned to this ward"
+    )
+    is_primary = models.BooleanField(
+        default=False,
+        help_text="Primary ward assignment for this staff member"
+    )
+
+    # Audit fields
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ward_assignments_made'
+    )
+
+    class Meta:
+        unique_together = ('ward', 'practitioner')
+        ordering = ['ward', 'role', 'practitioner']
+        verbose_name = 'Ward Staff Assignment'
+        verbose_name_plural = 'Ward Staff Assignments'
+        indexes = [
+            models.Index(fields=['ward', 'is_active']),
+            models.Index(fields=['practitioner', 'is_active']),
+            models.Index(fields=['role', 'is_active']),
+        ]
+
+    def __str__(self):
+        practitioner_name = self.practitioner.staff.user.get_full_name() if self.practitioner.staff else 'Unknown'
+        return f"{practitioner_name} - {self.ward.name} ({self.role.name})"
+
+
+# ============================================================================
+# Ward Models
+# ============================================================================
+
+
 class Ward(models.Model):
     """
     Model for hospital wards.
@@ -118,7 +224,7 @@ class Bed(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
 
     # Additional rate for special beds
-    additional_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    additional_rate = models.DecimalField(max_digits=10, decimal_places=2, default='0.00')
 
     # Location in ward
     location_x = models.PositiveSmallIntegerField(default=0, help_text="X coordinate for bed location")
@@ -205,19 +311,21 @@ class Bed(models.Model):
         """
         Calculate the total rate for this bed per night including section multiplier and amenities.
         """
+        from decimal import Decimal
         base = self.ward.base_rate_per_night
 
         # Apply section multiplier if section exists
         if self.section:
             base = base * self.section.rate_multiplier
 
-        # Add bed-level additional rate
-        rate = base + self.additional_rate
+        # Add bed-level additional rate (ensure Decimal type)
+        additional = self.additional_rate if isinstance(self.additional_rate, Decimal) else Decimal(str(self.additional_rate))
+        rate = base + additional
 
         # Add amenity costs
         amenity_cost = self.amenities.aggregate(
             total=models.Sum('additional_rate')
-        )['total'] or 0
+        )['total'] or Decimal('0')
 
         return rate + amenity_cost
 

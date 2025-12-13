@@ -8,7 +8,7 @@ from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta, datetime
 
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
     WardSerializer, WardListSerializer,
     BedSerializer, BedListSerializer,
@@ -16,7 +16,9 @@ from .serializers import (
     BedAllocationLogSerializer,
     WardTransferSerializer, WardTransferListSerializer,
     AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer,
-    WardSectionSerializer, WardSectionListSerializer, BedAmenitySerializer
+    WardSectionSerializer, WardSectionListSerializer, BedAmenitySerializer,
+    WardStaffAssignmentListSerializer, WardStaffAssignmentDetailSerializer,
+    WardStaffAssignmentCreateSerializer, StaffRoleSerializer
 )
 from ..users.permissions import IsAdminOrOwner
 
@@ -132,6 +134,34 @@ class WardViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = BedSerializer(beds, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def staff(self, request, pk=None):
+        """
+        Get staff assigned to this ward.
+
+        Query Parameters:
+        - category: Filter by role category ('nursing', 'medical', 'allied')
+
+        Returns lightweight list optimized for dropdowns (nurse selection, etc.)
+        """
+        ward = self.get_object()
+        category = request.query_params.get('category', None)
+
+        # Get active staff assignments with optimized joins
+        assignments = ward.staff_assignments.filter(
+            is_active=True
+        ).select_related(
+            'practitioner__staff__user',
+            'role'
+        )
+
+        # Filter by role category if provided
+        if category:
+            assignments = assignments.filter(role__category=category)
+
+        serializer = WardStaffAssignmentListSerializer(assignments, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
@@ -667,9 +697,21 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     created_by=request.user
                 )
 
+                # Update bed statuses
+                source_bed = from_admission.bed
+                source_bed.status = 'available'
+                source_bed.save(update_fields=['status', 'updated_at'])
+
+                to_bed.status = 'occupied'
+                to_bed.save(update_fields=['status', 'updated_at'])
+
+                # Update source admission status
+                from_admission.status = 'transferred'
+                from_admission.save(update_fields=['status', 'updated_at'])
+
                 # Create bed allocation logs
                 BedAllocationLog.objects.create(
-                    bed=from_admission.bed,
+                    bed=source_bed,
                     previous_status='occupied',
                     new_status='available',
                     admission=from_admission,
@@ -682,7 +724,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     previous_status='available',
                     new_status='occupied',
                     admission=to_admission,
-                    notes=f"Patient transferred from {from_admission.bed.ward.name}",
+                    notes=f"Patient transferred from {source_bed.ward.name}",
                     created_by=request.user
                 )
 
@@ -786,3 +828,129 @@ class BedAmenityViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
+
+
+class StaffRoleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for staff roles.
+    Roles are configurable per facility (Staff Nurse, Charge Nurse, etc.)
+    """
+    queryset = StaffRole.objects.all()
+    serializer_class = StaffRoleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['category', 'is_active']
+    search_fields = ['name', 'code', 'description']
+    ordering_fields = ['category', 'name']
+    ordering = ['category', 'name']
+
+    def get_queryset(self):
+        """Add search and filter only active by default."""
+        queryset = super().get_queryset()
+
+        # Filter active only unless explicitly requested
+        show_inactive = self.request.query_params.get('show_inactive', 'false')
+        if show_inactive.lower() != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        # Search
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(code__icontains=search_query)
+            )
+
+        return queryset
+
+    def get_permissions(self):
+        """Only admins can create/update/delete roles."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+
+class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for ward staff assignments.
+    Manages which practitioners are assigned to which wards.
+    """
+    queryset = WardStaffAssignment.objects.select_related(
+        'ward', 'practitioner__staff__user', 'role', 'assigned_by'
+    ).all()
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['ward', 'practitioner', 'role', 'is_active', 'is_primary']
+    ordering_fields = ['assigned_at', 'role__category', 'role__name']
+    ordering = ['role__category', 'role__name', '-assigned_at']
+
+    def get_permissions(self):
+        """Only admins can create/update/delete assignments."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return WardStaffAssignmentCreateSerializer
+        if self.action in ['update', 'partial_update']:
+            return WardStaffAssignmentCreateSerializer
+        return WardStaffAssignmentDetailSerializer
+
+    def get_queryset(self):
+        """
+        Filter by ward, practitioner, role category, or active status.
+        """
+        queryset = super().get_queryset()
+
+        # Filter by ward
+        ward_id = self.request.query_params.get('ward', None)
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        # Filter by practitioner
+        practitioner_id = self.request.query_params.get('practitioner', None)
+        if practitioner_id:
+            queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        # Filter by role category
+        category = self.request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(role__category=category)
+
+        # Filter active only by default
+        show_inactive = self.request.query_params.get('show_inactive', 'false')
+        if show_inactive.lower() != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        """Set assigned_by on create."""
+        serializer.save(assigned_by=self.request.user)
+
+    def perform_update(self, serializer):
+        """Update the assignment."""
+        serializer.save()
+
+    @action(detail=False, methods=['get'])
+    def by_practitioner(self, request):
+        """
+        Get all ward assignments for a specific practitioner.
+        Used in Staff Detail page.
+
+        Query params:
+        - practitioner_id: UUID of the practitioner
+        """
+        practitioner_id = request.query_params.get('practitioner_id')
+        if not practitioner_id:
+            return Response(
+                {'error': 'practitioner_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        assignments = self.get_queryset().filter(
+            practitioner_id=practitioner_id,
+            is_active=True
+        )
+
+        serializer = WardStaffAssignmentDetailSerializer(assignments, many=True)
+        return Response(serializer.data)
