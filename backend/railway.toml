@@ -6,8 +6,6 @@ builder = "nixpacks"
 
 [deploy]
 numReplicas = 1
-healthcheckPath = "/api/health/"
-healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
 startCommand = "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn hms_backend.wsgi:application --bind 0.0.0.0:$PORT"
