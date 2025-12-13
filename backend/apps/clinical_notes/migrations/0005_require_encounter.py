@@ -7,6 +7,7 @@ IMPORTANT: Before running this migration, you MUST run the backfill command:
 This migration will fail if there are any entries with null encounter values.
 """
 from django.db import migrations, models
+from django.db.utils import ProgrammingError
 import django.db.models.deletion
 
 
@@ -15,8 +16,12 @@ def check_no_null_encounters(apps, schema_editor):
     NoteEntry = apps.get_model('clinical_notes', 'NoteEntry')
     Prescription = apps.get_model('clinical_notes', 'Prescription')
 
-    null_notes = NoteEntry.objects.filter(encounter__isnull=True).count()
-    null_prescriptions = Prescription.objects.filter(encounter__isnull=True).count()
+    try:
+        null_notes = NoteEntry.objects.filter(encounter__isnull=True).count()
+        null_prescriptions = Prescription.objects.filter(encounter__isnull=True).count()
+    except ProgrammingError:
+        # Table doesn't exist yet (fresh database) - no data to check
+        return
 
     if null_notes > 0 or null_prescriptions > 0:
         raise ValueError(

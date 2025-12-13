@@ -1,0 +1,12 @@
+# Kubernetes Namespace for HMS
+# Creates isolated namespace for all HMS resources
+#
+# Apply: kubectl apply -f k8s/namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: namespace

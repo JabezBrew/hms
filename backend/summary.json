@@ -1,0 +1,441 @@
+{
+  "root_group": {
+    "groups": [
+      {
+        "groups": [],
+        "checks": [
+            {
+              "name": "analytics loaded",
+              "path": "::Admin: Ward Analytics::analytics loaded",
+              "id": "dd79cb0287d2086673642124f556c0cd",
+              "passes": 107,
+              "fails": 0
+            },
+            {
+              "passes": 107,
+              "fails": 0,
+              "name": "analytics time OK",
+              "path": "::Admin: Ward Analytics::analytics time OK",
+              "id": "5b3d5b56e2d374444b68aea3de0a6d74"
+            }
+          ],
+        "name": "Admin: Ward Analytics",
+        "path": "::Admin: Ward Analytics",
+        "id": "640d32d61ed3e0e5312286c0dc18836c"
+      },
+      {
+        "name": "Nurse: Dashboard",
+        "path": "::Nurse: Dashboard",
+        "id": "34151fac3ee066f54c93e9a3c654ef0c",
+        "groups": [],
+        "checks": [
+            {
+              "name": "dashboard loaded",
+              "path": "::Nurse: Dashboard::dashboard loaded",
+              "id": "3e819b1c03f921713526e3ce88b4f8d2",
+              "passes": 339,
+              "fails": 0
+            },
+            {
+              "passes": 339,
+              "fails": 0,
+              "name": "dashboard response time OK",
+              "path": "::Nurse: Dashboard::dashboard response time OK",
+              "id": "159c36d5c184ed03ea8bfddd62b8811b"
+            },
+            {
+              "name": "vitals loaded",
+              "path": "::Nurse: Dashboard::vitals loaded",
+              "id": "68153d99e5b68bc2b6fcac56503738ac",
+              "passes": 339,
+              "fails": 0
+            },
+            {
+              "id": "8614e33650f1a8151e0242002a4cd4c2",
+              "passes": 52,
+              "fails": 0,
+              "name": "vitals recorded",
+              "path": "::Nurse: Dashboard::vitals recorded"
+            },
+            {
+              "name": "vitals record time OK",
+              "path": "::Nurse: Dashboard::vitals record time OK",
+              "id": "2fc006c3935cb10687b687f5bb983d95",
+              "passes": 52,
+              "fails": 0
+            }
+          ]
+      },
+      {
+        "name": "Doctor: Appointments",
+        "path": "::Doctor: Appointments",
+        "id": "65b5739507600b7641779f8a96122bd7",
+        "groups": [],
+        "checks": [
+            {
+              "name": "appointments loaded",
+              "path": "::Doctor: Appointments::appointments loaded",
+              "id": "b08e7686a589913cb858ab694a1d4be2",
+              "passes": 239,
+              "fails": 0
+            }
+          ]
+      },
+      {
+        "name": "Doctor: Patient Search",
+        "path": "::Doctor: Patient Search",
+        "id": "c24a1b3139223e40844284a2fe16d6e2",
+        "groups": [],
+        "checks": [
+            {
+              "name": "search completed",
+              "path": "::Doctor: Patient Search::search completed",
+              "id": "a71094ea93706e34f9362299954858c5",
+              "passes": 239,
+              "fails": 0
+            },
+            {
+              "path": "::Doctor: Patient Search::search time OK",
+              "id": "43bfc47e194001f3150e996b626ce5d9",
+              "passes": 239,
+              "fails": 0,
+              "name": "search time OK"
+            },
+            {
+              "name": "patient detail loaded",
+              "path": "::Doctor: Patient Search::patient detail loaded",
+              "id": "013d4e6b0693754e43086aba7e57c84d",
+              "passes": 32,
+              "fails": 0
+            }
+          ]
+      },
+      {
+        "name": "Nurse: Alerts",
+        "path": "::Nurse: Alerts",
+        "id": "7f35b343f96da443462ec4fa56424591",
+        "groups": [],
+        "checks": [
+            {
+              "passes": 339,
+              "fails": 0,
+              "name": "alerts loaded",
+              "path": "::Nurse: Alerts::alerts loaded",
+              "id": "00e6563e374978a2904aaf27a043a79d"
+            }
+          ]
+      },
+      {
+        "name": "Admin: Ward List",
+        "path": "::Admin: Ward List",
+        "id": "f74a551cf91fbd78e563c1768c339ade",
+        "groups": [],
+        "checks": [
+            {
+              "fails": 0,
+              "name": "wards loaded",
+              "path": "::Admin: Ward List::wards loaded",
+              "id": "87ae6243521efd47c8bc354d437b8bb7",
+              "passes": 107
+            }
+          ]
+      }
+    ],
+    "checks": [],
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "options": {
+    "summaryTrendStats": [
+      "avg",
+      "min",
+      "med",
+      "max",
+      "p(90)",
+      "p(95)"
+    ],
+    "summaryTimeUnit": "",
+    "noColor": false
+  },
+  "state": {
+    "testRunDurationMs": 131412.784,
+    "isStdOutTTY": false,
+    "isStdErrTTY": false
+  },
+  "metrics": {
+    "iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 685,
+        "rate": 5.21258266623436
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0,
+        "min": 0,
+        "med": 0,
+        "max": 0,
+        "p(90)": 0,
+        "p(95)": 0
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 0.096,
+        "avg": 0.04428674832962146,
+        "min": 0.007,
+        "med": 0.037,
+        "max": 0.529,
+        "p(90)": 0.079
+      }
+    },
+    "errors": {
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 630
+      },
+      "thresholds": {
+        "rate<0.01": {
+          "ok": true
+        }
+      },
+      "type": "rate"
+    },
+    "http_req_failed": {
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 1796
+      },
+      "thresholds": {
+        "rate<0.01": {
+          "ok": true
+        }
+      },
+      "type": "rate",
+      "contains": "default"
+    },
+    "vitals_record_time": {
+      "contains": "time",
+      "values": {
+        "avg": 59.28846153846154,
+        "min": 31,
+        "med": 55.5,
+        "max": 116,
+        "p(90)": 81.8,
+        "p(95)": 95.04999999999998
+      },
+      "thresholds": {
+        "p(95)<200": {
+          "ok": true
+        }
+      },
+      "type": "trend"
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0.024785634743875608,
+        "min": 0.001,
+        "med": 0.004,
+        "max": 0.827,
+        "p(90)": 0.014,
+        "p(95)": 0.018
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 56.59954342984397,
+        "min": 7.562,
+        "med": 32.4145,
+        "max": 451.59,
+        "p(90)": 123.85700000000001,
+        "p(95)": 195.08775
+      }
+    },
+    "data_received": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "rate": 59896.49378404464,
+        "count": 7871165
+      }
+    },
+    "vus_max": {
+      "values": {
+        "min": 50,
+        "max": 50,
+        "value": 50
+      },
+      "type": "gauge",
+      "contains": "default"
+    },
+    "group_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 9063.301099999999,
+        "avg": 4533.552461067159,
+        "min": 1013.230833,
+        "med": 4030.936521,
+        "max": 10609.576542,
+        "p(90)": 8122.366837500001
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 195.25325,
+        "avg": 56.66425278396429,
+        "min": 7.577,
+        "med": 32.465,
+        "max": 451.625,
+        "p(90)": 123.89250000000001
+      },
+      "thresholds": {
+        "p(99)<1000": {
+          "ok": true
+        },
+        "p(95)<500": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0,
+        "p(95)": 0,
+        "avg": 0.01822383073496659,
+        "min": 0,
+        "med": 0,
+        "max": 0.783
+      }
+    },
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0.041,
+        "p(95)": 0.05224999999999992,
+        "avg": 0.020422605790645896,
+        "min": 0.003,
+        "med": 0.015,
+        "max": 0.39
+      }
+    },
+    "search_time": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 69.05857740585775,
+        "min": 17,
+        "med": 45,
+        "max": 452,
+        "p(90)": 107.2,
+        "p(95)": 207.1999999999985
+      },
+      "thresholds": {
+        "p(95)<1000": {
+          "ok": true
+        }
+      }
+    },
+    "checks": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 1,
+        "passes": 2530,
+        "fails": 0
+      }
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 1796,
+        "rate": 13.666859078185272
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "contains": "time",
+      "values": {
+        "min": 7.577,
+        "med": 32.465,
+        "max": 451.625,
+        "p(90)": 123.89250000000001,
+        "p(95)": 195.25325,
+        "avg": 56.66425278396429
+      },
+      "type": "trend"
+    },
+    "data_sent": {
+      "contains": "data",
+      "values": {
+        "count": 920441,
+        "rate": 7004.196791082366
+      },
+      "type": "counter"
+    },
+    "iteration_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 15050.789167,
+        "p(90)": 12031.980075,
+        "p(95)": 12221.188825399999,
+        "avg": 9067.228590332847,
+        "min": 5046.35525,
+        "med": 9076.418959
+      }
+    },
+    "dashboard_load_time": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 70,
+        "p(95)": 206,
+        "avg": 39.80530973451327,
+        "min": 8,
+        "med": 23,
+        "max": 222
+      },
+      "thresholds": {
+        "p(95)<500": {
+          "ok": true
+        }
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 50
+      }
+    }
+  },
+  "setup_data": {
+    "tokens": {
+      "doctor": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjI4NTg5LCJpYXQiOjE3NjU2Mjc2ODksImp0aSI6IjViNjQ1NjU2YjdmYTRjNTZiYjY5ODhiMTIyNzI2Mjk4IiwidXNlcl9pZCI6IjcyNzM3ODhjLTFiYmUtNDhlMy05NDBmLTk0OGNmMzEzOGExOCIsInVzZXJfdHlwZSI6ImRvY3RvciIsImVtYWlsIjoiZG9jdG9yQGhtcy5sb2NhbCJ9.vlycJPWYjOjHm9cMr_Bygne1fMEr4agV0cVDG8MgT4s",
+      "nurse": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjI4NTg5LCJpYXQiOjE3NjU2Mjc2ODksImp0aSI6IjU1NGU1N2Q2OTFmMjRiODQ5ZmEwYjJkOWQxMWQ4MTYzIiwidXNlcl9pZCI6IjY0MWViNzY1LTNjMzYtNGQ2OS04M2NhLTIxNWU0N2E5MmQ0ZSIsInVzZXJfdHlwZSI6Im51cnNlIiwiZW1haWwiOiJudXJzZUBobXMubG9jYWwifQ.hXIcLAvt0IThiQz3b_bEsxeX0nW6l5BNnG3xf_eNBEw",
+      "admin": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjI4NTg5LCJpYXQiOjE3NjU2Mjc2ODksImp0aSI6ImE5ZDcxNjA3NjFjOTQ0ZGM5N2FiZThjYjMxNmM0OGEwIiwidXNlcl9pZCI6IjcwZjY2ZjkwLTRjNDQtNDkxNi1hNzFkLTAzNGNkNmIxMWU5OSIsInVzZXJfdHlwZSI6ImFkbWluIiwiZW1haWwiOiJhZG1pbkBleGFtcGxlLmNvbSJ9.S9oZtBgzM39_-wO9JtpnshVHNW0NGorn0jKcrgQdFq4"
+    }
+  }
+}

@@ -9,6 +9,7 @@ from apps.appointments.proxies import AppointmentProxy
 from apps.wards.models import Admission, Ward, Bed
 from apps.nursing.models import NursingAlert, MedicationAdministration, NursingTask
 from apps.users.models import PatientProfile, PractitionerProfile
+from apps.users.serializers import PatientProfileListSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -692,3 +693,236 @@ def admin_dashboard(request):
         },
         'wards': ward_stats,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_context_patients(request):
+    """
+    Return context-specific patients based on user role.
+
+    GET /api/dashboards/my-context-patients/
+
+    Returns patients relevant to the user's current work context:
+    - Nurses: Patients in their assigned ward (max 50)
+    - Doctors: Today's appointments + admitted patients under their care (max 30 each)
+    - Receptionists: Today's scheduled arrivals (max 50)
+    - Other roles: Empty list (use search instead)
+    """
+    user = request.user
+    role = getattr(user, 'role', None)
+
+    if role in ['nurse', 'head_nurse', 'nurse_practitioner']:
+        return Response(_get_nurse_context_patients(user, request))
+    elif role in ['doctor', 'physician', 'practitioner']:
+        return Response(_get_doctor_context_patients(user, request))
+    elif role in ['receptionist', 'admin_staff']:
+        return Response(_get_receptionist_context_patients(user, request))
+    else:
+        return Response({
+            'context': 'none',
+            'context_label': 'Search for patients',
+            'patients': [],
+            'total': 0,
+        })
+
+
+def _get_nurse_context_patients(user, request):
+    """
+    Get ward patients for nurse context.
+    Returns patients currently admitted to the nurse's assigned ward.
+    """
+    from django.db.models import Prefetch
+
+    # Get ward filter from query params or nurse's assigned ward
+    ward_id = request.query_params.get('ward')
+    nurse_profile = getattr(user, 'practitionerprofile', None)
+    assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
+
+    # Build admission filter
+    admission_filter = {'status': 'admitted'}
+    if assigned_ward:
+        admission_filter['bed__ward_id'] = assigned_ward
+
+    # Get patient IDs from admissions
+    admissions = Admission.objects.filter(**admission_filter).select_related(
+        'patient', 'patient__user', 'bed', 'bed__ward'
+    ).order_by('bed__bed_number')[:50]
+
+    # Format patients with ward context
+    patients = []
+    for admission in admissions:
+        patient = admission.patient
+        patients.append({
+            'id': str(patient.id),
+            'name': patient.user.get_full_name(),
+            'mrn': patient.medical_record_number,
+            'gender': patient.user.gender,
+            'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+            'current_ward': admission.bed.ward.name if admission.bed else 'Waiting',
+            'current_ward_id': str(admission.bed.ward.id) if admission.bed else None,
+            'bed_number': admission.bed.bed_number if admission.bed else None,
+            'admission_date': admission.admission_date.isoformat(),
+            'admission_id': str(admission.id),
+        })
+
+    # Get ward name for context label
+    ward_name = None
+    if assigned_ward and admissions:
+        first_admission = admissions[0]
+        if first_admission.bed:
+            ward_name = first_admission.bed.ward.name
+
+    return {
+        'context': 'ward',
+        'context_label': f'{ward_name} Patients' if ward_name else 'Ward Patients',
+        'ward_id': str(assigned_ward) if assigned_ward else None,
+        'patients': patients,
+        'total': len(patients),
+    }
+
+
+def _get_doctor_context_patients(user, request):
+    """
+    Get patients for doctor context.
+    Returns today's appointments + admitted patients under their care.
+    """
+    today = timezone.now().date()
+    practitioner = getattr(user, 'practitionerprofile', None)
+
+    patients = []
+    appointments_patients = []
+    inpatients = []
+
+    # Get today's appointments
+    if practitioner and practitioner.fhir_practitioner_id:
+        try:
+            bundle = AppointmentProxy.search(
+                practitioner_id=practitioner.fhir_practitioner_id,
+                date=today.isoformat()
+            )
+
+            if bundle and 'entry' in bundle:
+                # Extract patient IDs from appointments
+                appointment_patient_ids = set()
+                for entry in bundle['entry']:
+                    appt = entry.get('resource', {})
+                    # Only include upcoming or in-progress appointments
+                    if appt.get('status') not in ['fulfilled', 'cancelled', 'noshow']:
+                        for participant in appt.get('participant', []):
+                            actor = participant.get('actor', {})
+                            ref = actor.get('reference', '')
+                            if ref.startswith('Patient/'):
+                                fhir_patient_id = ref.split('/')[-1]
+                                appointment_patient_ids.add(fhir_patient_id)
+
+                # Get local patient profiles for these FHIR patients
+                if appointment_patient_ids:
+                    appointment_patients_qs = PatientProfile.objects.filter(
+                        fhir_patient_id__in=appointment_patient_ids
+                    ).select_related('user')[:30]
+
+                    for patient in appointment_patients_qs:
+                        appointments_patients.append({
+                            'id': str(patient.id),
+                            'name': patient.user.get_full_name(),
+                            'mrn': patient.medical_record_number,
+                            'gender': patient.user.gender,
+                            'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+                            'current_ward': None,
+                            'current_ward_id': None,
+                            'context_type': 'appointment',
+                        })
+        except Exception as e:
+            logger.warning(f"Failed to fetch appointment patients: {e}")
+
+    # Get admitted patients under this doctor's care
+    if practitioner:
+        my_admissions = Admission.objects.filter(
+            status='admitted',
+            admitting_doctor=practitioner
+        ).select_related('patient', 'patient__user', 'bed', 'bed__ward')[:30]
+
+        for admission in my_admissions:
+            patient = admission.patient
+            inpatients.append({
+                'id': str(patient.id),
+                'name': patient.user.get_full_name(),
+                'mrn': patient.medical_record_number,
+                'gender': patient.user.gender,
+                'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+                'current_ward': admission.bed.ward.name if admission.bed else 'Waiting',
+                'current_ward_id': str(admission.bed.ward.id) if admission.bed else None,
+                'bed_number': admission.bed.bed_number if admission.bed else None,
+                'admission_date': admission.admission_date.isoformat(),
+                'context_type': 'inpatient',
+            })
+
+    # Combine and deduplicate by patient ID
+    seen_ids = set()
+    for p in inpatients + appointments_patients:  # Prioritize inpatients
+        if p['id'] not in seen_ids:
+            patients.append(p)
+            seen_ids.add(p['id'])
+
+    return {
+        'context': 'doctor',
+        'context_label': "Today's Patients",
+        'patients': patients,
+        'total': len(patients),
+        'breakdown': {
+            'appointments': len(appointments_patients),
+            'inpatients': len(inpatients),
+        },
+    }
+
+
+def _get_receptionist_context_patients(user, request):
+    """
+    Get patients for receptionist context.
+    Returns today's scheduled arrivals.
+    """
+    today = timezone.now().date()
+    patients = []
+
+    try:
+        bundle = AppointmentProxy.search(date=today.isoformat())
+
+        if bundle and 'entry' in bundle:
+            # Extract patient IDs from today's appointments
+            fhir_patient_ids = set()
+            for entry in bundle['entry']:
+                appt = entry.get('resource', {})
+                # Include booked and arrived patients
+                if appt.get('status') in ['booked', 'arrived', 'pending']:
+                    for participant in appt.get('participant', []):
+                        actor = participant.get('actor', {})
+                        ref = actor.get('reference', '')
+                        if ref.startswith('Patient/'):
+                            fhir_patient_id = ref.split('/')[-1]
+                            fhir_patient_ids.add(fhir_patient_id)
+
+            # Get local patient profiles
+            if fhir_patient_ids:
+                scheduled_patients = PatientProfile.objects.filter(
+                    fhir_patient_id__in=fhir_patient_ids
+                ).select_related('user')[:50]
+
+                for patient in scheduled_patients:
+                    patients.append({
+                        'id': str(patient.id),
+                        'name': patient.user.get_full_name(),
+                        'mrn': patient.medical_record_number,
+                        'gender': patient.user.gender,
+                        'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+                        'phone': patient.user.phone_number,
+                    })
+    except Exception as e:
+        logger.warning(f"Failed to fetch scheduled patients: {e}")
+
+    return {
+        'context': 'reception',
+        'context_label': "Today's Scheduled Patients",
+        'patients': patients,
+        'total': len(patients),
+    }

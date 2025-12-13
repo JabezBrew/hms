@@ -29,7 +29,7 @@ class PatientRegistrationAdmissionTests(TestCase):
         self.admin_user = User.objects.create_superuser(
             email='admin@example.com',
             username='adminuser',
-            password='adminpassword'
+            password='AdminPassword123'
         )
         self.client.force_authenticate(user=self.admin_user)
         

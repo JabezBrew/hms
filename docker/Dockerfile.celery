@@ -1,0 +1,64 @@
+# Celery Worker Dockerfile
+# Runs Celery workers for background task processing
+#
+# Build: docker build -f docker/Dockerfile.celery -t hms-celery .
+# Run:   docker run --env-file .env hms-celery
+
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Production image
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=hms_backend.settings
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY backend/ .
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Run Celery worker
+# - Concurrency: 2 workers per container (scale horizontally with k8s)
+# - Prefetch: 4 tasks per worker
+# - Events enabled for monitoring
+CMD ["celery", \
+     "-A", "hms_backend", \
+     "worker", \
+     "--loglevel=info", \
+     "--concurrency=2", \
+     "--prefetch-multiplier=4", \
+     "-E"]

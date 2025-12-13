@@ -6,6 +6,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
+from django.db import connection
 from rest_framework_simplejwt.views import TokenVerifyView
 from .auth_views import CookieTokenRefreshView, LogoutView, LoginView
 from apps.users.password_reset_views import (
@@ -15,7 +17,35 @@ from apps.users.password_reset_views import (
     AdminForceResetView,
 )
 
+
+def health_check(request):
+    """
+    Health check endpoint for Docker/Kubernetes probes.
+
+    Returns:
+        - 200 OK if the service is healthy
+        - 503 Service Unavailable if database is not reachable
+    """
+    try:
+        # Check database connectivity
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return JsonResponse({
+            'status': 'healthy',
+            'database': 'connected',
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'unhealthy',
+            'database': 'disconnected',
+            'error': str(e),
+        }, status=503)
+
+
 urlpatterns = [
+    # Health check endpoint (unauthenticated for k8s probes)
+    path('api/health/', health_check, name='health_check'),
+
     path('admin/', admin.site.urls),
 
     # Authentication endpoints

@@ -16,3 +16,11 @@ redis>=4.5.0
 sendgrid>=6.9.0
 honcho>=1.1.0
 requests>=2.31.0
+
+# WebSocket support for real-time alerts
+channels>=4.0.0
+channels-redis>=4.2.0
+daphne>=4.0.0
+
+# Load testing
+locust>=2.15.0

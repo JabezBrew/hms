@@ -1,0 +1,67 @@
+# Kubernetes Services for HMS
+# Internal ClusterIP services for component communication
+#
+# Apply: kubectl apply -f k8s/services.yaml
+
+---
+# API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: hms-api
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+
+---
+# WebSocket Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: hms-websocket
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: websocket
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: websocket
+  ports:
+    - name: ws
+      port: 8001
+      targetPort: 8001
+      protocol: TCP
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: hms-frontend
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

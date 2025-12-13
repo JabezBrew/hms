@@ -8,7 +8,7 @@ base_url = 'http://localhost:8000/api'
 # Admin credentials
 admin_credentials = {
     'email': 'admin@example.com',
-    'password': 'adminpassword'
+    'password': 'AdminPassword123'
 }
 
 # Login to get token

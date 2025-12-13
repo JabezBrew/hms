@@ -6,6 +6,7 @@ from .views import (
     inpatient_dashboard,
     reception_dashboard,
     admin_dashboard,
+    my_context_patients,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path('dashboards/inpatient/', inpatient_dashboard, name='inpatient-dashboard'),
     path('dashboards/reception/', reception_dashboard, name='reception-dashboard'),
     path('dashboards/admin/', admin_dashboard, name='admin-dashboard'),
+    path('dashboards/my-context-patients/', my_context_patients, name='my-context-patients'),
 ]

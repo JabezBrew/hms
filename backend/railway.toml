@@ -1,0 +1,19 @@
+# Railway configuration for HMS Backend API
+# Docs: https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "../docker/Dockerfile.backend"
+
+[deploy]
+numReplicas = 2
+healthcheckPath = "/api/health/"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+
+# Scaling settings
+[deploy.scaling]
+minReplicas = 2
+maxReplicas = 10
+cpuThreshold = 70
