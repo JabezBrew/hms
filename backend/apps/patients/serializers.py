@@ -132,6 +132,9 @@ class PatientRegistrationSerializer(serializers.Serializer):
     postal_code = serializers.CharField(required=False, allow_blank=True)
     country = serializers.CharField(required=False, allow_blank=True)
 
+    # Admission fields (optional, for registration with admission)
+    admission_details = serializers.DictField(required=False, write_only=True)
+
     def validate(self, data):
         """
         Validate the data according to the registration rules.
@@ -154,6 +157,22 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     import re
                     if not re.match(rule.validation_regex, str(data[field_name])):
                         raise serializers.ValidationError({field_name: rule.validation_message})
+        
+        # Validate admission details if present
+        if 'admission_details' in data:
+            admission = data['admission_details']
+            if admission.get('type') == 'inpatient':
+                # If bed_id is provided, validate it
+                if admission.get('bed_id'):
+                    # Check if bed exists and is available
+                    from ..wards.models import Bed
+                    try:
+                        bed = Bed.objects.get(id=admission['bed_id'])
+                        if bed.status != 'available':
+                             raise serializers.ValidationError({"admission_details": f"Bed {bed.bed_number} is not available."})
+                    except Bed.DoesNotExist:
+                        raise serializers.ValidationError({"admission_details": "Selected bed does not exist."})
+                # If no bed_id, it's a waiting list admission (valid)
 
         return data
 
@@ -170,6 +189,9 @@ class PatientRegistrationSerializer(serializers.Serializer):
             'postal_code': validated_data.pop('postal_code', ''),
             'country': validated_data.pop('country', '')
         }
+        
+        # Extract admission details
+        admission_details = validated_data.pop('admission_details', None)
 
         # Generate a secure password for the patient (not provided during registration)
         generated_password = generate_secure_password()
@@ -265,6 +287,51 @@ class PatientRegistrationSerializer(serializers.Serializer):
             # Update the patient profile with the FHIR ID
             patient_profile.fhir_patient_id = fhir_patient["id"]
             patient_profile.save()
+            
+            # Handle Admission if details provided
+            if admission_details and admission_details.get('type') == 'inpatient':
+                from ..wards.models import Bed, Admission
+                from ..wards.proxies import EncounterProxy
+                
+                bed_id = admission_details.get('bed_id')
+                admission_notes = admission_details.get('notes', '')
+                
+                bed = None
+                location_display = "Waiting List"
+                admission_status = 'waiting'
+                daily_rate = 0.00
+                
+                if bed_id:
+                    # Get the bed
+                    bed = Bed.objects.get(id=bed_id)
+                    location_display = bed.ward.name
+                    admission_status = 'admitted'
+                    daily_rate = bed.total_rate
+                
+                # Create Encounter first
+                encounter = EncounterProxy.create(
+                    patient_id=fhir_patient["id"],
+                    encounter_type='inpatient',
+                    status='in-progress' if bed else 'planned',
+                    reason=admission_notes,
+                    location=location_display
+                )
+                
+                # Create Admission
+                Admission.objects.create(
+                    patient=patient_profile,
+                    bed=bed,
+                    fhir_encounter_id=encounter['id'],
+                    admission_type='emergency', # Defaulting to emergency for now or could be passed
+                    status=admission_status,
+                    admission_notes=admission_notes,
+                    daily_rate=daily_rate,
+                    admitting_doctor=None, # Could be passed if needed
+                    created_by=self.context['request'].user,
+                    updated_by=self.context['request'].user
+                )
+                
+                # Bed status is automatically updated to 'occupied' by Admission.save() if bed is present
 
         except Exception as e:
             # If FHIR creation fails, delete the local resources and raise the error

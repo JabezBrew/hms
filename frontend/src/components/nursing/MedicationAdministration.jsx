@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,264 +8,205 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { apiClient } from '@/lib/api';
-import { format, addHours, isAfter, isBefore, parseISO } from 'date-fns';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Clock, CheckCircle, XCircle, AlertTriangle, Search } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { format, isAfter, isBefore, addHours } from 'date-fns';
+import {
+  Clock, CheckCircle, XCircle, AlertTriangle, Search,
+  Pill, Package, AlertCircle, RefreshCw
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  usePatientMAR,
+  useReadyForAdmin,
+  useAdministerMedication,
+  useMedicationsDueNow,
+  useOverdueMedications
+} from '@/hooks/useNursingQueries';
 
 export function MedicationAdministration({ patient }) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [medications, setMedications] = useState([]);
-  const [administrationHistory, setAdministrationHistory] = useState([]);
-  const [selectedMedication, setSelectedMedication] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({
-    dose_given: '',
-    notes: '',
-    status: 'administered'
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedMedication, setSelectedMedication] = useState(null);
+  const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [adminForm, setAdminForm] = useState({
+    status: 'administered',
+    administration_notes: '',
+    reason_not_given: ''
   });
 
-  // Fetch medications and administration history
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // In a real application, this would fetch from an API endpoint
-        // For demo purposes, we'll generate some sample data
-        const sampleMedications = generateSampleMedications(patient.id);
-        const sampleHistory = generateSampleAdministrationHistory(sampleMedications);
-        
-        setMedications(sampleMedications);
-        setAdministrationHistory(sampleHistory);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching medication data:', err);
-        setError('Failed to load medication data. Please try again.');
-        setLoading(false);
-      }
-    };
+  // Fetch MAR for patient
+  const {
+    data: marData,
+    isLoading: marLoading,
+    error: marError,
+    refetch: refetchMAR
+  } = usePatientMAR(patient?.id, selectedDate);
 
-    fetchData();
-  }, [patient.id]);
+  // Fetch ready for admin medications
+  const {
+    data: readyMeds,
+    isLoading: readyLoading
+  } = useReadyForAdmin(patient?.id);
 
-  // Generate sample medications for demo purposes
-  const generateSampleMedications = (patientId) => {
-    const now = new Date();
-    const medications = [
-      {
-        id: `med-${patientId}-1`,
-        name: 'Paracetamol',
-        dose: '1000mg',
-        route: 'Oral',
-        frequency: 'Every 6 hours',
-        start_date: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-        end_date: addDays(now, 3).toISOString(), // 3 days from now
-        status: 'active',
-        instructions: 'Take with food',
-        next_due: addHours(now, 2).toISOString(), // 2 hours from now
-        prescriber: 'Dr. Smith'
-      },
-      {
-        id: `med-${patientId}-2`,
-        name: 'Amoxicillin',
-        dose: '500mg',
-        route: 'Oral',
-        frequency: 'Every 8 hours',
-        start_date: new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString(), // 12 hours ago
-        end_date: addDays(now, 7).toISOString(), // 7 days from now
-        status: 'active',
-        instructions: 'Take with water',
-        next_due: addHours(now, -1).toISOString(), // 1 hour ago (overdue)
-        prescriber: 'Dr. Johnson'
-      },
-      {
-        id: `med-${patientId}-3`,
-        name: 'Ibuprofen',
-        dose: '400mg',
-        route: 'Oral',
-        frequency: 'Every 8 hours as needed',
-        start_date: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-        end_date: addDays(now, 5).toISOString(), // 5 days from now
-        status: 'active',
-        instructions: 'Take with food for pain',
-        next_due: addHours(now, 4).toISOString(), // 4 hours from now
-        prescriber: 'Dr. Smith'
-      },
-      {
-        id: `med-${patientId}-4`,
-        name: 'Morphine',
-        dose: '5mg',
-        route: 'IV',
-        frequency: 'Every 4 hours as needed',
-        start_date: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString(), // 6 hours ago
-        end_date: addDays(now, 2).toISOString(), // 2 days from now
-        status: 'active',
-        instructions: 'For severe pain only',
-        next_due: addHours(now, 1).toISOString(), // 1 hour from now
-        prescriber: 'Dr. Williams'
-      },
-      {
-        id: `med-${patientId}-5`,
-        name: 'Ondansetron',
-        dose: '4mg',
-        route: 'Oral',
-        frequency: 'Every 8 hours as needed',
-        start_date: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-        end_date: addDays(now, 5).toISOString(), // 5 days from now
-        status: 'active',
-        instructions: 'For nausea',
-        next_due: addHours(now, 3).toISOString(), // 3 hours from now
-        prescriber: 'Dr. Johnson'
-      }
-    ];
-    
-    return medications;
-  };
+  // Administer mutation
+  const administerMutation = useAdministerMedication();
 
-  // Helper function to add days to a date
-  const addDays = (date, days) => {
-    const result = new Date(date);
-    result.setDate(result.getDate() + days);
-    return result;
-  };
-
-  // Generate sample administration history for demo purposes
-  const generateSampleAdministrationHistory = (medications) => {
-    const now = new Date();
-    const history = [];
-    
-    medications.forEach(medication => {
-      // Generate 3 past administrations for each medication
-      for (let i = 0; i < 3; i++) {
-        const timestamp = new Date(now.getTime() - (i + 1) * 8 * 60 * 60 * 1000); // 8, 16, 24 hours ago
-        
-        history.push({
-          id: `adm-${medication.id}-${i}`,
-          medication_id: medication.id,
-          medication_name: medication.name,
-          scheduled_time: new Date(timestamp.getTime() - 30 * 60 * 1000).toISOString(), // 30 minutes before administration
-          administration_time: timestamp.toISOString(),
-          dose_given: medication.dose,
-          route: medication.route,
-          administered_by: 'Nurse Johnson',
-          status: Math.random() > 0.2 ? 'administered' : 'missed', // 80% administered, 20% missed
-          notes: Math.random() > 0.7 ? 'Patient reported pain relief' : ''
-        });
-      }
-    });
-    
-    return history.sort((a, b) => new Date(b.administration_time) - new Date(a.administration_time));
-  };
-
-  // Filter medications based on search term
-  const filteredMedications = medications.filter(medication => 
-    medication.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    medication.prescriber.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Handle medication selection
-  const handleMedicationSelect = (medication) => {
-    setSelectedMedication(medication);
-    setFormData({
-      dose_given: medication.dose,
-      notes: '',
-      status: 'administered'
-    });
-  };
-
-  // Handle input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Handle select changes
-  const handleSelectChange = (name, value) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
+  // Format timestamp
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '-';
     try {
-      // In a real application, this would send data to an API endpoint
-      // For demo purposes, we'll just add it to the local state
-      const newAdministration = {
-        id: `adm-${selectedMedication.id}-${Date.now()}`,
-        medication_id: selectedMedication.id,
-        medication_name: selectedMedication.name,
-        scheduled_time: selectedMedication.next_due,
-        administration_time: new Date().toISOString(),
-        dose_given: formData.dose_given,
-        route: selectedMedication.route,
-        administered_by: 'Current Nurse',
-        status: formData.status,
-        notes: formData.notes
-      };
-      
-      setAdministrationHistory([newAdministration, ...administrationHistory]);
-      
-      // Update next due time for the medication
-      const updatedMedications = medications.map(med => {
-        if (med.id === selectedMedication.id) {
-          // Calculate next due time based on frequency
-          let hoursToAdd = 6; // default
-          if (med.frequency.includes('6 hours')) hoursToAdd = 6;
-          if (med.frequency.includes('8 hours')) hoursToAdd = 8;
-          if (med.frequency.includes('4 hours')) hoursToAdd = 4;
-          
-          return {
-            ...med,
-            next_due: addHours(new Date(), hoursToAdd).toISOString()
-          };
-        }
-        return med;
-      });
-      
-      setMedications(updatedMedications);
-      setSelectedMedication(null);
-      
-      // Show success message (in a real app, we'd use a toast notification)
-      alert('Medication administered successfully');
-    } catch (err) {
-      console.error('Error administering medication:', err);
-      setError('Failed to record medication administration. Please try again.');
+      return format(new Date(timestamp), 'h:mm a');
+    } catch {
+      return timestamp;
     }
   };
 
-  // Format timestamp for display
-  const formatTimestamp = (timestamp) => {
-    return format(new Date(timestamp), 'MMM d, yyyy h:mm a');
+  const formatDateTime = (timestamp) => {
+    if (!timestamp) return '-';
+    try {
+      return format(new Date(timestamp), 'MMM d, yyyy h:mm a');
+    } catch {
+      return timestamp;
+    }
   };
 
-  // Check if a medication is overdue
-  const isOverdue = (nextDue) => {
-    return isBefore(new Date(nextDue), new Date());
+  // Check medication status
+  const isOverdue = (scheduledTime) => {
+    if (!scheduledTime) return false;
+    return isBefore(new Date(scheduledTime), new Date());
   };
 
-  // Check if a medication is due soon (within the next hour)
-  const isDueSoon = (nextDue) => {
-    const dueTime = new Date(nextDue);
-    const oneHourFromNow = addHours(new Date(), 1);
-    return isAfter(dueTime, new Date()) && isBefore(dueTime, oneHourFromNow);
+  const isDueSoon = (scheduledTime) => {
+    if (!scheduledTime) return false;
+    const scheduled = new Date(scheduledTime);
+    const now = new Date();
+    const oneHourFromNow = addHours(now, 1);
+    return isAfter(scheduled, now) && isBefore(scheduled, oneHourFromNow);
   };
 
-  // Get status badge for a medication
-  const getMedicationStatusBadge = (medication) => {
-    if (isOverdue(medication.next_due)) {
+  // Get status badge
+  const getStatusBadge = (medication) => {
+    if (medication.status === 'administered') {
+      return <Badge className="bg-emerald-600">Administered</Badge>;
+    }
+    if (medication.status === 'missed') {
+      return <Badge variant="destructive">Missed</Badge>;
+    }
+    if (medication.status === 'refused') {
+      return <Badge className="bg-amber-600">Refused</Badge>;
+    }
+    if (medication.status === 'held') {
+      return <Badge variant="outline">Held</Badge>;
+    }
+
+    // Scheduled - check timing
+    if (!medication.is_dispensed) {
+      return <Badge variant="outline" className="border-slate-400">Awaiting Dispensing</Badge>;
+    }
+    if (isOverdue(medication.scheduled_time)) {
       return <Badge variant="destructive">Overdue</Badge>;
     }
-    if (isDueSoon(medication.next_due)) {
-      return <Badge variant="warning">Due Soon</Badge>;
+    if (isDueSoon(medication.scheduled_time)) {
+      return <Badge className="bg-amber-500">Due Soon</Badge>;
     }
     return <Badge variant="outline">Scheduled</Badge>;
   };
 
-  if (loading) {
+  // Filter medications
+  const filterMedications = (meds) => {
+    if (!meds || !Array.isArray(meds)) return [];
+    return meds.filter(med =>
+      med.medication_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      med.dosage?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  };
+
+  // Handle admin form changes
+  const handleAdminFormChange = (field, value) => {
+    setAdminForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Open administration dialog
+  const openAdminDialog = (medication) => {
+    setSelectedMedication(medication);
+    setAdminForm({
+      status: 'administered',
+      administration_notes: '',
+      reason_not_given: ''
+    });
+    setShowAdminDialog(true);
+  };
+
+  // Submit administration
+  const handleAdminister = async () => {
+    if (!selectedMedication) return;
+
+    // Validate reason for non-administered statuses
+    if (['missed', 'refused', 'held'].includes(adminForm.status) && !adminForm.reason_not_given) {
+      toast.error('Please provide a reason');
+      return;
+    }
+
+    try {
+      await administerMutation.mutateAsync({
+        medicationId: selectedMedication.id,
+        data: {
+          status: adminForm.status,
+          administration_notes: adminForm.administration_notes,
+          reason_not_given: adminForm.reason_not_given,
+          administered_time: new Date().toISOString()
+        }
+      });
+
+      toast.success(
+        adminForm.status === 'administered'
+          ? 'Medication administered successfully'
+          : `Medication marked as ${adminForm.status}`
+      );
+      setShowAdminDialog(false);
+      setSelectedMedication(null);
+      refetchMAR();
+    } catch (error) {
+      toast.error(error.message || 'Failed to record medication administration');
+    }
+  };
+
+  // Get medications by category
+  const getScheduledMeds = () => {
+    if (!marData?.medications) return [];
+    return filterMedications(marData.medications.filter(m => m.status === 'scheduled'));
+  };
+
+  const getCompletedMeds = () => {
+    if (!marData?.medications) return [];
+    return filterMedications(marData.medications.filter(m =>
+      ['administered', 'missed', 'refused', 'held'].includes(m.status)
+    ));
+  };
+
+  const getDueMeds = () => {
+    const scheduled = getScheduledMeds();
+    return scheduled.filter(m =>
+      m.is_dispensed && (isOverdue(m.scheduled_time) || isDueSoon(m.scheduled_time))
+    );
+  };
+
+  if (!patient) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="text-center text-muted-foreground">
+            <Pill className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>Select a patient to view medications</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (marLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-12 w-full" />
@@ -274,19 +215,21 @@ export function MedicationAdministration({ patient }) {
     );
   }
 
-  if (error) {
+  if (marError) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-red-500">Error</CardTitle>
+          <CardTitle className="text-red-500 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            Error Loading Medications
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <p>{error}</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => window.location.reload()}
-          >
+          <p className="text-muted-foreground mb-4">
+            {marError.message || 'Failed to load medication data'}
+          </p>
+          <Button variant="outline" onClick={() => refetchMAR()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
             Try Again
           </Button>
         </CardContent>
@@ -294,270 +237,424 @@ export function MedicationAdministration({ patient }) {
     );
   }
 
+  const dueMeds = getDueMeds();
+  const scheduledMeds = getScheduledMeds();
+  const completedMeds = getCompletedMeds();
+
   return (
     <div className="space-y-6">
-      {selectedMedication ? (
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle>Administer {selectedMedication.name}</CardTitle>
-                <CardDescription>
-                  {selectedMedication.dose} - {selectedMedication.route} - {selectedMedication.frequency}
-                </CardDescription>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setSelectedMedication(null)}
-              >
-                Back to Medications
-              </Button>
-            </div>
+      {/* Header with search and date filter */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Input
+            placeholder="Search medications..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="date-filter" className="sr-only">Date</Label>
+          <Input
+            id="date-filter"
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-40"
+          />
+          <Button variant="outline" size="icon" onClick={() => refetchMAR()}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Due Now Alert */}
+      {dueMeds.length > 0 && (
+        <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-amber-700 dark:text-amber-400 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              {dueMeds.length} Medication{dueMeds.length !== 1 ? 's' : ''} Due Now
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dose_given">Dose Given</Label>
-                  <Input
-                    id="dose_given"
-                    name="dose_given"
-                    value={formData.dose_given}
-                    onChange={handleInputChange}
-                    required
-                  />
+            <div className="space-y-2">
+              {dueMeds.slice(0, 3).map(med => (
+                <div
+                  key={med.id}
+                  className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 rounded-lg border"
+                >
+                  <div>
+                    <span className="font-medium">{med.medication_name}</span>
+                    <span className="text-muted-foreground ml-2">{med.dosage} - {med.route}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {formatTime(med.scheduled_time)}
+                    </span>
+                    <Button size="sm" onClick={() => openAdminDialog(med)}>
+                      Administer
+                    </Button>
+                  </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="status">Administration Status</Label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(value) => handleSelectChange('status', value)}
-                  >
-                    <SelectTrigger id="status">
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="administered">Administered</SelectItem>
-                      <SelectItem value="missed">Missed</SelectItem>
-                      <SelectItem value="refused">Patient Refused</SelectItem>
-                      <SelectItem value="held">Held</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Input
-                  id="notes"
-                  name="notes"
-                  placeholder="Any additional observations"
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                />
-              </div>
-              
-              <div className="pt-4">
-                <Button type="submit" className="w-full">Record Administration</Button>
-              </div>
-            </form>
+              ))}
+              {dueMeds.length > 3 && (
+                <p className="text-sm text-muted-foreground text-center pt-2">
+                  +{dueMeds.length - 3} more medications due
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Search medications..."
-              className="pl-10"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <Tabs defaultValue="due">
-            <TabsList>
-              <TabsTrigger value="due">Due Medications</TabsTrigger>
-              <TabsTrigger value="all">All Medications</TabsTrigger>
-              <TabsTrigger value="history">Administration History</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="due" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Medications Due</CardTitle>
-                  <CardDescription>
-                    Medications that are due or overdue for administration
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-4">
-                      {filteredMedications
-                        .filter(med => isOverdue(med.next_due) || isDueSoon(med.next_due))
-                        .map(medication => (
-                          <div
-                            key={medication.id}
-                            className={`p-4 border rounded-md cursor-pointer hover:bg-muted transition-colors ${
-                              isOverdue(medication.next_due) ? 'border-red-300 bg-red-50' : 
-                              isDueSoon(medication.next_due) ? 'border-yellow-300 bg-yellow-50' : ''
-                            }`}
-                            onClick={() => handleMedicationSelect(medication)}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h3 className="font-medium">{medication.name} - {medication.dose}</h3>
-                                <p className="text-sm text-muted-foreground">
-                                  {medication.route} - {medication.frequency}
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                {getMedicationStatusBadge(medication)}
-                                <div className="flex items-center text-sm text-muted-foreground mt-1">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  {formatTimestamp(medication.next_due)}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="mt-2 text-sm">
-                              <p className="text-muted-foreground">{medication.instructions}</p>
-                              <p className="mt-1">Prescribed by: {medication.prescriber}</p>
-                            </div>
-                            
-                            <div className="mt-2">
-                              <Button 
-                                size="sm" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleMedicationSelect(medication);
-                                }}
-                              >
-                                Administer
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                        
-                      {filteredMedications.filter(med => isOverdue(med.next_due) || isDueSoon(med.next_due)).length === 0 && (
-                        <div className="text-center p-4">
-                          <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-2" />
-                          <p className="text-lg font-medium">No medications due</p>
-                          <p className="text-muted-foreground">
-                            There are no medications due for administration at this time.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="all" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>All Medications</CardTitle>
-                  <CardDescription>
-                    All active medications for {patient.user.full_name}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Medication</TableHead>
-                          <TableHead>Dose</TableHead>
-                          <TableHead>Route</TableHead>
-                          <TableHead>Frequency</TableHead>
-                          <TableHead>Next Due</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredMedications.map(medication => (
-                          <TableRow key={medication.id}>
-                            <TableCell className="font-medium">{medication.name}</TableCell>
-                            <TableCell>{medication.dose}</TableCell>
-                            <TableCell>{medication.route}</TableCell>
-                            <TableCell>{medication.frequency}</TableCell>
-                            <TableCell>{formatTimestamp(medication.next_due)}</TableCell>
-                            <TableCell>{getMedicationStatusBadge(medication)}</TableCell>
-                            <TableCell>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => handleMedicationSelect(medication)}
-                              >
-                                Administer
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="history" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Administration History</CardTitle>
-                  <CardDescription>
-                    Recent medication administrations for {patient.user.full_name}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Time</TableHead>
-                          <TableHead>Medication</TableHead>
-                          <TableHead>Dose</TableHead>
-                          <TableHead>Route</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Administered By</TableHead>
-                          <TableHead>Notes</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {administrationHistory.map(record => (
-                          <TableRow key={record.id}>
-                            <TableCell>{formatTimestamp(record.administration_time)}</TableCell>
-                            <TableCell className="font-medium">{record.medication_name}</TableCell>
-                            <TableCell>{record.dose_given}</TableCell>
-                            <TableCell>{record.route}</TableCell>
-                            <TableCell>
-                              {record.status === 'administered' ? (
-                                <Badge variant="success">Administered</Badge>
-                              ) : record.status === 'missed' ? (
-                                <Badge variant="destructive">Missed</Badge>
-                              ) : record.status === 'refused' ? (
-                                <Badge variant="warning">Refused</Badge>
-                              ) : (
-                                <Badge variant="outline">Held</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>{record.administered_by}</TableCell>
-                            <TableCell>{record.notes}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
       )}
+
+      {/* Main Tabs */}
+      <Tabs defaultValue="due">
+        <TabsList>
+          <TabsTrigger value="due" className="flex items-center gap-1">
+            <Clock className="h-4 w-4" />
+            Due ({dueMeds.length})
+          </TabsTrigger>
+          <TabsTrigger value="scheduled" className="flex items-center gap-1">
+            <Pill className="h-4 w-4" />
+            Scheduled ({scheduledMeds.length})
+          </TabsTrigger>
+          <TabsTrigger value="completed" className="flex items-center gap-1">
+            <CheckCircle className="h-4 w-4" />
+            Completed ({completedMeds.length})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Due Medications */}
+        <TabsContent value="due" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Medications Due</CardTitle>
+              <CardDescription>
+                Dispensed medications that are due or overdue for administration
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dueMeds.length === 0 ? (
+                <div className="text-center py-8">
+                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-lg font-medium">No medications due</p>
+                  <p className="text-muted-foreground">
+                    All scheduled medications have been administered or are not yet due.
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {dueMeds.map(medication => (
+                      <MedicationCard
+                        key={medication.id}
+                        medication={medication}
+                        onAdminister={() => openAdminDialog(medication)}
+                        getStatusBadge={getStatusBadge}
+                        formatTime={formatTime}
+                        isOverdue={isOverdue}
+                        isDueSoon={isDueSoon}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* All Scheduled */}
+        <TabsContent value="scheduled" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Scheduled Medications</CardTitle>
+              <CardDescription>
+                All medications scheduled for {format(new Date(selectedDate), 'MMMM d, yyyy')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {scheduledMeds.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Pill className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No scheduled medications for this date</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Medication</TableHead>
+                        <TableHead>Dose</TableHead>
+                        <TableHead>Route</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scheduledMeds.map(medication => (
+                        <TableRow key={medication.id}>
+                          <TableCell className="font-mono">
+                            {formatTime(medication.scheduled_time)}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {medication.medication_name}
+                          </TableCell>
+                          <TableCell>{medication.dosage}</TableCell>
+                          <TableCell>{medication.route}</TableCell>
+                          <TableCell>{getStatusBadge(medication)}</TableCell>
+                          <TableCell>
+                            {medication.is_dispensed ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openAdminDialog(medication)}
+                              >
+                                Administer
+                              </Button>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                <Package className="h-4 w-4 inline mr-1" />
+                                Awaiting pharmacy
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Completed */}
+        <TabsContent value="completed" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Administration History</CardTitle>
+              <CardDescription>
+                Medication administrations for {format(new Date(selectedDate), 'MMMM d, yyyy')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {completedMeds.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CheckCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No completed administrations for this date</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Scheduled</TableHead>
+                        <TableHead>Administered</TableHead>
+                        <TableHead>Medication</TableHead>
+                        <TableHead>Dose</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Administered By</TableHead>
+                        <TableHead>Notes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {completedMeds.map(medication => (
+                        <TableRow key={medication.id}>
+                          <TableCell className="font-mono">
+                            {formatTime(medication.scheduled_time)}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            {formatTime(medication.administered_time)}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {medication.medication_name}
+                          </TableCell>
+                          <TableCell>{medication.dosage}</TableCell>
+                          <TableCell>{getStatusBadge(medication)}</TableCell>
+                          <TableCell>
+                            {medication.administered_by_details?.user?.full_name || '-'}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {medication.administration_notes || medication.reason_not_given || '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Administration Dialog */}
+      <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Medication Administration</DialogTitle>
+            <DialogDescription>
+              {selectedMedication?.medication_name} - {selectedMedication?.dosage}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Medication Details */}
+            <div className="bg-muted p-3 rounded-lg space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Route:</span>
+                <span>{selectedMedication?.route}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Frequency:</span>
+                <span>{selectedMedication?.frequency}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Scheduled:</span>
+                <span>{formatDateTime(selectedMedication?.scheduled_time)}</span>
+              </div>
+              {selectedMedication?.prescribed_by_details && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Prescribed by:</span>
+                  <span>{selectedMedication.prescribed_by_details.user?.full_name}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Status Selection */}
+            <div className="space-y-2">
+              <Label>Administration Status</Label>
+              <Select
+                value={adminForm.status}
+                onValueChange={(v) => handleAdminFormChange('status', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="administered">
+                    <span className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-500" />
+                      Administered
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="missed">
+                    <span className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      Missed
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="refused">
+                    <span className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-amber-500" />
+                      Patient Refused
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="held">
+                    <span className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-slate-500" />
+                      Held
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Reason (for non-administered) */}
+            {['missed', 'refused', 'held'].includes(adminForm.status) && (
+              <div className="space-y-2">
+                <Label>Reason *</Label>
+                <Textarea
+                  placeholder="Reason medication was not administered..."
+                  value={adminForm.reason_not_given}
+                  onChange={(e) => handleAdminFormChange('reason_not_given', e.target.value)}
+                  rows={2}
+                />
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea
+                placeholder="Additional observations or notes..."
+                value={adminForm.administration_notes}
+                onChange={(e) => handleAdminFormChange('administration_notes', e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdminDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAdminister}
+              disabled={administerMutation.isPending}
+            >
+              {administerMutation.isPending ? 'Recording...' : 'Record Administration'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Medication Card Component
+function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, isOverdue, isDueSoon }) {
+  const isUrgent = isOverdue(medication.scheduled_time);
+  const isDue = isDueSoon(medication.scheduled_time);
+
+  return (
+    <div
+      className={`p-4 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors ${
+        isUrgent ? 'border-red-300 bg-red-50 dark:bg-red-950/20' :
+        isDue ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20' : ''
+      }`}
+      onClick={onAdminister}
+    >
+      <div className="flex justify-between items-start">
+        <div>
+          <h3 className="font-medium">{medication.medication_name}</h3>
+          <p className="text-sm text-muted-foreground">
+            {medication.dosage} - {medication.route}
+          </p>
+          {medication.frequency && (
+            <p className="text-sm text-muted-foreground">
+              {medication.frequency}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {getStatusBadge(medication)}
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Clock className="h-3 w-3 mr-1" />
+            {formatTime(medication.scheduled_time)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex justify-between items-center">
+        {medication.prescribed_by_details && (
+          <span className="text-sm text-muted-foreground">
+            Prescribed by: {medication.prescribed_by_details.user?.full_name}
+          </span>
+        )}
+        <Button
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAdminister();
+          }}
+        >
+          Administer
+        </Button>
+      </div>
     </div>
   );
 }

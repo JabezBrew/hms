@@ -11,10 +11,23 @@ User = get_user_model()
 class VitalSigns(models.Model):
     """
     Model for recording patient vital signs.
+
+    Optionally linked to an Encounter to group vitals by clinical visit.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='vital_signs')
     recorded_by = models.ForeignKey(PractitionerProfile, on_delete=models.SET_NULL, null=True, related_name='recorded_vitals')
+
+    # Link to encounter - required, groups vitals by clinical visit
+    # The auto-encounter logic in views ensures this is always set
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.PROTECT,  # Prevent deletion of encounters with linked vitals
+        null=False,
+        blank=False,
+        related_name='vital_signs',
+        help_text="The clinical encounter/visit during which these vitals were recorded"
+    )
 
     # Vital sign measurements
     temperature = models.DecimalField(
@@ -364,6 +377,36 @@ class MedicationAdministration(models.Model):
         related_name='prescribed_medications'
     )
 
+    # Link to prescription (optional for backwards compatibility)
+    prescription = models.ForeignKey(
+        'clinical_notes.Prescription',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mar_entries'
+    )
+
+    # Link to treatment sheet entry (for inpatient medication tracking)
+    treatment_entry = models.ForeignKey(
+        'TreatmentSheetEntry',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='dose_administrations',
+        help_text="Parent treatment sheet entry for inpatient medications"
+    )
+
+    # Dispensing status (for pharmacy workflow)
+    is_dispensed = models.BooleanField(default=False)
+    dispensed_at = models.DateTimeField(null=True, blank=True)
+    dispensed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispensed_medications'
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -457,3 +500,372 @@ class ShiftHandoff(models.Model):
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.get_shift_type_display()} - {self.shift_date}"
+
+
+class TreatmentSheetEntry(models.Model):
+    """
+    Ongoing medication order for inpatients (parent of MAR doses).
+
+    Represents a continuous medication order on the treatment sheet.
+    Links to individual MedicationAdministration entries (doses).
+    Used for tracking overall supply and medication lifecycle.
+    """
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('discontinued', 'Discontinued'),
+        ('on_hold', 'On Hold')
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='treatment_sheet_entries'
+    )
+    admission = models.ForeignKey(
+        'wards.Admission',
+        on_delete=models.CASCADE,
+        related_name='treatment_entries'
+    )
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.PROTECT,
+        help_text="The clinical encounter during which this was ordered"
+    )
+
+    # Medication details (denormalized for quick access)
+    medication_name = models.CharField(max_length=255)
+    dosage = models.CharField(max_length=100)
+    route = models.CharField(max_length=50)
+    frequency = models.CharField(max_length=100)
+
+    # Temporal scope
+    start_datetime = models.DateTimeField()
+    duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in days. Null means until discontinued."
+    )
+    end_datetime = models.DateTimeField(null=True, blank=True)
+
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+
+    # Ordering practitioner
+    ordered_by = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.CASCADE,
+        related_name='treatment_orders'
+    )
+
+    # Supply tracking (aggregate counts)
+    total_doses_ordered = models.PositiveIntegerField(
+        default=0,
+        help_text="Total number of doses generated in MAR"
+    )
+    total_doses_dispensed = models.PositiveIntegerField(
+        default=0,
+        help_text="Total doses dispensed by pharmacy"
+    )
+    total_doses_administered = models.PositiveIntegerField(
+        default=0,
+        help_text="Total doses actually administered to patient"
+    )
+
+    # Link to source prescription (optional)
+    prescription = models.ForeignKey(
+        'clinical_notes.Prescription',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='treatment_entries'
+    )
+
+    # Discontinuation tracking
+    discontinued_at = models.DateTimeField(null=True, blank=True)
+    discontinued_by = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='discontinued_orders'
+    )
+    discontinuation_reason = models.TextField(blank=True)
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_treatment_entries'
+    )
+
+    class Meta:
+        ordering = ['-start_datetime']
+        indexes = [
+            models.Index(fields=['admission', 'status']),
+            models.Index(fields=['patient', 'status', '-start_datetime']),
+            models.Index(fields=['status', '-start_datetime']),
+        ]
+        verbose_name = 'Treatment Sheet Entry'
+        verbose_name_plural = 'Treatment Sheet Entries'
+
+    def __str__(self):
+        return f"{self.patient.user.get_full_name()} - {self.medication_name} - {self.status}"
+
+    @property
+    def supply_remaining(self):
+        """Calculate remaining supply (dispensed but not yet administered)."""
+        return self.total_doses_dispensed - self.total_doses_administered
+
+    @property
+    def days_of_supply_remaining(self):
+        """Estimate days of supply remaining based on frequency."""
+        if self.supply_remaining <= 0:
+            return 0
+
+        # Parse frequency to estimate daily doses
+        frequency_lower = self.frequency.lower()
+        daily_doses = 1
+
+        if 'bid' in frequency_lower or 'twice' in frequency_lower:
+            daily_doses = 2
+        elif 'tid' in frequency_lower or 'three' in frequency_lower:
+            daily_doses = 3
+        elif 'qid' in frequency_lower or 'four' in frequency_lower:
+            daily_doses = 4
+        elif 'q4h' in frequency_lower:
+            daily_doses = 6
+        elif 'q6h' in frequency_lower:
+            daily_doses = 4
+        elif 'q8h' in frequency_lower:
+            daily_doses = 3
+        elif 'q12h' in frequency_lower:
+            daily_doses = 2
+
+        if daily_doses > 0:
+            return self.supply_remaining / daily_doses
+        return 0
+
+
+class SupplyRequest(models.Model):
+    """
+    Nurse request for medication supply from pharmacy.
+
+    Represents a request for bulk supply of medication (multiple doses)
+    for a treatment sheet entry. Pharmacy fulfills these requests.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('dispensed', 'Dispensed'),
+        ('rejected', 'Rejected')
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    treatment_entry = models.ForeignKey(
+        TreatmentSheetEntry,
+        on_delete=models.CASCADE,
+        related_name='supply_requests'
+    )
+
+    # Request details
+    quantity_requested = models.PositiveIntegerField(
+        help_text="Number of doses requested"
+    )
+    quantity_dispensed = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Actual quantity dispensed (may differ from requested)"
+    )
+
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Request tracking
+    requested_by = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.CASCADE,
+        related_name='supply_requests'
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    # Dispensing tracking
+    dispensed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispensed_supplies'
+    )
+    dispensed_at = models.DateTimeField(null=True, blank=True)
+
+    # Rejection handling
+    rejection_reason = models.TextField(blank=True)
+
+    # Additional notes
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-requested_at']
+        indexes = [
+            models.Index(fields=['status', '-requested_at']),
+            models.Index(fields=['treatment_entry', '-requested_at']),
+            models.Index(fields=['requested_by', 'status']),
+        ]
+        verbose_name = 'Supply Request'
+        verbose_name_plural = 'Supply Requests'
+
+    def __str__(self):
+        return f"{self.treatment_entry.medication_name} - {self.quantity_requested} doses - {self.status}"
+
+
+class FluidBalance(models.Model):
+    """
+    Model for tracking patient fluid intake and output.
+
+    Used by nurses to monitor fluid balance for inpatients.
+    Tracks both intake (oral, IV, enteral, blood products) and
+    output (urine, vomit, stool, drain, N.G. suction).
+    Output entries can include colour descriptions for clinical assessment.
+    """
+    ENTRY_TYPE_CHOICES = (
+        ('intake', 'Intake'),
+        ('output', 'Output'),
+    )
+
+    # Intake categories
+    INTAKE_CATEGORY_CHOICES = (
+        ('oral', 'Oral'),
+        ('iv', 'IV Fluids'),
+        ('enteral', 'Enteral Feed'),
+        ('blood', 'Blood Products'),
+    )
+
+    # Output categories
+    OUTPUT_CATEGORY_CHOICES = (
+        ('urine', 'Urine'),
+        ('vomit', 'Vomit'),
+        ('stool', 'Stool'),
+        ('drain', 'Drain'),
+        ('ng_suction', 'N.G. Suction'),
+        ('other', 'Other'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='fluid_balance_records'
+    )
+    admission = models.ForeignKey(
+        'wards.Admission',
+        on_delete=models.CASCADE,
+        related_name='fluid_balance_records',
+        null=True,
+        blank=True,
+        help_text="Admission for inpatient tracking. Null for outpatient."
+    )
+
+    # Entry type and category
+    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPE_CHOICES)
+    category = models.CharField(
+        max_length=20,
+        help_text="Category based on entry type (oral/iv/etc for intake, urine/vomit/etc for output)"
+    )
+    subcategory = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Optional subcategory, e.g., Water, Normal Saline, Foley, JP Drain"
+    )
+
+    # Volume
+    volume_ml = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10000)],
+        help_text="Volume in milliliters"
+    )
+
+    # Recording details
+    recorded_at = models.DateTimeField(default=timezone.now)
+    recorded_by = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='recorded_fluid_entries'
+    )
+
+    # Notes
+    notes = models.TextField(blank=True, null=True)
+
+    # Colour (for output entries - urine, stool, vomit, drain, ng_suction, etc.)
+    colour = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Colour description for output entries (e.g., 'dark amber', 'clear', 'bloody')"
+    )
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_fluid_balance_entries'
+    )
+    modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_fluid_balance_entries',
+        help_text="User who last modified this entry"
+    )
+
+    # Soft delete support
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deleted_fluid_balance_entries',
+        help_text="User who deleted this entry"
+    )
+    deletion_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['patient', '-recorded_at']),
+            models.Index(fields=['patient', 'entry_type', '-recorded_at']),
+            models.Index(fields=['admission', '-recorded_at']),
+            models.Index(fields=['is_deleted', '-recorded_at']),
+        ]
+        verbose_name = 'Fluid Balance Entry'
+        verbose_name_plural = 'Fluid Balance Entries'
+
+    def __str__(self):
+        return f"{self.patient.user.get_full_name()} - {self.entry_type} - {self.volume_ml}ml - {self.recorded_at.strftime('%Y-%m-%d %H:%M')}"
+
+    def clean(self):
+        """Validate category matches entry type."""
+        from django.core.exceptions import ValidationError
+
+        valid_intake_categories = [c[0] for c in self.INTAKE_CATEGORY_CHOICES]
+        valid_output_categories = [c[0] for c in self.OUTPUT_CATEGORY_CHOICES]
+
+        if self.entry_type == 'intake' and self.category not in valid_intake_categories:
+            raise ValidationError({
+                'category': f"For intake, category must be one of: {', '.join(valid_intake_categories)}"
+            })
+
+        if self.entry_type == 'output' and self.category not in valid_output_categories:
+            raise ValidationError({
+                'category': f"For output, category must be one of: {', '.join(valid_output_categories)}"
+            })

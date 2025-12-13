@@ -47,11 +47,13 @@ INSTALLED_APPS = [
 
     # Third-party apps
     'rest_framework',
+    'django_filters',
     'corsheaders',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
 
     # Local apps
+    'apps.core.apps.CoreConfig',  # Shared utilities for API optimization
     'apps.users.apps.UsersConfig',  # Use this instead of 'apps.users'
     'apps.fhir_client',
     'apps.appointments',
@@ -63,6 +65,11 @@ INSTALLED_APPS = [
     'apps.nursing.apps.NursingConfig',
     'apps.workflows.apps.WorkflowsConfig',
     'apps.dashboards.apps.DashboardsConfig',
+    'apps.audit.apps.AuditConfig',
+    'apps.drug_safety.apps.DrugSafetyConfig',
+    'apps.laboratory.apps.LaboratoryConfig',
+    'apps.referrals.apps.ReferralsConfig',
+    'apps.charts.apps.ChartsConfig',
 ]
 
 MIDDLEWARE = [
@@ -74,6 +81,8 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'hms_backend.middleware.JWTUserTypeValidationMiddleware',  # Validate JWT claims
+    'hms_backend.middleware.OffSiteDetectionMiddleware',  # Off-site read-only mode detection
+    'apps.audit.middleware.AuditMiddleware',  # Audit logging context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'hms_backend.middleware.RequestLoggingMiddleware',
@@ -189,6 +198,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
     'DEFAULT_THROTTLE_CLASSES': [
@@ -199,6 +211,7 @@ REST_FRAMEWORK = {
         'anon': '100/hour',
         'user': '1000/hour',
         'login': '5/minute',
+        'password_reset': '3/hour',
     }
 }
 
@@ -220,13 +233,9 @@ SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
 
-# Email settings
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = env('EMAIL_HOST')
-EMAIL_PORT = int(env('EMAIL_PORT'))
-EMAIL_HOST_USER = env('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
-EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+# Email settings - SendGrid Web API
+EMAIL_BACKEND = 'hms_backend.email_backends.SendGridEmailBackend'
+SENDGRID_API_KEY = env('SENDGRID_API_KEY')
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
 
 # Google Cloud Healthcare API settings
@@ -270,6 +279,10 @@ SIMPLE_JWT = {
     'TOKEN_TYPE_CLAIM': 'token_type',
     'JTI_CLAIM': 'jti',
 }
+
+# Password reset settings
+PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 15
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
 # dj-rest-auth settings
 REST_USE_JWT = True
@@ -381,6 +394,7 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+
 # Celery Beat Schedule
 CELERY_BEAT_SCHEDULE = {
     'generate-slots-weekly': {
@@ -390,5 +404,9 @@ CELERY_BEAT_SCHEDULE = {
         'options': {
             'expires': 3600,  # Task expires after 1 hour
         },
+    },
+    'cleanup-expired-password-tokens-daily': {
+        'task': 'apps.users.tasks.cleanup_expired_tokens',
+        'schedule': timedelta(days=1),  # Run once a day
     },
 }

@@ -121,7 +121,8 @@ class FHIRClient:
                     method=method,
                     url=url,
                     json=json_data,
-                    params=params
+                    params=params,
+                    timeout=10  # Add 10s timeout
                 )
 
                 response.raise_for_status()

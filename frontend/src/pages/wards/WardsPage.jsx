@@ -1,36 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Plus, Hospital, BarChart3 } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Building2,
+  Bed,
+  Users,
+  Activity,
+  BarChart3,
+  ChevronRight,
+  RefreshCw
+} from 'lucide-react';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { useWards } from '@/hooks/useWardQueries';
 
+/**
+ * WardsPage - Chronicle-style ward management dashboard
+ *
+ * Features:
+ * - Hero section with aggregate statistics
+ * - Visual ward cards with occupancy indicators
+ * - Quick actions and search
+ */
 export default function WardsPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Use React Query hook for fetching wards
-  const { 
-    data: wards = [], 
-    isLoading: loading, 
+  const {
+    data: wards = [],
+    isLoading,
     isError,
-    error: queryError
+    error,
+    refetch
   } = useWards();
 
-  // Extract error message from query error
-  const error = isError ? (queryError?.message || 'Failed to load wards. Please try again.') : null;
+  const breadcrumbs = [{ label: 'Wards', path: '/wards' }];
 
-  // Define breadcrumbs for this page
-  const breadcrumbs = [
-    { label: 'Wards', path: '/wards' }
-  ];
-
-  // Check if user is admin
   useEffect(() => {
     const userJson = localStorage.getItem('user');
     if (userJson) {
@@ -39,189 +49,289 @@ export default function WardsPage() {
     }
   }, []);
 
-  // Filter wards based on search term
-  const filteredWards = wards.filter(ward => 
-    ward.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ward.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ward.ward_type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Calculate aggregate statistics
+  const stats = useMemo(() => {
+    if (!wards.length) return { total: 0, totalBeds: 0, occupied: 0, available: 0, avgOccupancy: 0 };
 
-  // Handle ward click
-  const handleWardClick = (wardId) => {
-    navigate(`/wards/${wardId}`);
-  };
+    const totalBeds = wards.reduce((sum, w) => sum + (w.total_beds || 0), 0);
+    const availableBeds = wards.reduce((sum, w) => sum + (w.available_beds_count || 0), 0);
+    const occupiedBeds = totalBeds - availableBeds;
+    const avgOccupancy = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
 
-  // Handle new ward
-  const handleNewWard = () => {
-    // Since buttons are only visible to admins, we can simplify this function
-    const userJson = localStorage.getItem('user');
-    if (userJson) {
-      navigate('/wards/new');
-    } else {
-      navigate('/login');
-    }
-  };
-
-  // Get ward type display name
-  const getWardTypeDisplay = (wardType) => {
-    const wardTypes = {
-      'general': 'General Ward',
-      'private': 'Private Ward',
-      'icu': 'Intensive Care Unit',
-      'emergency': 'Emergency Ward',
-      'maternity': 'Maternity Ward',
-      'pediatric': 'Pediatric Ward',
-      'psychiatric': 'Psychiatric Ward',
-      'isolation': 'Isolation Ward',
+    return {
+      total: wards.length,
+      totalBeds,
+      occupied: occupiedBeds,
+      available: availableBeds,
+      avgOccupancy: avgOccupancy.toFixed(1)
     };
-    return wardTypes[wardType] || wardType;
+  }, [wards]);
+
+  // Filter wards
+  const filteredWards = useMemo(() => {
+    if (!searchTerm) return wards;
+    const term = searchTerm.toLowerCase();
+    return wards.filter(ward =>
+      ward.name.toLowerCase().includes(term) ||
+      ward.description?.toLowerCase().includes(term) ||
+      ward.ward_type?.toLowerCase().includes(term)
+    );
+  }, [wards, searchTerm]);
+
+  // Ward type display names
+  const wardTypeLabels = {
+    'general': 'General',
+    'private': 'Private',
+    'icu': 'ICU',
+    'emergency': 'Emergency',
+    'maternity': 'Maternity',
+    'pediatric': 'Pediatric',
+    'psychiatric': 'Psychiatric',
+    'isolation': 'Isolation',
   };
 
-  // Get occupancy status color
-  const getOccupancyColor = (rate) => {
-    if (rate < 70) return 'bg-green-100 text-green-800';
-    if (rate < 90) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
+  // Occupancy color based on rate
+  const getOccupancyStyle = (rate) => {
+    if (rate < 60) return { color: 'text-emerald-600', bg: 'bg-emerald-500', label: 'Low' };
+    if (rate < 85) return { color: 'text-amber-600', bg: 'bg-amber-500', label: 'Moderate' };
+    return { color: 'text-rose-600', bg: 'bg-rose-500', label: 'High' };
   };
 
-  if (loading) {
+  // Loading state
+  if (isLoading) {
     return (
-      <div className="container mx-auto py-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Wards</h1>
-          <Skeleton className="h-10 w-32" />
+      <div className="min-h-screen bg-background">
+        <div className="bg-card border-b border-border px-6 py-8">
+          <Skeleton className="h-8 w-48 mb-4" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}
+          </div>
         </div>
-        <Skeleton className="h-12 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <Skeleton key={i} className="h-48 w-full" />
-          ))}
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-48" />)}
+          </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  // Error state
+  if (isError) {
     return (
-      <div className="container mx-auto py-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-red-500">Error</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>{error}</p>
-            <Button 
-              variant="outline" 
-              className="mt-4"
-              onClick={() => window.location.reload()}
-            >
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Building2 className="h-12 w-12 text-muted-foreground mx-auto" />
+          <h2 className="text-xl font-display text-foreground">Unable to load wards</h2>
+          <p className="text-muted-foreground text-sm">{error?.message || 'Please try again'}</p>
+          <Button onClick={() => refetch()} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Set breadcrumb navigation */}
+    <div className="min-h-screen bg-background">
       <BreadcrumbSetter breadcrumbs={breadcrumbs} />
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-3xl font-bold">Wards</h1>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => navigate('/wards/reports')}
-            variant="outline"
-          >
-            <BarChart3 className="h-4 w-4 mr-2" />
-            View Reports
-          </Button>
-          {isAdmin && (
-            <Button onClick={handleNewWard}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Ward
-            </Button>
-          )}
+      {/* Hero Section with Stats */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-display font-bold text-foreground">
+                Ward Management
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Monitor bed availability and patient flow across all wards
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => navigate('/wards/reports')}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Reports
+              </Button>
+              {isAdmin && (
+                <Button onClick={() => navigate('/wards/new')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Ward
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-mono text-2xl font-bold text-foreground">{stats.total}</p>
+                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Wards</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-sky-500/10">
+                  <Bed className="h-5 w-5 text-sky-600" />
+                </div>
+                <div>
+                  <p className="font-mono text-2xl font-bold text-foreground">{stats.totalBeds}</p>
+                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Total Beds</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <Activity className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-mono text-2xl font-bold text-emerald-600">{stats.available}</p>
+                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Available</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-rose-500/10">
+                  <Users className="h-5 w-5 text-rose-600" />
+                </div>
+                <div>
+                  <p className="font-mono text-2xl font-bold text-foreground">{stats.avgOccupancy}%</p>
+                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Occupancy</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-        <Input
-          placeholder="Search wards by name, type, or description..."
-          className="pl-10"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-      </div>
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Search */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search wards..."
+              className="pl-10 font-mono text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
 
-      {filteredWards.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center p-6">
-            <Hospital className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-lg font-medium">No wards found</p>
-            <p className="text-muted-foreground">
-              {wards.length > 0 
-                ? 'Try adjusting your search terms' 
-                : isAdmin 
-                  ? 'Create your first ward to get started'
-                  : 'No wards available at this time'}
+        {/* Wards Grid */}
+        {filteredWards.length === 0 ? (
+          <div className="text-center py-16">
+            <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground">
+              {wards.length > 0 ? 'No wards match your search' : 'No wards yet'}
+            </h3>
+            <p className="text-muted-foreground text-sm mt-1">
+              {wards.length > 0 ? 'Try adjusting your search term' : 'Create your first ward to get started'}
             </p>
             {wards.length === 0 && isAdmin && (
-              <Button 
-                variant="outline" 
-                className="mt-4"
-                onClick={handleNewWard}
-              >
+              <Button className="mt-4" onClick={() => navigate('/wards/new')}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Ward
               </Button>
             )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredWards.map(ward => (
-            <Card 
-              key={ward.id} 
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => handleWardClick(ward.id)}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                  <CardTitle>{ward.name}</CardTitle>
-                  <Badge variant={ward.is_active ? "outline" : "destructive"}>
-                    {ward.is_active ? "Active" : "Inactive"}
-                  </Badge>
-                </div>
-                <CardDescription>{getWardTypeDisplay(ward.ward_type)}</CardDescription>
-              </CardHeader>
-              <CardContent className="pb-2">
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {ward.description || 'No description available'}
-                </p>
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Beds:</span>
-                  <span className="text-sm">{ward.total_beds}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Occupancy:</span>
-                  <Badge 
-                    variant="outline" 
-                    className={getOccupancyColor(ward.occupancy_rate)}
-                  >
-                    {ward.occupancy_rate.toFixed(1)}%
-                  </Badge>
-                </div>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredWards.map(ward => {
+              const occupancyStyle = getOccupancyStyle(ward.occupancy_rate);
+              const availableBeds = ward.available_beds_count || 0;
+              const occupiedBeds = (ward.total_beds || 0) - availableBeds;
+
+              return (
+                <article
+                  key={ward.id}
+                  onClick={() => navigate(`/wards/${ward.id}`)}
+                  className={cn(
+                    "group relative bg-card rounded-xl border border-border/50 p-6",
+                    "hover:border-border hover:shadow-lg transition-all duration-200 cursor-pointer"
+                  )}
+                >
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
+                        {ward.name}
+                      </h3>
+                      <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mt-0.5">
+                        {wardTypeLabels[ward.ward_type] || ward.ward_type}
+                      </p>
+                    </div>
+                    <div className={cn(
+                      "px-2 py-1 rounded-full text-xs font-mono",
+                      ward.is_active
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      {ward.is_active ? 'Active' : 'Inactive'}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  {ward.description && (
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                      {ward.description}
+                    </p>
+                  )}
+
+                  {/* Occupancy Bar */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-muted-foreground">Occupancy</span>
+                      <span className={cn("font-mono font-medium", occupancyStyle.color)}>
+                        {ward.occupancy_rate?.toFixed(0) || 0}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", occupancyStyle.bg)}
+                        style={{ width: `${Math.min(ward.occupancy_rate || 0, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bed Stats */}
+                  <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <p className="font-mono text-lg font-bold text-foreground">{ward.total_beds || 0}</p>
+                        <p className="text-xs text-muted-foreground">Total</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-mono text-lg font-bold text-emerald-600">{availableBeds}</p>
+                        <p className="text-xs text-muted-foreground">Available</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-mono text-lg font-bold text-rose-600">{occupiedBeds}</p>
+                        <p className="text-xs text-muted-foreground">Occupied</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

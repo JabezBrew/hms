@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import { format } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
+import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -49,29 +50,30 @@ const encounterFormSchema = z.object({
   end_time: z.date().nullable().optional(),
   location: z.string().min(1, { message: "Location is required" }),
   admission_source: z.string().optional()
-      .transform(val => val === '' ? null : val),
+    .transform(val => val === '' ? null : val),
 })
-.refine(data => {
-  // If encounter_type is inpatient, admission_source is required
-  if (data.encounter_type === 'inpatient') {
-    return !!data.admission_source && data.admission_source !== 'none';
-  }
-  return true;
-}, {
-  message: "Admission source is required for inpatient encounters",
-  path: ["admission_source"]
-});
+  .refine(data => {
+    // If encounter_type is inpatient, admission_source is required
+    if (data.encounter_type === 'inpatient') {
+      return !!data.admission_source && data.admission_source !== 'none';
+    }
+    return true;
+  }, {
+    message: "Admission source is required for inpatient encounters",
+    path: ["admission_source"]
+  });
 
 export function EncounterForm({ isEditing = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [slotSelected, setSlotSelected] = useState(false);
 
   // Use React Query hooks
-  const { 
-    data: encounterData, 
-    isLoading: isEncounterLoading, 
+  const {
+    data: encounterData,
+    isLoading: isEncounterLoading,
     isError: isEncounterError,
     error: encounterError
   } = useEncounter(isEditing ? id : null);
@@ -82,8 +84,8 @@ export function EncounterForm({ isEditing = false }) {
 
   // Search state for patients
   const [patientSearchQuery, setPatientSearchQuery] = useState("");
-  const { 
-    data: patients = [], 
+  const {
+    data: patients = [],
     isLoading: isLoadingPatients,
     searchTerm: patientSearchTerm,
     setSearchTerm: setPatientSearchTerm
@@ -91,8 +93,8 @@ export function EncounterForm({ isEditing = false }) {
 
   // Search state for practitioners
   const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
-  const { 
-    data: practitioners = [], 
+  const {
+    data: practitioners = [],
     isLoading: isLoadingPractitioners,
     searchTerm: practitionerSearchTerm,
     setSearchTerm: setPractitionerSearchTerm
@@ -258,7 +260,7 @@ export function EncounterForm({ isEditing = false }) {
       const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
       return {
         label: displayName,
-        value: practitioner.fhir_resource.id
+        value: practitioner.local_data?.id || practitioner.fhir_resource.id
       };
     } else if (practitioner.staff_details) {
       // Structure with staff_details
@@ -295,8 +297,8 @@ export function EncounterForm({ isEditing = false }) {
         </CardHeader>
         <CardContent>
           <p>{error}</p>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="mt-4"
             onClick={() => window.location.reload()}
           >
@@ -313,8 +315,8 @@ export function EncounterForm({ isEditing = false }) {
         <CardHeader>
           <CardTitle>{isEditing ? 'Edit Encounter' : 'New Encounter'}</CardTitle>
           <CardDescription>
-            {isEditing 
-              ? 'Update the details of this encounter' 
+            {isEditing
+              ? 'Update the details of this encounter'
               : 'Enter the details for a new patient encounter'}
           </CardDescription>
         </CardHeader>
@@ -494,46 +496,79 @@ export function EncounterForm({ isEditing = false }) {
                 )}
               />
 
-              {/* Start Time */}
-              <FormField
-                control={form.control}
-                name="start_time"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Start Time</FormLabel>
-                    <FormControl>
-                      <DateTimePicker
-                        date={field.value}
-                        setDate={field.onChange}
-                        disabled={submitting}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Availability Calendar */}
+              {form.watch("practitioner_id") && (
+                <div className="rounded-md border p-4">
+                  <h3 className="text-sm font-medium mb-4">Practitioner Availability</h3>
+                  <DoctorAvailabilityCalendar
+                    practitionerId={form.watch("practitioner_id")}
+                    onSlotSelect={(slot) => {
+                      form.setValue("start_time", new Date(slot.start));
+                      form.setValue("end_time", new Date(slot.end));
+                      setSlotSelected(true);
+                    }}
+                  />
+                </div>
+              )}
 
-              {/* End Time (optional) */}
-              <FormField
-                control={form.control}
-                name="end_time"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>End Time (Optional)</FormLabel>
-                    <FormControl>
-                      <DateTimePicker
-                        date={field.value}
-                        setDate={field.onChange}
-                        disabled={submitting || form.getValues("status") === 'planned'}
-                      />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      Only set an end time for completed or cancelled encounters.
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Selected Time Display */}
+              {slotSelected && form.watch("start_time") && (
+                <div className="rounded-md border p-4 bg-muted/50">
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-muted-foreground">Selected Time</span>
+                    <span className="text-lg font-semibold">
+                      {format(form.watch("start_time"), "MMMM d, yyyy hh:mm a")}
+                      {form.watch("end_time") && ` - ${format(form.watch("end_time"), "hh:mm a")}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual Time Entry - Only show if NO slot selected AND (editing OR not planned) */}
+              {!slotSelected && (isEditing || form.watch("status") !== 'planned') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Start Time */}
+                  <FormField
+                    control={form.control}
+                    name="start_time"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Time</FormLabel>
+                        <FormControl>
+                          <DateTimePicker
+                            date={field.value}
+                            setDate={field.onChange}
+                            disabled={submitting}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* End Time (optional) */}
+                  <FormField
+                    control={form.control}
+                    name="end_time"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Time (Optional)</FormLabel>
+                        <FormControl>
+                          <DateTimePicker
+                            date={field.value}
+                            setDate={field.onChange}
+                            disabled={submitting || form.getValues("status") === 'planned'}
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          Only set an end time for completed or cancelled encounters.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
 
               {/* Location */}
               <FormField
@@ -608,15 +643,15 @@ export function EncounterForm({ isEditing = false }) {
 
               {/* Form actions */}
               <div className="flex justify-end gap-4 pt-4">
-                <Button 
-                  type="button" 
+                <Button
+                  type="button"
                   variant="outline"
                   onClick={() => navigate(-1)}
                   disabled={submitting}
                 >
                   Cancel
                 </Button>
-                <Button 
+                <Button
                   type="submit"
                   disabled={submitting}
                 >

@@ -12,11 +12,13 @@ import { useDebounce } from './use-debounce';
 export function useSearchQuery(queryKey, queryFn, options = {}) {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, options.debounceMs || 300);
-  
-  const enabled = 
-    !!debouncedSearchTerm && 
-    debouncedSearchTerm.length >= (options.minLength || 2);
-  
+
+  const enabled =
+    !!debouncedSearchTerm &&
+    (typeof debouncedSearchTerm === 'string'
+      ? debouncedSearchTerm.length >= (options.minLength || 2)
+      : true);
+
   const query = useQuery({
     queryKey: [...queryKey, debouncedSearchTerm],
     queryFn: () => queryFn(debouncedSearchTerm),
@@ -24,7 +26,7 @@ export function useSearchQuery(queryKey, queryFn, options = {}) {
     staleTime: options.staleTime || 60 * 1000, // 1 minute by default
     ...options
   });
-  
+
   return {
     ...query,
     searchTerm,

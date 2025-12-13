@@ -1,0 +1,4 @@
+web: python manage.py runserver 0.0.0.0:8000
+celery_worker: celery -A hms_backend worker --loglevel=info
+celery_beat: celery -A hms_backend beat --loglevel=info
+redis: redis-server --port 6379

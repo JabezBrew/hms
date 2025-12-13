@@ -1,114 +1,351 @@
+import { useState, useMemo } from 'react';
+import { cn } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  addMonths,
+  subMonths,
+  startOfWeek,
+  endOfWeek,
+  isBefore,
+  startOfDay,
+  isSameDay,
+  parseISO,
+  isWithinInterval
+} from 'date-fns';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Clock,
+  CalendarCheck,
+  CalendarX
+} from 'lucide-react';
+import {
+  useAvailableSlots,
+  useRecurringSchedules,
+  useBlockedTimes
+} from '@/hooks/useAppointmentQueries';
 
 /**
- * DoctorAvailabilityCalendar component (Simplified Presentational Component)
- * Displays a calendar with color-coded days based on provided availability data.
+ * DoctorAvailabilityCalendar - Chronicle-style calendar component
  *
- * @param {Object} props - Component props
- * @param {Date} props.currentMonth - The month the calendar should display
- * @param {Function} props.onMonthChange - Callback when the month changes
- * @param {Date | null} props.selectedDate - The currently selected date
- * @param {Function} props.onDateChange - Callback when a date is selected
- * @param {Object} props.availabilityData - Map of dates {'YYYY-MM-DD': { hasSlots: boolean }}
- * @param {boolean} props.isLoading - Whether the calendar data is loading
+ * Features:
+ * - Visual calendar with availability indicators
+ * - Slot selection for selected date
+ * - Two-column layout (calendar | slots)
  */
 const DoctorAvailabilityCalendar = ({
-  currentMonth,
-  onMonthChange,
-  selectedDate,
-  onDateChange,
-  availabilityData = {}, // Default to empty object
-  isLoading = false,
+  practitionerId,
+  onSlotSelect,
 }) => {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedSlotId, setSelectedSlotId] = useState(null);
 
-  // Determine available days based on the provided availabilityData
-  const availableModifiers = Object.entries(availabilityData)
-    .filter(([, data]) => data.hasSlots)
-    .map(([dateStr]) => new Date(dateStr + 'T00:00:00')); // Ensure correct date parsing
+  // Calculate visible date range
+  const calendarStart = startOfWeek(startOfMonth(currentMonth));
+  const calendarEnd = endOfWeek(endOfMonth(currentMonth));
 
-  // Function to check if a day has available slots based on props
-  const isDayAvailable = (day) => {
-    const formattedDay = format(day, 'yyyy-MM-dd');
-    return !!availabilityData[formattedDay]?.hasSlots;
+  const dateRangeParams = {
+    practitioner_id: practitionerId,
+    start_date: format(calendarStart, 'yyyy-MM-dd'),
+    end_date: format(calendarEnd, 'yyyy-MM-dd'),
   };
 
-  // Handle date selection: only call onDateChange if the day is available
+  // Fetch data with server-side filtering by practitioner
+  // Note: practitionerId must be the UUID (local_data.id), not FHIR resource ID
+  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams);
+
+  const { data: recurringSchedulesData, isLoading: recurringLoading } = useRecurringSchedules(
+    practitionerId ? { practitioner: practitionerId } : {}
+  );
+
+  const { data: blockedTimesData, isLoading: blockedLoading } = useBlockedTimes(
+    practitionerId ? { practitioner: practitionerId } : {}
+  );
+
+  // Normalize data to arrays
+  const recurringSchedules = Array.isArray(recurringSchedulesData)
+    ? recurringSchedulesData
+    : recurringSchedulesData?.results || [];
+
+  const blockedTimes = Array.isArray(blockedTimesData)
+    ? blockedTimesData
+    : blockedTimesData?.results || [];
+
+  const isLoading = slotsLoading || recurringLoading || blockedLoading;
+
+  // Process availability
+  const { availableDates, unavailableDates, availabilityMap } = useMemo(() => {
+    const available = [];
+    const unavailable = [];
+    const map = {};
+
+    if (isLoading) return { availableDates: [], unavailableDates: [], availabilityMap: {} };
+
+    const isBlocked = (date) => {
+      return blockedTimes.some(block => {
+        const blockStart = parseISO(block.start_date || block.date);
+        const blockEnd = block.end_date ? parseISO(block.end_date) : blockStart;
+        return isWithinInterval(date, { start: startOfDay(blockStart), end: startOfDay(blockEnd) });
+      });
+    };
+
+    const isScheduled = (date) => {
+      const dayOfWeek = date.getDay();
+      const backendDay = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+      return recurringSchedules.some(schedule => {
+        if (!schedule.is_active) return false;
+
+        const activeFrom = parseISO(schedule.active_from);
+        const activeTo = schedule.active_to ? parseISO(schedule.active_to) : null;
+
+        if (isBefore(date, startOfDay(activeFrom))) return false;
+        if (activeTo && isBefore(startOfDay(activeTo), date)) return false;
+
+        return schedule.days_of_week?.includes(backendDay);
+      });
+    };
+
+    // Get slots from API response
+    const slots = slotsData?.slots || (Array.isArray(slotsData) ? slotsData : []);
+
+    // Populate slots map
+    slots.forEach(slot => {
+      const dateStr = format(new Date(slot.start), 'yyyy-MM-dd');
+      if (!map[dateStr]) {
+        map[dateStr] = [];
+      }
+      map[dateStr].push(slot);
+    });
+
+    // Check if we have any recurring schedules configured
+    const hasRecurringSchedules = recurringSchedules.length > 0;
+
+    // Iterate through visible days
+    let iterDate = startOfDay(calendarStart);
+    const endDate = startOfDay(calendarEnd);
+
+    while (iterDate <= endDate) {
+      const isPast = isBefore(iterDate, startOfDay(new Date()));
+      const scheduled = isScheduled(iterDate);
+      const blocked = isBlocked(iterDate);
+      const dateStr = format(iterDate, 'yyyy-MM-dd');
+      const hasSlots = map[dateStr]?.some(s => s.status === 'free' || !s.status);
+
+      // If there are recurring schedules, use them to determine availability
+      if (hasRecurringSchedules) {
+        if (scheduled) {
+          if (isPast || blocked) {
+            unavailable.push(new Date(iterDate));
+          } else if (hasSlots) {
+            available.push(new Date(iterDate));
+          } else {
+            unavailable.push(new Date(iterDate));
+          }
+        }
+      } else {
+        // No recurring schedules - fall back to just checking for slots
+        if (!isPast && !blocked && hasSlots) {
+          available.push(new Date(iterDate));
+        } else if (hasSlots) {
+          unavailable.push(new Date(iterDate));
+        }
+      }
+
+      iterDate = new Date(iterDate);
+      iterDate.setDate(iterDate.getDate() + 1);
+    }
+
+    return { availableDates: available, unavailableDates: unavailable, availabilityMap: map };
+  }, [slotsData, recurringSchedules, blockedTimes, calendarStart, calendarEnd, isLoading]);
+
+  const isDayAvailable = (day) => availableDates.some(d => isSameDay(d, day));
+
   const handleSelect = (day) => {
     if (day && isDayAvailable(day)) {
-      onDateChange(day);
+      setSelectedDate(day);
+      setSelectedSlotId(null);
     }
-    // If an unavailable day is clicked, potentially deselect or do nothing
-    // Current implementation: clicking unavailable day does nothing selection-wise
   };
 
-  // Function to navigate to previous month
-  const goToPreviousMonth = () => {
-    onMonthChange(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  const handleSlotClick = (slot) => {
+    if (slot.status === 'booked' || slot.status === 'busy') return;
+    setSelectedSlotId(slot.id);
+    if (onSlotSelect) {
+      onSlotSelect(slot);
+    }
   };
 
-  // Function to navigate to next month
-  const goToNextMonth = () => {
-    onMonthChange(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
+  const selectedDateSlots = selectedDate
+    ? (availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])
+    : [];
 
-  if (isLoading) {
-    return (
-       <div className="space-y-4">
-         <Skeleton className="h-[290px] w-full rounded-md" />
-         <div className="flex justify-between">
-            <Skeleton className="h-9 w-36" />
-            <Skeleton className="h-9 w-36" />
-         </div>
-       </div>
-    );
-  }
+  selectedDateSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // Count available/booked slots
+  const availableCount = selectedDateSlots.filter(s => s.status !== 'booked' && s.status !== 'busy').length;
+  const bookedCount = selectedDateSlots.filter(s => s.status === 'booked' || s.status === 'busy').length;
 
   return (
-    <div className="space-y-4">
-      <Calendar
-        mode="single"
-        selected={selectedDate}
-        onSelect={handleSelect}
-        month={currentMonth} // Control the displayed month
-        onMonthChange={onMonthChange} // Let parent handle month state
-        className="rounded-md border"
-        modifiers={{
-          available: availableModifiers,
-          today: [new Date()], // Keep today highlighted
-          // selected: selectedDate ? [selectedDate] : [], // Already handled by `selected` prop
-        }}
-        modifiersClassNames={{
-          available: "bg-green-200 text-green-900 hover:bg-green-400 enabled:hover:text-green-900",
-          today: "bg-blue-50 text-blue-900 font-bold",
-          selected: "border-2 border-blue-500 text-foreground hover:border-blue-600",
-        }}
-        // Disable days that are not marked as available in the data
-        disabled={(day) => !isDayAvailable(day)}
-        // Ensure already selected available days are clickable for potential deselection logic later
-        // onDayClick logic now handled by onSelect + disabled check
-      />
-       <div className="flex justify-between">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToPreviousMonth}
-          >
-            <ChevronLeft className="h-4 w-4 mr-2" />
-            Previous Month
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToNextMonth}
-          >
-            Next Month
-            <ChevronRight className="h-4 w-4 ml-2" />
-          </Button>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Calendar */}
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border/50 p-4">
+          {/* Month Navigation */}
+          <div className="flex justify-between items-center mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h3 className="font-semibold text-foreground">
+              {format(currentMonth, 'MMMM yyyy')}
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Calendar Grid */}
+          {isLoading ? (
+            <div className="h-[300px] flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleSelect}
+              month={currentMonth}
+              onMonthChange={setCurrentMonth}
+              className="w-full flex justify-center"
+              modifiers={{
+                available: availableDates,
+                unavailable: unavailableDates,
+              }}
+              modifiersClassNames={{
+                available: "bg-emerald-500/20 text-emerald-700 font-medium hover:bg-emerald-500/30 dark:text-emerald-400",
+                unavailable: "bg-rose-500/10 text-rose-700/50 font-medium cursor-not-allowed dark:text-rose-400/50",
+                selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
+              }}
+            />
+          )}
         </div>
+
+        {/* Legend */}
+        <div className="flex items-center justify-center gap-6 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
+            <span className="text-muted-foreground">Available</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-rose-500/20 border border-rose-500/30" />
+            <span className="text-muted-foreground">Unavailable</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Slots Panel */}
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-foreground">
+              {format(selectedDate, 'EEEE, MMMM d')}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {selectedDateSlots.length > 0
+                ? `${availableCount} available, ${bookedCount} booked`
+                : 'No scheduled slots'
+              }
+            </p>
+          </div>
+          {selectedDateSlots.length > 0 && (
+            <div className="flex gap-2">
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                <CalendarCheck className="h-3 w-3 mr-1" />
+                {availableCount}
+              </Badge>
+              <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">
+                <CalendarX className="h-3 w-3 mr-1" />
+                {bookedCount}
+              </Badge>
+            </div>
+          )}
+        </div>
+
+        {/* Slots List */}
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+          </div>
+        ) : selectedDateSlots.length > 0 ? (
+          <ScrollArea className="h-[350px] rounded-xl border border-border/50 p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {selectedDateSlots.map((slot) => {
+                const isBooked = slot.status === 'booked' || slot.status === 'busy';
+                const isSelected = selectedSlotId === slot.id;
+
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => handleSlotClick(slot)}
+                    disabled={isBooked}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border transition-all text-left",
+                      isBooked
+                        ? "bg-rose-500/5 border-rose-500/20 text-rose-600/60 cursor-not-allowed"
+                        : "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10 hover:border-emerald-500/40 cursor-pointer dark:text-emerald-400",
+                      isSelected && !isBooked && "ring-2 ring-primary ring-offset-2"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className={cn(
+                        "h-4 w-4",
+                        isBooked ? "text-rose-400" : "text-emerald-500"
+                      )} />
+                      <span className="font-mono text-sm">
+                        {format(new Date(slot.start), 'h:mm a')} - {format(new Date(slot.end), 'h:mm a')}
+                      </span>
+                    </div>
+                    {isBooked && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-rose-500/10 text-rose-600">
+                        Booked
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-[200px] rounded-xl border border-border/50 bg-muted/20">
+            <Clock className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm">No slots for this date</p>
+            <p className="text-muted-foreground/60 text-xs mt-1">
+              Select an available day on the calendar
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

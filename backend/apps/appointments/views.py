@@ -4,13 +4,13 @@ from rest_framework.response import Response
 import datetime
 
 from .models import (
-    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule, 
-    ScheduleFHIRMapping, RecurringSchedule
+    AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
+    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 )
 from .serializers import (
     AppointmentTypeSerializer, AppointmentFHIRMappingSerializer,
-    RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer, 
-    RecurringScheduleSerializer
+    RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer,
+    RecurringScheduleSerializer, BlockedTimeSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
 from .services import AvailabilityService, ConflictPreventionService, AppointmentTypeService
@@ -234,7 +234,8 @@ class AppointmentViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def available_slots(self, request):
         """
-        Get available slots for scheduling.
+        Get available slots for scheduling using just-in-time computation.
+        This computes slots on-demand from recurring schedules without pre-generation.
         """
         practitioner_id = request.query_params.get('practitioner_id')
         start_date = request.query_params.get('start_date')
@@ -248,14 +249,23 @@ class AppointmentViewSet(viewsets.ViewSet):
             )
 
         try:
-            slots = AvailabilityService.get_available_slots(
+            # Use new just-in-time computation method
+            slots = AvailabilityService.compute_available_slots(
                 practitioner_id=practitioner_id,
                 start_date=start_date,
                 end_date=end_date,
                 appointment_type_id=appointment_type_id
             )
 
-            return Response(slots)
+            # Filter to only free slots by default, unless status param says otherwise
+            status_filter = request.query_params.get('status', 'free')
+            if status_filter:
+                slots = [slot for slot in slots if slot['status'] == status_filter]
+
+            return Response({
+                "total": len(slots),
+                "slots": slots
+            })
 
         except Exception as e:
             return Response(
@@ -672,16 +682,104 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
     serializer_class = RecurringScheduleSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
 
+    def get_queryset(self):
+        """
+        Filter schedules by practitioner and active status.
+        """
+        queryset = RecurringSchedule.objects.all()
+        practitioner_id = self.request.query_params.get('practitioner')
+        is_active = self.request.query_params.get('is_active')
+
+        if practitioner_id:
+            queryset = queryset.filter(practitioner_id=practitioner_id)
+        
+        if is_active is not None:
+            active_bool = is_active.lower() == 'true'
+            queryset = queryset.filter(is_active=active_bool)
+            
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
+    @action(detail=False, methods=['post'])
+    def preview_slots(self, request):
+        """
+        Preview slots for a given schedule configuration.
+        """
+        try:
+            start_time_str = request.data.get('start_time')
+            end_time_str = request.data.get('end_time')
+            slot_duration = int(request.data.get('slot_duration', 30))
+            breaks = request.data.get('breaks', [])
+            
+            if not start_time_str or not end_time_str:
+                return Response(
+                    {"error": "start_time and end_time are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            start_time = datetime.datetime.strptime(start_time_str, '%H:%M').time()
+            end_time = datetime.datetime.strptime(end_time_str, '%H:%M').time()
+            
+            # Generate preview slots
+            slots = []
+            current_time = start_time
+            
+            while current_time < end_time:
+                # Calculate slot end time
+                # We need a dummy date to do time arithmetic
+                dummy_date = datetime.date.today()
+                slot_end_datetime = datetime.datetime.combine(dummy_date, current_time) + datetime.timedelta(minutes=slot_duration)
+                slot_end_time = slot_end_datetime.time()
+
+                # Ensure slot doesn't go beyond the schedule end time
+                if slot_end_time > end_time:
+                    break
+
+                # Check if slot overlaps with any break
+                is_break_time = False
+                for break_period in breaks:
+                    break_start = datetime.datetime.strptime(break_period['start'], '%H:%M').time()
+                    break_end = datetime.datetime.strptime(break_period['end'], '%H:%M').time()
+                    
+                    if current_time < break_end and slot_end_time > break_start:
+                        is_break_time = True
+                        if slot_end_time < break_end:
+                            current_time = break_end
+                        else:
+                            if current_time >= break_start:
+                                current_time = break_end
+                        break
+                
+                if not is_break_time:
+                    slots.append({
+                        "start": current_time.strftime('%H:%M'),
+                        "end": slot_end_time.strftime('%H:%M')
+                    })
+                    current_time = slot_end_time
+            
+            return Response({"slots": slots})
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to preview slots: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 
 class BatchGenerationViewSet(viewsets.ViewSet):
     """
     ViewSet for batch generation of slots.
+
+    DEPRECATED: This endpoint is deprecated as of the new just-in-time slot computation.
+    Slots are now computed on-demand when requested via the available_slots endpoint.
+    This approach is more efficient and doesn't require pre-generation.
+
+    This endpoint is kept for backwards compatibility but will be removed in a future version.
     """
     permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
 
@@ -689,7 +787,15 @@ class BatchGenerationViewSet(viewsets.ViewSet):
     def generate_slots(self, request):
         """
         Generate slots for all practitioners with active recurring schedules.
+
+        DEPRECATED: Use the just-in-time computation approach instead.
         """
+        import warnings
+        warnings.warn(
+            "Batch slot generation is deprecated. Slots are now computed on-demand.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         try:
             days = request.data.get('days', 14)
 
@@ -718,5 +824,106 @@ class BatchGenerationViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response(
                 {"error": f"Failed to batch generate slots: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class BlockedTimeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing blocked times (one-off schedule exceptions).
+    Blocked times override recurring schedules for specific dates/times.
+    """
+    queryset = BlockedTime.objects.all()
+    serializer_class = BlockedTimeSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+
+    def get_queryset(self):
+        """
+        Filter blocked times by practitioner and date range.
+        """
+        queryset = BlockedTime.objects.all()
+
+        practitioner_id = self.request.query_params.get('practitioner_id')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if practitioner_id:
+            queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        if start_date:
+            queryset = queryset.filter(date__gte=start_date)
+
+        if end_date:
+            queryset = queryset.filter(date__lte=end_date)
+
+        return queryset.select_related('practitioner', 'practitioner__staff', 'practitioner__staff__user')
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        """
+        Create multiple blocked times at once.
+        Useful for blocking vacation periods or multiple days.
+
+        Request body:
+        {
+            "practitioner_id": "uuid",
+            "start_date": "2025-12-01",
+            "end_date": "2025-12-15",
+            "reason": "Vacation",
+            "is_all_day": true
+        }
+        """
+        try:
+            practitioner_id = request.data.get('practitioner_id')
+            start_date_str = request.data.get('start_date')
+            end_date_str = request.data.get('end_date')
+            reason = request.data.get('reason')
+            is_all_day = request.data.get('is_all_day', True)
+            start_time = request.data.get('start_time')
+            end_time = request.data.get('end_time')
+
+            if not all([practitioner_id, start_date_str, end_date_str, reason]):
+                return Response(
+                    {"error": "Missing required fields: practitioner_id, start_date, end_date, reason"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+
+            # Create blocked time for each day in the range
+            blocked_times = []
+            current_date = start_date
+
+            while current_date <= end_date:
+                blocked_time = BlockedTime.objects.create(
+                    practitioner_id=practitioner_id,
+                    date=current_date,
+                    start_time=start_time if start_time else datetime.time(0, 0),
+                    end_time=end_time if end_time else datetime.time(23, 59),
+                    reason=reason,
+                    is_all_day=is_all_day,
+                    created_by=request.user,
+                    updated_by=request.user
+                )
+                blocked_times.append(blocked_time)
+                current_date += datetime.timedelta(days=1)
+
+            serializer = self.get_serializer(blocked_times, many=True)
+
+            return Response({
+                "message": f"Created {len(blocked_times)} blocked time(s)",
+                "blocked_times": serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to create blocked times: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

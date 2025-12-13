@@ -16,9 +16,10 @@ import { Skeleton } from '@/components/ui/skeleton';
  * Dynamic form component for clinical notes
  * Renders different form fields based on template structure
  */
-const DynamicNoteForm = ({ 
-  template, 
-  encounterId, 
+const DynamicNoteForm = ({
+  template,
+  encounterId,
+  patientId,
   onSuccess,
   isLoading = false
 }) => {
@@ -75,7 +76,8 @@ const DynamicNoteForm = ({
       // Prepare data for submission
       const noteData = {
         template: template.id,
-        encounter_id: encounterId,
+        encounter: encounterId,
+        patient: patientId,
         data: data
       };
 

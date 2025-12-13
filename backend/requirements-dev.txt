@@ -1,0 +1,24 @@
+# Testing Dependencies for HMS Backend
+# Install with: pip install -r requirements-dev.txt
+
+# Test Framework
+pytest==7.4.3
+pytest-django==4.7.0
+pytest-cov==4.1.0
+pytest-xdist==3.5.0
+pytest-sugar==0.9.7
+pytest-clarity==1.0.1
+
+# Test Data Generation
+factory-boy==3.3.0
+Faker==20.1.0
+
+# Mocking & Time Control
+freezegun==1.4.0
+responses==0.24.1
+
+# Code Quality (already in requirements.txt, but ensuring latest)
+flake8==6.1.0
+
+# Coverage Reporting
+coverage==7.3.2

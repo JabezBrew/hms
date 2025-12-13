@@ -5,16 +5,21 @@ from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
 from django.db.models import Q
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
 from .serializers import (
-    UserSerializer, StaffSerializer, PractitionerProfileSerializer, 
-    PatientProfileSerializer, UserCreateSerializer, PractitionerFHIRMappingSerializer,
-    StaffRegistrationSerializer
+    UserSerializer, UserListSerializer, UserCreateSerializer,
+    UserWithAccessContextSerializer,
+    StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
+    PractitionerProfileSerializer, PractitionerProfileListSerializer,
+    PatientProfileSerializer, PatientProfileListSerializer,
+    PractitionerFHIRMappingSerializer,
+    UserPatientListSerializer, UserPatientListCreateSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
 from .rbac import (
     IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsLabTechnician,
-    IsPharmacist, IsBillingOfficer, IsPatient, setup_groups_and_permissions
+    IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
+    setup_groups_and_permissions
 )
 from ..fhir_client.client import fhir_client
 
@@ -50,7 +55,7 @@ class UserViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             permission_classes = [permissions.IsAuthenticated, IsAdminOrSelf]
-        elif self.action == 'me':
+        elif self.action in ['me', 'change_password']:
             permission_classes = [permissions.IsAuthenticated]
         else:
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
@@ -59,6 +64,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return UserCreateSerializer
+        elif self.action == 'list':
+            return UserListSerializer
         return UserSerializer
 
     def get_queryset(self):
@@ -75,9 +82,10 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def me(self, request):
         """
-        Get the current user's profile.
+        Get the current user's profile with access context.
+        Includes off-site status and read-only mode information.
         """
-        serializer = self.get_serializer(request.user)
+        serializer = UserWithAccessContextSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'])
@@ -113,6 +121,11 @@ class StaffViewSet(viewsets.ModelViewSet):
     queryset = Staff.objects.all()
     serializer_class = StaffSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return StaffListSerializer
+        return StaffSerializer
 
     def get_permissions(self):
         """
@@ -195,6 +208,11 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
     serializer_class = PractitionerProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PractitionerProfileListSerializer
+        return PractitionerProfileSerializer
+
     def get_permissions(self):
         """
         Instantiate and return the list of permissions that this view requires.
@@ -223,17 +241,24 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Filter the queryset based on the user's role.
+        Filter the queryset based on the user's role and query parameters.
         """
         user = self.request.user
         if user.user_type == 'admin':
-            return PractitionerProfile.objects.all()
+            queryset = PractitionerProfile.objects.all()
         elif user.user_type in ['doctor', 'nurse']:
             # These roles can see all practitioners but not modify them
-            return PractitionerProfile.objects.all()
+            queryset = PractitionerProfile.objects.all()
         else:
             # Other roles can't see practitioners
             return PractitionerProfile.objects.none()
+
+        # Filter by user_type (e.g., ?user_type=doctor to get only doctors)
+        user_type_filter = self.request.query_params.get('user_type')
+        if user_type_filter:
+            queryset = queryset.filter(staff__user__user_type=user_type_filter)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -398,10 +423,21 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
 class PatientProfileViewSet(viewsets.ModelViewSet):
     """
     API endpoint for patient profiles.
+    Shows most recently registered patients first with pagination.
+    Includes current ward information in each patient record.
     """
-    queryset = PatientProfile.objects.all()
+    queryset = PatientProfile.objects.select_related('user').prefetch_related(
+        'admissions',
+        'admissions__bed',
+        'admissions__bed__ward'
+    ).order_by('-created_at')
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PatientProfileListSerializer
+        return PatientProfileSerializer
 
     def get_permissions(self):
         """
@@ -436,14 +472,23 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter the queryset based on the user's role.
+        Returns patients ordered by most recently registered first.
+        Includes current ward information via prefetched admissions.
         """
         user = self.request.user
+
+        # Base queryset with optimization and ordering
+        base_qs = PatientProfile.objects.select_related('user').prefetch_related(
+            'admissions',
+            'admissions__bed',
+            'admissions__bed__ward'
+        ).order_by('-created_at')
 
         # Patients can only see their own profile
         if user.user_type == 'patient':
             try:
                 patient_profile = PatientProfile.objects.get(user=user)
-                return PatientProfile.objects.filter(id=patient_profile.id)
+                return base_qs.filter(id=patient_profile.id)
             except PatientProfile.DoesNotExist:
                 return PatientProfile.objects.none()
 
@@ -451,11 +496,11 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
         elif user.user_type == 'doctor':
             # In a real implementation, this would filter based on doctor-patient relationships
             # For simplicity, we're allowing doctors to see all patients
-            return PatientProfile.objects.all()
+            return base_qs
 
         # Admin, nurse, receptionist, lab tech, pharmacist, billing can see all patients
         elif user.user_type in ['admin', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']:
-            return PatientProfile.objects.all()
+            return base_qs
 
         # Other roles can't see patients
         else:
@@ -466,3 +511,147 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
+class UserPatientListViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing user's personal patient list (My Patients).
+    Each user can maintain their own list of patients for quick access.
+    Only clinical providers (doctors, nurses, lab technicians, pharmacists) can access this feature.
+    """
+    serializer_class = UserPatientListSerializer
+    permission_classes = [permissions.IsAuthenticated, IsClinicalProvider]
+
+    def get_queryset(self):
+        """Return only the current user's patient list."""
+        return UserPatientList.objects.filter(
+            user=self.request.user
+        ).select_related(
+            'patient',
+            'patient__user'
+        ).prefetch_related(
+            'patient__admissions',
+            'patient__admissions__bed',
+            'patient__admissions__bed__ward'
+        )
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserPatientListCreateSerializer
+        return UserPatientListSerializer
+
+    def perform_create(self, serializer):
+        """Set the user when creating a new list entry."""
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def toggle_pin(self, request, pk=None):
+        """Toggle the pinned status of a patient in the list."""
+        list_entry = self.get_object()
+        list_entry.is_pinned = not list_entry.is_pinned
+        list_entry.save(update_fields=['is_pinned'])
+        return Response({
+            'id': str(list_entry.id),
+            'is_pinned': list_entry.is_pinned,
+            'message': 'Pinned' if list_entry.is_pinned else 'Unpinned'
+        })
+
+    @action(detail=True, methods=['patch'])
+    def update_notes(self, request, pk=None):
+        """Update the notes for a patient in the list."""
+        list_entry = self.get_object()
+        notes = request.data.get('notes', '')
+        list_entry.notes = notes
+        list_entry.save(update_fields=['notes'])
+        return Response({
+            'id': str(list_entry.id),
+            'notes': list_entry.notes
+        })
+
+    @action(detail=False, methods=['post'])
+    def add_patient(self, request):
+        """
+        Add a patient to the user's list.
+        Accepts patient_id in the request body.
+        """
+        patient_id = request.data.get('patient_id')
+        if not patient_id:
+            return Response(
+                {'error': 'patient_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {'error': 'Patient not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if already in list
+        if UserPatientList.objects.filter(user=request.user, patient=patient).exists():
+            return Response(
+                {'error': 'Patient is already in your list'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create the list entry
+        list_entry = UserPatientList.objects.create(
+            user=request.user,
+            patient=patient,
+            notes=request.data.get('notes', ''),
+            is_pinned=request.data.get('is_pinned', False)
+        )
+
+        serializer = UserPatientListSerializer(list_entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['delete'])
+    def remove_patient(self, request):
+        """
+        Remove a patient from the user's list by patient_id.
+        Accepts patient_id as query parameter.
+        """
+        patient_id = request.query_params.get('patient_id')
+        if not patient_id:
+            return Response(
+                {'error': 'patient_id query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        deleted_count, _ = UserPatientList.objects.filter(
+            user=request.user,
+            patient_id=patient_id
+        ).delete()
+
+        if deleted_count == 0:
+            return Response(
+                {'error': 'Patient not in your list'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(
+            {'message': 'Patient removed from list'},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['get'])
+    def check_patient(self, request):
+        """
+        Check if a patient is in the user's list.
+        Accepts patient_id as query parameter.
+        """
+        patient_id = request.query_params.get('patient_id')
+        if not patient_id:
+            return Response(
+                {'error': 'patient_id query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        exists = UserPatientList.objects.filter(
+            user=request.user,
+            patient_id=patient_id
+        ).exists()
+
+        return Response({'in_list': exists})

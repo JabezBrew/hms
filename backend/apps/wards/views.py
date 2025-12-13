@@ -8,16 +8,19 @@ from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta, datetime
 
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
-    WardSerializer, BedSerializer, AdmissionSerializer, 
-    BedAllocationLogSerializer, WardTransferSerializer,
-    AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer
+    WardSerializer, WardListSerializer,
+    BedSerializer, BedListSerializer,
+    AdmissionSerializer, AdmissionListSerializer,
+    BedAllocationLogSerializer,
+    WardTransferSerializer, WardTransferListSerializer,
+    AdmissionCreateSerializer, DischargeSerializer, TransferRequestSerializer,
+    WardSectionSerializer, WardSectionListSerializer, BedAmenitySerializer,
+    WardStaffAssignmentListSerializer, WardStaffAssignmentDetailSerializer,
+    WardStaffAssignmentCreateSerializer, StaffRoleSerializer
 )
 from ..users.permissions import IsAdminOrOwner
-from ..fhir_client.client import fhir_client
-from ..fhir_client.utils import create_reference, create_period, generate_fhir_id
-from .proxies import EncounterProxy
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -35,6 +38,11 @@ class WardViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward_type', 'is_active']
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardListSerializer
+        return WardSerializer
 
     def get_queryset(self):
         """
@@ -126,6 +134,34 @@ class WardViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = BedSerializer(beds, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def staff(self, request, pk=None):
+        """
+        Get staff assigned to this ward.
+
+        Query Parameters:
+        - category: Filter by role category ('nursing', 'medical', 'allied')
+
+        Returns lightweight list optimized for dropdowns (nurse selection, etc.)
+        """
+        ward = self.get_object()
+        category = request.query_params.get('category', None)
+
+        # Get active staff assignments with optimized joins
+        assignments = ward.staff_assignments.filter(
+            is_active=True
+        ).select_related(
+            'practitioner__staff__user',
+            'role'
+        )
+
+        # Filter by role category if provided
+        if category:
+            assignments = assignments.filter(role__category=category)
+
+        serializer = WardStaffAssignmentListSerializer(assignments, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
@@ -346,6 +382,11 @@ class BedViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['ward', 'status', 'bed_type']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BedListSerializer
+        return BedSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
@@ -395,6 +436,61 @@ class BedViewSet(viewsets.ModelViewSet):
         serializer = BedAllocationLogSerializer(logs, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """
+        Get available beds with optional filters.
+        Filters: ward, section, gender (M/F for patient), accommodation_tier,
+                 isolation_capable, amenities (comma-separated codes)
+        """
+        queryset = Bed.objects.select_related('ward', 'section').prefetch_related('amenities').filter(status='available')
+
+        # Filter by ward
+        ward_id = request.query_params.get('ward')
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        # Filter by section
+        section_id = request.query_params.get('section')
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+
+        # Filter by gender compatibility
+        gender = request.query_params.get('gender')
+        if gender:
+            # Exclude beds in male-only sections if patient is female
+            if gender == 'F':
+                queryset = queryset.exclude(section__gender_restriction='male_only')
+            # Exclude beds in female-only sections if patient is male
+            elif gender == 'M':
+                queryset = queryset.exclude(section__gender_restriction='female_only')
+
+        # Filter by accommodation tier
+        accommodation_tier = request.query_params.get('accommodation_tier')
+        if accommodation_tier:
+            queryset = queryset.filter(
+                Q(accommodation_tier=accommodation_tier) |
+                Q(accommodation_tier__isnull=True, section__accommodation_tier=accommodation_tier)
+            )
+
+        # Filter by isolation capability
+        isolation_capable = request.query_params.get('isolation_capable')
+        if isolation_capable and isolation_capable.lower() == 'true':
+            queryset = queryset.filter(
+                Q(is_isolation_capable=True) |
+                Q(section__is_isolation_capable=True)
+            )
+
+        # Filter by required amenities
+        amenities = request.query_params.get('amenities')
+        if amenities:
+            amenity_codes = [code.strip() for code in amenities.split(',')]
+            for code in amenity_codes:
+                queryset = queryset.filter(amenities__code=code)
+
+        serializer = BedListSerializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class AdmissionViewSet(viewsets.ModelViewSet):
     """
@@ -415,6 +511,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return AdmissionCreateSerializer
+        elif self.action == 'list':
+            return AdmissionListSerializer
         return AdmissionSerializer
 
     def perform_create(self, serializer):
@@ -430,36 +528,36 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 daily_rate=bed.total_rate if bed else 0
             )
 
-            # Create FHIR Encounter if fhir_encounter_id is not provided
-            if not admission.fhir_encounter_id:
+            # Create local Encounter (syncs to FHIR in background)
+            try:
+                encounter = Encounter.objects.create(
+                    patient=admission.patient,
+                    practitioner=admission.admitting_doctor,
+                    encounter_type='inpatient',
+                    status='in-progress',
+                    start_time=admission.admission_date,
+                    service_type=f"Admission to {admission.bed.ward.name}",
+                    location=admission.bed.ward.name,
+                    admission=admission,
+                    created_by=self.request.user,
+                )
+
+                # Update the admission with the encounter reference (for backwards compatibility)
+                admission.fhir_encounter_id = str(encounter.id)
+                admission.save(update_fields=['fhir_encounter_id'])
+
+                # Queue FHIR sync in background
                 try:
-                    # Get practitioner ID if available
-                    # Note: admitting_doctor is a PractitionerProfile, not StaffProfile
-                    practitioner_id = None
-                    if admission.admitting_doctor and admission.admitting_doctor.fhir_practitioner_id:
-                        practitioner_id = admission.admitting_doctor.fhir_practitioner_id
+                    from .tasks import sync_encounter_to_fhir
+                    sync_encounter_to_fhir.delay(str(encounter.id))
+                except Exception:
+                    pass  # Celery not available, will sync later
 
-                    # Create FHIR Encounter using EncounterProxy
-                    fhir_encounter = EncounterProxy.create(
-                        patient_id=admission.patient.fhir_patient_id,
-                        practitioner_id=practitioner_id,
-                        encounter_type="inpatient",
-                        status="in-progress",
-                        start_time=admission.admission_date,
-                        service_type=f"Admission to {admission.bed.ward.name}",
-                        location=admission.bed.ward.name
-                    )
-
-                    # Update the admission with the FHIR encounter ID
-                    admission.fhir_encounter_id = fhir_encounter["id"]
-                    admission.save()
-
-                except Exception as e:
-                    # Log the error but continue (we don't want to roll back the admission)
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to create FHIR Encounter for admission {admission.id}: {str(e)}", exc_info=True)
-                    print(f"Failed to create FHIR Encounter: {str(e)}")
+            except Exception as e:
+                # Log the error but continue (we don't want to roll back the admission)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
 
             # Store the previous bed status before updating
             previous_status = bed.status
@@ -500,18 +598,20 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 discharge_notes = serializer.validated_data.get('discharge_notes', '')
                 admission.discharge_patient(discharge_notes)
 
-                # Update FHIR Encounter if available
-                if admission.fhir_encounter_id:
+                # Update local Encounter if linked
+                if hasattr(admission, 'encounter') and admission.encounter:
                     try:
-                        # Update the encounter using EncounterProxy
-                        EncounterProxy.update(
-                            encounter_id=admission.fhir_encounter_id,
-                            status="finished",
-                            end_time=admission.actual_discharge_date
-                        )
+                        admission.encounter.finish(end_time=admission.actual_discharge_date)
+                        # Queue FHIR sync in background
+                        try:
+                            from .tasks import sync_encounter_to_fhir
+                            sync_encounter_to_fhir.delay(str(admission.encounter.id))
+                        except Exception:
+                            pass
                     except Exception as e:
-                        # Log the error but continue
-                        print(f"Failed to update FHIR Encounter: {str(e)}")
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Failed to update Encounter: {str(e)}")
 
                 # Create a bed allocation log
                 BedAllocationLog.objects.create(
@@ -549,6 +649,11 @@ class WardTransferViewSet(viewsets.ModelViewSet):
     serializer_class = WardTransferSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     filterset_fields = ['patient', 'from_admission', 'to_admission', 'created_by']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardTransferListSerializer
+        return WardTransferSerializer
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -592,9 +697,21 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     created_by=request.user
                 )
 
+                # Update bed statuses
+                source_bed = from_admission.bed
+                source_bed.status = 'available'
+                source_bed.save(update_fields=['status', 'updated_at'])
+
+                to_bed.status = 'occupied'
+                to_bed.save(update_fields=['status', 'updated_at'])
+
+                # Update source admission status
+                from_admission.status = 'transferred'
+                from_admission.save(update_fields=['status', 'updated_at'])
+
                 # Create bed allocation logs
                 BedAllocationLog.objects.create(
-                    bed=from_admission.bed,
+                    bed=source_bed,
                     previous_status='occupied',
                     new_status='available',
                     admission=from_admission,
@@ -607,7 +724,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     previous_status='available',
                     new_status='occupied',
                     admission=to_admission,
-                    notes=f"Patient transferred from {from_admission.bed.ward.name}",
+                    notes=f"Patient transferred from {source_bed.ward.name}",
                     created_by=request.user
                 )
 
@@ -617,3 +734,223 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 })
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class WardSectionViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for ward sections.
+    Supports CRUD operations for managing sections within wards.
+    """
+    queryset = WardSection.objects.select_related('ward').prefetch_related('beds').all()
+    serializer_class = WardSectionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    filterset_fields = ['ward', 'gender_restriction', 'accommodation_tier', 'is_isolation_capable', 'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['display_order', 'name', 'created_at']
+    ordering = ['ward', 'display_order', 'name']
+    pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return WardSectionListSerializer
+        return WardSectionSerializer
+
+    def get_queryset(self):
+        """
+        Override to allow filtering by ward and add search.
+        """
+        queryset = super().get_queryset()
+        ward_id = self.request.query_params.get('ward', None)
+        search_query = self.request.query_params.get('search', None)
+
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['get'])
+    def beds(self, request, pk=None):
+        """
+        Get all beds in this section.
+        """
+        section = self.get_object()
+        beds = section.beds.all()
+        serializer = BedListSerializer(beds, many=True)
+        return Response(serializer.data)
+
+
+class BedAmenityViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for bed amenities.
+    Supports CRUD operations for managing amenity types.
+    """
+    queryset = BedAmenity.objects.all()
+    serializer_class = BedAmenitySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['category', 'is_active']
+    search_fields = ['name', 'code', 'description']
+    ordering_fields = ['category', 'name', 'additional_rate']
+    ordering = ['category', 'name']
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        """
+        Add search functionality.
+        """
+        queryset = super().get_queryset()
+        search_query = self.request.query_params.get('search', None)
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(code__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        return queryset
+
+    def get_permissions(self):
+        """
+        Only admins can create/update/delete amenities.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+
+class StaffRoleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for staff roles.
+    Roles are configurable per facility (Staff Nurse, Charge Nurse, etc.)
+    """
+    queryset = StaffRole.objects.all()
+    serializer_class = StaffRoleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['category', 'is_active']
+    search_fields = ['name', 'code', 'description']
+    ordering_fields = ['category', 'name']
+    ordering = ['category', 'name']
+
+    def get_queryset(self):
+        """Add search and filter only active by default."""
+        queryset = super().get_queryset()
+
+        # Filter active only unless explicitly requested
+        show_inactive = self.request.query_params.get('show_inactive', 'false')
+        if show_inactive.lower() != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        # Search
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(code__icontains=search_query)
+            )
+
+        return queryset
+
+    def get_permissions(self):
+        """Only admins can create/update/delete roles."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+
+class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for ward staff assignments.
+    Manages which practitioners are assigned to which wards.
+    """
+    queryset = WardStaffAssignment.objects.select_related(
+        'ward', 'practitioner__staff__user', 'role', 'assigned_by'
+    ).all()
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['ward', 'practitioner', 'role', 'is_active', 'is_primary']
+    ordering_fields = ['assigned_at', 'role__category', 'role__name']
+    ordering = ['role__category', 'role__name', '-assigned_at']
+
+    def get_permissions(self):
+        """Only admins can create/update/delete assignments."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return WardStaffAssignmentCreateSerializer
+        if self.action in ['update', 'partial_update']:
+            return WardStaffAssignmentCreateSerializer
+        return WardStaffAssignmentDetailSerializer
+
+    def get_queryset(self):
+        """
+        Filter by ward, practitioner, role category, or active status.
+        """
+        queryset = super().get_queryset()
+
+        # Filter by ward
+        ward_id = self.request.query_params.get('ward', None)
+        if ward_id:
+            queryset = queryset.filter(ward_id=ward_id)
+
+        # Filter by practitioner
+        practitioner_id = self.request.query_params.get('practitioner', None)
+        if practitioner_id:
+            queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        # Filter by role category
+        category = self.request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(role__category=category)
+
+        # Filter active only by default
+        show_inactive = self.request.query_params.get('show_inactive', 'false')
+        if show_inactive.lower() != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        """Set assigned_by on create."""
+        serializer.save(assigned_by=self.request.user)
+
+    def perform_update(self, serializer):
+        """Update the assignment."""
+        serializer.save()
+
+    @action(detail=False, methods=['get'])
+    def by_practitioner(self, request):
+        """
+        Get all ward assignments for a specific practitioner.
+        Used in Staff Detail page.
+
+        Query params:
+        - practitioner_id: UUID of the practitioner
+        """
+        practitioner_id = request.query_params.get('practitioner_id')
+        if not practitioner_id:
+            return Response(
+                {'error': 'practitioner_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        assignments = self.get_queryset().filter(
+            practitioner_id=practitioner_id,
+            is_active=True
+        )
+
+        serializer = WardStaffAssignmentDetailSerializer(assignments, many=True)
+        return Response(serializer.data)

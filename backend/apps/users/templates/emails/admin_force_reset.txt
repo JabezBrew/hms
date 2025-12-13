@@ -1,0 +1,18 @@
+{{ hospital_name }}
+===================
+
+YOUR PASSWORD HAS BEEN RESET
+
+Hello {{ user_name }},
+
+An administrator ({{ admin_name }}) has reset your password.
+
+Your new temporary password is:
+{{ temp_password }}
+
+Please log in at: {{ login_url }}
+
+IMPORTANT: Change this temporary password immediately after logging in.
+
+---
+This is an automated message. Please do not reply.

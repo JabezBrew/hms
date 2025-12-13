@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Calendar, AlertTriangle, Pill, FileText } from 'lucide-react';
+import { User, Calendar, AlertTriangle, Pill, FileText, Send, MessageCircle } from 'lucide-react';
 
 /**
  * PrepStep Component
@@ -33,6 +33,70 @@ export function PrepStep({ contextData, patient }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Referral Context - shown when consultation started from a referral */}
+      {prepData.referral && (
+        <Card className="border-[oklch(0.70_0.15_230_/_0.5)] bg-[oklch(0.70_0.15_230_/_0.05)]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-[oklch(0.70_0.15_230)]">
+              <Send className="h-5 w-5" />
+              Referral Details
+              <Badge variant="secondary" className="ml-2 bg-[oklch(0.70_0.15_230_/_0.2)] text-[oklch(0.70_0.15_230)]">
+                {prepData.referral.referral_number}
+              </Badge>
+              {prepData.referral.urgency && prepData.referral.urgency !== 'routine' && (
+                <Badge variant={prepData.referral.urgency === 'emergency' ? 'destructive' : 'warning'} className="ml-1">
+                  {prepData.referral.urgency.toUpperCase()}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Referring Provider */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Referring Doctor</p>
+                <p className="font-medium">{prepData.referral.referring_doctor || 'Unknown'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Department</p>
+                <p className="font-medium">{prepData.referral.referring_department || 'Unknown'}</p>
+              </div>
+            </div>
+
+            {/* Reason for Referral */}
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Reason for Referral</p>
+              <div className="p-3 bg-background rounded-lg border">
+                <p className="text-sm">{prepData.referral.reason}</p>
+              </div>
+            </div>
+
+            {/* Clinical Summary */}
+            {prepData.referral.clinical_summary && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Clinical Summary from Referring Provider</p>
+                <div className="p-3 bg-background rounded-lg border">
+                  <p className="text-sm whitespace-pre-wrap">{prepData.referral.clinical_summary}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Questions for Specialist */}
+            {prepData.referral.questions && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
+                  <MessageCircle className="h-4 w-4" />
+                  Questions for You to Address
+                </p>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-900">
+                  <p className="text-sm whitespace-pre-wrap">{prepData.referral.questions}</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Alerts */}
       {prepData.alerts && prepData.alerts.length > 0 && (

@@ -13,10 +13,14 @@ from .models import (
     PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt
 )
 from .serializers import (
-    ServiceCategorySerializer, ServiceSerializer, InsuranceProviderSerializer,
-    InsurancePlanSerializer, PatientInsuranceSerializer, InvoiceSerializer,
-    InvoiceItemSerializer, PaymentSerializer, ClaimSerializer, ReceiptSerializer,
-    InvoiceCreateUpdateSerializer
+    ServiceCategorySerializer, ServiceSerializer, ServiceListSerializer,
+    InsuranceProviderSerializer, InsurancePlanSerializer,
+    PatientInsuranceSerializer, PatientInsuranceListSerializer,
+    InvoiceSerializer, InvoiceListSerializer, InvoiceCreateUpdateSerializer,
+    InvoiceItemSerializer,
+    PaymentSerializer, PaymentListSerializer,
+    ClaimSerializer, ClaimListSerializer,
+    ReceiptSerializer
 )
 from ..users.permissions import IsAdminOrOwner
 
@@ -51,6 +55,11 @@ class ServiceViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description', 'code', 'category__name']
     ordering_fields = ['name', 'base_price', 'category__name', 'created_at']
     ordering = ['category__name', 'name']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ServiceListSerializer
+        return ServiceSerializer
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -143,6 +152,11 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['valid_from', 'valid_until', 'created_at']
     ordering = ['-valid_from']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PatientInsuranceListSerializer
+        return PatientInsuranceSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
@@ -193,6 +207,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return InvoiceCreateUpdateSerializer
+        elif self.action == 'list':
+            return InvoiceListSerializer
         return InvoiceSerializer
 
     def perform_create(self, serializer):
@@ -427,6 +443,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
     ordering_fields = ['payment_date', 'amount', 'created_at']
     ordering = ['-payment_date']
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PaymentListSerializer
+        return PaymentSerializer
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
@@ -472,6 +493,11 @@ class ClaimViewSet(viewsets.ModelViewSet):
     search_fields = ['claim_number', 'invoice__invoice_number', 'status', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
     ordering_fields = ['submission_date', 'status', 'claimed_amount', 'approved_amount', 'created_at']
     ordering = ['-submission_date']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ClaimListSerializer
+        return ClaimSerializer
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)

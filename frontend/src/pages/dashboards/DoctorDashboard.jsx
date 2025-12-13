@@ -1,6 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoctorDashboard } from '@/hooks/useDoctorDashboard';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +10,11 @@ import {
   CheckCircle,
   PlayCircle,
   RefreshCw,
+  ChevronRight,
+  AlertTriangle,
+  Stethoscope,
+  Send,
+  Inbox
 } from 'lucide-react';
 
 export default function DoctorDashboard() {
@@ -27,198 +31,338 @@ export default function DoctorDashboard() {
     navigate(`/workflows/consultation?${params.toString()}`);
   };
 
+  const handleViewPatient = (patientId) => {
+    if (patientId) {
+      navigate(`/patients/${patientId}`);
+    }
+  };
+
+  // Loading state
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="min-h-screen bg-background p-6 space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-64" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-destructive">Error Loading Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>{error.message}</p>
-          <Button onClick={() => refetch()} className="mt-4">
+      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+          </div>
+          <h2 className="font-display text-2xl text-foreground">Error Loading Dashboard</h2>
+          <p className="text-muted-foreground">{error.message}</p>
+          <Button onClick={() => refetch()} className="font-mono text-xs">
             <RefreshCw className="h-4 w-4 mr-2" />
             Retry
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
-  const statusColors = {
-    'arrived': 'bg-blue-100 text-blue-800',
-    'in-progress': 'bg-green-100 text-green-800',
-    'fulfilled': 'bg-gray-100 text-gray-800',
-    'booked': 'bg-purple-100 text-purple-800',
-    'cancelled': 'bg-red-100 text-red-800',
-  };
+  const todayDate = data.date
+    ? new Date(data.date).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      })
+    : new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      });
+
+  const totalAppointments = (data.upcoming?.length || 0) + (data.completed?.length || 0) + (data.current_patient ? 1 : 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Today's Clinic</h1>
-          <p className="text-muted-foreground mt-1">
-            {data.user_name} • {data.date ? new Date(data.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Today'}
-          </p>
+    <div className="min-h-screen bg-background">
+      {/* Page Header */}
+      <header className="bg-card border-b border-border px-6 py-8">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
+              {todayDate}
+            </p>
+            <h1 className="font-display text-4xl text-foreground tracking-tight">
+              Today's Clinic
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              {data.user_name && `Dr. ${data.user_name}`}
+              {totalAppointments > 0 && (
+                <span className="ml-2">
+                  · {totalAppointments} appointment{totalAppointments !== 1 ? 's' : ''} scheduled
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/sent')}
+              className="font-mono text-xs"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Sent Referrals
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/referrals/inbox')}
+              className="font-mono text-xs"
+            >
+              <Inbox className="h-4 w-4 mr-2" />
+              Referral Inbox
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="font-mono text-xs"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
-        <Button variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
+      </header>
 
-      {/* Current Patient */}
-      {data.current_patient ? (
-        <Card className="border-primary">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
+      <main className="p-6 space-y-6">
+        {/* Current Patient - Hero Card */}
+        {data.current_patient ? (
+          <article className={cn(
+            "relative bg-card border-2 border-primary/30 rounded-2xl p-6",
+            "shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
+            "animate-chronicle-enter"
+          )}>
+            {/* Status ribbon */}
+            <div className="status-ribbon status-ribbon-warning" />
+
+            <header className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <PlayCircle className="h-5 w-5 text-primary" />
-                  Current Patient
-                </CardTitle>
-                <CardDescription className="mt-1">
-                  {data.current_patient.time_display}
-                </CardDescription>
-              </div>
-              <Badge variant="default">In Progress</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium text-lg">{data.current_patient.patient_name}</span>
                 </div>
-                {data.current_patient.reason && (
-                  <p className="text-sm text-muted-foreground">
-                    Reason: {data.current_patient.reason}
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
+                    Current Patient
                   </p>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  Type: {data.current_patient.appointment_type}
-                </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {data.current_patient.time_display}
+                  </p>
+                </div>
               </div>
-              <Button onClick={() => handleStartConsultation(data.current_patient)}>
+              <span className="badge-chronicle-amber">In Progress</span>
+            </header>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-3">
+                <h2
+                  className="font-display text-3xl text-foreground cursor-pointer hover:text-primary transition-colors"
+                  onClick={() => handleViewPatient(data.current_patient.patient_id)}
+                >
+                  {data.current_patient.patient_name}
+                </h2>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  {data.current_patient.reason && (
+                    <span className="flex items-center gap-1.5">
+                      <Stethoscope className="h-3.5 w-3.5" />
+                      {data.current_patient.reason}
+                    </span>
+                  )}
+                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted">
+                    {data.current_patient.appointment_type}
+                  </span>
+                </div>
+              </div>
+              <Button
+                size="lg"
+                onClick={() => handleStartConsultation(data.current_patient)}
+                className="font-mono"
+              >
                 Begin Consultation
+                <ChevronRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No current patient</p>
-            <p className="text-sm text-muted-foreground mt-1">
+          </article>
+        ) : (
+          <article className={cn(
+            "bg-card/50 border border-border rounded-2xl p-12 text-center",
+            "animate-chronicle-enter"
+          )}>
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Clock className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="font-display text-xl text-foreground mb-2">No Current Patient</h3>
+            <p className="text-muted-foreground text-sm">
               {data.upcoming && data.upcoming.length > 0
                 ? 'Next patient arriving soon'
-                : 'No appointments scheduled'}
+                : 'No appointments scheduled for today'}
             </p>
-          </CardContent>
-        </Card>
-      )}
+          </article>
+        )}
 
-      {/* Upcoming Appointments */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Upcoming ({data.upcoming?.length || 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Upcoming Appointments */}
+        <section>
+          <header className="flex items-center gap-3 mb-4">
+            <Calendar className="h-5 w-5 text-muted-foreground" />
+            <h2 className="font-display text-2xl text-foreground">Upcoming</h2>
+            <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              {data.upcoming?.length || 0}
+            </span>
+          </header>
+
           {data.upcoming && data.upcoming.length > 0 ? (
             <div className="space-y-3">
-              {data.upcoming.map((appointment) => (
-                <div
+              {data.upcoming.map((appointment, index) => (
+                <AppointmentCard
                   key={appointment.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">{appointment.patient_name}</span>
-                      <Badge
-                        variant="outline"
-                        className={statusColors[appointment.status] || ''}
-                      >
-                        {appointment.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {appointment.time_display}
-                      </span>
-                      {appointment.reason && (
-                        <span>{appointment.reason}</span>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleStartConsultation(appointment)}
-                  >
-                    Start
-                  </Button>
-                </div>
+                  appointment={appointment}
+                  index={index}
+                  onStart={() => handleStartConsultation(appointment)}
+                  onViewPatient={() => handleViewPatient(appointment.patient_id)}
+                />
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No upcoming appointments
-            </p>
+            <div className="bg-card/30 border border-border rounded-xl p-8 text-center">
+              <p className="text-muted-foreground text-sm font-mono">
+                No upcoming appointments
+              </p>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
 
-      {/* Completed Today */}
-      {data.completed && data.completed.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              Completed Today ({data.completed.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        {/* Completed Today */}
+        {data.completed && data.completed.length > 0 && (
+          <section>
+            <header className="flex items-center gap-3 mb-4">
+              <CheckCircle className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+              <h2 className="font-display text-2xl text-foreground">Completed</h2>
+              <span className="font-mono text-xs text-[oklch(0.70_0.17_155)] bg-[oklch(0.70_0.17_155_/_0.1)] px-2 py-0.5 rounded-full">
+                {data.completed.length}
+              </span>
+            </header>
+
             <div className="space-y-2">
-              {data.completed.map((appointment) => (
-                <div
+              {data.completed.map((appointment, index) => (
+                <CompletedCard
                   key={appointment.id}
-                  className="flex items-center justify-between p-3 border rounded-lg opacity-60"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="font-medium">{appointment.patient_name}</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {appointment.time_display} • {appointment.appointment_type}
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="bg-green-100 text-green-800">
-                    Completed
-                  </Badge>
-                </div>
+                  appointment={appointment}
+                  index={index}
+                  onViewPatient={() => handleViewPatient(appointment.patient_id)}
+                />
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
+      </main>
     </div>
+  );
+}
+
+/**
+ * AppointmentCard - Upcoming appointment card
+ */
+function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
+  const getStatusBadge = (status) => {
+    const statusMap = {
+      'arrived': { class: 'badge-chronicle-emerald', label: 'Arrived' },
+      'booked': { class: 'badge-chronicle-sky', label: 'Booked' },
+      'in-progress': { class: 'badge-chronicle-amber', label: 'In Progress' },
+      'cancelled': { class: 'badge-chronicle-rose', label: 'Cancelled' },
+    };
+    return statusMap[status] || { class: 'badge-chronicle-sky', label: status };
+  };
+
+  const badge = getStatusBadge(appointment.status);
+
+  return (
+    <article
+      className={cn(
+        "group relative bg-card/50 border border-border rounded-xl p-5",
+        "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
+        "transition-all duration-300",
+        "animate-chronicle-enter"
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <h3
+              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors"
+              onClick={onViewPatient}
+            >
+              {appointment.patient_name}
+            </h3>
+            <span className={badge.class}>{badge.label}</span>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-mono text-xs">
+              <Clock className="h-3 w-3" />
+              {appointment.time_display}
+            </span>
+            {appointment.reason && (
+              <span>{appointment.reason}</span>
+            )}
+            <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted">
+              {appointment.appointment_type}
+            </span>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onStart}
+          className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          Start
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * CompletedCard - Completed appointment card (muted)
+ */
+function CompletedCard({ appointment, index, onViewPatient }) {
+  return (
+    <article
+      className={cn(
+        "bg-card/30 border border-border rounded-xl p-4 opacity-60",
+        "hover:opacity-80 transition-opacity cursor-pointer",
+        "animate-chronicle-enter"
+      )}
+      style={{ animationDelay: `${(index + 5) * 50}ms` }}
+      onClick={onViewPatient}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <CheckCircle className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
+          <div>
+            <h3 className="font-medium text-foreground">
+              {appointment.patient_name}
+            </h3>
+            <p className="font-mono text-xs text-muted-foreground">
+              {appointment.time_display} · {appointment.appointment_type}
+            </p>
+          </div>
+        </div>
+        <span className="badge-chronicle-emerald">Completed</span>
+      </div>
+    </article>
   );
 }

@@ -368,16 +368,17 @@ export default function CreateClinicalNotePage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h2 className="text-xl font-semibold">Create Note</h2>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setSelectedTemplate(null)}
                     >
                       Change Template
                     </Button>
                   </div>
-                  <DynamicNoteForm 
-                    template={selectedTemplate} 
+                  <DynamicNoteForm
+                    template={selectedTemplate}
                     encounterId={encounterId}
+                    patientId={encounter?.patient}
                     onSuccess={handleFormSuccess}
                   />
                 </div>
@@ -390,9 +391,10 @@ export default function CreateClinicalNotePage() {
 
             <TabsContent value="form" className="space-y-4">
               {selectedTemplate && (
-                <DynamicNoteForm 
-                  template={selectedTemplate} 
+                <DynamicNoteForm
+                  template={selectedTemplate}
                   encounterId={encounterId}
+                  patientId={encounter?.patient}
                   onSuccess={handleFormSuccess}
                 />
               )}

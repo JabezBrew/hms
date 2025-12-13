@@ -2,6 +2,52 @@
 
 This document provides an overview of the backend implementation for the Hospital Management System.
 
+## Getting Started
+
+### Quick Start
+
+To start the entire backend stack (Django, Celery, Redis) in one command:
+
+```bash
+cd backend
+./start.sh
+```
+
+This will automatically start:
+- Django development server (port 8000)
+- Celery worker (for background tasks)
+- Celery beat scheduler (for periodic tasks)
+- Redis server (port 6379, message broker)
+
+Press `Ctrl+C` to stop all services at once.
+
+### Prerequisites
+
+- Python 3.8+
+- Redis (will be checked by startup script)
+- Virtual environment with dependencies installed
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your configuration
+
+# Run migrations
+python manage.py migrate
+
+# Create superuser (optional)
+python manage.py createsuperuser
+```
+
+For more details on Celery and background tasks, see [README_CELERY.md](README_CELERY.md).
+
 ## Phase 2 Completion
 
 Phase 2 (Core Backend Development) has been fully implemented with the following components:

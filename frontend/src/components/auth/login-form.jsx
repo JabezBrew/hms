@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import {useState} from "react";
+import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../lib/auth.jsx"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -9,6 +10,7 @@ import { notifications } from "../../lib/notifications"
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate();
@@ -67,16 +69,31 @@ export function LoginForm() {
                   Forgot password?
                 </a>
               </div>
-              <Input
-                id="password"
-                type="password"
-                autoCapitalize="none"
-                autoComplete="current-password"
-                disabled={isLoading}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoCapitalize="none"
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}

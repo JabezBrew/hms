@@ -1,14 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { Plus, Trash2, CalendarIcon } from 'lucide-react';
+import { Plus, Trash2, CalendarIcon, Eye, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -37,13 +45,14 @@ import {
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 
-import { 
-  useCreateRecurringSchedule, 
-  useUpdateRecurringSchedule 
+import {
+  useCreateRecurringSchedule,
+  useUpdateRecurringSchedule
 } from '@/hooks/useAppointmentQueries';
-import { 
-  useSearchPractitioners 
+import {
+  useSearchPractitioners
 } from '@/hooks/useStaffQueries';
+import { previewSlots } from '@/lib/api';
 
 // Form validation schema
 const formSchema = z.object({
@@ -72,18 +81,25 @@ const formSchema = z.object({
   }),
   active_to: z.date().optional(),
   is_active: z.boolean().default(true),
+  breaks: z.array(z.object({
+    start: z.string().min(1, "Start time is required"),
+    end: z.string().min(1, "End time is required"),
+  })).optional(),
 });
 
 const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [previewData, setPreviewData] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const isEditing = !!initialData;
 
   // Use React Query hooks for data fetching
-  const { 
-    data: practitioners = [], 
-    isLoading, 
+  const {
+    data: practitioners = [],
+    isLoading,
     isError: isPractitionersError,
     error: practitionersError
   } = useSearchPractitioners(false, {
@@ -135,8 +151,41 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
       active_from: initialData?.active_from ? new Date(initialData.active_from) : new Date(),
       active_to: initialData?.active_to ? new Date(initialData.active_to) : undefined,
       is_active: initialData?.is_active ?? true,
+      breaks: initialData?.breaks || [],
     },
   });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "breaks",
+  });
+
+  const handlePreview = async () => {
+    const values = form.getValues();
+
+    // Validate required fields for preview
+    if (!values.start_time || !values.end_time || !values.slot_duration) {
+      toast.error("Please fill in start time, end time, and slot duration to preview slots.");
+      return;
+    }
+
+    setIsPreviewLoading(true);
+    try {
+      const result = await previewSlots({
+        start_time: values.start_time,
+        end_time: values.end_time,
+        slot_duration: values.slot_duration,
+        breaks: values.breaks || []
+      });
+      setPreviewData(result.slots);
+      setIsPreviewOpen(true);
+    } catch (error) {
+      console.error('Error previewing slots:', error);
+      toast.error("Failed to generate preview.");
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
 
   // Handle form submission
   const onSubmit = async (data) => {
@@ -208,9 +257,9 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
             <FormItem>
               <FormLabel>Schedule Name</FormLabel>
               <FormControl>
-                <Input 
-                  placeholder="e.g., Dr. Smith Regular Hours" 
-                  {...field} 
+                <Input
+                  placeholder="e.g., Dr. Smith Regular Hours"
+                  {...field}
                   disabled={submitting}
                 />
               </FormControl>
@@ -297,10 +346,10 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                                 return checked
                                   ? field.onChange([...field.value, day.id])
                                   : field.onChange(
-                                      field.value?.filter(
-                                        (value) => value !== day.id
-                                      )
-                                    );
+                                    field.value?.filter(
+                                      (value) => value !== day.id
+                                    )
+                                  );
                               }}
                               disabled={submitting}
                             />
@@ -361,6 +410,68 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
               </FormItem>
             )}
           />
+        </div>
+
+        {/* Breaks Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <FormLabel className="text-base">Breaks</FormLabel>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => append({ start: "", end: "" })}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Break
+            </Button>
+          </div>
+
+          {fields.length === 0 && (
+            <p className="text-sm text-muted-foreground italic">No breaks defined.</p>
+          )}
+
+          <div className="space-y-2">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex items-end gap-2">
+                <FormField
+                  control={form.control}
+                  name={`breaks.${index}.start`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel className="text-xs">Start</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`breaks.${index}.end`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel className="text-xs">End</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mb-2 text-destructive"
+                  onClick={() => remove(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Slot Duration */}
@@ -503,7 +614,53 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         />
 
         {/* Submit Button */}
-        <div className="flex justify-end">
+        <div className="flex justify-between pt-4">
+          <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handlePreview}
+                disabled={isPreviewLoading}
+              >
+                {isPreviewLoading ? (
+                  <>Generating Preview...</>
+                ) : (
+                  <>
+                    <Eye className="mr-2 h-4 w-4" />
+                    Preview Slots
+                  </>
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Slot Preview</DialogTitle>
+                <DialogDescription>
+                  Preview of slots generated based on current settings (for a single day).
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[300px] overflow-y-auto pr-2">
+                {previewData && previewData.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {previewData.map((slot, i) => (
+                      <div key={i} className="bg-secondary/50 p-2 rounded text-center text-sm border">
+                        {slot.start} - {slot.end}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No slots generated. Check your time range and breaks.
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Total slots: {previewData?.length || 0}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Button type="submit" disabled={submitting}>
             {submitting ? 'Saving...' : isEditing ? 'Update Schedule' : 'Create Schedule'}
           </Button>

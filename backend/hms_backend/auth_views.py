@@ -10,6 +10,8 @@ from django.contrib.auth import authenticate, login
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
 from .jwt_serializers import get_tokens_for_user
+from apps.audit.services import AuditService
+from apps.audit.models import AuditAction
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -87,6 +89,9 @@ class LogoutView(APIView):
     authentication_classes = []  # Don't require authentication
 
     def post(self, request, *args, **kwargs):
+        # Try to get user from request for audit logging
+        user = getattr(request, 'user', None) if hasattr(request, 'user') and request.user.is_authenticated else None
+
         try:
             # Get refresh token from cookie
             refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
@@ -103,6 +108,12 @@ class LogoutView(APIView):
             # If blacklisting fails, still proceed with logout
             pass
 
+        # Log the logout action
+        try:
+            AuditService.log_authentication(request, AuditAction.LOGOUT, success=True, user=user)
+        except Exception:
+            pass  # Don't let audit logging break logout
+
         response = Response({"detail": "Successfully logged out."})
         response.delete_cookie(
             settings.JWT_AUTH_REFRESH_COOKIE,
@@ -117,18 +128,73 @@ class LoginView(APIView):
     authentication_classes = []  # Disable authentication for login endpoint
     throttle_classes = [LoginRateThrottle]
 
+    def _get_client_ip(self, request):
+        """Get the client's real IP address from the request."""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+    def _get_access_context(self, request):
+        """Get off-site access context for the response."""
+        from apps.core.models import SiteNetwork, OffSiteAccessSettings
+
+        client_ip = self._get_client_ip(request)
+        is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
+        settings_obj = OffSiteAccessSettings.get_settings()
+
+        return {
+            'is_offsite': is_offsite,
+            'offsite_mode': settings_obj.offsite_mode,
+            'readonly_message': settings_obj.readonly_message if is_offsite and settings_obj.offsite_mode == 'readonly' else None,
+        }
 
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         password = request.data.get('password')
+
+        # Validate required fields before authentication (and before rate limiting counts)
+        if not email:
+            return Response(
+                {"email": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not password:
+            return Response(
+                {"password": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         user = authenticate(request, username=email, password=password)
 
         if user is not None:
             login(request, user)
 
+            # Log successful login
+            try:
+                AuditService.log_authentication(request, AuditAction.LOGIN, success=True, user=user)
+            except Exception:
+                pass  # Don't let audit logging break login
+
             # Generate tokens with custom claims
             tokens = get_tokens_for_user(user)
+
+            # Get off-site access context
+            access_context = self._get_access_context(request)
+
+            # Log off-site access if applicable
+            if access_context['is_offsite']:
+                try:
+                    AuditService.log_authentication(
+                        request,
+                        AuditAction.OFFSITE_ACCESS,
+                        success=True,
+                        user=user
+                    )
+                except Exception:
+                    pass  # Don't let audit logging break login
 
             response = Response({
                 'access': tokens['access'],
@@ -136,7 +202,10 @@ class LoginView(APIView):
                     'email': user.email,
                     'id': user.id,
                     'user_type': user.user_type,
-                }
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                },
+                'access_context': access_context,
             })
 
             response.set_cookie(
@@ -149,6 +218,12 @@ class LoginView(APIView):
             )
 
             return response
+
+        # Log failed login attempt
+        try:
+            AuditService.log_authentication(request, AuditAction.LOGIN_FAILED, success=False, email=email)
+        except Exception:
+            pass  # Don't let audit logging break login
 
         return Response(
             {"detail": "Invalid credentials"},

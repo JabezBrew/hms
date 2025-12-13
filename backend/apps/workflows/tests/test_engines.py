@@ -1,0 +1,726 @@
+"""
+Workflow engines tests for workflows app.
+
+Tests for:
+- ConsultationEngine
+- WardRoundEngine
+- AdmissionEngine
+- DischargeEngine
+- ClinicalNoteEngine
+- BaseWorkflowEngine
+"""
+import pytest
+from datetime import date, timedelta
+from unittest.mock import patch, MagicMock
+from django.utils import timezone
+from django.db import transaction
+
+from apps.workflows.models import (
+    ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
+    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WorkflowStatus, WorkflowType, ClinicalNoteType
+)
+from apps.workflows.engines import (
+    BaseWorkflowEngine, ConsultationEngine, WardRoundEngine,
+    AdmissionEngine, DischargeEngine, ClinicalNoteEngine
+)
+from apps.users.tests.factories import (
+    PatientProfileFactory, DoctorUserFactory, PractitionerProfileFactory
+)
+from .factories import (
+    ClinicalWorkflowFactory, ConsultationWorkflowFactory,
+    WardRoundWorkflowFactory, AdmissionWorkflowFactory,
+    DischargeWorkflowFactory
+)
+
+
+# =============================================================================
+# BaseWorkflowEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestBaseWorkflowEngine:
+    """Tests for BaseWorkflowEngine."""
+
+    def test_save_draft_updates_context(self, db):
+        """Test save_draft updates workflow context."""
+        workflow = ClinicalWorkflowFactory(
+            status=WorkflowStatus.IN_PROGRESS,
+            context_data={}
+        )
+
+        BaseWorkflowEngine.save_draft(
+            workflow,
+            {'new_field': 'new_value'}
+        )
+
+        workflow.refresh_from_db()
+        assert workflow.context_data['new_field'] == 'new_value'
+
+    def test_save_draft_preserves_existing_context(self, db):
+        """Test save_draft preserves existing context data."""
+        workflow = ClinicalWorkflowFactory(
+            status=WorkflowStatus.IN_PROGRESS,
+            context_data={'existing': 'data'}
+        )
+
+        BaseWorkflowEngine.save_draft(
+            workflow,
+            {'new_field': 'new_value'}
+        )
+
+        workflow.refresh_from_db()
+        assert workflow.context_data['existing'] == 'data'
+        assert workflow.context_data['new_field'] == 'new_value'
+
+    def test_cancel_workflow(self, db):
+        """Test cancel_workflow sets status to cancelled."""
+        workflow = ClinicalWorkflowFactory(
+            status=WorkflowStatus.IN_PROGRESS
+        )
+
+        BaseWorkflowEngine.cancel_workflow(workflow)
+
+        workflow.refresh_from_db()
+        assert workflow.status == WorkflowStatus.CANCELLED
+
+
+# =============================================================================
+# ConsultationEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestConsultationEngine:
+    """Tests for ConsultationEngine."""
+
+    def test_start_consultation(self, db):
+        """Test starting a consultation workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id
+        )
+
+        assert 'workflow' in result
+        assert 'consultation_data' in result
+        assert result['workflow'].workflow_type == WorkflowType.CONSULTATION
+        assert result['workflow'].status == WorkflowStatus.IN_PROGRESS
+        assert result['workflow'].patient == patient
+        assert result['workflow'].user == user
+
+    def test_start_consultation_with_appointment(self, db):
+        """Test starting consultation with appointment ID."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id,
+            appointment_id='apt-123'
+        )
+
+        assert result['consultation_data'].appointment_id == 'apt-123'
+        assert result['workflow'].context_data['appointment_id'] == 'apt-123'
+
+    def test_start_consultation_with_initial_data(self, db):
+        """Test starting consultation with initial data."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id,
+            initial_data={'reason': 'Follow-up visit'}
+        )
+
+        assert result['workflow'].context_data['reason'] == 'Follow-up visit'
+
+    def test_start_consultation_invalid_patient(self, db):
+        """Test starting consultation with invalid patient raises error."""
+        user = DoctorUserFactory()
+        import uuid
+
+        with pytest.raises(ValueError) as exc_info:
+            ConsultationEngine.start(
+                user=user,
+                patient_id=uuid.uuid4()
+            )
+
+        assert 'not found' in str(exc_info.value)
+
+    def test_start_consultation_loads_prep_data(self, db):
+        """Test starting consultation loads patient prep data."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id
+        )
+
+        prep_data = result['workflow'].context_data.get('prep_data', {})
+        assert 'patient_name' in prep_data
+        assert 'patient_id' in prep_data
+
+    def test_update_step_updates_context(self, db):
+        """Test update_step updates workflow context."""
+        consultation = ConsultationWorkflowFactory()
+        workflow = consultation.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.save()
+
+        result = ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'chief_complaint': 'Headache'},
+            consultation_fields={'chief_complaint': 'Headache'}
+        )
+
+        assert result['workflow'].context_data['chief_complaint'] == 'Headache'
+        assert result['consultation_data'].chief_complaint == 'Headache'
+
+    def test_update_step_marks_complete(self, db):
+        """Test update_step marks current step as complete."""
+        consultation = ConsultationWorkflowFactory()
+        workflow = consultation.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.current_step = 1
+        workflow.steps_completed = []
+        workflow.save()
+
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'data': 'value'}
+        )
+
+        assert 1 in workflow.steps_completed
+
+    def test_update_step_advances_to_next(self, db):
+        """Test update_step advances to next step when specified."""
+        consultation = ConsultationWorkflowFactory()
+        workflow = consultation.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.current_step = 1
+        workflow.save()
+
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'data': 'value'},
+            next_step=2
+        )
+
+        assert workflow.current_step == 2
+
+    def test_start_consultation_from_referral(self, db):
+        """Test starting consultation from a referral."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id,
+            initial_data={
+                'referral_id': 'ref-123',
+                'referral_reason': 'Chest pain evaluation',
+                'referral_clinical_summary': 'Patient with chest pain'
+            }
+        )
+
+        prep_data = result['workflow'].context_data.get('prep_data', {})
+        assert prep_data.get('chief_complaint') == 'Chest pain evaluation'
+
+
+# =============================================================================
+# WardRoundEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestWardRoundEngine:
+    """Tests for WardRoundEngine."""
+
+    @patch('apps.workflows.engines.Admission')
+    @patch('apps.workflows.engines.PatientProfile')
+    def test_start_ward_round(self, mock_patient, mock_admission, db):
+        """Test starting a ward round workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # Mock patient lookup
+        mock_patient.objects.get.return_value = patient
+
+        # Mock admission with bed and ward
+        mock_bed = MagicMock()
+        mock_bed.ward.name = 'Ward A'
+        mock_bed.bed_number = '101'
+        mock_bed.id = 'bed-123'
+
+        mock_ward = MagicMock()
+        mock_ward.name = 'Ward A'
+        mock_ward.id = 'ward-123'
+        mock_bed.ward = mock_ward
+
+        mock_admission_obj = MagicMock()
+        mock_admission_obj.id = 'admission-123'
+        mock_admission_obj.patient = patient
+        mock_admission_obj.bed = mock_bed
+        mock_admission_obj.admission_date = timezone.now()
+        mock_admission_obj.status = 'admitted'
+        mock_admission_obj.admission_notes = None  # Prevent MagicMock from being serialized
+        mock_admission.objects.select_related.return_value.get.return_value = mock_admission_obj
+
+        result = WardRoundEngine.start(
+            user=user,
+            patient_id=patient.id,
+            admission_id='admission-123'
+        )
+
+        assert 'workflow' in result
+        assert 'ward_round_data' in result
+        assert result['workflow'].workflow_type == WorkflowType.WARD_ROUND
+
+    def test_update_ward_round_step(self, db):
+        """Test updating ward round step."""
+        ward_round = WardRoundWorkflowFactory()
+        workflow = ward_round.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.save()
+
+        WardRoundEngine.update_step(
+            workflow=workflow,
+            step_number=1,
+            step_data={
+                'overnight_events': 'Patient stable overnight',
+                'nursing_concerns': 'None'
+            }
+        )
+
+        ward_round.refresh_from_db()
+        assert ward_round.overnight_events == 'Patient stable overnight'
+
+
+# =============================================================================
+# AdmissionEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestAdmissionEngine:
+    """Tests for AdmissionEngine."""
+
+    def test_start_admission(self, db):
+        """Test starting an admission workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = AdmissionEngine.start(
+            user=user,
+            patient_id=patient.id
+        )
+
+        assert 'workflow' in result
+        assert 'admission_data' in result
+        assert result['workflow'].workflow_type == WorkflowType.ADMISSION
+        assert result['workflow'].status == WorkflowStatus.IN_PROGRESS
+
+    def test_start_admission_invalid_patient(self, db):
+        """Test starting admission with invalid patient raises error."""
+        user = DoctorUserFactory()
+        import uuid
+
+        with pytest.raises(ValueError) as exc_info:
+            AdmissionEngine.start(
+                user=user,
+                patient_id=uuid.uuid4()
+            )
+
+        assert 'not found' in str(exc_info.value)
+
+    def test_start_admission_with_initial_data(self, db):
+        """Test starting admission with initial data."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = AdmissionEngine.start(
+            user=user,
+            patient_id=patient.id,
+            initial_data={'source': 'Emergency Department'}
+        )
+
+        assert result['workflow'].context_data['source'] == 'Emergency Department'
+
+    def test_update_admission_step(self, db):
+        """Test updating admission step."""
+        admission = AdmissionWorkflowFactory()
+        workflow = admission.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.save()
+
+        AdmissionEngine.update_step(
+            workflow=workflow,
+            step_number=1,
+            step_data={
+                'patient_verified': True,
+                'emergency_contact_name': 'Jane Doe'
+            }
+        )
+
+        admission.refresh_from_db()
+        assert admission.patient_verified is True
+        assert admission.emergency_contact_name == 'Jane Doe'
+
+
+# =============================================================================
+# DischargeEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestDischargeEngine:
+    """Tests for DischargeEngine."""
+
+    @patch('apps.workflows.engines.Admission')
+    @patch('apps.workflows.engines.PatientProfile')
+    def test_start_discharge(self, mock_patient, mock_admission, db):
+        """Test starting a discharge workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # Mock patient lookup
+        mock_patient.objects.get.return_value = patient
+
+        # Mock admission with bed
+        mock_bed = MagicMock()
+        mock_bed.ward.name = 'Ward A'
+
+        mock_admission_obj = MagicMock()
+        mock_admission_obj.patient = patient
+        mock_admission_obj.bed = mock_bed
+        mock_admission_obj.admission_date = timezone.now() - timedelta(days=3)
+        mock_admission.objects.select_related.return_value.get.return_value = mock_admission_obj
+
+        result = DischargeEngine.start(
+            user=user,
+            patient_id=patient.id,
+            admission_id='admission-123'
+        )
+
+        assert 'workflow' in result
+        assert 'discharge_data' in result
+        assert result['workflow'].workflow_type == WorkflowType.DISCHARGE
+
+    def test_update_discharge_step(self, db):
+        """Test updating discharge step."""
+        discharge = DischargeWorkflowFactory()
+        workflow = discharge.workflow
+        workflow.status = WorkflowStatus.IN_PROGRESS
+        workflow.save()
+
+        DischargeEngine.update_step(
+            workflow=workflow,
+            step_number=1,
+            step_data={
+                'discharge_disposition': 'Home',
+                'discharge_criteria_met': ['Vitals stable', 'Ambulating']
+            }
+        )
+
+        discharge.refresh_from_db()
+        assert discharge.discharge_disposition == 'Home'
+        assert len(discharge.discharge_criteria_met) == 2
+
+
+# =============================================================================
+# ClinicalNoteEngine Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestClinicalNoteEngine:
+    """Tests for ClinicalNoteEngine."""
+
+    def test_start_progress_note(self, db):
+        """Test starting a progress note workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='progress'
+        )
+
+        assert 'workflow' in result
+        assert 'clinical_note_data' in result
+        assert result['workflow'].workflow_type == WorkflowType.CLINICAL_NOTE
+        assert result['clinical_note_data'].note_type == 'progress'
+        assert result['workflow'].total_steps == 3
+
+    def test_start_soap_note(self, db):
+        """Test starting a SOAP note workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='soap'
+        )
+
+        assert result['clinical_note_data'].note_type == 'soap'
+        assert result['workflow'].total_steps == 4
+
+    def test_start_procedure_note(self, db):
+        """Test starting a procedure note workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='procedure'
+        )
+
+        assert result['clinical_note_data'].note_type == 'procedure'
+        assert result['workflow'].total_steps == 3
+
+    def test_start_phone_note(self, db):
+        """Test starting a phone note workflow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='phone'
+        )
+
+        assert result['clinical_note_data'].note_type == 'phone'
+        assert result['workflow'].total_steps == 3
+
+    def test_start_invalid_note_type(self, db):
+        """Test starting note with invalid type raises error."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        with pytest.raises(ValueError) as exc_info:
+            ClinicalNoteEngine.start(
+                user=user,
+                patient_id=patient.id,
+                note_type='invalid_type'
+            )
+
+        assert 'Invalid note type' in str(exc_info.value)
+
+    def test_start_note_invalid_patient(self, db):
+        """Test starting note with invalid patient raises error."""
+        user = DoctorUserFactory()
+        import uuid
+
+        with pytest.raises(ValueError) as exc_info:
+            ClinicalNoteEngine.start(
+                user=user,
+                patient_id=uuid.uuid4(),
+                note_type='progress'
+            )
+
+        assert 'not found' in str(exc_info.value)
+
+    def test_note_type_step_configurations(self, db):
+        """Test all note types have step configurations."""
+        expected_types = [
+            'progress', 'soap', 'procedure', 'phone',
+            'general', 'admission', 'discharge', 'nursing',
+            'consultation', 'custom'
+        ]
+
+        for note_type in expected_types:
+            assert note_type in ClinicalNoteEngine.NOTE_TYPE_STEPS
+            config = ClinicalNoteEngine.NOTE_TYPE_STEPS[note_type]
+            assert 'steps' in config
+            assert 'total_steps' in config
+            assert len(config['steps']) == config['total_steps']
+
+    def test_update_clinical_note_step(self, db):
+        """Test updating clinical note step."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='progress'
+        )
+
+        workflow = result['workflow']
+
+        updated = ClinicalNoteEngine.update_step(
+            workflow=workflow,
+            step_data={'chief_complaint': 'Follow-up visit'},
+            note_fields={'chief_complaint': 'Follow-up visit'}
+        )
+
+        assert updated['clinical_note_data'].chief_complaint == 'Follow-up visit'
+
+
+# =============================================================================
+# Engine Validation Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestEngineValidation:
+    """Tests for workflow engine validation."""
+
+    def test_consultation_requires_patient(self, db):
+        """Test consultation requires a valid patient."""
+        user = DoctorUserFactory()
+
+        with pytest.raises(ValueError):
+            ConsultationEngine.start(
+                user=user,
+                patient_id=None
+            )
+
+    def test_admission_requires_patient(self, db):
+        """Test admission requires a valid patient."""
+        user = DoctorUserFactory()
+
+        with pytest.raises(ValueError):
+            AdmissionEngine.start(
+                user=user,
+                patient_id=None
+            )
+
+
+# =============================================================================
+# Engine Integration Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestEngineIntegration:
+    """Integration tests for workflow engines."""
+
+    def test_consultation_full_workflow(self, db):
+        """Test complete consultation workflow flow."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # Start workflow
+        result = ConsultationEngine.start(
+            user=user,
+            patient_id=patient.id
+        )
+        workflow = result['workflow']
+
+        # Step 1: Chief Complaint
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'chief_complaint': 'Headache'},
+            consultation_fields={'chief_complaint': 'Headache'},
+            next_step=2
+        )
+
+        # Step 2: HPI/ROS
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'hpi': 'Headache for 3 days'},
+            consultation_fields={
+                'hpi': 'Headache for 3 days',
+                'ros': 'Otherwise negative'
+            },
+            next_step=3
+        )
+
+        # Step 3: Physical Exam
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'physical_exam': 'Normal neurological exam'},
+            consultation_fields={'physical_exam': 'Normal neurological exam'},
+            next_step=4
+        )
+
+        # Step 4: Assessment
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'assessment': 'Tension headache'},
+            consultation_fields={'assessment': 'Tension headache'},
+            next_step=5
+        )
+
+        # Step 5: Plan
+        ConsultationEngine.update_step(
+            workflow=workflow,
+            step_data={'plan': 'Ibuprofen PRN'},
+            consultation_fields={'plan': 'Ibuprofen PRN'}
+        )
+
+        # Verify progression
+        workflow.refresh_from_db()
+        assert workflow.current_step == 5
+        assert len(workflow.steps_completed) == 5
+
+    def test_admission_step_by_step(self, db):
+        """Test admission workflow step progression."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # Start workflow
+        result = AdmissionEngine.start(
+            user=user,
+            patient_id=patient.id
+        )
+        workflow = result['workflow']
+
+        # Step 1: Patient Verification
+        AdmissionEngine.update_step(
+            workflow=workflow,
+            step_number=1,
+            step_data={
+                'patient_verified': True,
+                'emergency_contact_name': 'John Doe',
+                'emergency_contact_phone': '555-1234'
+            }
+        )
+
+        # Step 2: Bed Assignment (simulate)
+        AdmissionEngine.update_step(
+            workflow=workflow,
+            step_number=2,
+            step_data={
+                'admission_type': 'elective',
+                'admission_source': 'Outpatient'
+            }
+        )
+
+        workflow.refresh_from_db()
+        assert workflow.current_step == 3
+        assert 1 in workflow.steps_completed
+        assert 2 in workflow.steps_completed
+
+    def test_clinical_note_workflow_progression(self, db):
+        """Test clinical note workflow progression."""
+        user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # Start SOAP note
+        result = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='soap'
+        )
+        workflow = result['workflow']
+
+        # Progress through steps
+        steps_data = [
+            {'subjective': 'Patient feels better'},
+            {'objective': 'Vitals normal'},
+            {'assessment': 'Improving'},
+            {'plan': 'Continue current meds'}
+        ]
+
+        for i, step_data in enumerate(steps_data, start=1):
+            ClinicalNoteEngine.update_step(
+                workflow=workflow,
+                step_data=step_data,
+                next_step=i + 1 if i < len(steps_data) else None
+            )
+
+        workflow.refresh_from_db()
+        assert len(workflow.steps_completed) == 4

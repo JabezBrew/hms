@@ -23,11 +23,13 @@ export function ConsultationWorkflow() {
   const [searchParams] = useSearchParams();
   const patientId = searchParams.get('patient_id');
   const appointmentId = searchParams.get('appointment_id');
+  const workflowIdParam = searchParams.get('workflow_id');
 
   const {
     workflow,
     loading,
     error,
+    loadWorkflow,
     startWorkflow,
     updateStep,
     completeWorkflow,
@@ -36,16 +38,23 @@ export function ConsultationWorkflow() {
     isStarting,
   } = useWorkflow('consultation');
 
-  // Initialize workflow on mount
+  // Load existing workflow if workflow_id is provided (e.g., from referral inbox)
   useEffect(() => {
-    if (patientId && !workflow && !isStarting) {
+    if (workflowIdParam && !workflow && !loading) {
+      loadWorkflow(workflowIdParam);
+    }
+  }, [workflowIdParam, workflow, loading, loadWorkflow]);
+
+  // Initialize NEW workflow on mount (when patient_id is provided without workflow_id)
+  useEffect(() => {
+    if (patientId && !workflowIdParam && !workflow && !isStarting) {
       startWorkflow({
         patient_id: patientId,  // Keep as UUID string, don't parse
         appointment_id: appointmentId || undefined,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId, appointmentId]);
+  }, [patientId, appointmentId, workflowIdParam]);
 
   const handleStepComplete = async (stepData, nextStep) => {
     // Extract consultation-specific fields
@@ -96,12 +105,14 @@ export function ConsultationWorkflow() {
     }
   };
 
-  if (loading && !workflow) {
+  if (loading || isStarting) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Loading consultation...</p>
+          <p className="text-muted-foreground">
+            {workflowIdParam ? 'Loading consultation...' : 'Starting consultation...'}
+          </p>
         </div>
       </div>
     );
@@ -120,9 +131,25 @@ export function ConsultationWorkflow() {
   }
 
   if (!workflow) {
+    // If we have neither patient_id nor workflow_id, show an error
+    if (!patientId && !workflowIdParam) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+          <p className="text-destructive">Missing patient or workflow information</p>
+          <Button onClick={() => navigate('/dashboard/doctor')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+        </div>
+      );
+    }
+    // Otherwise, still loading/initializing
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-muted-foreground">Initializing consultation...</p>
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Preparing consultation...</p>
+        </div>
       </div>
     );
   }

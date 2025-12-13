@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
@@ -24,8 +24,49 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
-                  'date_of_birth', 'user_type', 'is_active', 'date_joined']
+                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined']
         read_only_fields = ['id', 'date_joined']
+
+
+class UserWithAccessContextSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the User model that includes access context (off-site status).
+    Used for the /users/me/ endpoint to provide the frontend with read-only mode info.
+    """
+    is_offsite = serializers.SerializerMethodField()
+    offsite_mode = serializers.SerializerMethodField()
+    readonly_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
+                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
+                  'is_offsite', 'offsite_mode', 'readonly_message']
+        read_only_fields = ['id', 'date_joined']
+
+    def get_is_offsite(self, obj):
+        """Return whether the user is accessing from off-site."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'is_offsite'):
+            return request.is_offsite
+        return False
+
+    def get_offsite_mode(self, obj):
+        """Return the configured off-site access mode."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'offsite_mode'):
+            return request.offsite_mode
+        return 'allow'
+
+    def get_readonly_message(self, obj):
+        """Return the read-only message if user is off-site in readonly mode."""
+        request = self.context.get('request')
+        if request and hasattr(request, 'is_offsite') and request.is_offsite:
+            if hasattr(request, 'offsite_mode') and request.offsite_mode == 'readonly':
+                from apps.core.models import OffSiteAccessSettings
+                settings = OffSiteAccessSettings.get_settings()
+                return settings.readonly_message
+        return None
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -96,14 +137,125 @@ class PatientProfileSerializer(serializers.ModelSerializer):
     """
     user_details = UserSerializer(source='user', read_only=True)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    current_ward = serializers.SerializerMethodField()
+    current_ward_id = serializers.SerializerMethodField()
+    current_admission_id = serializers.SerializerMethodField()
+    admission_status = serializers.SerializerMethodField()
+    admission_date = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id', 
-                  'blood_group', 'allergies', 'emergency_contact_name', 
-                  'emergency_contact_phone', 'emergency_contact_relationship', 
-                  'fhir_patient_id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id',
+                  'blood_group', 'allergies', 'emergency_contact_name',
+                  'emergency_contact_phone', 'emergency_contact_relationship',
+                  'fhir_patient_id', 'current_ward', 'current_ward_id',
+                  'current_admission_id', 'admission_status', 'admission_date',
+                  'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def get_current_ward(self, obj):
+        """
+        Get the name of the ward where the patient is currently admitted.
+        Returns "Waiting List" if admitted but no bed, "Not Admitted" otherwise.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            # Filter in python to use the cache
+            # Note: admissions are ordered by -admission_date by default
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            # Fallback to DB query if not prefetched
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if not admission:
+            return "Not Admitted"
+
+        if admission.status == 'waiting':
+            return "Waiting List"
+
+        if admission.bed:
+            return admission.bed.ward.name
+
+        return "Admitted (No Bed)"
+
+    def get_current_ward_id(self, obj):
+        """
+        Get the ID of the ward where the patient is currently admitted.
+        Returns None if not admitted to a ward.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission and admission.bed:
+            return str(admission.bed.ward.id)
+
+        return None
+
+    def get_current_admission_id(self, obj):
+        """
+        Get the ID of the current active admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return str(admission.id)
+
+        return None
+
+    def get_admission_status(self, obj):
+        """
+        Get the status of the current admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return admission.status
+
+        return None
+
+    def get_admission_date(self, obj):
+        """
+        Get the admission date of the patient's current admission.
+        Returns None if not currently admitted.
+        """
+        # Use prefetched admissions if available to avoid N+1
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return admission.admission_date
+
+        return None
 
 
 class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):
@@ -212,9 +364,14 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Validate the data according to the registration rules.
         """
-        # Check if email is already in use
-        if User.objects.filter(email=data['email']).exists():
-            raise serializers.ValidationError({"email": "This email is already in use."})
+        # Check if email is already in use by an active staff member
+        existing_user = User.objects.filter(email=data['email']).first()
+        if existing_user:
+            # Check if this user has an active staff record
+            if hasattr(existing_user, 'staff') and existing_user.staff:
+                raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+            # Otherwise, we'll reuse this orphaned user - store it for create()
+            data['_existing_user'] = existing_user
 
         # Check if user_type is doctor or nurse, then practitioner fields are required
         if data.get('user_type') in ['doctor', 'nurse']:
@@ -231,6 +388,9 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Create a new staff member with both local and FHIR resources.
         """
+        # Check if we're reusing an existing user
+        existing_user = validated_data.pop('_existing_user', None)
+
         # Extract address fields
         address_fields = {
             'address_line1': validated_data.pop('address_line1', ''),
@@ -251,17 +411,29 @@ class StaffRegistrationSerializer(serializers.Serializer):
         # Generate a secure password for the staff
         generated_password = generate_secure_password()
 
-        # Create User
-        user = User.objects.create_user(
-            email=validated_data['email'],
-            username=validated_data['email'],  # Use email as username
-            password=generated_password,
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name'],
-            phone_number=validated_data.get('phone_number', ''),
-            date_of_birth=validated_data['date_of_birth'],
-            user_type=validated_data['user_type']
-        )
+        if existing_user:
+            # Reuse and update the existing orphaned user
+            user = existing_user
+            user.first_name = validated_data['first_name']
+            user.last_name = validated_data['last_name']
+            user.phone_number = validated_data.get('phone_number', '')
+            user.date_of_birth = validated_data['date_of_birth']
+            user.user_type = validated_data['user_type']
+            user.is_active = True
+            user.set_password(generated_password)
+            user.save()
+        else:
+            # Create new User
+            user = User.objects.create_user(
+                email=validated_data['email'],
+                username=validated_data['email'],  # Use email as username
+                password=generated_password,
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                phone_number=validated_data.get('phone_number', ''),
+                date_of_birth=validated_data['date_of_birth'],
+                user_type=validated_data['user_type']
+            )
 
         # Generate a unique employee ID
         employee_id = generate_unique_employee_id()
@@ -277,25 +449,19 @@ class StaffRegistrationSerializer(serializers.Serializer):
             updated_by=self.context['request'].user
         )
 
-        # Send credentials via email (password should not be logged)
-        message = f"""
-        Dear {user.first_name} {user.last_name},
-
-        Your account has been created in the Hospital Management System.
-
-        Your login credentials are:
-        Email: {user.email}
-        Password: {generated_password}
-        Employee ID: {employee_id}
-
-        Please log in and change your password immediately.
-
-        Best regards,
-        Hospital Management Team
-        """
-
-        # TODO: Send email to user with credentials
-        # send_mail(subject, message, from_email, [user.email])
+        # Send credentials via email (runs sync in DEBUG mode via CELERY_TASK_ALWAYS_EAGER)
+        from .tasks import send_welcome_credentials_email
+        try:
+            send_welcome_credentials_email.delay(
+                user_email=user.email,
+                user_name=f"{user.first_name} {user.last_name}",
+                password=generated_password,
+                employee_id=employee_id,
+                department=validated_data['department'],
+                position=validated_data['position'],
+            )
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to {user.email}: {e}")
 
         logger.info(f"Staff account created for {user.email} with employee ID: {employee_id}")
 
@@ -396,3 +562,253 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"Failed to create FHIR Practitioner resource: {str(e)}")
 
         return staff
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Serializer for requesting a password reset"""
+    email = serializers.EmailField(required=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Serializer for confirming password reset with token"""
+    token = serializers.CharField(required=True, min_length=32)
+    password = serializers.CharField(required=True, min_length=8, write_only=True)
+    password_confirm = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+        return attrs
+
+
+class AdminForceResetSerializer(serializers.Serializer):
+    """Serializer for admin-initiated password reset"""
+    user_id = serializers.UUIDField(required=True)
+
+
+# =============================================================================
+# LIST SERIALIZERS - Lightweight serializers for list views
+# These reduce payload sizes by 40-70% compared to full serializers
+# =============================================================================
+
+class UserListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for user lists.
+    Removes detailed profile information.
+
+    Payload reduction: ~30% (7 fields vs 10)
+    """
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'full_name', 'first_name', 'last_name',
+            'user_type', 'is_active'
+        ]
+
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
+
+class StaffListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for staff lists.
+    Flattens user info instead of nesting full UserSerializer.
+
+    Payload reduction: ~50% (9 fields vs nested user details)
+    """
+    name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source='user.email', read_only=True)
+    user_type = serializers.CharField(source='user.user_type', read_only=True)
+
+    class Meta:
+        model = Staff
+        fields = [
+            'id', 'name', 'email', 'user_type', 'employee_id',
+            'department', 'position', 'hire_date', 'user'
+        ]
+
+    def get_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name()
+        return None
+
+
+class PractitionerProfileListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for practitioner lists.
+    Flattens staff/user chain instead of deep nesting.
+
+    Payload reduction: ~60% (9 fields vs deeply nested staff/user)
+    """
+    name = serializers.SerializerMethodField()
+    email = serializers.SerializerMethodField()
+    department = serializers.CharField(source='staff.department', read_only=True)
+    user_type = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PractitionerProfile
+        fields = [
+            'id', 'name', 'email', 'user_type', 'department',
+            'specialization', 'license_number', 'qualification', 'staff'
+        ]
+
+    def get_name(self, obj):
+        if obj.staff and obj.staff.user:
+            return obj.staff.user.get_full_name()
+        return None
+
+    def get_email(self, obj):
+        if obj.staff and obj.staff.user:
+            return obj.staff.user.email
+        return None
+
+    def get_user_type(self, obj):
+        if obj.staff and obj.staff.user:
+            return obj.staff.user.user_type
+        return None
+
+
+class PatientProfileListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for patient lists.
+    Includes minimal user_details for frontend compatibility and admission status.
+
+    Payload reduction: ~40% (still lighter than full nested details)
+    """
+    # Minimal user_details for frontend compatibility (PatientChronicleCard expects this)
+    user_details = serializers.SerializerMethodField()
+    # Flat convenience fields
+    name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source='user.email', read_only=True)
+    phone = serializers.CharField(source='user.phone_number', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
+    # Admission status fields
+    current_ward = serializers.SerializerMethodField()
+    current_ward_id = serializers.SerializerMethodField()
+    admission_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id', 'user', 'user_details', 'name', 'email', 'phone', 'gender',
+            'date_of_birth', 'medical_record_number', 'blood_group', 'nhis_id',
+            'current_ward', 'current_ward_id', 'admission_date'
+        ]
+
+    def get_user_details(self, obj):
+        """Return minimal user details for frontend compatibility."""
+        if obj.user:
+            return {
+                'id': str(obj.user.id),
+                'first_name': obj.user.first_name,
+                'last_name': obj.user.last_name,
+                'email': obj.user.email,
+                'gender': obj.user.gender,
+            }
+        return None
+
+    def get_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name()
+        return None
+
+    def get_current_ward(self, obj):
+        """Get the ward name where patient is admitted."""
+        # Use prefetched admissions if available
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if not admission:
+            return None
+
+        if admission.status == 'waiting':
+            return "Waiting List"
+
+        if admission.bed:
+            return admission.bed.ward.name
+
+        return "Admitted (No Bed)"
+
+    def get_current_ward_id(self, obj):
+        """Get the ward ID where patient is admitted."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission and admission.bed:
+            return str(admission.bed.ward.id)
+        return None
+
+    def get_admission_date(self, obj):
+        """Get the admission date if patient is currently admitted."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            admission = next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        else:
+            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+        if admission:
+            return admission.admission_date
+        return None
+
+
+# =============================================================================
+# USER PATIENT LIST SERIALIZERS - My Patients feature
+# =============================================================================
+
+class UserPatientListSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for user's personal patient list.
+    Includes patient details for display.
+    """
+    patient_details = PatientProfileListSerializer(source='patient', read_only=True)
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+
+    class Meta:
+        model = UserPatientList
+        fields = [
+            'id', 'user', 'patient', 'patient_details', 'patient_name', 'patient_mrn',
+            'notes', 'is_pinned', 'added_at'
+        ]
+        read_only_fields = ['id', 'user', 'added_at']
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return None
+
+
+class UserPatientListCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for adding a patient to user's list.
+    Only requires patient ID.
+    """
+    class Meta:
+        model = UserPatientList
+        fields = ['patient', 'notes', 'is_pinned']
+
+    def validate_patient(self, value):
+        """Ensure patient isn't already in user's list."""
+        user = self.context['request'].user
+        if UserPatientList.objects.filter(user=user, patient=value).exists():
+            raise serializers.ValidationError("This patient is already in your list.")
+        return value
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)

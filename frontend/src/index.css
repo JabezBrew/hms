@@ -3,11 +3,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================
+   CLINICAL CHRONICLE DESIGN SYSTEM
+   Typography: Fraunces (display), DM Sans (headings), IBM Plex Mono (data)
+   Palette: Warm stone with amber/rose/emerald accents
+   ============================================ */
+
 @theme inline {
+  /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Core colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -26,11 +36,15 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Chart colors */
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+
+  /* Sidebar */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -39,89 +53,403 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Chronicle accent colors */
+  --color-chronicle-amber: var(--chronicle-amber);
+  --color-chronicle-emerald: var(--chronicle-emerald);
+  --color-chronicle-rose: var(--chronicle-rose);
+  --color-chronicle-sky: var(--chronicle-sky);
+
+  /* Typography */
+  --font-display: var(--font-fraunces);
+  --font-heading: var(--font-dm-sans);
+  --font-mono: var(--font-ibm-plex-mono);
 }
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.25);
+
+  /* Light mode - Warm cream base */
+  --background: oklch(0.98 0.005 60);
+  --foreground: oklch(0.15 0.01 50);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.25);
+  --card-foreground: oklch(0.15 0.01 50);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.25);
-  --primary: oklch(0.216 0.006 56.043);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.216 0.006 56.043);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
+  --popover-foreground: oklch(0.15 0.01 50);
+  --primary: oklch(0.75 0.18 55);
+  --primary-foreground: oklch(0.15 0.01 50);
+  --secondary: oklch(0.95 0.005 60);
+  --secondary-foreground: oklch(0.25 0.01 50);
+  --muted: oklch(0.95 0.005 60);
+  --muted-foreground: oklch(0.50 0.01 50);
+  --accent: oklch(0.95 0.005 60);
+  --accent-foreground: oklch(0.25 0.01 50);
+  --destructive: oklch(0.60 0.22 25);
+  --border: oklch(0.90 0.005 60);
+  --input: oklch(0.90 0.005 60);
+  --ring: oklch(0.75 0.18 55);
+
+  /* Chronicle accents */
+  --chronicle-amber: oklch(0.75 0.18 55);
+  --chronicle-emerald: oklch(0.70 0.17 155);
+  --chronicle-rose: oklch(0.65 0.22 15);
+  --chronicle-sky: oklch(0.70 0.15 230);
+
+  /* Charts */
+  --chart-1: oklch(0.75 0.18 55);
+  --chart-2: oklch(0.70 0.17 155);
+  --chart-3: oklch(0.65 0.22 15);
+  --chart-4: oklch(0.70 0.15 230);
+  --chart-5: oklch(0.70 0.15 290);
+
+  /* Sidebar */
+  --sidebar: oklch(0.97 0.005 60);
+  --sidebar-foreground: oklch(0.15 0.01 50);
+  --sidebar-primary: oklch(0.75 0.18 55);
+  --sidebar-primary-foreground: oklch(0.15 0.01 50);
+  --sidebar-accent: oklch(0.93 0.005 60);
+  --sidebar-accent-foreground: oklch(0.25 0.01 50);
+  --sidebar-border: oklch(0.90 0.005 60);
+  --sidebar-ring: oklch(0.75 0.18 55);
+
+  /* Fonts */
+  --font-fraunces: 'Fraunces', Georgia, serif;
+  --font-dm-sans: 'DM Sans', system-ui, sans-serif;
+  --font-ibm-plex-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 .dark {
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.923 0.003 48.717);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.553 0.013 58.071);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.553 0.013 58.071);
+  /* Dark mode - Warm charcoal base (Chronicle theme) */
+  --background: oklch(0.14 0.01 50);
+  --foreground: oklch(0.97 0.005 60);
+  --card: oklch(0.18 0.01 50);
+  --card-foreground: oklch(0.97 0.005 60);
+  --popover: oklch(0.18 0.01 50);
+  --popover-foreground: oklch(0.97 0.005 60);
+  --primary: oklch(0.75 0.18 55);
+  --primary-foreground: oklch(0.14 0.01 50);
+  --secondary: oklch(0.22 0.01 50);
+  --secondary-foreground: oklch(0.90 0.005 60);
+  --muted: oklch(0.22 0.01 50);
+  --muted-foreground: oklch(0.60 0.01 50);
+  --accent: oklch(0.22 0.01 50);
+  --accent-foreground: oklch(0.90 0.005 60);
+  --destructive: oklch(0.65 0.22 15);
+  --border: oklch(0.25 0.01 50);
+  --input: oklch(0.22 0.01 50);
+  --ring: oklch(0.75 0.18 55);
+
+  /* Chronicle accents - slightly brighter for dark mode */
+  --chronicle-amber: oklch(0.78 0.18 55);
+  --chronicle-emerald: oklch(0.72 0.17 155);
+  --chronicle-rose: oklch(0.68 0.22 15);
+  --chronicle-sky: oklch(0.72 0.15 230);
+
+  /* Charts */
+  --chart-1: oklch(0.78 0.18 55);
+  --chart-2: oklch(0.72 0.17 155);
+  --chart-3: oklch(0.68 0.22 15);
+  --chart-4: oklch(0.72 0.15 230);
+  --chart-5: oklch(0.72 0.15 290);
+
+  /* Sidebar */
+  --sidebar: oklch(0.12 0.01 50);
+  --sidebar-foreground: oklch(0.97 0.005 60);
+  --sidebar-primary: oklch(0.78 0.18 55);
+  --sidebar-primary-foreground: oklch(0.12 0.01 50);
+  --sidebar-accent: oklch(0.20 0.01 50);
+  --sidebar-accent-foreground: oklch(0.90 0.005 60);
+  --sidebar-border: oklch(0.22 0.01 50);
+  --sidebar-ring: oklch(0.78 0.18 55);
 }
 
 @layer base {
-    html,
+  html,
   body,
   #root {
     width: 100%;
     min-height: 100%;
     margin: 0;
   }
+
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-dm-sans);
   }
+
+  /* Typography classes */
+  .font-display {
+    font-family: var(--font-fraunces);
+  }
+
+  .font-heading {
+    font-family: var(--font-dm-sans);
+  }
+
+  .font-mono {
+    font-family: var(--font-ibm-plex-mono);
+  }
+}
+
+/* ============================================
+   CHRONICLE ANIMATIONS
+   ============================================ */
+
+@keyframes chronicle-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chronicle-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes chronicle-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes node-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 oklch(0.75 0.18 55 / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px oklch(0.75 0.18 55 / 0);
+  }
+}
+
+@keyframes vital-update {
+  0% {
+    background-color: oklch(0.75 0.18 55 / 0.2);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Animation utility classes */
+.animate-chronicle-enter {
+  animation: chronicle-enter 0.5s ease-out both;
+}
+
+.animate-chronicle-fade {
+  animation: chronicle-fade-in 0.3s ease-out both;
+}
+
+.animate-chronicle-scale {
+  animation: chronicle-scale-in 0.3s ease-out both;
+}
+
+.animate-node-pulse {
+  animation: node-pulse 2s ease-in-out infinite;
+}
+
+.animate-vital-update {
+  animation: vital-update 1s ease-out;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(1 0 0 / 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 50ms; }
+.stagger-3 { animation-delay: 100ms; }
+.stagger-4 { animation-delay: 150ms; }
+.stagger-5 { animation-delay: 200ms; }
+.stagger-6 { animation-delay: 250ms; }
+.stagger-7 { animation-delay: 300ms; }
+.stagger-8 { animation-delay: 350ms; }
+.stagger-9 { animation-delay: 400ms; }
+.stagger-10 { animation-delay: 450ms; }
+
+/* ============================================
+   CHRONICLE COMPONENT STYLES
+   ============================================ */
+
+/* Chronicle card hover glow effect */
+.chronicle-card-glow {
+  @apply relative;
+}
+
+.chronicle-card-glow::before {
+  content: '';
+  @apply absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-500;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    oklch(0.75 0.18 55 / 0.1),
+    transparent 40%
+  );
+}
+
+.chronicle-card-glow:hover::before {
+  @apply opacity-100;
+}
+
+/* Timeline styles */
+.timeline-spine {
+  @apply absolute left-0 top-0 bottom-0 w-px;
+  background: linear-gradient(
+    to bottom,
+    oklch(0.75 0.18 55),
+    oklch(0.25 0.01 50),
+    oklch(0.20 0.01 50)
+  );
+}
+
+.timeline-node {
+  @apply absolute left-0 top-1 -translate-x-1/2 w-3 h-3 rounded-full;
+  @apply ring-4 ring-background;
+}
+
+.timeline-node-amber {
+  @apply bg-[oklch(0.75_0.18_55)];
+  box-shadow: 0 0 12px oklch(0.75 0.18 55 / 0.5);
+}
+
+.timeline-node-emerald {
+  @apply bg-[oklch(0.70_0.17_155)];
+  box-shadow: 0 0 12px oklch(0.70 0.17 155 / 0.5);
+}
+
+.timeline-node-rose {
+  @apply bg-[oklch(0.65_0.22_15)];
+  box-shadow: 0 0 12px oklch(0.65 0.22 15 / 0.5);
+}
+
+.timeline-node-sky {
+  @apply bg-[oklch(0.70_0.15_230)];
+  box-shadow: 0 0 12px oklch(0.70 0.15 230 / 0.5);
+}
+
+/* Status ribbon for priority indication */
+.status-ribbon {
+  @apply absolute -left-px top-8 bottom-8 w-1 rounded-full;
+}
+
+.status-ribbon-critical {
+  background: linear-gradient(
+    to bottom,
+    oklch(0.65 0.22 15),
+    oklch(0.65 0.22 15 / 0.5),
+    transparent
+  );
+}
+
+.status-ribbon-warning {
+  background: linear-gradient(
+    to bottom,
+    oklch(0.75 0.18 55),
+    oklch(0.75 0.18 55 / 0.5),
+    transparent
+  );
+}
+
+.status-ribbon-stable {
+  background: linear-gradient(
+    to bottom,
+    oklch(0.70 0.17 155),
+    oklch(0.70 0.17 155 / 0.5),
+    transparent
+  );
+}
+
+/* Gradient dividers */
+.divider-gradient {
+  @apply h-px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    oklch(0.25 0.01 50),
+    transparent
+  );
+}
+
+/* Chronicle badge variants */
+.badge-chronicle-amber {
+  @apply px-2 py-1 rounded-full font-mono text-xs border;
+  @apply bg-[oklch(0.75_0.18_55_/_0.1)] text-[oklch(0.75_0.18_55)] border-[oklch(0.75_0.18_55_/_0.2)];
+}
+
+.badge-chronicle-emerald {
+  @apply px-2 py-1 rounded-full font-mono text-xs border;
+  @apply bg-[oklch(0.70_0.17_155_/_0.1)] text-[oklch(0.70_0.17_155)] border-[oklch(0.70_0.17_155_/_0.2)];
+}
+
+.badge-chronicle-rose {
+  @apply px-2 py-1 rounded-full font-mono text-xs border;
+  @apply bg-[oklch(0.65_0.22_15_/_0.1)] text-[oklch(0.65_0.22_15)] border-[oklch(0.65_0.22_15_/_0.2)];
+}
+
+.badge-chronicle-sky {
+  @apply px-2 py-1 rounded-full font-mono text-xs border;
+  @apply bg-[oklch(0.70_0.15_230_/_0.1)] text-[oklch(0.70_0.15_230)] border-[oklch(0.70_0.15_230_/_0.2)];
+}
+
+/* Scrollbar styling for chronicle theme */
+.chronicle-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chronicle-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.chronicle-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+
+.chronicle-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/50;
 }

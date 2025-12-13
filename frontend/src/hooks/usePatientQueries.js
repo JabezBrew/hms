@@ -36,6 +36,7 @@ export function usePatient(id) {
     queryKey: patientKeys.detail(id),
     queryFn: () => patientsApi.getPatient(id),
     enabled: !!id, // Only run the query if we have an ID
+    staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
   });
 }
 
