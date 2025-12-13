@@ -25,6 +25,9 @@
  *   # With environment variables
  *   k6 run -e BASE_URL=http://localhost:8000 tests/load/k6-test.js
  *
+ *   # With load test key (bypasses rate limiting - key must match LOAD_TEST_SECRET_KEY in backend)
+ *   k6 run -e BASE_URL=https://your-api.com -e LOAD_TEST_KEY=your-secret-key tests/load/k6-test.js
+ *
  *   # Cloud run (k6 Cloud)
  *   k6 cloud tests/load/k6-test.js
  *
@@ -45,6 +48,7 @@ import { randomIntBetween, randomItem } from 'https://jslib.k6.io/k6-utils/1.2.0
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
+const LOAD_TEST_KEY = __ENV.LOAD_TEST_KEY || ''; // Secret key to bypass rate limiting
 const TOKEN_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // Refresh tokens every 10 minutes (before 15 min expiry)
 
 // Per-VU token state (each VU maintains its own tokens)
@@ -300,6 +304,7 @@ export default function (data) {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${nurseToken}`,
+      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
     };
     nurseWorkflow(headers);
   } else if (vuType < 8) {
@@ -314,6 +319,7 @@ export default function (data) {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${doctorToken}`,
+      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
     };
     doctorWorkflow(headers);
   } else {
@@ -328,6 +334,7 @@ export default function (data) {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${adminToken}`,
+      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
     };
     adminWorkflow(headers);
   }
