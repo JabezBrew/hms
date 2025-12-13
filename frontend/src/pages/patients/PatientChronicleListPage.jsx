@@ -1,191 +1,125 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { usePatients, useSearchPatients } from "@/hooks/usePatientQueries";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, NavLink, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  useMyPatients,
+  useSearchPatients,
+  useRecentPatients,
+  useContextPatients,
+} from "@/hooks/usePatientQueries";
+import {
   useAddToMyPatients,
-  useRemoveFromMyPatients,
-  useToggleMyPatientPin
 } from "@/hooks/useMyPatientsQueries";
+import { myPatientsKeys } from "@/hooks/useMyPatientsQueries";
+import { patientsApi } from "@/lib/api/patients";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PatientChronicleCard } from "@/components/chronicle";
+import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
+import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
 import {
   Search,
   Plus,
   Users,
-  Filter,
   LayoutGrid,
   List,
   RefreshCw,
   X,
   Star,
-  UserCheck
 } from "lucide-react";
 
 // Clinical provider roles that can access "My Patients" feature
 const CLINICAL_PROVIDER_ROLES = ['doctor', 'nurse', 'lab_technician', 'pharmacist'];
 
 /**
- * PatientChronicleListPage - Magazine-style patient list
+ * PatientChronicleListPage - Search-first patient registry
  *
  * Features:
- * - Chronicle-style patient cards
- * - Search and filter functionality
- * - Toggle between grid and list views
- * - Staggered animations on load
+ * - Search-first approach (no "load all patients")
+ * - Recent patients section (horizontal scroll)
+ * - Context-specific patients (role-based)
+ * - Route-based tab navigation to My Patients
+ * - Background prefetch of My Patients data
  */
 const PatientChronicleListPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedWard, setSelectedWard] = useState("all");
-  const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
-  const [activeTab, setActiveTab] = useState("all"); // 'all' or 'my-patients'
+  const [viewMode, setViewMode] = useState("grid");
 
-  // Check if user is a clinical provider (can access My Patients)
+  // Check if user is a clinical provider
   const isClinicalProvider = CLINICAL_PROVIDER_ROLES.includes(user?.role);
 
-  // Fetch patients
+  // Search patients (only when query has 2+ characters)
   const {
     data: searchResults,
     isLoading: isSearchLoading,
     setSearchTerm,
-    debouncedSearchTerm
+    debouncedSearchTerm,
   } = useSearchPatients();
 
+  // Recent patients (limited to 10)
   const {
-    data: allPatientsData,
-    isLoading: isAllPatientsLoading,
-    refetch
-  } = usePatients();
+    data: recentPatientsData,
+    isLoading: isRecentLoading,
+    refetch: refetchRecent,
+  } = useRecentPatients(10);
 
-  // Fetch user's personal patient list (only for clinical providers)
+  // Context patients (role-specific)
   const {
-    data: myPatientsData,
-    isLoading: isMyPatientsLoading,
-    refetch: refetchMyPatients
-  } = useMyPatients({ enabled: isClinicalProvider });
+    data: contextPatientsData,
+    isLoading: isContextLoading,
+    refetch: refetchContext,
+  } = useContextPatients();
 
   // My Patients mutations
   const addToMyPatients = useAddToMyPatients();
-  const removeFromMyPatients = useRemoveFromMyPatients();
-  const togglePin = useToggleMyPatientPin();
 
-  const isLoading = activeTab === "my-patients"
-    ? isMyPatientsLoading
-    : (isSearchLoading || isAllPatientsLoading);
-
-  // ============================================
-  // Data processing
-  // ============================================
-
-  // Get patients array from response
-  const displayedPatients = useMemo(() => {
-    // Handle My Patients tab
-    if (activeTab === "my-patients") {
-      const entries = myPatientsData?.results || myPatientsData || [];
-      // Extract patient details from list entries, preserving entry metadata
-      return Array.isArray(entries)
-        ? entries.map(entry => ({
-            ...entry.patient_details,
-            _listEntryId: entry.id,
-            _isPinned: entry.is_pinned,
-            _listNotes: entry.notes,
-            _addedAt: entry.added_at
-          }))
-        : [];
+  // Prefetch My Patients data in background when page loads
+  useEffect(() => {
+    if (isClinicalProvider) {
+      queryClient.prefetchQuery({
+        queryKey: myPatientsKeys.list(),
+        queryFn: () => patientsApi.getMyPatients?.() || Promise.resolve([]),
+        staleTime: 60 * 1000,
+      });
     }
+  }, [isClinicalProvider, queryClient]);
 
-    // Handle All Patients tab (with search)
-    const patients = debouncedSearchTerm
-      ? (searchResults?.results || searchResults?.patients || [])
-      : (allPatientsData?.results || allPatientsData?.patients || allPatientsData || []);
+  // Determine if we're showing search results
+  const isSearching = debouncedSearchTerm && debouncedSearchTerm.length >= 2;
+  const hasSearchQuery = searchQuery.length > 0;
 
-    return Array.isArray(patients) ? patients : [];
-  }, [searchResults, allPatientsData, debouncedSearchTerm, activeTab, myPatientsData]);
+  // Get search results
+  const searchPatients = useMemo(() => {
+    if (!isSearching) return [];
+    return searchResults?.results || searchResults?.patients || [];
+  }, [searchResults, isSearching]);
 
-  // Extract unique wards for filter
-  const uniqueWards = useMemo(() => {
-    return displayedPatients.reduce((wards, patient) => {
-      const wardId = patient?.current_ward_id;
-      const wardName = patient?.current_ward ||
-        patient?.patient_profile_details?.current_ward;
+  // Get recent patients array
+  const recentPatients = useMemo(() => {
+    const results = recentPatientsData?.results || recentPatientsData || [];
+    return Array.isArray(results) ? results : [];
+  }, [recentPatientsData]);
 
-      if (wardId && wardName && wardName !== "Not Admitted" && wardName !== "Waiting List") {
-        if (!wards.find(w => w.id === wardId)) {
-          wards.push({ id: wardId, name: wardName });
-        }
-      }
-      return wards;
-    }, []);
-  }, [displayedPatients]);
-
-  // Filter patients by ward
-  const filteredPatients = useMemo(() => {
-    if (selectedWard === "all") return displayedPatients;
-    return displayedPatients.filter(patient =>
-      patient?.current_ward_id === selectedWard
-    );
-  }, [displayedPatients, selectedWard]);
-
-  // Calculate stats
-  const stats = useMemo(() => {
-    const total = filteredPatients.length;
-    const critical = filteredPatients.filter(p => p?.is_critical).length;
-    const admitted = filteredPatients.filter(p =>
-      p?.current_ward && p.current_ward !== "Not Admitted"
-    ).length;
-
-    return { total, critical, admitted };
-  }, [filteredPatients]);
-
-  // ============================================
   // Event handlers
-  // ============================================
-
   const handleSearchChange = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
     setSearchTerm(query);
   };
 
-  const handleClearFilters = () => {
+  const handleClearSearch = () => {
     setSearchQuery("");
-    setSelectedWard("all");
     setSearchTerm("");
   };
 
   const handleRefresh = () => {
-    if (activeTab === "my-patients") {
-      refetchMyPatients();
-    } else {
-      refetch();
-    }
-  };
-
-  // My Patients action handlers
-  const handleAddToMyPatients = (patientId) => {
-    addToMyPatients.mutate({ patientId });
-  };
-
-  const handleRemoveFromMyPatients = (patientId) => {
-    removeFromMyPatients.mutate(patientId);
-  };
-
-  const handleTogglePin = (entryId) => {
-    togglePin.mutate(entryId);
+    refetchRecent();
+    refetchContext();
   };
 
   const handleAddPatient = () => {
@@ -199,11 +133,12 @@ const PatientChronicleListPage = () => {
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedWard !== "all";
+  const handleAddToMyPatients = (patientId) => {
+    addToMyPatients.mutate({ patientId });
+  };
 
-  // ============================================
-  // Render
-  // ============================================
+  // Loading state
+  const isLoading = isSearching ? isSearchLoading : (isRecentLoading || isContextLoading);
 
   return (
     <div className="min-h-screen bg-background">
@@ -215,17 +150,7 @@ const PatientChronicleListPage = () => {
               Patient Registry
             </h1>
             <p className="text-sm text-muted-foreground">
-              {stats.total} patients
-              {stats.critical > 0 && (
-                <span className="text-destructive ml-2">
-                  · {stats.critical} critical
-                </span>
-              )}
-              {stats.admitted > 0 && (
-                <span className="text-muted-foreground ml-2">
-                  · {stats.admitted} admitted
-                </span>
-              )}
+              Search for patients or browse your recent and assigned patients
             </p>
           </div>
 
@@ -235,138 +160,140 @@ const PatientChronicleListPage = () => {
           </Button>
         </div>
 
-        {/* Tabs - My Patients tab only visible for clinical providers */}
-        {isClinicalProvider ? (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
-            <TabsList className="grid w-full sm:w-auto grid-cols-2 sm:inline-flex">
-              <TabsTrigger value="all" className="font-mono text-xs">
-                <Users className="h-4 w-4 mr-2" />
-                All Patients
-              </TabsTrigger>
-              <TabsTrigger value="my-patients" className="font-mono text-xs">
-                <Star className="h-4 w-4 mr-2" />
-                My Patients
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        ) : (
-          <div className="mb-4" /> /* Spacer when tabs are hidden */
+        {/* Tab Navigation - Using NavLinks for routes */}
+        {isClinicalProvider && (
+          <div className="flex items-center gap-1 mb-4 bg-muted rounded-lg p-1 w-fit">
+            <NavLink
+              to="/patients"
+              end
+              className={({ isActive }) => cn(
+                "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
+                isActive
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Users className="h-4 w-4" />
+              All Patients
+            </NavLink>
+            <NavLink
+              to="/patients/my-patients"
+              className={({ isActive }) => cn(
+                "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
+                isActive
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Star className="h-4 w-4" />
+              My Patients
+            </NavLink>
+          </div>
         )}
 
-        {/* Search and Filters */}
+        {/* Search Bar */}
         <div className="flex flex-col gap-3">
-          {/* Search - Full Width */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by name, MRN, or NHIS ID..."
+              placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
               value={searchQuery}
               onChange={handleSearchChange}
-              className="pl-10 font-mono text-sm bg-background"
+              className="pl-10 pr-10 font-mono text-sm bg-background"
             />
+            {hasSearchQuery && (
+              <button
+                onClick={handleClearSearch}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          {/* Filters Row */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Ward Filter */}
-            <Select value={selectedWard} onValueChange={setSelectedWard}>
-              <SelectTrigger className="w-full sm:w-[160px] font-mono text-xs h-9">
-                <Filter className="h-3.5 w-3.5 mr-2" />
-                <SelectValue placeholder="All Wards" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Wards</SelectItem>
-                {uniqueWards.map((ward) => (
-                  <SelectItem key={ward.id} value={ward.id}>
-                    {ward.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* View Mode Toggle */}
-            <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'grid'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'list'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <List className="h-4 w-4" />
-              </button>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-muted-foreground">
+              {isSearching && (
+                <span>{searchPatients.length} results for "{debouncedSearchTerm}"</span>
+              )}
             </div>
 
-            {/* Refresh */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              className="shrink-0 h-9 w-9"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex bg-muted rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors",
+                    viewMode === 'grid'
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors",
+                    viewMode === 'list'
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
 
-            {/* Clear Filters */}
-            {hasActiveFilters && (
+              {/* Refresh */}
               <Button
                 variant="ghost"
-                size="sm"
-                onClick={handleClearFilters}
-                className="font-mono text-xs h-9"
+                size="icon"
+                onClick={handleRefresh}
+                className="shrink-0 h-9 w-9"
               >
-                <X className="h-4 w-4 mr-1" />
-                Clear
+                <RefreshCw className="h-4 w-4" />
               </Button>
-            )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Patient List */}
-      <main className="p-4 sm:p-6">
-        {isLoading ? (
-          <LoadingSkeleton viewMode={viewMode} />
-        ) : filteredPatients.length === 0 ? (
-          <EmptyState
-            hasFilters={hasActiveFilters}
-            onClear={handleClearFilters}
-            isMyPatients={activeTab === "my-patients"}
+      {/* Main Content */}
+      <main className="p-4 sm:p-6 space-y-8">
+        {isSearching ? (
+          // Show search results
+          <SearchResultsSection
+            patients={searchPatients}
+            isLoading={isSearchLoading}
+            searchQuery={debouncedSearchTerm}
+            viewMode={viewMode}
+            onStartRound={handleStartRound}
+            onAddToMyPatients={handleAddToMyPatients}
+            showMyPatientsActions={isClinicalProvider}
           />
         ) : (
-          <div className={cn(
-            viewMode === 'grid'
-              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
-              : "space-y-4"
-          )}>
-            {filteredPatients.map((patient, index) => (
-              <PatientChronicleCard
-                key={patient?.id || patient?.patient_profile || index}
-                patient={patient}
-                index={index}
-                onStartRound={handleStartRound}
-                showMyPatientsActions={isClinicalProvider}
-                isInMyPatients={activeTab === "my-patients"}
-                onAddToMyPatients={handleAddToMyPatients}
-                onRemoveFromMyPatients={handleRemoveFromMyPatients}
-                onTogglePin={handleTogglePin}
-                className={viewMode === 'list' ? 'max-w-none' : ''}
-              />
-            ))}
-          </div>
+          // Show recent + context patients
+          <>
+            <RecentPatientsSection
+              patients={recentPatients}
+              isLoading={isRecentLoading}
+            />
+
+            <ContextPatientsSection
+              data={contextPatientsData}
+              isLoading={isContextLoading}
+              onStartRound={handleStartRound}
+              onAddToMyPatients={handleAddToMyPatients}
+              showMyPatientsActions={isClinicalProvider}
+            />
+
+            {/* Search hint when no search query */}
+            {!hasSearchQuery && recentPatients.length === 0 && !contextPatientsData?.patients?.length && (
+              <SearchHint />
+            )}
+          </>
         )}
       </main>
     </div>
@@ -374,10 +301,60 @@ const PatientChronicleListPage = () => {
 };
 
 /**
- * LoadingSkeleton - Skeleton loading state
+ * SearchResultsSection - Display search results
  */
-const LoadingSkeleton = ({ viewMode }) => {
-  const count = viewMode === 'grid' ? 6 : 4;
+const SearchResultsSection = ({
+  patients,
+  isLoading,
+  searchQuery,
+  viewMode,
+  onStartRound,
+  onAddToMyPatients,
+  showMyPatientsActions,
+}) => {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-card/50 border border-border rounded-2xl p-6 animate-pulse">
+            <div className="h-6 bg-muted rounded w-2/3 mb-3" />
+            <div className="h-4 bg-muted rounded w-1/2 mb-4" />
+            <div className="h-20 bg-muted rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (patients.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+          <Search className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="font-display text-xl text-foreground mb-2">
+          No patients found
+        </h3>
+        <p className="text-muted-foreground text-sm max-w-md">
+          No patients match "{searchQuery}". Try a different search term.
+        </p>
+      </div>
+    );
+  }
+
+  // Deduplicate patients by ID
+  const uniquePatients = patients.reduce((acc, patientData, index) => {
+    const patient = patientData?.local_data || patientData;
+    const id = patient?.id;
+    if (id && !acc.seen.has(id)) {
+      acc.seen.add(id);
+      acc.list.push({ patient, originalIndex: index });
+    } else if (!id) {
+      // Keep patients without ID (fallback)
+      acc.list.push({ patient, originalIndex: index });
+    }
+    return acc;
+  }, { seen: new Set(), list: [] }).list;
 
   return (
     <div className={cn(
@@ -385,82 +362,36 @@ const LoadingSkeleton = ({ viewMode }) => {
         ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
         : "space-y-4"
     )}>
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="bg-card/50 border border-border rounded-2xl p-6 space-y-4"
-        >
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-64" />
-            </div>
-            <Skeleton className="h-6 w-20 rounded-full" />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-          <Skeleton className="h-16 w-full rounded-xl" />
-          <div className="flex justify-between pt-4 border-t border-border">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-8 w-24 rounded-lg" />
-          </div>
-        </div>
+      {uniquePatients.map(({ patient, originalIndex }, index) => (
+        <PatientChronicleCard
+          key={`search-${patient?.id || originalIndex}-${index}`}
+          patient={patient}
+          index={index}
+          onStartRound={onStartRound}
+          onAddToMyPatients={onAddToMyPatients}
+          showMyPatientsActions={showMyPatientsActions}
+          className={viewMode === 'list' ? 'max-w-none' : ''}
+        />
       ))}
     </div>
   );
 };
 
 /**
- * EmptyState - No patients found state
+ * SearchHint - Shown when no data and no search
  */
-const EmptyState = ({ hasFilters, onClear, isMyPatients = false }) => {
-  // Determine content based on context
-  const getContent = () => {
-    if (isMyPatients) {
-      return {
-        icon: <Star className="h-8 w-8 text-muted-foreground" />,
-        title: 'No patients in your list',
-        description: 'Add patients to your personal list for quick access during ward rounds.'
-      };
-    }
-    if (hasFilters) {
-      return {
-        icon: <Users className="h-8 w-8 text-muted-foreground" />,
-        title: 'No matching patients',
-        description: 'Try adjusting your search or filter criteria.'
-      };
-    }
-    return {
-      icon: <Users className="h-8 w-8 text-muted-foreground" />,
-      title: 'No patients registered',
-      description: 'Start by registering a new patient to see them appear here.'
-    };
-  };
-
-  const content = getContent();
-
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        {content.icon}
-      </div>
-      <h3 className="font-display text-xl text-foreground mb-2">
-        {content.title}
-      </h3>
-      <p className="text-muted-foreground text-sm mb-4 max-w-md">
-        {content.description}
-      </p>
-      {hasFilters && !isMyPatients && (
-        <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="h-4 w-4 mr-2" />
-          Clear Filters
-        </Button>
-      )}
+const SearchHint = () => (
+  <div className="flex flex-col items-center justify-center py-16 text-center">
+    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+      <Search className="h-8 w-8 text-muted-foreground" />
     </div>
-  );
-};
+    <h3 className="font-display text-xl text-foreground mb-2">
+      Search for patients
+    </h3>
+    <p className="text-muted-foreground text-sm max-w-md">
+      Use the search bar above to find patients by name, MRN, or phone number.
+    </p>
+  </div>
+);
 
 export default PatientChronicleListPage;

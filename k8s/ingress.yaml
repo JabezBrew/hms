@@ -1,0 +1,168 @@
+# Kubernetes Ingress for HMS
+# Routes external traffic to internal services
+#
+# Prerequisites:
+# - Ingress controller (nginx-ingress, traefik, etc.)
+# - TLS certificate (cert-manager or manual)
+#
+# Apply: kubectl apply -f k8s/ingress.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hms-ingress
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: ingress
+  annotations:
+    # Nginx Ingress Controller annotations
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+
+    # SSL/TLS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Rate limiting (adjust based on needs)
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+
+    # CORS (if not handled by Django)
+    # nginx.ingress.kubernetes.io/enable-cors: "true"
+
+    # cert-manager for automatic TLS
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hms.local
+        - api.hms.local
+        - ws.hms.local
+      secretName: hms-tls-secret
+  rules:
+    # Main frontend
+    - host: hms.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hms-frontend
+                port:
+                  number: 80
+
+    # API backend
+    - host: api.hms.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hms-api
+                port:
+                  number: 8000
+
+    # WebSocket backend
+    - host: ws.hms.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hms-websocket
+                port:
+                  number: 8001
+
+---
+# Alternative: Single host with path-based routing
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hms-ingress-single-host
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.hms.local
+      secretName: hms-tls-secret-single
+  rules:
+    - host: app.hms.local
+      http:
+        paths:
+          # API routes
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hms-api
+                port:
+                  number: 8000
+
+          # WebSocket routes
+          - path: /ws(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hms-websocket
+                port:
+                  number: 8001
+
+          # Static files from API (Django admin, etc.)
+          - path: /static(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hms-api
+                port:
+                  number: 8000
+
+          # Media files
+          - path: /media(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hms-api
+                port:
+                  number: 8000
+
+          # Admin interface
+          - path: /admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hms-api
+                port:
+                  number: 8000
+
+          # Frontend - catch all
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hms-frontend
+                port:
+                  number: 80

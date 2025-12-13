@@ -191,13 +191,29 @@ export function useSearchPatients(options = {}) {
 }
 
 /**
- * Get recent patients
+ * Get recent patients (limited to 10 by default)
+ * @param {number} limit - Maximum number of results (default: 10, max: 20)
  * @returns {Object} Query result
  */
-export function useRecentPatients() {
+export function useRecentPatients(limit = 10) {
   return useQuery({
-    queryKey: patientKeys.recent(),
-    queryFn: () => patientsApi.getRecentPatients(),
+    queryKey: [...patientKeys.recent(), { limit }],
+    queryFn: () => patientsApi.getRecentPatients({ limit }),
+    staleTime: 30 * 1000, // 30 seconds - recent patients change frequently
+  });
+}
+
+/**
+ * Get context-specific patients based on user role
+ * Returns ward patients for nurses, appointments for doctors, etc.
+ * @param {Object} params - Query parameters (e.g., ward for nurses)
+ * @returns {Object} Query result
+ */
+export function useContextPatients(params = {}) {
+  return useQuery({
+    queryKey: ['patients', 'context', params],
+    queryFn: () => patientsApi.getContextPatients(params),
+    staleTime: 60 * 1000, // 1 minute
   });
 }
 

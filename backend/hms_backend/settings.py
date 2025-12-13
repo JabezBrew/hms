@@ -38,14 +38,17 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',  # ASGI server - must be first for static files handling
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',  # PostgreSQL features (GIN indexes, etc.)
 
     # Third-party apps
+    'channels',  # WebSocket support
     'rest_framework',
     'django_filters',
     'corsheaders',
@@ -107,6 +110,27 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'hms_backend.wsgi.application'
+ASGI_APPLICATION = 'hms_backend.asgi.application'
+
+# Channels Layer Configuration (WebSocket support)
+# Uses Redis for cross-process communication in production
+if DEBUG:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [env('REDIS_URL', default='redis://127.0.0.1:6379/2')],
+                'capacity': 1500,  # Max messages in channel before oldest dropped
+                'expiry': 10,  # Message expiry in seconds
+            },
+        },
+    }
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -119,8 +143,39 @@ DATABASES = {
         'PASSWORD': env('DB_PASSWORD'),
         'HOST': env('DB_HOST'),
         'PORT': env('DB_PORT'),
+        # Connection pooling - persistent connections for 10 minutes
+        # This prevents creating/destroying connections per request
+        'CONN_MAX_AGE': 600,
+        # Health checks ensure stale connections are recycled (Django 4.1+)
+        'CONN_HEALTH_CHECKS': True,
+        'OPTIONS': {
+            'connect_timeout': 10,
+            # Query timeout of 30 seconds to prevent long-running queries
+            'options': '-c statement_timeout=30000',
+        },
     }
 }
+
+# Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
+# Routes read queries to replica for horizontal scaling
+DB_REPLICA_HOST = env('DB_REPLICA_HOST', default='')
+if DB_REPLICA_HOST:
+    DATABASES['replica'] = {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': env('DB_NAME'),
+        'USER': env('DB_REPLICA_USER', default=env('DB_USER')),
+        'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
+        'HOST': DB_REPLICA_HOST,
+        'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
+        'CONN_MAX_AGE': 600,
+        'CONN_HEALTH_CHECKS': True,
+        'OPTIONS': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000',
+        },
+    }
+    # Enable the read replica router
+    DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -208,9 +263,9 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle'
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour',
-        'login': '5/minute',
+        'anon': '1000/hour' if not DEBUG else '10000/hour',
+        'user': '5000/hour' if not DEBUG else '50000/hour',
+        'login': '5/minute' if not DEBUG else '100/minute',
         'password_reset': '3/hour',
     }
 }

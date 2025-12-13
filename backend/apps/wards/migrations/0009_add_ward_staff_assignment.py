@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import migrations, models
+from django.db.utils import ProgrammingError
 import django.db.models.deletion
 import uuid
 
@@ -39,11 +40,15 @@ def seed_default_roles(apps, schema_editor):
          'description': 'Respiratory care specialist'},
     ]
 
-    for role_data in default_roles:
-        StaffRole.objects.get_or_create(
-            code=role_data['code'],
-            defaults=role_data
-        )
+    try:
+        for role_data in default_roles:
+            StaffRole.objects.get_or_create(
+                code=role_data['code'],
+                defaults=role_data
+            )
+    except ProgrammingError:
+        # Table doesn't exist yet (fresh database with complex migration ordering)
+        return
 
 
 def seed_head_nurse_assignments(apps, schema_editor):
@@ -61,6 +66,9 @@ def seed_head_nurse_assignments(apps, schema_editor):
         charge_nurse_role = StaffRole.objects.get(code='charge_nurse')
     except StaffRole.DoesNotExist:
         return  # Role not seeded yet
+    except ProgrammingError:
+        # Table doesn't exist yet (fresh database with complex migration ordering)
+        return
 
     for ward in Ward.objects.filter(head_nurse__isnull=False):
         WardStaffAssignment.objects.get_or_create(

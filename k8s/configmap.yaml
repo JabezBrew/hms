@@ -1,0 +1,36 @@
+# Kubernetes ConfigMap for HMS
+# Non-sensitive configuration values
+#
+# Apply: kubectl apply -f k8s/configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hms-config
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: config
+data:
+  # Django settings
+  DEBUG: "False"
+  DJANGO_SETTINGS_MODULE: "hms_backend.settings"
+
+  # Database settings (host/credentials in secrets)
+  DB_PORT: "5432"
+
+  # Application settings
+  ALLOWED_HOSTS: "localhost,api.hms.local,*.hms.local"
+  CORS_ALLOWED_ORIGINS: "https://hms.local,https://www.hms.local"
+  CSRF_TRUSTED_ORIGINS: "https://hms.local,https://www.hms.local"
+
+  # Frontend URLs (for email links, etc.)
+  FRONTEND_URL: "https://hms.local"
+
+  # Gunicorn settings
+  GUNICORN_WORKERS: "4"
+  GUNICORN_THREADS: "2"
+  GUNICORN_TIMEOUT: "30"
+
+  # Celery settings
+  CELERY_CONCURRENCY: "2"

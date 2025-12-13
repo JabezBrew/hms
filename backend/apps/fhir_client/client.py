@@ -29,6 +29,7 @@ class FHIRClient:
         self.fhir_store_id = settings.GOOGLE_FHIR_STORE
 
         # Set up authentication
+        self.credentials = None
         if settings.GOOGLE_APPLICATION_CREDENTIALS and os.path.exists(settings.GOOGLE_APPLICATION_CREDENTIALS):
             try:
                 self.credentials = service_account.Credentials.from_service_account_file(
@@ -39,7 +40,7 @@ class FHIRClient:
                 logger.warning(f"Failed to load credentials from file: {str(e)}")
         else:
             # Use default credentials
-            logger.warning("Google cloud authentication failed")
+            logger.warning("Google cloud authentication not configured - FHIR client will operate in mock mode")
 
         # Create session if credentials are available
         if self.credentials:

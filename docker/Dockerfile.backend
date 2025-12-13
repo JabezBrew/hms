@@ -1,0 +1,91 @@
+# Backend API Dockerfile
+# Runs Django with Gunicorn for HTTP requests
+#
+# Build: docker build -f docker/Dockerfile.backend -t hms-backend .
+# Run:   docker run -p 8000:8000 --env-file .env hms-backend
+
+FROM python:3.11-slim AS builder
+
+# Set build-time environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+
+# Production image
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Django settings
+    DJANGO_SETTINGS_MODULE=hms_backend.settings
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY backend/ .
+
+# Copy entrypoint script
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+
+# Collect static files
+RUN python manage.py collectstatic --noinput --clear 2>/dev/null || true
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Set entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health/ || exit 1
+
+# Run Gunicorn
+# - 4 workers (adjust based on CPU cores: 2-4 x cores)
+# - 2 threads per worker for mixed I/O
+# - 30s timeout for long requests
+# - Graceful timeout for clean shutdowns
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "4", \
+     "--threads", "2", \
+     "--timeout", "30", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "50", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--capture-output", \
+     "hms_backend.wsgi:application"]

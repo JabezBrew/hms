@@ -1,0 +1,96 @@
+Collecting channels
+  Obtaining dependency information for channels from https://files.pythonhosted.org/packages/16/34/c32915288b7ef482377b6adc401192f98c6a99b3a145423d3b8aed807898/channels-4.3.2-py3-none-any.whl.metadata
+  Downloading channels-4.3.2-py3-none-any.whl.metadata (4.7 kB)
+Collecting channels-redis
+  Obtaining dependency information for channels-redis from https://files.pythonhosted.org/packages/df/fe/b7224a401ad227b263e5ba84753ffb5a88df048f3b15efd2797903543ce4/channels_redis-4.3.0-py3-none-any.whl.metadata
+  Downloading channels_redis-4.3.0-py3-none-any.whl.metadata (13 kB)
+Collecting daphne
+  Obtaining dependency information for daphne from https://files.pythonhosted.org/packages/01/34/6171ab34715ed210bcd6c2b38839cc792993cff4fe2493f50bc92b0086a0/daphne-4.2.1-py3-none-any.whl.metadata
+  Downloading daphne-4.2.1-py3-none-any.whl.metadata (1.7 kB)
+Requirement already satisfied: Django>=4.2 in ./.venv/lib/python3.9/site-packages (from channels) (4.2.10)
+Collecting asgiref<4,>=3.9.0 (from channels)
+  Obtaining dependency information for asgiref<4,>=3.9.0 from https://files.pythonhosted.org/packages/91/be/317c2c55b8bbec407257d45f5c8d1b6867abc76d12043f2d3d58c538a4ea/asgiref-3.11.0-py3-none-any.whl.metadata
+  Downloading asgiref-3.11.0-py3-none-any.whl.metadata (9.3 kB)
+Requirement already satisfied: redis>=4.6 in ./.venv/lib/python3.9/site-packages (from channels-redis) (5.2.1)
+Collecting msgpack~=1.0 (from channels-redis)
+  Obtaining dependency information for msgpack~=1.0 from https://files.pythonhosted.org/packages/6c/3a/7d4077e8ae720b29d2b299a9591969f0d105146960681ea6f4121e6d0f8d/msgpack-1.1.2-cp39-cp39-macosx_11_0_arm64.whl.metadata
+  Downloading msgpack-1.1.2-cp39-cp39-macosx_11_0_arm64.whl.metadata (8.1 kB)
+Collecting autobahn>=22.4.2 (from daphne)
+  Obtaining dependency information for autobahn>=22.4.2 from https://files.pythonhosted.org/packages/13/ee/a6475f39ef6c6f41c33da6b193e0ffd2c6048f52e1698be6253c59301b72/autobahn-24.4.2-py2.py3-none-any.whl.metadata
+  Downloading autobahn-24.4.2-py2.py3-none-any.whl.metadata (18 kB)
+Collecting twisted[tls]>=22.4 (from daphne)
+  Obtaining dependency information for twisted[tls]>=22.4 from https://files.pythonhosted.org/packages/eb/66/ab7efd8941f0bc7b2bd555b0f0471bff77df4c88e0cc31120c82737fec77/twisted-25.5.0-py3-none-any.whl.metadata
+  Downloading twisted-25.5.0-py3-none-any.whl.metadata (22 kB)
+Requirement already satisfied: typing_extensions>=4 in ./.venv/lib/python3.9/site-packages (from asgiref<4,>=3.9.0->channels) (4.13.2)
+Collecting txaio>=21.2.1 (from autobahn>=22.4.2->daphne)
+  Obtaining dependency information for txaio>=21.2.1 from https://files.pythonhosted.org/packages/15/88/0d000ddcebd54469ffd84688b578578e3d180b23fa91114d22ec205b9e5d/txaio-23.6.1-py2.py3-none-any.whl.metadata
+  Downloading txaio-23.6.1-py2.py3-none-any.whl.metadata (7.1 kB)
+Requirement already satisfied: cryptography>=3.4.6 in ./.venv/lib/python3.9/site-packages (from autobahn>=22.4.2->daphne) (46.0.3)
+Collecting hyperlink>=21.0.0 (from autobahn>=22.4.2->daphne)
+  Obtaining dependency information for hyperlink>=21.0.0 from https://files.pythonhosted.org/packages/6e/aa/8caf6a0a3e62863cbb9dab27135660acba46903b703e224f14f447e57934/hyperlink-21.0.0-py2.py3-none-any.whl.metadata
+  Downloading hyperlink-21.0.0-py2.py3-none-any.whl.metadata (1.5 kB)
+Requirement already satisfied: setuptools in ./.venv/lib/python3.9/site-packages (from autobahn>=22.4.2->daphne) (68.2.0)
+Requirement already satisfied: sqlparse>=0.3.1 in ./.venv/lib/python3.9/site-packages (from Django>=4.2->channels) (0.5.3)
+Requirement already satisfied: async-timeout>=4.0.3 in ./.venv/lib/python3.9/site-packages (from redis>=4.6->channels-redis) (5.0.1)
+Collecting attrs>=22.2.0 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for attrs>=22.2.0 from https://files.pythonhosted.org/packages/3a/2a/7cc015f5b9f5db42b7d48157e23356022889fc354a2813c15934b7cb5c0e/attrs-25.4.0-py3-none-any.whl.metadata
+  Downloading attrs-25.4.0-py3-none-any.whl.metadata (10 kB)
+Collecting automat>=24.8.0 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for automat>=24.8.0 from https://files.pythonhosted.org/packages/02/ff/1175b0b7371e46244032d43a56862d0af455823b5280a50c63d99cc50f18/automat-25.4.16-py3-none-any.whl.metadata
+  Downloading automat-25.4.16-py3-none-any.whl.metadata (8.4 kB)
+Collecting constantly>=15.1 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for constantly>=15.1 from https://files.pythonhosted.org/packages/b8/40/c199d095151addf69efdb4b9ca3a4f20f70e20508d6222bffb9b76f58573/constantly-23.10.4-py3-none-any.whl.metadata
+  Downloading constantly-23.10.4-py3-none-any.whl.metadata (1.8 kB)
+Collecting incremental>=24.7.0 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for incremental>=24.7.0 from https://files.pythonhosted.org/packages/1d/55/0f4df2a44053867ea9cbea73fc588b03c55605cd695cee0a3d86f0029cb2/incremental-24.11.0-py3-none-any.whl.metadata
+  Downloading incremental-24.11.0-py3-none-any.whl.metadata (9.5 kB)
+Collecting zope-interface>=5 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for zope-interface>=5 from https://files.pythonhosted.org/packages/8a/76/565cf6db478ba344b27cfd6828f17da2888cf1beb521bce31142b3041fb5/zope_interface-8.0.1-cp39-cp39-macosx_11_0_arm64.whl.metadata
+  Downloading zope_interface-8.0.1-cp39-cp39-macosx_11_0_arm64.whl.metadata (44 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.9/44.9 kB 1.5 MB/s eta 0:00:00
+Requirement already satisfied: idna>=2.4 in ./.venv/lib/python3.9/site-packages (from twisted[tls]>=22.4->daphne) (3.10)
+Collecting pyopenssl>=21.0.0 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for pyopenssl>=21.0.0 from https://files.pythonhosted.org/packages/d1/81/ef2b1dfd1862567d573a4fdbc9f969067621764fbb74338496840a1d2977/pyopenssl-25.3.0-py3-none-any.whl.metadata
+  Downloading pyopenssl-25.3.0-py3-none-any.whl.metadata (17 kB)
+Collecting service-identity>=18.1.0 (from twisted[tls]>=22.4->daphne)
+  Obtaining dependency information for service-identity>=18.1.0 from https://files.pythonhosted.org/packages/08/2c/ca6dd598b384bc1ce581e24aaae0f2bed4ccac57749d5c3befbb5e742081/service_identity-24.2.0-py3-none-any.whl.metadata
+  Downloading service_identity-24.2.0-py3-none-any.whl.metadata (5.1 kB)
+Requirement already satisfied: cffi>=2.0.0 in ./.venv/lib/python3.9/site-packages (from cryptography>=3.4.6->autobahn>=22.4.2->daphne) (2.0.0)
+Requirement already satisfied: packaging>=17.0 in ./.venv/lib/python3.9/site-packages (from incremental>=24.7.0->twisted[tls]>=22.4->daphne) (24.2)
+Requirement already satisfied: tomli in ./.venv/lib/python3.9/site-packages (from incremental>=24.7.0->twisted[tls]>=22.4->daphne) (2.2.1)
+Requirement already satisfied: pyasn1 in ./.venv/lib/python3.9/site-packages (from service-identity>=18.1.0->twisted[tls]>=22.4->daphne) (0.6.1)
+Requirement already satisfied: pyasn1-modules in ./.venv/lib/python3.9/site-packages (from service-identity>=18.1.0->twisted[tls]>=22.4->daphne) (0.4.2)
+Requirement already satisfied: pycparser in ./.venv/lib/python3.9/site-packages (from cffi>=2.0.0->cryptography>=3.4.6->autobahn>=22.4.2->daphne) (2.22)
+Downloading channels-4.3.2-py3-none-any.whl (31 kB)
+Downloading channels_redis-4.3.0-py3-none-any.whl (20 kB)
+Downloading daphne-4.2.1-py3-none-any.whl (29 kB)
+Downloading asgiref-3.11.0-py3-none-any.whl (24 kB)
+Downloading autobahn-24.4.2-py2.py3-none-any.whl (666 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 667.0/667.0 kB 1.8 MB/s eta 0:00:00
+Downloading msgpack-1.1.2-cp39-cp39-macosx_11_0_arm64.whl (84 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 84.1/84.1 kB 2.2 MB/s eta 0:00:00
+Downloading attrs-25.4.0-py3-none-any.whl (67 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.6/67.6 kB 1.5 MB/s eta 0:00:00
+Downloading automat-25.4.16-py3-none-any.whl (42 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 42.8/42.8 kB 1.6 MB/s eta 0:00:00
+Downloading constantly-23.10.4-py3-none-any.whl (13 kB)
+Downloading hyperlink-21.0.0-py2.py3-none-any.whl (74 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74.6/74.6 kB 897.9 kB/s eta 0:00:00
+Downloading incremental-24.11.0-py3-none-any.whl (21 kB)
+Downloading pyopenssl-25.3.0-py3-none-any.whl (57 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 57.3/57.3 kB 2.1 MB/s eta 0:00:00
+Downloading service_identity-24.2.0-py3-none-any.whl (11 kB)
+Downloading txaio-23.6.1-py2.py3-none-any.whl (31 kB)
+Downloading zope_interface-8.0.1-cp39-cp39-macosx_11_0_arm64.whl (207 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 207.9/207.9 kB 1.3 MB/s eta 0:00:00
+Downloading twisted-25.5.0-py3-none-any.whl (3.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 1.7 MB/s eta 0:00:00
+Installing collected packages: zope-interface, txaio, msgpack, incremental, hyperlink, constantly, automat, attrs, asgiref, twisted, service-identity, pyopenssl, channels, autobahn, channels-redis, daphne
+  Attempting uninstall: asgiref
+    Found existing installation: asgiref 3.8.1
+    Uninstalling asgiref-3.8.1:
+      Successfully uninstalled asgiref-3.8.1
+Successfully installed asgiref-3.11.0 attrs-25.4.0 autobahn-24.4.2 automat-25.4.16 channels-4.3.2 channels-redis-4.3.0 constantly-23.10.4 daphne-4.2.1 hyperlink-21.0.0 incremental-24.11.0 msgpack-1.1.2 pyopenssl-25.3.0 service-identity-24.2.0 twisted-25.5.0 txaio-23.6.1 zope-interface-8.0.1
+
+[notice] A new release of pip is available: 23.2.1 -> 25.3
+[notice] To update, run: pip install --upgrade pip

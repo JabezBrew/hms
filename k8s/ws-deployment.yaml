@@ -1,0 +1,99 @@
+# Kubernetes Deployment for HMS WebSocket Server
+# Django Channels served by Daphne
+#
+# Apply: kubectl apply -f k8s/ws-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hms-websocket
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: websocket
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hms
+      app.kubernetes.io/component: websocket
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hms
+        app.kubernetes.io/component: websocket
+    spec:
+      serviceAccountName: hms-websocket
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: websocket
+          image: ${DOCKER_REGISTRY}/hms-websocket:${VERSION}
+          imagePullPolicy: Always
+
+          ports:
+            - name: ws
+              containerPort: 8001
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: hms-config
+            - secretRef:
+                name: hms-secrets
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ws
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: ws
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: hms
+                    app.kubernetes.io/component: websocket
+                topologyKey: kubernetes.io/hostname
+
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hms-websocket
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: websocket

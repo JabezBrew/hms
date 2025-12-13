@@ -346,7 +346,249 @@ This ensures:
 
 ---
 
+## Scalability & Performance Guidelines
+
+**Target:** 10,000+ concurrent users with sub-second response times.
+
+Every feature must be built with scale in mind. The system serves large hospitals with thousands of staff and patients.
+
+### Database Query Optimization
+
+**CRITICAL: Avoid N+1 queries.** Every list endpoint must be analyzed for query efficiency.
+
+#### Always Use `select_related` and `prefetch_related`
+
+```python
+# BAD - N+1 queries (1 + N queries for N patients)
+patients = Patient.objects.all()
+for p in patients:
+    print(p.user.name)  # Extra query per patient
+    print(p.admissions.first())  # Extra query per patient
+
+# GOOD - 2 queries total
+patients = Patient.objects.select_related('user').prefetch_related(
+    Prefetch(
+        'admissions',
+        queryset=Admission.objects.filter(status='admitted').select_related('bed__ward'),
+        to_attr='active_admissions_list'  # Use to_attr for filtered prefetch
+    )
+)
+```
+
+#### Use Database Aggregation Over Python Loops
+
+```python
+# BAD - Fetches all records, processes in Python
+total = sum(order.amount for order in Order.objects.filter(date=today))
+
+# GOOD - Single query with database aggregation
+from django.db.models import Sum, Count, Avg
+total = Order.objects.filter(date=today).aggregate(total=Sum('amount'))['total']
+
+# GOOD - Group by with annotation
+stats = Order.objects.values('status').annotate(
+    count=Count('id'),
+    total=Sum('amount')
+)
+```
+
+#### Verify Query Count
+
+```python
+# In tests, assert query count
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
+
+with CaptureQueriesContext(connection) as context:
+    response = client.get('/api/endpoint/')
+
+assert len(context) < 10, f"Too many queries: {len(context)}"
+```
+
+### Caching Strategy
+
+#### View-Level Caching for Read-Heavy Endpoints
+
+```python
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+
+# Cache list views (adjust timeout based on data volatility)
+@method_decorator(cache_page(60 * 5), name='list')  # 5 minutes
+class WardViewSet(viewsets.ModelViewSet):
+    pass
+
+# Cache expensive analytics
+@method_decorator(cache_page(60 * 15))  # 15 minutes
+@action(detail=False)
+def analytics(self, request):
+    pass
+```
+
+#### Cache Timeout Guidelines
+- **Static lookups** (wards, departments): 5-15 minutes
+- **Analytics/reports**: 10-15 minutes
+- **Dashboard summaries**: 30-60 seconds
+- **Real-time data** (alerts, vitals): No caching or 5-10 seconds
+
+#### Invalidate Cache on Writes
+
+```python
+from django.core.cache import cache
+
+def perform_create(self, serializer):
+    instance = serializer.save()
+    cache.delete_pattern('ward_list_*')  # Invalidate related caches
+```
+
+### API Design for Scale
+
+#### Pagination is Mandatory
+
+```python
+# Never return unbounded querysets
+class MyViewSet(viewsets.ModelViewSet):
+    pagination_class = PageNumberPagination  # Always set
+```
+
+#### Use Search Instead of Dropdowns
+
+For any selection with potentially >50 items, use search endpoints:
+
+```python
+# BAD - Loading all staff into dropdown
+staff = Staff.objects.all()  # Could be thousands
+
+# GOOD - Search endpoint with limit
+@action(detail=False, methods=['get'])
+def search(self, request):
+    query = request.query_params.get('q', '')
+    return Staff.objects.filter(
+        Q(user__first_name__icontains=query) |
+        Q(user__last_name__icontains=query)
+    )[:20]  # Always limit results
+```
+
+#### Lightweight List Serializers
+
+```python
+# Use different serializers for list vs detail
+def get_serializer_class(self):
+    if self.action == 'list':
+        return PatientListSerializer  # 5-8 fields only
+    return PatientDetailSerializer    # Full data
+
+# List serializer - flatten relationships
+class PatientListSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.get_full_name')
+    ward_name = serializers.CharField(source='current_ward.name', default=None)
+
+    class Meta:
+        model = Patient
+        fields = ['id', 'mrn', 'name', 'ward_name', 'status']  # Minimal
+```
+
+### Real-Time Features
+
+#### Use WebSockets for Live Data
+
+Polling is inefficient. Use WebSocket broadcasts for:
+- Alerts and notifications
+- Live vital signs monitoring
+- Real-time status updates
+
+```python
+# Broadcast via Django Channels signal
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+def broadcast_alert(alert):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f'ward_{alert.ward_id}',
+        {'type': 'alert.new', 'data': serialize_alert(alert)}
+    )
+```
+
+#### Frontend WebSocket Pattern
+
+```javascript
+// Use WebSocket hook instead of polling
+const { alerts, isConnected } = useAlertWebSocket({
+    wardId: currentWard.id,
+    onAlert: (alert) => toast.warning(alert.message)
+});
+
+// Only poll as fallback when WebSocket disconnects
+```
+
+### Frontend Performance
+
+#### React Query Caching
+
+```javascript
+// Configure appropriate stale times
+const { data } = useQuery({
+    queryKey: ['patients', filters],
+    queryFn: fetchPatients,
+    staleTime: 30 * 1000,      // 30 seconds before refetch
+    cacheTime: 5 * 60 * 1000,  // 5 minutes in cache
+});
+```
+
+#### Virtualize Long Lists
+
+```javascript
+// For lists > 100 items, use virtualization
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+// Don't render 1000 DOM nodes - virtualize
+```
+
+#### Debounce Search Inputs
+
+```javascript
+// Debounce user input to reduce API calls
+const debouncedSearch = useDebouncedCallback((value) => {
+    searchPatients(value);
+}, 300);
+```
+
+### Checklist for New Features
+
+Before implementing any feature, verify:
+
+- [ ] **Queries optimized?** - Used `select_related`/`prefetch_related` for related data
+- [ ] **Query count acceptable?** - List endpoints under 10 queries regardless of result size
+- [ ] **Pagination implemented?** - No unbounded querysets
+- [ ] **Caching considered?** - Added `cache_page` for read-heavy endpoints
+- [ ] **Search over dropdown?** - Used search for selections with >50 potential items
+- [ ] **List serializer lightweight?** - Only essential fields, no nested objects
+- [ ] **Real-time via WebSocket?** - Used broadcast instead of polling for live updates
+- [ ] **Frontend optimized?** - Proper React Query config, virtualization if needed
+
+### Performance Testing
+
+Run load tests before deploying significant features:
+
+```bash
+# Quick smoke test (50 users, 2 minutes)
+locust -f tests/load/locustfile.py --host=http://localhost:8000 \
+    --headless -u 50 -r 5 -t 2m
+
+# Full load test
+k6 run tests/load/k6-test.js
+```
+
+**Target Metrics:**
+- P95 response time < 500ms
+- Error rate < 1%
+- No query count increase with result size
+
+---
+
 **Success = Clinical staff focus on patient care, not navigating software.**
-- let's do test driven development from now!
-- Because the system would be used by facilities with different approaches, most features should be configurable instead of hardcoding
-- Always take into account the fact that the system will deploy in large hospitals that will have large numbers of staff, patients etc so in places where a selection needs to be made, it would be ideal and efficient to use a search mechanism than loading all entiities and displaying in a drop-down list
+- Test-driven development: write tests first
+- Configurable over hardcoded: facilities have different approaches
+- Search over dropdowns: large hospitals have thousands of staff/patients
+- Scale-first mindset: every feature must handle 10,000+ concurrent users

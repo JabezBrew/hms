@@ -56,3 +56,22 @@ def bulk_sync_patients_with_fhir(patient_ids):
             results.append({"patient_id": patient_id, "status": "no_mapping"})
 
     return results
+
+
+@shared_task
+def log_patient_search(user_id, search_query):
+    """
+    Background task to log patient search queries.
+    Moved to background to avoid blocking the search response.
+    """
+    from .models import PatientSearch
+    from apps.users.models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+        PatientSearch.objects.create(user=user, search_query=search_query)
+        logger.debug(f"Search logged for user {user_id}: {search_query[:50]}")
+    except User.DoesNotExist:
+        logger.warning(f"User {user_id} not found when logging search")
+    except Exception as e:
+        logger.error(f"Error logging patient search: {str(e)}")

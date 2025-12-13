@@ -1,10 +1,13 @@
 from rest_framework import viewsets, permissions, status, filters
 import time
 import logging
+import hashlib
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
+from django.core.cache import cache
 
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -16,10 +19,10 @@ from .serializers import (
     PatientNoteSerializer, PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
-from apps.users.serializers import PatientProfileSerializer
+from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
 from apps.fhir_client.client import fhir_client
-from .tasks import sync_patient_with_fhir
+from .tasks import sync_patient_with_fhir, log_patient_search
 
 
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
@@ -82,8 +85,21 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter recent patients to only show the current user's recent patients.
+        Limited to 10 most recent for performance.
         """
-        return RecentPatient.objects.filter(user=self.request.user)
+        limit = int(self.request.query_params.get('limit', 10))
+        # Cap at 20 to prevent abuse
+        limit = min(limit, 20)
+        return RecentPatient.objects.filter(
+            user=self.request.user
+        ).select_related(
+            'patient_profile',
+            'patient_profile__user'
+        ).prefetch_related(
+            'patient_profile__admissions',
+            'patient_profile__admissions__bed',
+            'patient_profile__admissions__bed__ward'
+        )[:limit]
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -220,37 +236,72 @@ class PatientViewSet(viewsets.ViewSet):
     def search(self, request):
         """
         Search for patients with advanced filters.
+        Requires minimum 2 characters for text search when no other filters are provided.
+
+        Performance optimizations:
+        - Uses lightweight serializer (PatientSearchListSerializer)
+        - Caches results for 30 seconds
+        - Logs searches asynchronously via Celery
+        - FHIR calls are opt-in via include_fhir=true query param
         """
-        query = request.query_params.get('query', '')
+        query = request.query_params.get('query', '').strip()
         ward_id = request.query_params.get('ward', '')
         admission_date = request.query_params.get('admission_date', '')
-        
-        # Log the search
+        include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+
+        # Require minimum 2 characters for search query when no other filters
+        has_other_filters = bool(ward_id or admission_date)
+        if not has_other_filters and len(query) < 2:
+            return Response(
+                {
+                    "error": "Search query must be at least 2 characters.",
+                    "query": query,
+                    "total": 0,
+                    "results": []
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        logger = logging.getLogger(__name__)
+        start_time = time.time()
+
+        # Generate cache key based on search parameters
+        cache_params = f"{query}:{ward_id}:{admission_date}"
+        cache_key = f"patient_search_{hashlib.md5(cache_params.encode()).hexdigest()}"
+
+        # Try to get from cache first (skip cache if include_fhir is requested)
+        if not include_fhir:
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                logger.info(f"Search cache hit for: {query[:20]}...")
+                # Log search asynchronously even for cache hits
+                search_desc = f"Query: {query}" + (f", Ward: {ward_id}" if ward_id else "") + (f", Date: {admission_date}" if admission_date else "")
+                log_patient_search.delay(str(request.user.id), search_desc)
+                return Response(cached_result)
+
+        # Log search asynchronously (non-blocking)
         search_desc = f"Query: {query}"
         if ward_id:
             search_desc += f", Ward: {ward_id}"
         if admission_date:
             search_desc += f", Date: {admission_date}"
-            
-        logger = logging.getLogger(__name__)
-        start_time = time.time()
-        
-        PatientSearch.objects.create(
-            user=request.user,
-            search_query=search_desc
-        )
+        log_patient_search.delay(str(request.user.id), search_desc)
 
         try:
             from django.db.models import Q
             from apps.wards.models import Admission
 
-            # Base query for local patients with optimizations
+            # OPTIMIZED: Base query with Prefetch for active admissions only
             local_patients_qs = PatientProfile.objects.select_related('user').prefetch_related(
-                'admissions', 
-                'admissions__bed', 
-                'admissions__bed__ward'
-            ).all()
-            
+                Prefetch(
+                    'admissions',
+                    queryset=Admission.objects.filter(
+                        status__in=['admitted', 'waiting']
+                    ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+                    to_attr='active_admissions_list'
+                )
+            )
+
             # Filter by text query (Name, MRN, NHIS)
             if query:
                 local_patients_qs = local_patients_qs.filter(
@@ -269,96 +320,84 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Filter by Admission Date
             if admission_date:
-                # Filter patients who have an admission on this date
                 local_patients_qs = local_patients_qs.filter(
                     admissions__admission_date__date=admission_date
                 ).distinct()
 
-            # Log query construction time
-            query_build_time = time.time()
-            logger.info(f"Search query built in {query_build_time - start_time:.4f}s")
+            # Limit to 20 results and serialize with lightweight serializer
+            patients_list = list(local_patients_qs[:20])
+            results = PatientSearchListSerializer(patients_list, many=True).data
 
-            # Prepare results
-            patients = []
-            
-            # Process local results
-            for patient in local_patients_qs[:20]: # Limit to 20 local results
-                # Optimization: Do NOT fetch FHIR resource synchronously for list view
-                # This causes massive performance issues (N+1 HTTP requests)
-                # The frontend primarily uses local_data for the list
-                patients.append({
-                    "fhir_resource": None, 
-                    "local_data": PatientProfileSerializer(patient).data
-                })
-            
-            # Log local processing time
+            # Log timing
             local_proc_time = time.time()
-            logger.info(f"Local results processed in {local_proc_time - query_build_time:.4f}s. Count: {len(patients)}")
+            logger.info(f"Search completed in {local_proc_time - start_time:.4f}s. Count: {len(results)}")
 
-            # If only text query is provided and no specific filters, also search FHIR directly
-            # (FHIR search usually doesn't support our specific ward/admission logic easily without custom params)
-            if query and not ward_id and not admission_date and len(patients) < 10:
-                search_params = {
-                    "name": query,
-                    "_sort": "family",
-                    "_count": 10
-                }
-                
-                identifier_search_params = {
-                    "identifier": query,
-                    "_sort": "family",
-                    "_count": 10
-                }
-
-                # Try name search first
-                fhir_results = fhir_client.search_resources("Patient", search_params)
-
-                # If no results, try identifier search
-                if "entry" not in fhir_results or len(fhir_results.get("entry", [])) == 0:
-                    fhir_results = fhir_client.search_resources("Patient", identifier_search_params)
-
-                if "entry" in fhir_results:
-                    for entry in fhir_results["entry"]:
-                        resource = entry.get("resource", {})
-                        
-                        # Check if we already have this patient in our local results
-                        if any(p['fhir_resource'] and p['fhir_resource'].get('id') == resource.get('id') for p in patients):
-                            continue
-
-                        # Try to find the local mapping
-                        try:
-                            mapping = PatientFHIRMapping.objects.get(fhir_patient_id=resource.get("id"))
-                            # Add to results if not already present (though logic above should catch it, mapping might exist without being in local_patients_qs if filters didn't match)
-                            # But if filters didn't match local_patients_qs, we probably shouldn't show it if we are strict. 
-                            # However, for pure text search fallback, we show it.
-                            
-                            patients.append({
-                                "fhir_resource": resource,
-                                "local_data": PatientProfileSerializer(mapping.patient_profile).data
-                            })
-                        except PatientFHIRMapping.DoesNotExist:
-                            # Just include FHIR data
-                            patients.append({
-                                "fhir_resource": resource,
-                                "local_data": None
-                            })
-
-
-            
-            total_time = time.time()
-            logger.info(f"Total search time: {total_time - start_time:.4f}s")
-            
-            return Response({
+            response_data = {
                 "query": query,
-                "total": len(patients),
-                "patients": patients
-            })
+                "total": len(results),
+                "results": results
+            }
+
+            # Cache results for 30 seconds (skip caching for FHIR results)
+            if not include_fhir:
+                cache.set(cache_key, response_data, timeout=30)
+
+            # Optional: Include FHIR results if explicitly requested and local results are sparse
+            if include_fhir and query and not ward_id and not admission_date and len(results) < 10:
+                fhir_results = self._search_fhir(query, results)
+                if fhir_results:
+                    response_data['fhir_results'] = fhir_results
+                    response_data['total'] += len(fhir_results)
+
+            return Response(response_data)
 
         except Exception as e:
+            logger.error(f"Search error: {str(e)}")
             return Response(
                 {"error": f"Failed to search patients: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _search_fhir(self, query, existing_results):
+        """
+        Helper method to search FHIR for additional patients.
+        Called only when include_fhir=true and local results are sparse.
+        """
+        try:
+            existing_ids = {str(r.get('id')) for r in existing_results}
+            fhir_patients = []
+
+            search_params = {"name": query, "_sort": "family", "_count": 10}
+            fhir_results = fhir_client.search_resources("Patient", search_params)
+
+            if "entry" not in fhir_results or not fhir_results.get("entry"):
+                # Try identifier search
+                fhir_results = fhir_client.search_resources("Patient", {"identifier": query, "_count": 10})
+
+            if "entry" in fhir_results:
+                for entry in fhir_results["entry"]:
+                    resource = entry.get("resource", {})
+                    fhir_id = resource.get('id')
+
+                    # Check for local mapping
+                    try:
+                        mapping = PatientFHIRMapping.objects.get(fhir_patient_id=fhir_id)
+                        if str(mapping.patient_profile_id) in existing_ids:
+                            continue
+                        fhir_patients.append({
+                            "fhir_resource": resource,
+                            "local_id": str(mapping.patient_profile_id)
+                        })
+                    except PatientFHIRMapping.DoesNotExist:
+                        fhir_patients.append({
+                            "fhir_resource": resource,
+                            "local_id": None
+                        })
+
+            return fhir_patients
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"FHIR search failed: {str(e)}")
+            return []
 
     @action(detail=True, methods=['get'])
     def get_patient(self, request, pk=None):

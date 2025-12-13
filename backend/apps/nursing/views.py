@@ -5,6 +5,9 @@ from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Prefetch
 from django.db import transaction
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.core.cache import cache
 from datetime import timedelta
 import logging
 
@@ -976,12 +979,16 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         """
         return self.dashboard(request)
 
+    @method_decorator(cache_page(30))  # Cache for 30 seconds (frequent updates needed)
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
         """
         Get consolidated patient monitoring data.
         Supports filtering by ward and admission status.
         Supports pagination with page and page_size query params.
+
+        OPTIMIZED: Uses Prefetch to reduce queries from 81 to 5-6 for 20 patients.
+        CACHED: Results cached for 30 seconds to reduce database load while staying fresh.
         """
         try:
             # Get query parameters with error handling
@@ -995,61 +1002,86 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 page = 1
                 page_size = 20
 
-            # Get currently admitted patients with optimized query
+            # Calculate time boundaries for prefetch filters
+            now = timezone.now()
+            twenty_four_hours_ago = now - timedelta(hours=24)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            two_hours_later = now + timedelta(hours=2)
+
+            # OPTIMIZED: Get currently admitted patients with all related data prefetched
+            # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
             admissions = Admission.objects.filter(status='admitted').select_related(
-                'patient__user',  # Use double underscore for nested relations
+                'patient__user',
                 'bed__ward',
                 'admitting_doctor__staff__user'
-            ).order_by('-admission_date')  # Most recent first
+            ).prefetch_related(
+                # Prefetch recent vital signs (last 24 hours)
+                Prefetch(
+                    'patient__vital_signs',
+                    queryset=VitalSigns.objects.filter(
+                        recorded_at__gte=twenty_four_hours_ago
+                    ).order_by('-recorded_at')[:5],
+                    to_attr='recent_vitals_list'
+                ),
+                # Prefetch active alerts (unacknowledged)
+                Prefetch(
+                    'patient__nursing_alerts',
+                    queryset=NursingAlert.objects.filter(
+                        is_acknowledged=False
+                    ).order_by('-severity', '-created_at')[:5],
+                    to_attr='active_alerts_list'
+                ),
+                # Prefetch pending tasks for today
+                Prefetch(
+                    'patient__nursing_tasks',
+                    queryset=NursingTask.objects.filter(
+                        status__in=['pending', 'overdue'],
+                        scheduled_time__gte=today_start,
+                        scheduled_time__lt=today_end
+                    ).order_by('scheduled_time')[:10],
+                    to_attr='pending_tasks_list'
+                ),
+                # Prefetch medications due in next 2 hours
+                Prefetch(
+                    'patient__medication_administrations',
+                    queryset=MedicationAdministration.objects.filter(
+                        status='scheduled',
+                        scheduled_time__gte=now,
+                        scheduled_time__lte=two_hours_later
+                    ).order_by('scheduled_time')[:10],
+                    to_attr='medications_due_list'
+                ),
+            ).order_by('-admission_date')
 
             # Filter by ward if specified
             if ward_id:
                 admissions = admissions.filter(bed__ward_id=ward_id)
 
-            # Get total count before pagination
-            total_count = admissions.count()
+            # Get total count with caching (avoid expensive count on every request)
+            cache_key = f'nursing_dashboard_count_{ward_id or "all"}'
+            total_count = cache.get(cache_key)
+            if total_count is None:
+                total_count = admissions.count()
+                cache.set(cache_key, total_count, 60)  # Cache count for 60 seconds
 
             # Apply pagination
             start = (page - 1) * page_size
             end = start + page_size
-            admissions = admissions[start:end]
+            admissions = list(admissions[start:end])
 
             monitoring_data = []
 
             for admission in admissions:
                 patient = admission.patient
 
-                # Get latest vital signs (within last 24 hours)
-                latest_vitals = VitalSigns.objects.filter(
-                    patient=patient,
-                    recorded_at__gte=timezone.now() - timedelta(hours=24)
-                ).select_related('recorded_by').order_by('-recorded_at').first()
+                # Use prefetched data instead of making individual queries
+                recent_vitals = getattr(patient, 'recent_vitals_list', [])
+                latest_vitals = recent_vitals[0] if recent_vitals else None
 
-                # Get active alerts
-                active_alerts = NursingAlert.objects.filter(
-                    patient=patient,
-                    is_acknowledged=False
-                ).select_related('patient__user').order_by('-severity', '-created_at')[:5]
-
-                # Get pending tasks for today
-                today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                today_end = today_start + timedelta(days=1)
-                pending_tasks = NursingTask.objects.filter(
-                    patient=patient,
-                    status__in=['pending', 'overdue'],
-                    scheduled_time__gte=today_start,
-                    scheduled_time__lt=today_end
-                ).order_by('scheduled_time')[:10]
-
-                # Get medications due in next 2 hours
-                now = timezone.now()
-                two_hours_later = now + timedelta(hours=2)
-                medications_due = MedicationAdministration.objects.filter(
-                    patient=patient,
-                    status='scheduled',
-                    scheduled_time__gte=now,
-                    scheduled_time__lte=two_hours_later
-                ).order_by('scheduled_time')[:10]
+                active_alerts = getattr(patient, 'active_alerts_list', [])
+                pending_tasks = getattr(patient, 'pending_tasks_list', [])
+                medications_due = getattr(patient, 'medications_due_list', [])
 
                 monitoring_data.append({
                     'patient': patient,

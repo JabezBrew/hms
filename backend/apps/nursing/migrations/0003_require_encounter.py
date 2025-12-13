@@ -7,6 +7,7 @@ IMPORTANT: Before running this migration, you MUST run the backfill command:
 This migration will fail if there are any vital signs with null encounter values.
 """
 from django.db import migrations, models
+from django.db.utils import ProgrammingError
 import django.db.models.deletion
 
 
@@ -14,7 +15,11 @@ def check_no_null_encounters(apps, schema_editor):
     """Verify no null encounters exist before making field required."""
     VitalSigns = apps.get_model('nursing', 'VitalSigns')
 
-    null_vitals = VitalSigns.objects.filter(encounter__isnull=True).count()
+    try:
+        null_vitals = VitalSigns.objects.filter(encounter__isnull=True).count()
+    except ProgrammingError:
+        # Table doesn't exist yet (fresh database) - no data to check
+        return
 
     if null_vitals > 0:
         raise ValueError(

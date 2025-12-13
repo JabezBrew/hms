@@ -153,22 +153,35 @@ class PatientProfileSerializer(serializers.ModelSerializer):
                   'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
+    def _get_active_admission(self, obj):
+        """
+        Helper method to get the active admission with optimized prefetch handling.
+        Supports three prefetch patterns:
+        1. active_admissions_list (optimized - pre-filtered for active)
+        2. admissions in _prefetched_objects_cache (legacy - filter in Python)
+        3. Database query fallback
+        """
+        # First, check for optimized prefetch attribute (active admissions only)
+        if hasattr(obj, 'active_admissions_list'):
+            active_list = obj.active_admissions_list
+            return active_list[0] if active_list else None
+
+        # Second, check for legacy prefetched admissions cache
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            return next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+
+        # Fallback to DB query if not prefetched
+        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
     def get_current_ward(self, obj):
         """
         Get the name of the ward where the patient is currently admitted.
         Returns "Waiting List" if admitted but no bed, "Not Admitted" otherwise.
         """
-        # Use prefetched admissions if available to avoid N+1
-        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
-            # Filter in python to use the cache
-            # Note: admissions are ordered by -admission_date by default
-            admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
-                None
-            )
-        else:
-            # Fallback to DB query if not prefetched
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+        admission = self._get_active_admission(obj)
 
         if not admission:
             return "Not Admitted"
@@ -186,18 +199,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         Get the ID of the ward where the patient is currently admitted.
         Returns None if not admitted to a ward.
         """
-        # Use prefetched admissions if available to avoid N+1
-        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
-            admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
-                None
-            )
-        else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
-
+        admission = self._get_active_admission(obj)
         if admission and admission.bed:
             return str(admission.bed.ward.id)
-
         return None
 
     def get_current_admission_id(self, obj):
@@ -205,18 +209,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         Get the ID of the current active admission.
         Returns None if not currently admitted.
         """
-        # Use prefetched admissions if available to avoid N+1
-        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
-            admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
-                None
-            )
-        else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
-
+        admission = self._get_active_admission(obj)
         if admission:
             return str(admission.id)
-
         return None
 
     def get_admission_status(self, obj):
@@ -224,18 +219,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         Get the status of the current admission.
         Returns None if not currently admitted.
         """
-        # Use prefetched admissions if available to avoid N+1
-        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
-            admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
-                None
-            )
-        else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
-
+        admission = self._get_active_admission(obj)
         if admission:
             return admission.status
-
         return None
 
     def get_admission_date(self, obj):
@@ -243,18 +229,40 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         Get the admission date of the patient's current admission.
         Returns None if not currently admitted.
         """
-        # Use prefetched admissions if available to avoid N+1
-        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
-            admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
-                None
-            )
-        else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
-
+        admission = self._get_active_admission(obj)
         if admission:
             return admission.admission_date
+        return None
 
+
+class PatientSearchListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for patient search results.
+    Returns only essential fields for list display - no nested objects or DB lookups.
+    """
+    name = serializers.SerializerMethodField()
+    date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    current_ward = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientProfile
+        fields = ['id', 'medical_record_number', 'nhis_id', 'name', 'date_of_birth',
+                  'gender', 'blood_group', 'current_ward']
+
+    def get_name(self, obj):
+        """Get full name directly from prefetched user."""
+        return obj.user.get_full_name()
+
+    def get_current_ward(self, obj):
+        """Get ward name from prefetched active_admissions_list."""
+        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
+            admission = obj.active_admissions_list[0]
+            if admission.status == 'waiting':
+                return "Waiting List"
+            if admission.bed:
+                return admission.bed.ward.name
+            return "Admitted (No Bed)"
         return None
 
 
