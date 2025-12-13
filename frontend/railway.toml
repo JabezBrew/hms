@@ -1,0 +1,10 @@
+# Railway configuration for HMS Frontend
+# Using Nixpacks builder (auto-detects Node.js/Vite)
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+numReplicas = 1
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
