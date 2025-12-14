@@ -121,7 +121,10 @@ function login(email, password, retries = 3) {
     const res = http.post(
       `${BASE_URL}/api/auth/login/`,
       JSON.stringify({ email, password }),
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: {
+        'Content-Type': 'application/json',
+        ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
+      } }
     );
 
     if (res.status === 200) {
