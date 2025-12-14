@@ -251,30 +251,56 @@ class WardViewSet(viewsets.ModelViewSet):
             'id', 'bed__ward_id', 'admission_date', 'actual_discharge_date'
         ))
 
-        # Generate date range
+        # Occupancy Trends Optimization
+        # Pre-initialize counters for the date range
+        daily_ward_occupancy = {}
+        current_date_iter = start_date_only
+        while current_date_iter <= end_date_only:
+            daily_ward_occupancy[current_date_iter] = {ward_id: 0 for ward_id in ward_ids}
+            current_date_iter += timedelta(days=1)
+
+        # Iterate admissions once
+        for adm in all_admissions:
+            # Determine effective start/end for this admission
+            adm_start = adm['admission_date'].date() if hasattr(adm['admission_date'], 'date') else adm['admission_date']
+            disc_raw = adm['actual_discharge_date']
+            adm_end = disc_raw.date() if disc_raw and hasattr(disc_raw, 'date') else disc_raw
+
+            # Clamp admission range to query range
+            # Range is [max(adm_start, start_date), min(discharge_date, end_date + 1))
+            # Note: discharge_date is exclusive for occupancy count in the original logic:
+            # "if adm_date <= current_date and (discharge_date is None or discharge_date > current_date)"
+            
+            range_start = max(adm_start, start_date_only)
+            
+            if adm_end:
+                 # If discharged, we count up to the day BEFORE discharge
+                 range_end = min(adm_end, end_date_only + timedelta(days=1))
+            else:
+                 # If active, count up to end of query range
+                 range_end = end_date_only + timedelta(days=1)
+            
+            # Iterate the intersection days
+            curr = range_start
+            while curr < range_end:
+                if curr in daily_ward_occupancy:
+                    daily_ward_occupancy[curr][adm['bed__ward_id']] += 1
+                curr += timedelta(days=1)
+
+        # Build response from pre-calculated data
         current_date = start_date_only
         while current_date <= end_date_only:
             date_data = {
                 'date': current_date.strftime('%b %d'),
                 'full_date': current_date.isoformat()
             }
-
-            # Calculate occupancy for each ward on this date (in Python, but using pre-fetched data)
-            ward_occupancy = {ward_id: 0 for ward_id in ward_ids}
-            for adm in all_admissions:
-                adm_date = adm['admission_date'].date() if hasattr(adm['admission_date'], 'date') else adm['admission_date']
-                discharge_date = adm['actual_discharge_date']
-                if discharge_date:
-                    discharge_date = discharge_date.date() if hasattr(discharge_date, 'date') else discharge_date
-
-                # Check if admission was active on current_date
-                if adm_date <= current_date and (discharge_date is None or discharge_date > current_date):
-                    ward_occupancy[adm['bed__ward_id']] += 1
-
+            
+            ward_occupancy = daily_ward_occupancy.get(current_date, {})
+            
             for ward_id in ward_ids:
                 total_beds = ward_bed_counts.get(ward_id, 0)
                 if total_beds > 0:
-                    occupancy_rate = round((ward_occupancy[ward_id] / total_beds) * 100, 1)
+                    occupancy_rate = round((ward_occupancy.get(ward_id, 0) / total_beds) * 100, 1)
                     date_data[ward_names[ward_id]] = occupancy_rate
 
             # Calculate overall occupancy

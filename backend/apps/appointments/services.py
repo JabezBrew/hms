@@ -550,33 +550,50 @@ class AvailabilityService:
 
         available_slots = []
         if "entry" in schedules_bundle:
-            for entry in schedules_bundle["entry"]:
-                if "resource" in entry and entry["resource"]["resourceType"] == "Schedule":
-                    schedule_id = entry["resource"]["id"]
-                    logger.debug(f"Searching slots for schedule: {schedule_id}")
-                    
-                    slots_bundle = SlotProxy.search(
-                        schedule_id=schedule_id,
-                        start_date=start_date,
-                        end_date=end_date,
-                        status="free"
-                    )
-                    logger.debug(f"Found slots: {slots_bundle}")
+            import concurrent.futures
 
-                    if "entry" in slots_bundle:
-                        for slot_entry in slots_bundle["entry"]:
-                            if "resource" in slot_entry:
-                                slot = slot_entry["resource"]
-                                slot_start = datetime.fromisoformat(slot["start"].replace('Z', '+00:00'))
-                                slot_end = datetime.fromisoformat(slot["end"].replace('Z', '+00:00'))
-                                
-                                # Add explicit date filtering here
-                                slot_date = slot_start.date()
-                                if start_date_obj <= slot_date <= end_date_obj:
-                                    available_slots.append(slot)
-                                else:
-                                    logger.debug(f"Filtering out slot with date {slot_date} outside range {start_date_obj} to {end_date_obj}")
+            def fetch_slots(schedule_entry):
+                if "resource" not in schedule_entry or schedule_entry["resource"]["resourceType"] != "Schedule":
+                    return []
+                
+                schedule_id = schedule_entry["resource"]["id"]
+                logger.debug(f"Searching slots for schedule: {schedule_id}")
+                
+                slots_bundle = SlotProxy.search(
+                    schedule_id=schedule_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    status="free"
+                )
+                
+                found_slots = []
+                if "entry" in slots_bundle:
+                    for slot_entry in slots_bundle["entry"]:
+                        if "resource" in slot_entry:
+                            found_slots.append(slot_entry["resource"])
+                return found_slots
 
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_schedule = {
+                    executor.submit(fetch_slots, entry): entry 
+                    for entry in schedules_bundle["entry"]
+                }
+                
+                for future in concurrent.futures.as_completed(future_to_schedule):
+                    try:
+                        slots = future.result()
+                        for slot in slots:
+                            slot_start = datetime.fromisoformat(slot["start"].replace('Z', '+00:00'))
+                            # Add explicit date filtering here
+                            slot_date = slot_start.date()
+                            if start_date_obj <= slot_date <= end_date_obj:
+                                available_slots.append(slot)
+                            else:
+                                logger.debug(f"Filtering out slot with date {slot_date} outside range {start_date_obj} to {end_date_obj}")
+                    except Exception as e:
+                        logger.error(f"Error fetching slots for schedule: {e}")
+
+        return available_slots
         return available_slots
 
 

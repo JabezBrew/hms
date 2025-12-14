@@ -1,125 +1,5 @@
 {
-  "root_group": {
-    "id": "d41d8cd98f00b204e9800998ecf8427e",
-    "groups": [
-      {
-        "name": "Doctor: Appointments",
-        "path": "::Doctor: Appointments",
-        "id": "65b5739507600b7641779f8a96122bd7",
-        "groups": [],
-        "checks": [
-            {
-              "name": "appointments loaded",
-              "path": "::Doctor: Appointments::appointments loaded",
-              "id": "b08e7686a589913cb858ab694a1d4be2",
-              "passes": 32,
-              "fails": 409
-            }
-          ]
-      },
-      {
-        "name": "Nurse: Dashboard",
-        "path": "::Nurse: Dashboard",
-        "id": "34151fac3ee066f54c93e9a3c654ef0c",
-        "groups": [],
-        "checks": [
-            {
-              "id": "3e819b1c03f921713526e3ce88b4f8d2",
-              "passes": 52,
-              "fails": 568,
-              "name": "dashboard loaded",
-              "path": "::Nurse: Dashboard::dashboard loaded"
-            },
-            {
-              "path": "::Nurse: Dashboard::dashboard response time OK",
-              "id": "159c36d5c184ed03ea8bfddd62b8811b",
-              "passes": 473,
-              "fails": 147,
-              "name": "dashboard response time OK"
-            }
-          ]
-      },
-      {
-        "name": "Admin: Ward Analytics",
-        "path": "::Admin: Ward Analytics",
-        "id": "640d32d61ed3e0e5312286c0dc18836c",
-        "groups": [],
-        "checks": [
-            {
-              "path": "::Admin: Ward Analytics::analytics loaded",
-              "id": "dd79cb0287d2086673642124f556c0cd",
-              "passes": 20,
-              "fails": 182,
-              "name": "analytics loaded"
-            },
-            {
-              "name": "analytics time OK",
-              "path": "::Admin: Ward Analytics::analytics time OK",
-              "id": "5b3d5b56e2d374444b68aea3de0a6d74",
-              "passes": 187,
-              "fails": 15
-            }
-          ]
-      },
-      {
-        "name": "Doctor: Patient Search",
-        "path": "::Doctor: Patient Search",
-        "id": "c24a1b3139223e40844284a2fe16d6e2",
-        "groups": [],
-        "checks": [
-            {
-              "name": "search completed",
-              "path": "::Doctor: Patient Search::search completed",
-              "id": "a71094ea93706e34f9362299954858c5",
-              "passes": 2,
-              "fails": 439
-            },
-            {
-              "fails": 12,
-              "name": "search time OK",
-              "path": "::Doctor: Patient Search::search time OK",
-              "id": "43bfc47e194001f3150e996b626ce5d9",
-              "passes": 429
-            }
-          ]
-      },
-      {
-        "checks": [
-          {
-            "fails": 614,
-            "name": "alerts loaded",
-            "path": "::Nurse: Alerts::alerts loaded",
-            "id": "00e6563e374978a2904aaf27a043a79d",
-            "passes": 6
-          }
-        ],
-        "name": "Nurse: Alerts",
-        "path": "::Nurse: Alerts",
-        "id": "7f35b343f96da443462ec4fa56424591",
-        "groups": []
-      },
-      {
-        "checks": [
-          {
-            "name": "wards loaded",
-            "path": "::Admin: Ward List::wards loaded",
-            "id": "87ae6243521efd47c8bc354d437b8bb7",
-            "passes": 3,
-            "fails": 199
-          }
-        ],
-        "name": "Admin: Ward List",
-        "path": "::Admin: Ward List",
-        "id": "f74a551cf91fbd78e563c1768c339ade",
-        "groups": []
-      }
-    ],
-    "checks": [],
-    "name": "",
-    "path": ""
-  },
   "options": {
-    "noColor": false,
     "summaryTrendStats": [
       "avg",
       "min",
@@ -128,133 +8,48 @@
       "p(90)",
       "p(95)"
     ],
-    "summaryTimeUnit": ""
+    "summaryTimeUnit": "",
+    "noColor": false
   },
   "state": {
-    "testRunDurationMs": 136597.864,
     "isStdOutTTY": true,
-    "isStdErrTTY": true
+    "isStdErrTTY": true,
+    "testRunDurationMs": 4587.923
   },
   "metrics": {
-    "group_duration": {
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 189,
+        "rate": 41.19511160060882
+      }
+    },
+    "http_req_sending": {
       "type": "trend",
       "contains": "time",
       "values": {
-        "avg": 4938.696219037607,
-        "min": 1176.664875,
-        "med": 4360.4541035,
-        "max": 15447.483458,
-        "p(90)": 8431.384875,
-        "p(95)": 9448.326249999998
+        "med": 0.936,
+        "max": 17.764,
+        "p(90)": 2.6351999999999998,
+        "p(95)": 3.1457999999999995,
+        "avg": 1.6368412698412698,
+        "min": 0.014
       }
     },
-    "iterations": {
-      "contains": "default",
-      "values": {
-        "count": 1263,
-        "rate": 9.246118226270362
-      },
-      "type": "counter"
-    },
     "http_req_failed": {
-      "type": "rate",
       "contains": "default",
       "values": {
-        "rate": 0.9540957657301148,
-        "passes": 2411,
-        "fails": 116
+        "rate": 1,
+        "passes": 189,
+        "fails": 0
       },
       "thresholds": {
         "rate<0.01": {
           "ok": false
         }
-      }
-    },
-    "search_time": {
-      "thresholds": {
-        "p(95)<1000": {
-          "ok": true
-        }
-      },
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "max": 2233,
-        "p(90)": 601,
-        "p(95)": 726,
-        "avg": 406.8616780045351,
-        "min": 176,
-        "med": 356
-      }
-    },
-    "data_sent": {
-      "type": "counter",
-      "contains": "data",
-      "values": {
-        "count": 314045,
-        "rate": 2299.04766300006
-      }
-    },
-    "checks": {
-      "contains": "default",
-      "values": {
-        "rate": 0.31776194246503037,
-        "passes": 1204,
-        "fails": 2585
       },
       "type": "rate"
-    },
-    "http_req_blocked": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "med": 0.001,
-        "max": 604.03,
-        "p(90)": 0.002,
-        "p(95)": 0.002,
-        "avg": 18.53136288088478,
-        "min": 0
-      }
-    },
-    "http_reqs": {
-      "type": "counter",
-      "contains": "default",
-      "values": {
-        "count": 2527,
-        "rate": 18.49955721123136
-      }
-    },
-    "http_req_waiting": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "max": 5585.514,
-        "p(90)": 621.9688000000001,
-        "p(95)": 828.4739999999999,
-        "avg": 481.87816778789073,
-        "min": 174.027,
-        "med": 350.687
-      }
-    },
-    "http_req_duration": {
-      "type": "trend",
-      "contains": "time",
-      "values": {
-        "min": 174.354,
-        "med": 351.265,
-        "max": 5586.101,
-        "p(90)": 622.1776000000001,
-        "p(95)": 829.8511999999998,
-        "avg": 482.41364107637634
-      },
-      "thresholds": {
-        "p(95)<500": {
-          "ok": false
-        },
-        "p(99)<1000": {
-          "ok": false
-        }
-      }
     },
     "vitals_record_time": {
       "contains": "time",
@@ -273,155 +68,179 @@
       },
       "type": "trend"
     },
-    "vus_max": {
-      "type": "gauge",
-      "contains": "default",
-      "values": {
-        "value": 100,
-        "min": 100,
-        "max": 100
-      }
-    },
-    "iteration_duration": {
+    "dashboard_load_time": {
       "type": "trend",
       "contains": "time",
       "values": {
-        "med": 9676.217042,
-        "max": 19750.2975,
-        "p(90)": 13043.2932578,
-        "p(95)": 14355.128741399998,
-        "avg": 9877.576996683307,
-        "min": 5371.598959
-      }
-    },
-    "http_req_sending": {
-      "contains": "time",
-      "values": {
-        "med": 0.187,
-        "max": 1.786,
-        "p(90)": 0.262,
-        "p(95)": 0.279,
-        "avg": 0.1667942223981003,
-        "min": 0.013
-      },
-      "type": "trend"
-    },
-    "errors": {
-      "values": {
-        "rate": 0.9491046182846371,
-        "passes": 1007,
-        "fails": 54
+        "max": 0,
+        "p(90)": 0,
+        "p(95)": 0,
+        "avg": 0,
+        "min": 0,
+        "med": 0
       },
       "thresholds": {
-        "rate<0.01": {
-          "ok": false
+        "p(95)<500": {
+          "ok": true
         }
-      },
-      "type": "rate",
-      "contains": "default"
+      }
     },
-    "dashboard_load_time": {
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
       "values": {
-        "med": 358,
-        "max": 6138,
-        "p(90)": 758.2,
-        "p(95)": 2699.4499999999985,
-        "avg": 622.1403225806451,
-        "min": 174
+        "p(90)": 2024.881,
+        "p(95)": 2114.1558,
+        "avg": 1163.6148042328043,
+        "min": 102.236,
+        "med": 1176.518,
+        "max": 2214.02
       },
       "thresholds": {
         "p(95)<500": {
           "ok": false
+        },
+        "p(99)<1000": {
+          "ok": false
+        }
+      }
+    },
+    "search_time": {
+      "values": {
+        "p(95)": 0,
+        "avg": 0,
+        "min": 0,
+        "med": 0,
+        "max": 0,
+        "p(90)": 0
+      },
+      "thresholds": {
+        "p(95)<1000": {
+          "ok": true
         }
       },
       "type": "trend",
       "contains": "time"
     },
-    "vus": {
-      "values": {
-        "value": 2,
-        "min": 0,
-        "max": 100
-      },
+    "vus_max": {
       "type": "gauge",
-      "contains": "default"
-    },
-    "http_req_duration{expected_response:true}": {
-      "type": "trend",
-      "contains": "time",
+      "contains": "default",
       "values": {
-        "avg": 2677.315698275862,
-        "min": 193.456,
-        "med": 2645.64,
-        "max": 5586.101,
-        "p(90)": 4990.195500000001,
-        "p(95)": 5290.67575
+        "value": 500,
+        "min": 500,
+        "max": 500
       }
     },
     "http_req_receiving": {
-      "values": {
-        "avg": 0.3686790660862689,
-        "min": 0.007,
-        "med": 0.081,
-        "max": 45.052,
-        "p(90)": 0.137,
-        "p(95)": 0.17539999999999978
-      },
       "type": "trend",
-      "contains": "time"
-    },
-    "http_req_tls_handshaking": {
       "contains": "time",
       "values": {
-        "avg": 10.484969133359714,
-        "min": 0,
-        "med": 0,
-        "max": 339.943,
-        "p(90)": 0,
-        "p(95)": 0
-      },
-      "type": "trend"
+        "avg": 0.08641798941798946,
+        "min": 0.027,
+        "med": 0.066,
+        "max": 2.344,
+        "p(90)": 0.0922,
+        "p(95)": 0.10939999999999997
+      }
     },
     "http_req_connecting": {
       "type": "trend",
       "contains": "time",
       "values": {
-        "max": 264.136,
+        "avg": 12.67036507936508,
+        "min": 0,
+        "med": 9.563,
+        "max": 22.683,
+        "p(90)": 20.2354,
+        "p(95)": 20.79
+      }
+    },
+    "data_sent": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 111600,
+        "rate": 24324.732564169015
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 1161.8915449735448,
+        "min": 102.141,
+        "med": 1175.417,
+        "max": 2213.537,
+        "p(90)": 2022.2636,
+        "p(95)": 2113.346
+      }
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 20.3426,
+        "p(95)": 20.9612,
+        "avg": 12.85833862433862,
+        "min": 0.016,
+        "med": 9.743,
+        "max": 24.372
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 0,
+        "max": 0,
         "p(90)": 0,
         "p(95)": 0,
-        "avg": 8.017766125840918,
+        "avg": 0,
+        "min": 0
+      }
+    },
+    "errors": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 0
+      },
+      "thresholds": {
+        "rate<0.01": {
+          "ok": true
+        }
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 500,
         "min": 0,
-        "med": 0
+        "max": 500
       }
     },
     "data_received": {
       "type": "counter",
       "contains": "data",
       "values": {
-        "count": 1081355,
-        "rate": 7916.339013910204
+        "count": 70119,
+        "rate": 15283.38640382587
       }
     }
   },
   "setup_data": {
     "initialTokens": {
-      "admin": {
-        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjYyNDM3LCJpYXQiOjE3NjU2NjE1MzcsImp0aSI6IjU3ODhiYjFjY2YwZDQyNWM4YzdhZmRiOGJjNGJkZjRjIiwidXNlcl9pZCI6IjY0MDAyOGUzLTgxOGMtNGQyYy04ZjgxLTdmOTQ2MTNjNjBjZSIsInVzZXJfdHlwZSI6ImFkbWluIiwiZW1haWwiOiJhZG1pbkBobXMuY29tIn0.IlOmbjyl_Q5TRw4nWFsAGV4vRxxTqrRKu2UBRbwys4M",
-        "refresh": null
-      },
-      "doctor": {
-        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjYyNDM3LCJpYXQiOjE3NjU2NjE1MzcsImp0aSI6IjU3ODhiYjFjY2YwZDQyNWM4YzdhZmRiOGJjNGJkZjRjIiwidXNlcl9pZCI6IjY0MDAyOGUzLTgxOGMtNGQyYy04ZjgxLTdmOTQ2MTNjNjBjZSIsInVzZXJfdHlwZSI6ImFkbWluIiwiZW1haWwiOiJhZG1pbkBobXMuY29tIn0.IlOmbjyl_Q5TRw4nWFsAGV4vRxxTqrRKu2UBRbwys4M",
-        "refresh": null
-      },
-      "nurse": {
-        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY1NjYyNDM3LCJpYXQiOjE3NjU2NjE1MzcsImp0aSI6IjU3ODhiYjFjY2YwZDQyNWM4YzdhZmRiOGJjNGJkZjRjIiwidXNlcl9pZCI6IjY0MDAyOGUzLTgxOGMtNGQyYy04ZjgxLTdmOTQ2MTNjNjBjZSIsInVzZXJfdHlwZSI6ImFkbWluIiwiZW1haWwiOiJhZG1pbkBobXMuY29tIn0.IlOmbjyl_Q5TRw4nWFsAGV4vRxxTqrRKu2UBRbwys4M",
-        "refresh": null
-      }
+      "admin": null,
+      "doctor": null,
+      "nurse": null
     },
     "credentials": {
       "admin": {
-        "password": "Admin123!",
-        "email": "admin@hms.com"
+        "email": "admin@hms.com",
+        "password": "Admin123!"
       },
       "doctor": {
         "email": "admin@hms.com",
@@ -432,5 +251,12 @@
         "password": "Admin123!"
       }
     }
+  },
+  "root_group": {
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": [],
+    "checks": []
   }
 }
