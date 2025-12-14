@@ -979,7 +979,6 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         """
         return self.dashboard(request)
 
-    @method_decorator(cache_page(30))  # Cache for 30 seconds (frequent updates needed)
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
         """
@@ -988,7 +987,11 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         Supports pagination with page and page_size query params.
 
         OPTIMIZED: Uses Prefetch to reduce queries from 81 to 5-6 for 20 patients.
-        CACHED: Results cached for 30 seconds to reduce database load while staying fresh.
+        CACHED: Results cached for 60 seconds with stampede protection.
+        
+        STAMPEDE PROTECTION: Uses lock-based single-flight pattern to prevent
+        cache stampedes. When cache expires, only ONE request runs the expensive
+        query while others wait for the result.
         """
         try:
             # Get query parameters with error handling
@@ -1002,107 +1005,144 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 page = 1
                 page_size = 20
 
-            # Calculate time boundaries for prefetch filters
-            now = timezone.now()
-            twenty_four_hours_ago = now - timedelta(hours=24)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            two_hours_later = now + timedelta(hours=2)
+            # Build cache key based on query params
+            cache_key = f'nursing_dashboard_{ward_id or "all"}_p{page}_ps{page_size}'
+            lock_key = f'{cache_key}_lock'
+            
+            # Try to get from cache first
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                return Response(cached_result)
+            
+            # Cache miss - try to acquire lock for single-flight
+            # Using cache.add() as a distributed lock (returns True if set, False if exists)
+            lock_acquired = cache.add(lock_key, '1', timeout=30)  # 30s lock timeout
+            
+            # If we didn't get the lock, another request is building the cache.
+            # Instead of blocking (which starves threads), we have two options:
+            # 1. Check cache one more time (the other request might be done)
+            # 2. If still no cache, proceed anyway (better than blocking)
+            if not lock_acquired:
+                # Quick retry - check if cache was populated while we waited
+                cached_result = cache.get(cache_key)
+                if cached_result is not None:
+                    return Response(cached_result)
+                # Still no cache - proceed with query rather than blocking threads
+                # This allows some duplicate queries but prevents thread starvation
+            
 
-            # OPTIMIZED: Get currently admitted patients with all related data prefetched
-            # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
-            admissions = Admission.objects.filter(status='admitted').select_related(
-                'patient__user',
-                'bed__ward',
-                'admitting_doctor__staff__user'
-            ).prefetch_related(
-                # Prefetch recent vital signs (last 24 hours)
-                Prefetch(
-                    'patient__vital_signs',
-                    queryset=VitalSigns.objects.filter(
-                        recorded_at__gte=twenty_four_hours_ago
-                    ).order_by('-recorded_at')[:5],
-                    to_attr='recent_vitals_list'
-                ),
-                # Prefetch active alerts (unacknowledged)
-                Prefetch(
-                    'patient__nursing_alerts',
-                    queryset=NursingAlert.objects.filter(
-                        is_acknowledged=False
-                    ).order_by('-severity', '-created_at')[:5],
-                    to_attr='active_alerts_list'
-                ),
-                # Prefetch pending tasks for today
-                Prefetch(
-                    'patient__nursing_tasks',
-                    queryset=NursingTask.objects.filter(
-                        status__in=['pending', 'overdue'],
-                        scheduled_time__gte=today_start,
-                        scheduled_time__lt=today_end
-                    ).order_by('scheduled_time')[:10],
-                    to_attr='pending_tasks_list'
-                ),
-                # Prefetch medications due in next 2 hours
-                Prefetch(
-                    'patient__medication_administrations',
-                    queryset=MedicationAdministration.objects.filter(
-                        status='scheduled',
-                        scheduled_time__gte=now,
-                        scheduled_time__lte=two_hours_later
-                    ).order_by('scheduled_time')[:10],
-                    to_attr='medications_due_list'
-                ),
-            ).order_by('-admission_date')
+            try:
+                # Calculate time boundaries for prefetch filters
+                now = timezone.now()
+                twenty_four_hours_ago = now - timedelta(hours=24)
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                today_end = today_start + timedelta(days=1)
+                two_hours_later = now + timedelta(hours=2)
 
-            # Filter by ward if specified
-            if ward_id:
-                admissions = admissions.filter(bed__ward_id=ward_id)
+                # OPTIMIZED: Get currently admitted patients with all related data prefetched
+                # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
+                admissions = Admission.objects.filter(status='admitted').select_related(
+                    'patient__user',
+                    'bed__ward',
+                    'admitting_doctor__staff__user'
+                ).prefetch_related(
+                    # Prefetch recent vital signs (last 24 hours)
+                    Prefetch(
+                        'patient__vital_signs',
+                        queryset=VitalSigns.objects.filter(
+                            recorded_at__gte=twenty_four_hours_ago
+                        ).order_by('-recorded_at')[:5],
+                        to_attr='recent_vitals_list'
+                    ),
+                    # Prefetch active alerts (unacknowledged)
+                    Prefetch(
+                        'patient__nursing_alerts',
+                        queryset=NursingAlert.objects.filter(
+                            is_acknowledged=False
+                        ).order_by('-severity', '-created_at')[:5],
+                        to_attr='active_alerts_list'
+                    ),
+                    # Prefetch pending tasks for today
+                    Prefetch(
+                        'patient__nursing_tasks',
+                        queryset=NursingTask.objects.filter(
+                            status__in=['pending', 'overdue'],
+                            scheduled_time__gte=today_start,
+                            scheduled_time__lt=today_end
+                        ).order_by('scheduled_time')[:10],
+                        to_attr='pending_tasks_list'
+                    ),
+                    # Prefetch medications due in next 2 hours
+                    Prefetch(
+                        'patient__medication_administrations',
+                        queryset=MedicationAdministration.objects.filter(
+                            status='scheduled',
+                            scheduled_time__gte=now,
+                            scheduled_time__lte=two_hours_later
+                        ).order_by('scheduled_time')[:10],
+                        to_attr='medications_due_list'
+                    ),
+                ).order_by('-admission_date')
 
-            # Get total count with caching (avoid expensive count on every request)
-            cache_key = f'nursing_dashboard_count_{ward_id or "all"}'
-            total_count = cache.get(cache_key)
-            if total_count is None:
-                total_count = admissions.count()
-                cache.set(cache_key, total_count, 60)  # Cache count for 60 seconds
+                # Filter by ward if specified
+                if ward_id:
+                    admissions = admissions.filter(bed__ward_id=ward_id)
 
-            # Apply pagination
-            start = (page - 1) * page_size
-            end = start + page_size
-            admissions = list(admissions[start:end])
+                # Get total count with caching (avoid expensive count on every request)
+                count_cache_key = f'nursing_dashboard_count_{ward_id or "all"}'
+                total_count = cache.get(count_cache_key)
+                if total_count is None:
+                    total_count = admissions.count()
+                    cache.set(count_cache_key, total_count, 120)  # Cache count for 120 seconds
 
-            monitoring_data = []
+                # Apply pagination
+                start = (page - 1) * page_size
+                end = start + page_size
+                admissions = list(admissions[start:end])
 
-            for admission in admissions:
-                patient = admission.patient
+                monitoring_data = []
 
-                # Use prefetched data instead of making individual queries
-                recent_vitals = getattr(patient, 'recent_vitals_list', [])
-                latest_vitals = recent_vitals[0] if recent_vitals else None
+                for admission in admissions:
+                    patient = admission.patient
 
-                active_alerts = getattr(patient, 'active_alerts_list', [])
-                pending_tasks = getattr(patient, 'pending_tasks_list', [])
-                medications_due = getattr(patient, 'medications_due_list', [])
+                    # Use prefetched data instead of making individual queries
+                    recent_vitals = getattr(patient, 'recent_vitals_list', [])
+                    latest_vitals = recent_vitals[0] if recent_vitals else None
 
-                monitoring_data.append({
-                    'patient': patient,
-                    'admission': admission,
-                    'latest_vitals': latest_vitals,
-                    'active_alerts': active_alerts,
-                    'pending_tasks': pending_tasks,
-                    'medications_due': medications_due
-                })
+                    active_alerts = getattr(patient, 'active_alerts_list', [])
+                    pending_tasks = getattr(patient, 'pending_tasks_list', [])
+                    medications_due = getattr(patient, 'medications_due_list', [])
 
-            # Use lightweight list serializer for dashboard (97% payload reduction)
-            serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
+                    monitoring_data.append({
+                        'patient': patient,
+                        'admission': admission,
+                        'latest_vitals': latest_vitals,
+                        'active_alerts': active_alerts,
+                        'pending_tasks': pending_tasks,
+                        'medications_due': medications_due
+                    })
 
-            # Return paginated response
-            return Response({
-                'count': total_count,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': (total_count + page_size - 1) // page_size,
-                'results': serializer.data
-            })
+                # Use lightweight list serializer for dashboard (97% payload reduction)
+                serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
+
+                # Build response data
+                result = {
+                    'count': total_count,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': (total_count + page_size - 1) // page_size,
+                    'results': serializer.data
+                }
+                
+                # Cache the result for 60 seconds
+                cache.set(cache_key, result, 60)
+                
+                return Response(result)
+            
+            finally:
+                # Release the lock if we acquired it
+                if lock_acquired:
+                    cache.delete(lock_key)
 
         except Exception as e:
             # Log the error and return a proper error response

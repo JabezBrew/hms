@@ -368,11 +368,11 @@ class PatientViewSet(viewsets.ViewSet):
             fhir_patients = []
 
             search_params = {"name": query, "_sort": "family", "_count": 10}
-            fhir_results = fhir_client.search_resources("Patient", search_params)
+            fhir_results = fhir_client.search_resources("Patient", search_params, timeout=2)
 
             if "entry" not in fhir_results or not fhir_results.get("entry"):
                 # Try identifier search
-                fhir_results = fhir_client.search_resources("Patient", {"identifier": query, "_count": 10})
+                fhir_results = fhir_client.search_resources("Patient", {"identifier": query, "_count": 10}, timeout=2)
 
             if "entry" in fhir_results:
                 for entry in fhir_results["entry"]:

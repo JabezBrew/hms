@@ -416,6 +416,7 @@ class MedicationAdministration(models.Model):
         ordering = ['scheduled_time']
         indexes = [
             models.Index(fields=['patient', 'scheduled_time', 'status']),
+            models.Index(fields=['patient', 'status', 'scheduled_time'], name='nursing_med_patient_status_idx'),  # For dashboard prefetch
             models.Index(fields=['status', 'scheduled_time']),
             models.Index(fields=['administered_by', 'administered_time']),
         ]

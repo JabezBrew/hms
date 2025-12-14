@@ -410,6 +410,7 @@ class Admission(models.Model):
     class Meta:
         ordering = ['-admission_date']
         indexes = [
+            models.Index(fields=['status'], name='wards_admis_status_single_idx'),  # Single column for dashboard filter
             models.Index(fields=['status', 'admission_date']),
             models.Index(fields=['bed', 'status']),
             models.Index(fields=['patient', 'status']),

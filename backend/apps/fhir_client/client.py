@@ -95,7 +95,7 @@ class FHIRClient:
 
     def query_with_retries(self, method: str, url: str, json_data: Optional[Dict] = None, 
                           params: Optional[Dict] = None, max_retries: int = 3, 
-                          retry_delay: int = 1) -> Dict:
+                          retry_delay: int = 1, timeout: int = 10) -> Dict:
         """
         Execute a request to the FHIR API with retry logic.
         """
@@ -143,7 +143,7 @@ class FHIRClient:
                     url=url,
                     json=json_data,
                     params=params,
-                    timeout=10  # Add 10s timeout
+                    timeout=timeout
                 )
 
                 response.raise_for_status()
@@ -218,19 +218,20 @@ class FHIRClient:
         url = self._build_url(resource_type, resource_id)
         return self.query_with_retries('DELETE', url)
 
-    def search_resources(self, resource_type: str, params: Dict) -> Dict:
+    def search_resources(self, resource_type: str, params: Dict, timeout: int = 10) -> Dict:
         """
         Search for FHIR resources.
 
         Args:
             resource_type: The FHIR resource type (e.g., 'Patient', 'Observation')
             params: Search parameters
+            timeout: Request timeout in seconds
 
         Returns:
             Bundle of matching resources
         """
         url = self._build_url(resource_type)
-        return self.query_with_retries('GET', url, params=params)
+        return self.query_with_retries('GET', url, params=params, timeout=timeout)
 
     def execute_bundle(self, bundle: Dict) -> Dict:
         """
