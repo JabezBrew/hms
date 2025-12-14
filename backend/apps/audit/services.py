@@ -67,6 +67,27 @@ class AuditService:
         return audit_log
 
     @classmethod
+    def log_action(cls, request, action, category, resource_type=None,
+                   resource_id=None, resource_name=None, description=None,
+                   changes=None, user=None):
+        """
+        Alias for log() - provides backwards compatibility.
+
+        This method has the same signature as log() and simply delegates to it.
+        """
+        return cls.log(
+            request=request,
+            action=action,
+            category=category,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            resource_name=resource_name,
+            description=description,
+            changes=changes,
+            user=user,
+        )
+
+    @classmethod
     def log_authentication(cls, request, action, success=True, user=None, email=None):
         """
         Log authentication events (login, logout, failed attempts).
