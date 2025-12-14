@@ -47,7 +47,11 @@ class Command(BaseCommand):
         # Create admin user
         self.stdout.write(f'Creating admin user: {email}')
 
+        # Username is required by AbstractUser - use email prefix
+        username = email.split('@')[0]
+
         user = User.objects.create_superuser(
+            username=username,
             email=email,
             password=password,
             first_name='Admin',
