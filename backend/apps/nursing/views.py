@@ -1018,16 +1018,19 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             # Using cache.add() as a distributed lock (returns True if set, False if exists)
             lock_acquired = cache.add(lock_key, '1', timeout=30)  # 30s lock timeout
             
+            # If we didn't get the lock, another request is building the cache.
+            # Instead of blocking (which starves threads), we have two options:
+            # 1. Check cache one more time (the other request might be done)
+            # 2. If still no cache, proceed anyway (better than blocking)
             if not lock_acquired:
-                # Another request is building the cache - wait for it
-                import time
-                for _ in range(60):  # Wait up to 6 seconds
-                    time.sleep(0.1)
-                    cached_result = cache.get(cache_key)
-                    if cached_result is not None:
-                        return Response(cached_result)
-                # Timeout waiting - fall through and build it ourselves
+                # Quick retry - check if cache was populated while we waited
+                cached_result = cache.get(cache_key)
+                if cached_result is not None:
+                    return Response(cached_result)
+                # Still no cache - proceed with query rather than blocking threads
+                # This allows some duplicate queries but prevents thread starvation
             
+
             try:
                 # Calculate time boundaries for prefetch filters
                 now = timezone.now()
