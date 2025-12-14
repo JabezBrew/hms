@@ -166,8 +166,7 @@ DATABASES['default'].update({
     'CONN_HEALTH_CHECKS': True,
     'OPTIONS': {
         'connect_timeout': 10,
-        # Query timeout of 30 seconds to prevent long-running queries
-        'options': '-c statement_timeout=30000',
+        # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
     },
 })
 
@@ -186,7 +185,6 @@ if DB_REPLICA_HOST:
         'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'connect_timeout': 10,
-            'options': '-c statement_timeout=30000',
         },
     }
     # Enable the read replica router
