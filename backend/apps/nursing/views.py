@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count, Case, When, Sum
 from django.db import transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -10,6 +10,8 @@ from django.views.decorators.cache import cache_page
 from django.core.cache import cache
 from datetime import timedelta
 import logging
+
+from ..core.pagination import StandardResultsSetPagination, SmallResultsSetPagination
 
 from .models import (
     VitalSigns, NursingTask, NursingAlert, MedicationAdministration,
@@ -48,6 +50,7 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
     queryset = VitalSigns.objects.select_related('patient', 'patient__user', 'recorded_by').all()
     permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
     filterset_fields = ['patient', 'recorded_by', 'is_critical']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -190,6 +193,7 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated, IsNurseOrAdmin]
     filterset_fields = ['patient', 'assigned_to', 'status', 'priority', 'task_type']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -277,6 +281,7 @@ class NursingAlertViewSet(viewsets.ModelViewSet):
     serializer_class = NursingAlertSerializer
     permission_classes = [permissions.IsAuthenticated, IsNurseOrAdmin]
     filterset_fields = ['patient', 'alert_type', 'severity', 'is_acknowledged']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -333,6 +338,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
     filterset_fields = ['patient', 'status', 'administered_by']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -563,18 +569,22 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         ).order_by('scheduled_time')
 
         serializer = self.get_serializer(medications, many=True)
+
+        # Use single aggregation query instead of multiple count() calls (N+1 fix)
+        summary = medications.aggregate(
+            total=Count('id'),
+            scheduled=Count(Case(When(status='scheduled', then=1))),
+            administered=Count(Case(When(status='administered', then=1))),
+            missed=Count(Case(When(status='missed', then=1))),
+            held=Count(Case(When(status='held', then=1))),
+            refused=Count(Case(When(status='refused', then=1))),
+        )
+
         return Response({
             'date': str(target_date),
             'patient_id': patient_id,
             'medications': serializer.data,
-            'summary': {
-                'total': medications.count(),
-                'scheduled': medications.filter(status='scheduled').count(),
-                'administered': medications.filter(status='administered').count(),
-                'missed': medications.filter(status='missed').count(),
-                'held': medications.filter(status='held').count(),
-                'refused': medications.filter(status='refused').count(),
-            }
+            'summary': summary
         })
 
     @action(detail=False, methods=['post'], url_path='create-and-administer')
@@ -939,6 +949,7 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
     serializer_class = ShiftHandoffSerializer
     permission_classes = [permissions.IsAuthenticated, IsNurseOrAdmin]
     filterset_fields = ['patient', 'shift_date', 'shift_type', 'from_nurse', 'to_nurse']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -1333,6 +1344,7 @@ class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
     ).prefetch_related('supply_requests', 'dose_administrations').all()
     permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
     filterset_fields = ['patient', 'admission', 'status', 'ordered_by']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
@@ -1694,6 +1706,7 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['status', 'treatment_entry', 'requested_by']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
@@ -1906,6 +1919,7 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
     ).all()
     permission_classes = [permissions.IsAuthenticated, IsNurseOrDoctor]
     filterset_fields = ['patient', 'admission', 'entry_type', 'category']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -2050,22 +2064,24 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
             is_deleted=False
         )
 
-        intake_entries = entries.filter(entry_type='intake')
-        output_entries = entries.filter(entry_type='output')
-
-        total_intake = sum(e.volume_ml for e in intake_entries)
-        total_output = sum(e.volume_ml for e in output_entries)
+        # Use database aggregation instead of Python sum (N+1 fix)
+        # Single query with conditional aggregation for totals + breakdown
+        totals = entries.aggregate(
+            total_intake=Sum(Case(When(entry_type='intake', then='volume_ml'))),
+            total_output=Sum(Case(When(entry_type='output', then='volume_ml'))),
+        )
+        total_intake = totals['total_intake'] or 0
+        total_output = totals['total_output'] or 0
         balance = total_intake - total_output
 
         # Calculate breakdown by category
-        from django.db.models import Sum
         intake_breakdown = dict(
-            intake_entries.values('category').annotate(
+            entries.filter(entry_type='intake').values('category').annotate(
                 total=Sum('volume_ml')
             ).values_list('category', 'total')
         )
         output_breakdown = dict(
-            output_entries.values('category').annotate(
+            entries.filter(entry_type='output').values('category').annotate(
                 total=Sum('volume_ml')
             ).values_list('category', 'total')
         )
@@ -2098,18 +2114,19 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
 
         today = timezone.now().date()
 
-        # Calculate totals (excluding soft-deleted entries)
+        # Calculate totals using database aggregation (N+1 fix)
         entries = FluidBalance.objects.filter(
             patient_id=patient_id,
             recorded_at__date=today,
             is_deleted=False
         )
 
-        intake_entries = entries.filter(entry_type='intake')
-        output_entries = entries.filter(entry_type='output')
-
-        total_intake = sum(e.volume_ml for e in intake_entries)
-        total_output = sum(e.volume_ml for e in output_entries)
+        totals = entries.aggregate(
+            total_intake=Sum(Case(When(entry_type='intake', then='volume_ml'))),
+            total_output=Sum(Case(When(entry_type='output', then='volume_ml'))),
+        )
+        total_intake = totals['total_intake'] or 0
+        total_output = totals['total_output'] or 0
         balance = total_intake - total_output
 
         return Response({
@@ -2166,18 +2183,19 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         # Get facility settings
         settings = FacilityFluidBalanceSettings.get_settings()
 
-        # Calculate totals (excluding soft-deleted entries)
+        # Calculate totals using database aggregation (N+1 fix)
         entries = FluidBalance.objects.filter(
             patient_id=patient_id,
             recorded_at__date=filter_date,
             is_deleted=False
         )
 
-        intake_entries = entries.filter(entry_type='intake')
-        output_entries = entries.filter(entry_type='output')
-
-        total_intake = sum(e.volume_ml for e in intake_entries)
-        total_output = sum(e.volume_ml for e in output_entries)
+        totals = entries.aggregate(
+            total_intake=Sum(Case(When(entry_type='intake', then='volume_ml'))),
+            total_output=Sum(Case(When(entry_type='output', then='volume_ml'))),
+        )
+        total_intake = totals['total_intake'] or 0
+        total_output = totals['total_output'] or 0
         balance = total_intake - total_output
 
         # Check alerts based on thresholds

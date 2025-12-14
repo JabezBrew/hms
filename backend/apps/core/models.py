@@ -237,3 +237,54 @@ class FacilityFluidBalanceSettings(models.Model):
             settings, _ = cls.objects.get_or_create(pk=1)
             cache.set('facility_fluid_balance_settings', settings, 300)  # Cache for 5 minutes
         return settings
+
+
+class IdempotencyRecord(models.Model):
+    """
+    Stores idempotency keys and their responses for deduplication.
+
+    Records are automatically cleaned up after their TTL expires.
+    Uses both database and cache for reliability and performance.
+    """
+    key = models.CharField(
+        max_length=128,
+        unique=True,
+        db_index=True,
+        help_text="Unique idempotency key (typically hashed)"
+    )
+    operation_type = models.CharField(
+        max_length=64,
+        help_text="Type of operation (e.g., 'payment', 'admission', 'discharge')"
+    )
+    request_path = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="API endpoint path"
+    )
+    request_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Hash of request body for validation"
+    )
+    response_status = models.IntegerField(
+        help_text="HTTP status code of the response"
+    )
+    response_body = models.JSONField(
+        help_text="Serialized response data"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        db_index=True,
+        help_text="When this record can be cleaned up"
+    )
+
+    class Meta:
+        verbose_name = "Idempotency Record"
+        verbose_name_plural = "Idempotency Records"
+        indexes = [
+            models.Index(fields=['key', 'operation_type']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.operation_type}:{self.key[:16]}..."

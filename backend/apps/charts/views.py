@@ -8,6 +8,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count
 from django.utils import timezone
@@ -26,6 +27,13 @@ from apps.charts.permissions import (
 from apps.charts.services import ChartEntryService
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for charts endpoints."""
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class ChartTemplateViewSet(viewsets.ModelViewSet):
     """
     ViewSet for chart template CRUD operations.
@@ -40,6 +48,7 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated, ChartTemplatePermission]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category', 'visibility', 'is_active']
     search_fields = ['name', 'description']
@@ -275,6 +284,7 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated, ChartAssignmentPermission]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['patient', 'admission', 'template', 'status']
     ordering_fields = ['created_at', 'start_datetime', 'status']
@@ -403,6 +413,7 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated, ChartEntryPermission]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['assignment', 'has_critical_values']
     ordering_fields = ['observation_datetime', 'created_at']

@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -22,12 +23,20 @@ from ..wards.models import Encounter
 logger = logging.getLogger(__name__)
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for referrals endpoints."""
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class ReferralViewSet(viewsets.ModelViewSet):
     """
     API endpoint for referrals with workflow management.
     """
     queryset = Referral.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
