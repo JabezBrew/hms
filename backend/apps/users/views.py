@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
@@ -25,6 +26,14 @@ from ..fhir_client.client import fhir_client
 
 User = get_user_model()
 
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for users endpoints."""
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 # Initialize RBAC system
 def initialize_rbac():
     """
@@ -44,6 +53,7 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_permissions(self):
         """
@@ -121,6 +131,7 @@ class StaffViewSet(viewsets.ModelViewSet):
     queryset = Staff.objects.all()
     serializer_class = StaffSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -207,6 +218,7 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
     queryset = PractitionerProfile.objects.all()
     serializer_class = PractitionerProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -433,6 +445,7 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     ).order_by('-created_at')
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':

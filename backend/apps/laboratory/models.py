@@ -125,6 +125,7 @@ class LabTestCatalog(models.Model):
         indexes = [
             models.Index(fields=['code']),
             models.Index(fields=['loinc_code']),
+            models.Index(fields=['name']),  # Added for search optimization
             models.Index(fields=['category', 'is_active']),
         ]
 

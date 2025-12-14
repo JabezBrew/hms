@@ -141,6 +141,11 @@ GET /api/dashboards/clinic/           # Clinic schedule
 
 **Critical:** Keep API response payloads minimal. Only return fields the frontend actually needs.
 
+**Mandatory Standards:**
+1. **List Serializers**: ALL list endpoints MUST use lightweight `*ListSerializer` with flattened fields (no nested objects)
+2. **Pagination**: ALL `ModelViewSet` classes MUST set `pagination_class = StandardResultsSetPagination`
+3. **Imports**: Use shared pagination from `apps.core.pagination.StandardResultsSetPagination`
+
 **Patterns:**
 - Use **List Serializers** for list endpoints (5-8 fields max)
 - Use **Detail Serializers** for single-item retrieval (full data)
@@ -149,11 +154,15 @@ GET /api/dashboards/clinic/           # Clinic schedule
 
 **Example:**
 ```python
-# In ViewSet
-def get_serializer_class(self):
-    if self.action == 'list':
-        return MyListSerializer  # Lightweight
-    return MySerializer          # Full details
+from apps.core.pagination import StandardResultsSetPagination
+
+class MyViewSet(viewsets.ModelViewSet):
+    pagination_class = StandardResultsSetPagination  # MANDATORY
+    
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return MyListSerializer  # Lightweight
+        return MySerializer          # Full details
 
 # List serializer: return name, not full nested object
 patient_name = serializers.SerializerMethodField()  # Good

@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
-from rest_framework.pagination import CursorPagination
+from rest_framework.pagination import PageNumberPagination
 from django.db import transaction, models
 from django.db.models import Q
 from django.utils import timezone
@@ -15,7 +15,8 @@ from .serializers import (
     NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
     NoteEntryCloneSerializer, NoteEntryVersionSerializer, NoteEntryUpdateSerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
-    PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer
+    PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer,
+    NoteEntryListSerializer, PrescriptionListSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
 from ..users.models import PractitionerProfile, PatientProfile
@@ -30,6 +31,13 @@ from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 
 logger = logging.getLogger(__name__)
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for clinical notes endpoints."""
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class NoteTemplateViewSet(viewsets.ModelViewSet):
@@ -47,6 +55,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
     queryset = NoteTemplate.objects.all()
     serializer_class = NoteTemplateSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         """Use lightweight serializer for list action."""
@@ -193,6 +202,12 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
     queryset = NoteEntry.objects.all()
     serializer_class = NoteEntrySerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse]
+    pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return NoteEntryListSerializer
+        return NoteEntrySerializer
 
     def get_queryset(self):
         """
@@ -1272,9 +1287,12 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
     """
     queryset = Prescription.objects.all()
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action == 'list':
+            return PrescriptionListSerializer
+        elif self.action == 'create':
             return PrescriptionCreateSerializer
         elif self.action in ['update', 'partial_update']:
             return PrescriptionUpdateSerializer

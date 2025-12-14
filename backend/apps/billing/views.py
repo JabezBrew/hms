@@ -2,6 +2,7 @@ import uuid
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import Sum, F, Q
@@ -25,6 +26,13 @@ from .serializers import (
 from ..users.permissions import IsAdminOrOwner
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for billing endpoints."""
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
     """
     API endpoint for service categories.
@@ -32,6 +40,7 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
@@ -51,6 +60,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'code', 'category__name']
     ordering_fields = ['name', 'base_price', 'category__name', 'created_at']
@@ -93,6 +103,7 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
     queryset = InsuranceProvider.objects.all()
     serializer_class = InsuranceProviderSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'contact_person', 'email', 'phone']
     ordering_fields = ['name', 'created_at']
@@ -128,6 +139,7 @@ class InsurancePlanViewSet(viewsets.ModelViewSet):
     queryset = InsurancePlan.objects.all()
     serializer_class = InsurancePlanSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description', 'provider__name']
     ordering_fields = ['name', 'provider__name', 'coverage_percentage', 'created_at']
@@ -147,6 +159,7 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     queryset = PatientInsurance.objects.all()
     serializer_class = PatientInsuranceSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'policy_number', 'plan__name', 'plan__provider__name']
     ordering_fields = ['valid_from', 'valid_until', 'created_at']
@@ -199,6 +212,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     """
     queryset = Invoice.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name', 'status']
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'status', 'created_at']
@@ -419,6 +433,7 @@ class InvoiceItemViewSet(viewsets.ModelViewSet):
     queryset = InvoiceItem.objects.all()
     serializer_class = InvoiceItemSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['service__name', 'description', 'invoice__invoice_number']
     ordering_fields = ['service__name', 'quantity', 'unit_price', 'created_at']
@@ -438,6 +453,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['invoice__invoice_number', 'reference_number', 'payment_method']
     ordering_fields = ['payment_date', 'amount', 'created_at']
@@ -489,6 +505,7 @@ class ClaimViewSet(viewsets.ModelViewSet):
     queryset = Claim.objects.all()
     serializer_class = ClaimSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['claim_number', 'invoice__invoice_number', 'status', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
     ordering_fields = ['submission_date', 'status', 'claimed_amount', 'approved_amount', 'created_at']
@@ -579,6 +596,7 @@ class ReceiptViewSet(viewsets.ModelViewSet):
     queryset = Receipt.objects.all()
     serializer_class = ReceiptSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['receipt_number', 'payment__invoice__invoice_number', 'payment__reference_number']
     ordering_fields = ['receipt_date', 'created_at']
