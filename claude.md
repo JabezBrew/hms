@@ -261,6 +261,16 @@ import {
 - **Refactoring**: Run full test suite for affected areas
 - **Before committing**: Run at minimum the tests for changed files
 
+### Database Migrations
+
+When adding new models, **run Django migration commands** instead of manually creating migration files:
+
+```bash
+# From backend/ directory with venv activated
+python manage.py makemigrations  # Creates migration files
+python manage.py migrate         # Applies migrations
+```
+
 ### Test Commands
 
 ```bash

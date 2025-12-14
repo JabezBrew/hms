@@ -7,6 +7,8 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q, Prefetch
 import logging
 
+from ..core.pagination import LargeResultsSetPagination, StandardResultsSetPagination
+
 from .models import (
     LabTestCatalog, LabPanel, LabOrder, LabOrderTest,
     LabSpecimen, LabResult, LabOrderStatus
@@ -46,6 +48,7 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     """
     queryset = LabTestCatalog.objects.all()
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LargeResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -204,6 +207,7 @@ class LabPanelViewSet(viewsets.ModelViewSet):
     queryset = LabPanel.objects.prefetch_related('tests').all()
     serializer_class = LabPanelSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LargeResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -337,6 +341,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
     """
     queryset = LabOrder.objects.all()
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -694,6 +699,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
     queryset = LabSpecimen.objects.all()
     serializer_class = LabSpecimenSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -831,6 +837,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
     """
     queryset = LabResult.objects.all()
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':

@@ -9,14 +9,16 @@ import logging
 from datetime import timedelta
 from django.utils import timezone
 
+from apps.core.retry import EXTERNAL_API_CONFIG
+from apps.core.circuit_breaker import CircuitOpenError
+
 logger = logging.getLogger(__name__)
 
 
 @shared_task(
     name='apps.wards.tasks.sync_encounter_to_fhir',
     bind=True,
-    max_retries=3,
-    default_retry_delay=60,  # 1 minute between retries
+    max_retries=EXTERNAL_API_CONFIG.max_retries,
 )
 def sync_encounter_to_fhir(self, encounter_id: str):
     """
@@ -25,6 +27,10 @@ def sync_encounter_to_fhir(self, encounter_id: str):
     This task is queued whenever an encounter is created or updated.
     It converts the local encounter to FHIR format and pushes it to
     the Google Cloud Healthcare API.
+
+    Uses:
+    - Exponential backoff for retries
+    - Circuit breaker to handle FHIR service outages gracefully
 
     Args:
         encounter_id: UUID of the local Encounter to sync
@@ -76,6 +82,18 @@ def sync_encounter_to_fhir(self, encounter_id: str):
             'fhir_id': encounter.fhir_id,
         }
 
+    except CircuitOpenError as e:
+        # Circuit breaker is open - FHIR service is unavailable
+        # Don't retry immediately, let the circuit breaker handle recovery
+        error_msg = f"FHIR service unavailable (circuit open): {str(e)}"
+        logger.warning(f"FHIR sync deferred for encounter {encounter_id}: {error_msg}")
+
+        encounter.fhir_sync_error = error_msg
+        encounter.save(update_fields=['fhir_sync_error'])
+
+        # Retry after circuit breaker reset timeout (60s)
+        raise self.retry(exc=e, countdown=60)
+
     except Exception as e:
         error_msg = str(e)
         logger.error(f"FHIR sync failed for encounter {encounter_id}: {error_msg}")
@@ -84,8 +102,11 @@ def sync_encounter_to_fhir(self, encounter_id: str):
         encounter.fhir_sync_error = error_msg
         encounter.save(update_fields=['fhir_sync_error'])
 
-        # Retry the task
-        raise self.retry(exc=e)
+        # Retry with exponential backoff
+        raise self.retry(
+            exc=e,
+            countdown=EXTERNAL_API_CONFIG.get_countdown(self.request.retries)
+        )
 
 
 @shared_task(name='apps.wards.tasks.sync_pending_encounters')

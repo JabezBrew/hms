@@ -1,5 +1,8 @@
 """
 FHIR Client for Google Cloud Healthcare API.
+
+Uses circuit breaker pattern to prevent cascading failures when the
+FHIR service is unavailable.
 """
 import os
 import json
@@ -13,7 +16,18 @@ from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import service_account
 from django.conf import settings
 
+from apps.core.circuit_breaker import CircuitBreaker, CircuitOpenError
+
 logger = logging.getLogger(__name__)
+
+# Circuit breaker for FHIR API calls
+# Opens after 5 failures, resets after 60 seconds
+fhir_circuit_breaker = CircuitBreaker(
+    name='fhir_api',
+    failure_threshold=5,
+    reset_timeout=60,
+    half_open_max_calls=3
+)
 
 
 class FHIRClient:
@@ -93,11 +107,16 @@ class FHIRClient:
 
         return url
 
-    def query_with_retries(self, method: str, url: str, json_data: Optional[Dict] = None, 
-                          params: Optional[Dict] = None, max_retries: int = 3, 
+    def query_with_retries(self, method: str, url: str, json_data: Optional[Dict] = None,
+                          params: Optional[Dict] = None, max_retries: int = 3,
                           retry_delay: int = 1, timeout: int = 10) -> Dict:
         """
-        Execute a request to the FHIR API with retry logic.
+        Execute a request to the FHIR API with retry logic and circuit breaker protection.
+
+        The circuit breaker prevents cascading failures:
+        - Opens after 5 consecutive failures
+        - Stays open for 60 seconds before allowing test requests
+        - Returns to closed state after 3 successful test requests
         """
         # If we're in mock mode (no valid credentials/session), return mock data
         if self.session is None:
@@ -134,8 +153,30 @@ class FHIRClient:
                 return {}
             return {}
 
-        # Normal operation with valid session
+        # Check circuit breaker state before attempting request
+        try:
+            # Use circuit breaker to protect against cascading failures
+            def make_request():
+                return self._execute_request(method, url, json_data, params, max_retries, retry_delay, timeout)
+
+            return fhir_circuit_breaker.call(make_request)
+
+        except CircuitOpenError as e:
+            logger.warning(f"FHIR circuit breaker is open: {e.message}")
+            # Return empty result or raise depending on use case
+            # For now, raise to let callers handle gracefully
+            raise
+
+    def _execute_request(self, method: str, url: str, json_data: Optional[Dict] = None,
+                        params: Optional[Dict] = None, max_retries: int = 3,
+                        retry_delay: int = 1, timeout: int = 10) -> Dict:
+        """
+        Internal method to execute the actual HTTP request with retry logic.
+        Called by query_with_retries through the circuit breaker.
+        """
         retries = 0
+        last_error = None
+
         while retries < max_retries:
             try:
                 response = self.session.request(
@@ -153,13 +194,15 @@ class FHIRClient:
                 return {}
 
             except Exception as e:
+                last_error = e
                 retries += 1
                 if retries >= max_retries:
                     logger.error(f"Failed after {max_retries} retries: {str(e)}")
                     raise
 
                 logger.warning(f"Retry {retries}/{max_retries} after error: {str(e)}")
-                time.sleep(retry_delay)
+                # Exponential backoff: 1s, 2s, 4s
+                time.sleep(retry_delay * (2 ** (retries - 1)))
 
     def create_resource(self, resource_type: str, data: Dict) -> Dict:
         """

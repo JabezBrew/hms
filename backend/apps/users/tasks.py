@@ -6,13 +6,16 @@ from django.utils import timezone
 from django.db import models
 import logging
 
+from apps.core.retry import EMAIL_CONFIG
+
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_password_reset_email(self, user_id, token, user_email, user_name):
     """
     Send password reset email with secure link.
+    Uses exponential backoff for retries.
     """
     try:
         reset_url = f"{settings.FRONTEND_URL}/reset-password/confirm?token={token}"
@@ -41,13 +44,14 @@ def send_password_reset_email(self, user_id, token, user_email, user_name):
 
     except Exception as e:
         logger.error(f"Failed to send password reset email to {user_email}: {str(e)}")
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_name, admin_name):
     """
     Send email with temporary password after admin force reset.
+    Uses exponential backoff for retries.
     """
     try:
         login_url = f"{settings.FRONTEND_URL}/login"
@@ -77,13 +81,14 @@ def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_
 
     except Exception as e:
         logger.error(f"Failed to send admin force reset email to {user_email}: {str(e)}")
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_welcome_credentials_email(self, user_email, user_name, password, employee_id, department, position):
     """
     Send welcome email with login credentials to newly created staff.
+    Uses exponential backoff for retries.
     """
     try:
         login_url = f"{settings.FRONTEND_URL}/login"
@@ -116,7 +121,7 @@ def send_welcome_credentials_email(self, user_email, user_name, password, employ
 
     except Exception as e:
         logger.error(f"Failed to send welcome credentials email to {user_email}: {str(e)}")
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
 @shared_task
