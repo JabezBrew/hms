@@ -233,10 +233,10 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
             # Only admins can create practitioner profiles
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
         elif self.action in ['list', 'search']:
-            # Admins, doctors, and nurses can view practitioner list
+            # Admins, doctors, nurses, and receptionists can view practitioner list
             permission_classes = [
                 permissions.IsAuthenticated,
-                IsAdmin | IsDoctor | IsNurse
+                IsAdmin | IsDoctor | IsNurse | IsReceptionist
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             # Admins can edit any practitioner, others can only view

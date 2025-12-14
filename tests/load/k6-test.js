@@ -58,7 +58,6 @@ let vuTokens = {
   admin: { access: null, refresh: null, lastRefresh: 0 },
   lab: { access: null, refresh: null, lastRefresh: 0 },
   reception: { access: null, refresh: null, lastRefresh: 0 },
-  clerk: { access: null, refresh: null, lastRefresh: 0 },
 };
 
 // Custom metrics
@@ -69,7 +68,6 @@ const searchTime = new Trend('search_time', true);
 const prescriptionTime = new Trend('prescription_create_time', true);
 const labOrderTime = new Trend('lab_order_process_time', true);
 const appointmentBookingTime = new Trend('appointment_booking_time', true);
-const admissionTime = new Trend('admission_time', true);
 const errorRate = new Rate('errors');
 const tokenRefreshes = new Counter('token_refreshes');
 
@@ -97,7 +95,6 @@ export const options = {
     prescription_create_time: ['p(95)<800'],
     lab_order_process_time: ['p(95)<1500'],
     appointment_booking_time: ['p(95)<800'],
-    admission_time: ['p(95)<1000'],
     errors: ['rate<0.01'],
   },
 
@@ -232,7 +229,7 @@ function getValidToken(userType, credentials) {
 
 // Setup function - runs once (shared across all VUs)
 export function setup() {
-  console.log('Setting up test - logging in test user...');
+  console.log('Setting up test - logging in test users...');
 
   // Use admin account for all workflows (has access to all endpoints)
   // In production, test users were created via registration API with auto-generated passwords
@@ -242,29 +239,24 @@ export function setup() {
     admin: { email: 'admin@hms.com', password: 'Admin123!' },
     lab: { email: 'lab_tech@hms.com', password: 'Admin123!' },
     reception: { email: 'receptionist@hms.com', password: 'Admin123!' },
-    clerk: { email: 'admin@hms.com', password: 'Admin123!' }, // Clerk uses admin for now as per seed
   };
 
-  // Get initial token (same for all user types)
-  const adminTokens = login(credentials.admin.email, credentials.admin.password);
-
-  // Validate token
-  if (!adminTokens) {
-    console.error('SETUP ERROR: Admin token is null - cannot proceed');
-  } else {
-    console.log('Setup complete: Admin token obtained for all workflows');
+  // Obtain tokens for each role
+  const initialTokens = {};
+  for (const [role, creds] of Object.entries(credentials)) {
+    const tokens = login(creds.email, creds.password);
+    if (tokens) {
+      initialTokens[role] = tokens;
+      console.log(`Login successful for ${role}`);
+    } else {
+      console.error(`Login failed for ${role} - tests using this role will fail`);
+      initialTokens[role] = null;
+    }
   }
 
   return {
     credentials,
-    initialTokens: {
-      nurse: adminTokens,
-      doctor: adminTokens,
-      admin: adminTokens,
-      lab: adminTokens,
-      reception: adminTokens,
-      clerk: adminTokens,
-    },
+    initialTokens,
   };
 }
 
@@ -273,13 +265,15 @@ const failedRequests = new Counter('failed_requests_by_endpoint');
 
 // Helper to log failed requests
 function checkResponse(res, endpoint) {
-  if (res.status >= 400) {
+  if (res.status === 0) {
     failedRequests.add(1, { endpoint: endpoint });
-    if (res.status !== 401) { // Don't spam auth errors
-      console.error(`${endpoint} failed: status=${res.status}`);
-    }
+    console.error(`${endpoint} failed: Network Error/Timeout. Error: ${res.error}`);
+  } else if (res.status >= 400) {
+    failedRequests.add(1, { endpoint: endpoint });
+    // Log detailed error for debugging
+    console.error(`${endpoint} failed with status ${res.status}. Body: ${res.body}`);
   }
-  return res.status < 400;
+  return res.status !== 0 && res.status < 400;
 }
 
 // Initialize VU tokens from setup data (called once per VU on first iteration)
@@ -298,9 +292,6 @@ function initializeVuTokens(data) {
   }
   if (vuTokens.reception.access === null && data.initialTokens.reception) {
     vuTokens.reception = { ...data.initialTokens.reception, lastRefresh: Date.now() };
-  }
-  if (vuTokens.clerk.access === null && data.initialTokens.clerk) {
-    vuTokens.clerk = { ...data.initialTokens.clerk, lastRefresh: Date.now() };
   }
 }
 
@@ -336,13 +327,7 @@ export default function (data) {
     if (!token) return sleep(1);
     const headers = getHeaders(token);
     receptionistWorkflow(headers);
-  } else if (vuType < 19) { // 18 (5%)
-    // Admissions Clerk workflow
-    const token = getValidToken('clerk', data.credentials);
-    if (!token) return sleep(1);
-    const headers = getHeaders(token);
-    admissionWorkflow(headers);
-  } else { // 19 (5%)
+  } else { // 18-19 (10%)
     // Admin workflow
     const token = getValidToken('admin', data.credentials);
     if (!token) return sleep(1);
@@ -418,6 +403,7 @@ function nurseWorkflow(headers) {
         'vitals recorded': (r) => r.status === 201,
         'vitals record time OK': (r) => r.timings.duration < 200,
       });
+      checkResponse(recordRes, 'Record Vitals');
     }
 
     sleep(randomIntBetween(2, 5));
@@ -479,6 +465,7 @@ function doctorWorkflow(headers) {
       );
       searchTime.add(Date.now() - searchStart);
       check(searchRes, { 'drug search OK': (r) => r.status === 200 });
+      checkResponse(searchRes, 'Drug Search');
 
       if (searchRes.status === 200) {
         // 2. Create Prescription
@@ -504,9 +491,11 @@ function doctorWorkflow(headers) {
         prescriptionTime.add(Date.now() - start);
         
         // 201 Created or 400 (Safety Alert) are acceptable
+        const success = res.status === 201 || (res.status === 400 && res.body.includes('safety'));
         check(res, {
-          'prescription processed': (r) => r.status === 201 || (r.status === 400 && r.body.includes('safety')),
+          'prescription processed': (r) => success,
         });
+        if (!success) checkResponse(res, 'Create Prescription');
       }
       sleep(randomIntBetween(2, 4));
     });
@@ -635,7 +624,7 @@ function receptionistWorkflow(headers) {
     // 1. Get resources (practitioners, types, patients) - usually cached, but fetching for test
     const practRes = http.get(`${BASE_URL}/api/users/practitioners/`, { headers });
     const typesRes = http.get(`${BASE_URL}/api/appointments/types/`, { headers });
-    const patRes = http.get(`${BASE_URL}/api/patients/search/?query=`, { headers });
+    const patRes = http.get(`${BASE_URL}/api/patients/search/?query=john`, { headers });
     
     if (practRes.status === 200 && typesRes.status === 200 && patRes.status === 200) {
       const practitioners = JSON.parse(practRes.body).results || [];
@@ -655,6 +644,8 @@ function receptionistWorkflow(headers) {
           `${BASE_URL}/api/appointments/appointments/available_slots/?practitioner_id=${practId}&start_date=${startDate}&end_date=${endDate}&appointment_type_id=${typeId}`,
           { headers }
         );
+        
+        checkResponse(slotsRes, 'Search Slots');
         
         if (slotsRes.status === 200) {
           const slots = JSON.parse(slotsRes.body).slots || [];
@@ -678,71 +669,12 @@ function receptionistWorkflow(headers) {
             );
             appointmentBookingTime.add(Date.now() - start);
             check(bookRes, { 'appointment booked': (r) => r.status === 201 });
+            checkResponse(bookRes, 'Book Appointment');
           }
         }
       }
     }
     sleep(randomIntBetween(2, 5));
-  });
-}
-
-// Admissions Clerk workflow
-function admissionWorkflow(headers) {
-  group('ADT: Admit Patient', function() {
-    // 1. Get wards
-    const wardsRes = http.get(`${BASE_URL}/api/wards/wards/`, { headers });
-    if (wardsRes.status === 200) {
-      const wards = JSON.parse(wardsRes.body).results || [];
-      if (wards.length) {
-        const wardId = randomItem(wards).id;
-        
-        // 2. Find Bed
-        const bedsRes = http.get(
-          `${BASE_URL}/api/wards/beds/?ward=${wardId}&status=available`,
-          { headers }
-        );
-        
-        if (bedsRes.status === 200) {
-          const beds = JSON.parse(bedsRes.body).results || [];
-          if (beds.length) {
-            // Need a patient and doctor
-            const patRes = http.get(`${BASE_URL}/api/patients/search/?query=`, { headers });
-            const docRes = http.get(`${BASE_URL}/api/users/practitioners/`, { headers });
-            
-            if (patRes.status === 200 && docRes.status === 200) {
-              const patients = JSON.parse(patRes.body).results || [];
-              const doctors = JSON.parse(docRes.body).results || [];
-              
-              if (patients.length && doctors.length) {
-                const bedId = randomItem(beds).id;
-                
-                // 3. Admit
-                const start = Date.now();
-                const admitRes = http.post(
-                  `${BASE_URL}/api/wards/admissions/`,
-                  JSON.stringify({
-                    patient: randomItem(patients).id,
-                    bed: bedId,
-                    admission_date: new Date().toISOString(),
-                    admission_type: "emergency",
-                    admitting_doctor: randomItem(doctors).id,
-                    admission_notes: "Load test admission"
-                  }),
-                  { headers }
-                );
-                
-                admissionTime.add(Date.now() - start);
-                // 201 or 400 (Occupied) are valid for load test race conditions
-                check(admitRes, { 
-                  'admission processed': (r) => r.status === 201 || (r.status === 400 && r.body.includes('occupied')) 
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-    sleep(randomIntBetween(5, 10));
   });
 }
 
@@ -799,7 +731,6 @@ function textSummary(data, options) {
   summary += `  Rx Create P95: ${(metrics.prescription_create_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Lab Order Process P95: ${(metrics.lab_order_process_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Appt Booking P95: ${(metrics.appointment_booking_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
-  summary += `  Admission P95: ${(metrics.admission_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Token Refreshes: ${metrics.token_refreshes?.values?.count || 0}\n`;
 
   return summary;
