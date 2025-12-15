@@ -2,28 +2,43 @@ from django.utils import timezone
 from .models import AuditLog, AuditAction, AuditCategory
 from .tasks import log_audit_async
 
+
 class AuditService:
     @staticmethod
-    def log(request, action, category, resource_type, resource_id, description, user=None):
+    def log(
+        request,
+        action,
+        category,
+        resource_type,
+        resource_id,
+        description,
+        user=None,
+        resource_name=None,
+        changes=None,
+    ):
         """
         Create an audit log entry asynchronously.
         """
         if not user and request:
-            user = request.user
+            user = getattr(request, 'user', None)
+            if user and not user.is_authenticated:
+                user = None
 
-        user_id = str(user.id) if user and user.is_authenticated else None
-        
+        user_id = str(user.id) if user else None
+        user_email = user.email if user else None
+        user_type = getattr(user, 'user_type', 'unknown') if user else None
+
         # Get IP and User Agent safely
         ip_address = None
         user_agent = None
-        
+
         if request:
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
             if x_forwarded_for:
                 ip_address = x_forwarded_for.split(',')[0]
             else:
                 ip_address = request.META.get('REMOTE_ADDR')
-            
+
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
         # Dispatch async task
@@ -35,42 +50,75 @@ class AuditService:
             resource_id=str(resource_id) if resource_id else None,
             description=description,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
+            user_email=user_email,
+            user_type=user_type,
+            resource_name=resource_name,
+            changes=changes,
         )
 
     @staticmethod
-    def log_authentication(request, user, success=True, details=None):
+    def log_authentication(request, action, user=None, email=None, details=None):
         """
-        Log authentication events (login/logout) asynchronously.
+        Log authentication events (login/logout/failed) asynchronously.
+
+        Args:
+            request: The HTTP request object
+            action: AuditAction (LOGIN, LOGOUT, LOGIN_FAILED, OFFSITE_ACCESS)
+            user: The user object (for successful auth events)
+            email: Email address (for failed login attempts where user may not exist)
+            details: Additional details to append to description
         """
-        action = AuditAction.LOGIN if success else AuditAction.LOGIN_FAILED
-        description = f"User {user.email} logged in successfully" if success else f"Failed login attempt for {user.email}"
-        
+        # Build description based on action
+        if action == AuditAction.LOGIN:
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} logged in successfully"
+        elif action == AuditAction.LOGOUT:
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} logged out"
+        elif action == AuditAction.LOGIN_FAILED:
+            user_identifier = email or 'unknown'
+            description = f"Failed login attempt for {user_identifier}"
+        elif action == AuditAction.OFFSITE_ACCESS:
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} accessed from off-site location"
+        else:
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"Authentication event for {user_identifier}"
+
         if details:
             description += f". {details}"
 
-        # Get request details here before passing to celery
+        # Get request details
         ip_address = None
         user_agent = None
-        
+
         if request:
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
             if x_forwarded_for:
                 ip_address = x_forwarded_for.split(',')[0]
             else:
                 ip_address = request.META.get('REMOTE_ADDR')
-            
+
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
+        # Get user details
+        user_id = str(user.id) if user else None
+        user_email = user.email if user else email
+        user_type = getattr(user, 'user_type', 'unknown') if user else 'unknown'
+
         log_audit_async.delay(
-            user_id=str(user.id) if user else None,
+            user_id=user_id,
             action=action,
             category=AuditCategory.AUTHENTICATION,
             resource_type='User',
-            resource_id=str(user.id) if user else None,
+            resource_id=user_id,
             description=description,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
+            user_email=user_email,
+            user_type=user_type,
+            resource_name=user_email,
         )
 
     @classmethod
@@ -167,9 +215,9 @@ class AuditService:
             'User': AuditCategory.ADMIN,
             'Staff': AuditCategory.ADMIN,
             'PractitionerProfile': AuditCategory.ADMIN,
-            'WardAdmission': AuditCategory.WARD,
-            'Bed': AuditCategory.WARD,
             'Ward': AuditCategory.WARD,
+            'Admission': AuditCategory.WARD,
+            'Bed': AuditCategory.WARD,
             'Appointment': AuditCategory.APPOINTMENT,
             'FluidBalance': AuditCategory.NURSING,
             'VitalSigns': AuditCategory.VITALS,

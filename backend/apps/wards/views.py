@@ -5,10 +5,15 @@ from django.db import transaction, models
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.core.cache import cache
 from django.db.models import Count, Avg, Sum, F, Q
 from django.db.models.functions import TruncDate
 from rest_framework.pagination import PageNumberPagination
 from datetime import timedelta, datetime
+
+# Cache key constants for invalidation
+WARD_LIST_CACHE_KEY = 'ward_list_view'
+WARD_ANALYTICS_CACHE_KEY = 'ward_analytics_view'
 
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
@@ -31,10 +36,41 @@ class StandardResultsSetPagination(PageNumberPagination):
     max_page_size = 1000
 
 
-@method_decorator(cache_page(60 * 5), name='list')  # Cache list for 5 minutes
+def invalidate_ward_caches():
+    """
+    Invalidate all ward-related caches when ward data changes.
+    Uses pattern deletion for Redis or clears specific keys.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Try pattern deletion (works with django-redis)
+        if hasattr(cache, 'delete_pattern'):
+            # Clear ward list and analytics caches
+            cache.delete_pattern('views.decorators.cache.cache_page.*ward*')
+            cache.delete_pattern('views.decorators.cache.cache_header.*ward*')
+            logger.debug("Ward caches invalidated via pattern deletion")
+        else:
+            # For non-Redis backends, we need a different approach
+            # Since cache_page generates complex keys, we'll use cache versioning
+            # by storing a version number that changes on write
+            version_key = 'ward_cache_version'
+            current_version = cache.get(version_key, 0)
+            cache.set(version_key, current_version + 1, timeout=None)
+            logger.debug(f"Ward cache version bumped to {current_version + 1}")
+    except Exception as e:
+        # If cache deletion fails, log but don't break the request
+        logger.warning(f"Failed to invalidate ward cache: {e}")
+
+
 class WardViewSet(viewsets.ModelViewSet):
     """
     API endpoint for wards.
+
+    Note: List view caching removed due to cache invalidation complexity.
+    For high-traffic deployments, consider implementing cache versioning
+    or using a cache key that includes a version number stored in Redis.
     """
     queryset = Ward.objects.prefetch_related('beds').all()
     serializer_class = WardSerializer
@@ -108,8 +144,18 @@ class WardViewSet(viewsets.ModelViewSet):
                         updated_by=self.request.user
                     )
 
+        # Invalidate cache after creating ward
+        invalidate_ward_caches()
+
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+        # Invalidate cache after updating ward
+        invalidate_ward_caches()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        # Invalidate cache after deleting ward
+        invalidate_ward_caches()
 
     @action(detail=True, methods=['get'])
     def beds(self, request, pk=None):

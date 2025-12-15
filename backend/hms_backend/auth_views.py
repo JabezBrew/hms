@@ -110,7 +110,7 @@ class LogoutView(APIView):
 
         # Log the logout action
         try:
-            AuditService.log_authentication(request, AuditAction.LOGOUT, success=True, user=user)
+            AuditService.log_authentication(request, action=AuditAction.LOGOUT, user=user)
         except Exception:
             pass  # Don't let audit logging break logout
 
@@ -174,7 +174,7 @@ class LoginView(APIView):
 
             # Log successful login
             try:
-                AuditService.log_authentication(request, AuditAction.LOGIN, success=True, user=user)
+                AuditService.log_authentication(request, action=AuditAction.LOGIN, user=user)
             except Exception:
                 pass  # Don't let audit logging break login
 
@@ -189,8 +189,7 @@ class LoginView(APIView):
                 try:
                     AuditService.log_authentication(
                         request,
-                        AuditAction.OFFSITE_ACCESS,
-                        success=True,
+                        action=AuditAction.OFFSITE_ACCESS,
                         user=user
                     )
                 except Exception:
@@ -221,7 +220,7 @@ class LoginView(APIView):
 
         # Log failed login attempt
         try:
-            AuditService.log_authentication(request, AuditAction.LOGIN_FAILED, success=False, email=email)
+            AuditService.log_authentication(request, action=AuditAction.LOGIN_FAILED, email=email)
         except Exception:
             pass  # Don't let audit logging break login
 
