@@ -408,3 +408,27 @@ export function useBulkCreateLabResults() {
     },
   });
 }
+
+/**
+ * Hook for bulk verifying lab results
+ * Used for batch verification by order or panel
+ */
+export function useBulkVerifyLabResults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.bulkVerifyResults(data),
+    onSuccess: (data, variables) => {
+      // Invalidate results queries
+      queryClient.invalidateQueries({ queryKey: labKeys.results() });
+
+      // Invalidate the specific order if provided
+      if (variables.order_id) {
+        queryClient.invalidateQueries({ queryKey: labKeys.order(variables.order_id) });
+      }
+
+      // Invalidate orders list
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() });
+    },
+  });
+}

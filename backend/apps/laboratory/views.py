@@ -854,9 +854,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
         queryset = LabResult.objects.select_related(
             'order_test__test',
             'order_test__order__patient__user',
+            'order_test__order__ordering_provider',
             'specimen',
             'performed_by__staff__user',
             'verified_by__staff__user'
+        ).prefetch_related(
+            'order_test__order__panels'  # M2M field
         )
 
         # Filter by order
@@ -1019,10 +1022,13 @@ class LabResultViewSet(viewsets.ModelViewSet):
         results_count = LabResult.objects.filter(order_test__order=order).count()
 
         if results_count >= all_tests_count:
-            # All results entered, but not verified yet - keep as processing
+            # All results entered - mark order as completed
+            order.status = LabOrderStatus.COMPLETED
+            order.completed_at = timezone.now()
+            order.save(update_fields=['status', 'completed_at'])
             logger.info(
                 f"All {results_count} results entered for order {order.order_number}. "
-                f"Awaiting verification."
+                f"Order auto-completed."
             )
 
         logger.info(
@@ -1047,3 +1053,95 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'created_count': len(created_results),
             'results': result_serializer.data
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='bulk-verify')
+    @transaction.atomic
+    def bulk_verify(self, request):
+        """
+        Verify multiple lab results in a single request.
+
+        Payload:
+        {
+            "result_ids": ["uuid1", "uuid2", ...],
+            "verification_notes": "Optional notes"  # optional
+        }
+
+        Can also verify by order:
+        {
+            "order_id": "uuid",
+            "verification_notes": "Optional notes"
+        }
+        """
+        result_ids = request.data.get('result_ids', [])
+        order_id = request.data.get('order_id')
+        verification_notes = request.data.get('verification_notes', '')
+
+        # Get practitioner profile
+        try:
+            practitioner = request.user.staff_profile.practitioner_profile
+        except AttributeError:
+            return Response(
+                {'error': 'Only practitioners can verify lab results'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get results to verify
+        if order_id:
+            # Verify all unverified results for an order
+            results = LabResult.objects.filter(
+                order_test__order_id=order_id,
+                is_verified=False
+            )
+        elif result_ids:
+            # Verify specific results
+            results = LabResult.objects.filter(
+                id__in=result_ids,
+                is_verified=False
+            )
+        else:
+            return Response(
+                {'error': 'Provide either result_ids or order_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not results.exists():
+            return Response(
+                {'error': 'No unverified results found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Verify all results
+        verified_count = results.count()
+        now = timezone.now()
+        results.update(
+            is_verified=True,
+            verified_by=practitioner,
+            verified_at=now
+        )
+
+        # Get order info for logging
+        order_info = ""
+        if order_id:
+            order = LabOrder.objects.filter(id=order_id).first()
+            if order:
+                order_info = f" for order {order.order_number}"
+
+        logger.info(
+            f"Bulk verified {verified_count} lab results{order_info} by {request.user.get_full_name()}"
+        )
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_RESULT_VERIFY,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabResult',
+            resource_id=order_id or str(result_ids[0]) if result_ids else None,
+            resource_name=f"Bulk verification{order_info}",
+            description=f"Verified {verified_count} lab results{order_info}",
+        )
+
+        return Response({
+            'verified_count': verified_count,
+            'message': f'Successfully verified {verified_count} result(s)'
+        })

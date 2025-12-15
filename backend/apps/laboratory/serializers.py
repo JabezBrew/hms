@@ -777,21 +777,67 @@ class LabResultListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for lab result lists.
     Used for patient result history and dashboard views.
-
-    Payload reduction: ~60% (12 fields vs 21 in full serializer)
     """
     test_name = serializers.CharField(source='order_test.test.short_name', read_only=True)
+    test_code = serializers.CharField(source='order_test.test.code', read_only=True)
     order_number = serializers.CharField(source='order_test.order.order_number', read_only=True)
+    order_id = serializers.UUIDField(source='order_test.order.id', read_only=True)
+    panel_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+    patient_id = serializers.SerializerMethodField()
+    ordering_provider = serializers.SerializerMethodField()
     flag_display = serializers.CharField(source='get_flag_display', read_only=True)
 
     class Meta:
         model = LabResult
         fields = [
-            'id', 'order_number', 'test_name',
+            'id', 'order_id', 'order_number', 'test_name', 'test_code',
+            'panel_name', 'patient_name', 'patient_mrn', 'patient_id',
+            'ordering_provider',
             'value', 'unit', 'reference_low', 'reference_high',
             'flag', 'flag_display', 'is_verified',
             'performed_at', 'verified_at'
         ]
+
+    def get_panel_name(self, obj):
+        """Get panel name(s) from the order's panels."""
+        try:
+            panels = obj.order_test.order.panels.all()
+            if panels:
+                # Return first panel name (most orders have one panel)
+                return panels[0].name
+            return None
+        except AttributeError:
+            return None
+
+    def get_patient_name(self, obj):
+        """Get patient full name from the order."""
+        try:
+            return obj.order_test.order.patient.user.get_full_name()
+        except AttributeError:
+            return None
+
+    def get_patient_mrn(self, obj):
+        """Get patient MRN from the order."""
+        try:
+            return obj.order_test.order.patient.medical_record_number
+        except AttributeError:
+            return None
+
+    def get_patient_id(self, obj):
+        """Get patient ID from the order."""
+        try:
+            return str(obj.order_test.order.patient.id)
+        except AttributeError:
+            return None
+
+    def get_ordering_provider(self, obj):
+        """Get ordering provider name from the order."""
+        try:
+            return obj.order_test.order.ordering_provider.get_full_name()
+        except AttributeError:
+            return None
 
 
 class LabSpecimenListSerializer(serializers.ModelSerializer):
