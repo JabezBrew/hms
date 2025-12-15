@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useDebounce } from "@/hooks/use-debounce";
+import { normalizeApiResults } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner.jsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,14 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
 
   // Function to get patient initials for avatar
   const getInitials = (patient) => {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      const parts = patient.name.trim().split(' ');
+      if (parts.length >= 2) {
+        return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+      }
+      return patient.name.charAt(0).toUpperCase();
+    }
     if (patient?.local_data?.user) {
       const firstName = patient.local_data.user.first_name || "";
       const lastName = patient.local_data.user.last_name || "";
@@ -45,6 +54,10 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
 
   // Function to get patient display name
   const getDisplayName = (patient) => {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      return patient.name;
+    }
     if (patient?.local_data?.user) {
       return `${patient.local_data.user.first_name} ${patient.local_data.user.last_name}`;
     } else if (patient?.fhir_resource?.name?.[0]) {
@@ -57,6 +70,10 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
 
   // Function to get patient ID
   const getPatientId = (patient) => {
+    // Check for direct id first (from search API)
+    if (patient?.id) {
+      return patient.id;
+    }
     if (patient?.local_data?.id) {
       return patient.local_data.id;
     } else if (patient?.fhir_resource?.id) {
@@ -75,7 +92,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
     setIsLoading(true);
     try {
       const response = await axios.get(`/api/patients/search/?query=${encodeURIComponent(query)}`);
-      setPatients(response.data.patients || []);
+      setPatients(normalizeApiResults(response.data));
     } catch (error) {
       console.error("Error searching patients:", error);
       Toaster({

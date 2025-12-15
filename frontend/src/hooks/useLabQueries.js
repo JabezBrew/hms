@@ -384,3 +384,27 @@ export function useVerifyLabResult() {
     },
   });
 }
+
+/**
+ * Hook for bulk creating lab results
+ * Used by the inline result entry table
+ */
+export function useBulkCreateLabResults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.bulkCreateResults(data),
+    onSuccess: (data, variables) => {
+      // Invalidate results queries
+      queryClient.invalidateQueries({ queryKey: labKeys.results() });
+
+      // Invalidate the specific order
+      if (variables.order_id) {
+        queryClient.invalidateQueries({ queryKey: labKeys.order(variables.order_id) });
+      }
+
+      // Invalidate orders list
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() });
+    },
+  });
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, normalizeApiResults } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -384,11 +384,11 @@ function StaffAssignmentForm({
   } = useSearchPractitioners(false, { minLength: 2 });
 
   // Handle paginated vs non-paginated response
-  const practitioners = searchResults?.results || searchResults || [];
+  const practitioners = normalizeApiResults(searchResults);
 
   // Fetch roles (small list, OK to preload)
   const { data: rolesData = [] } = useStaffRoles();
-  const roles = rolesData?.results || rolesData || [];
+  const roles = normalizeApiResults(rolesData);
 
   // Filter out already assigned practitioners from search results
   const assignedPractitionerIds = existingAssignments.map(a => a.practitioner_id);

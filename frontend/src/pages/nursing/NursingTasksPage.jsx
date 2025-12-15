@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
+import { normalizeApiResults } from '@/lib/utils';
 import {
   useNursingTasks,
   useTodayTasks,
@@ -125,8 +126,8 @@ export default function NursingTasksPage() {
   const updateMutation = useUpdateTask();
 
   // Get data
-  const tasks = Array.isArray(tasksData) ? tasksData : (tasksData?.results || []);
-  const patients = patientsData?.results || [];
+  const tasks = normalizeApiResults(tasksData);
+  const patients = normalizeApiResults(patientsData);
   const nurses = staffData || [];
 
   // Filter tasks by search

@@ -34,7 +34,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { cn, normalizeApiResults } from '@/lib/utils';
 import { 
   fetchAppointmentTypes, 
   fetchAvailableSlots, 
@@ -186,8 +186,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
       setIsLoadingPatients(true);
       try {
         const response = await searchPatients(debouncedPatientQuery);
-        const patientsData = response.patients || [];
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
+        setPatients(normalizeApiResults(response));
       } catch (error) {
         console.error('Error searching patients:', error);
         toast.error('Failed to search patients');
@@ -319,10 +318,14 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
                 <SearchBar
                     options={Array.isArray(patients) ? patients.map((patient) => {
                       let name = "Unknown Patient";
-                      let id = "";
+                      let id = patient?.id || "";
 
+                      // Check for simple name field first (from search API)
+                      if (patient?.name) {
+                        name = patient.name;
+                      }
                       // Check for FHIR resource format
-                      if (patient?.fhir_resource?.name?.[0]) {
+                      else if (patient?.fhir_resource?.name?.[0]) {
                         const given = patient.fhir_resource.name[0].given?.join(' ') || "";
                         const family = patient.fhir_resource.name[0].family || "";
                         name = `${family}, ${given}`.trim() || "Unknown Patient";
@@ -368,8 +371,13 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
                   <FormControl>
                     <SearchBar
                         options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                          // Handle both old and new response structures
-                          if (practitioner.fhir_resource) {
+                          // Check for simple name field first (from search API)
+                          if (practitioner?.name) {
+                            return {
+                              label: practitioner.name,
+                              value: practitioner.id
+                            };
+                          } else if (practitioner.fhir_resource) {
                             // New structure with FHIR resource
                             const name = practitioner.fhir_resource.name?.[0];
                             const given = name?.given?.join(' ') || '';

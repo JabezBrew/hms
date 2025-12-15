@@ -153,7 +153,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                 <SelectContent>
                                     {practitioners.map((practitioner) => (
                                         <SelectItem key={practitioner.id} value={practitioner.id}>
-                                            {practitioner.staff_details?.user_details?.first_name} {practitioner.staff_details?.user_details?.last_name}
+                                            {practitioner?.name || `${practitioner.staff_details?.user_details?.first_name || ''} ${practitioner.staff_details?.user_details?.last_name || ''}`.trim() || 'Unknown'}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

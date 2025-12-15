@@ -329,6 +329,112 @@ class LabResultVerifySerializer(serializers.Serializer):
     verification_notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class BulkLabResultItemSerializer(serializers.Serializer):
+    """
+    Serializer for individual result in bulk create.
+    """
+    order_test_id = serializers.UUIDField()
+    value = serializers.CharField(max_length=100)
+    unit = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    reference_low = serializers.DecimalField(
+        max_digits=10, decimal_places=3, required=False, allow_null=True
+    )
+    reference_high = serializers.DecimalField(
+        max_digits=10, decimal_places=3, required=False, allow_null=True
+    )
+    flag = serializers.ChoiceField(
+        choices=LabResult.FLAG_CHOICES,
+        default='normal'
+    )
+    interpretation = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkLabResultCreateSerializer(serializers.Serializer):
+    """
+    Serializer for bulk creation of lab results.
+    Allows recording multiple test results in a single request.
+    """
+    order_id = serializers.UUIDField()
+    specimen_id = serializers.UUIDField()
+    results = BulkLabResultItemSerializer(many=True)
+    performed_at = serializers.DateTimeField(required=False)
+
+    def validate_order_id(self, value):
+        """Validate order exists and is in correct status."""
+        from .models import LabOrder, LabOrderStatus
+        try:
+            order = LabOrder.objects.get(id=value)
+        except LabOrder.DoesNotExist:
+            raise serializers.ValidationError("Lab order not found.")
+
+        if order.status not in [LabOrderStatus.RECEIVED, LabOrderStatus.PROCESSING]:
+            raise serializers.ValidationError(
+                f"Order must be in 'received' or 'processing' status to record results. "
+                f"Current status: {order.get_status_display()}"
+            )
+        return value
+
+    def validate_specimen_id(self, value):
+        """Validate specimen exists."""
+        from .models import LabSpecimen
+        try:
+            LabSpecimen.objects.get(id=value)
+        except LabSpecimen.DoesNotExist:
+            raise serializers.ValidationError("Specimen not found.")
+        return value
+
+    def validate(self, data):
+        """Cross-field validation."""
+        from .models import LabOrder, LabSpecimen, LabOrderTest, LabResult
+
+        order = LabOrder.objects.get(id=data['order_id'])
+        specimen = LabSpecimen.objects.get(id=data['specimen_id'])
+
+        # Verify specimen belongs to the order
+        if specimen.order_id != order.id:
+            raise serializers.ValidationError({
+                'specimen_id': "Specimen does not belong to this order."
+            })
+
+        # Validate each result item
+        errors = []
+        valid_order_test_ids = set(
+            order.order_tests.values_list('id', flat=True)
+        )
+        existing_results = set(
+            LabResult.objects.filter(
+                order_test__order=order
+            ).values_list('order_test_id', flat=True)
+        )
+
+        for idx, result_item in enumerate(data['results']):
+            order_test_id = result_item['order_test_id']
+
+            # Check if order_test belongs to this order
+            if order_test_id not in valid_order_test_ids:
+                errors.append({
+                    'index': idx,
+                    'order_test_id': "Test does not belong to this order."
+                })
+                continue
+
+            # Check if result already exists
+            if order_test_id in existing_results:
+                errors.append({
+                    'index': idx,
+                    'order_test_id': "Result already exists for this test."
+                })
+
+        if errors:
+            raise serializers.ValidationError({'results': errors})
+
+        # Store validated objects for create
+        data['_order'] = order
+        data['_specimen'] = specimen
+
+        return data
+
+
 class LabOrderSerializer(serializers.ModelSerializer):
     """
     Serializer for lab orders with nested tests, panels, and specimens.

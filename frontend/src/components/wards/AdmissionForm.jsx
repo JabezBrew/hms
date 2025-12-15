@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { normalizeApiResults } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -23,7 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-export function AdmissionForm({ wardId = null }) {
+export function AdmissionForm({ wardId = null, wardData = null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
@@ -64,8 +65,7 @@ export function AdmissionForm({ wardId = null }) {
       setIsLoadingPatients(true);
       try {
         const response = await searchPatientsForAdmission(debouncedPatientQuery);
-        const patientsData = response.patients || [];
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
+        setPatients(normalizeApiResults(response));
       } catch (err) {
         console.error('Error searching patients:', err);
         setError('Failed to search patients');
@@ -209,8 +209,12 @@ export function AdmissionForm({ wardId = null }) {
       id = patient.local_data.id;
     }
 
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      name = patient.name;
+    }
     // Get the display name from FHIR resource if available
-    if (patient?.fhir_resource?.name?.[0]) {
+    else if (patient?.fhir_resource?.name?.[0]) {
       const given = patient.fhir_resource.name[0].given?.join(' ') || "";
       const family = patient.fhir_resource.name[0].family || "";
       name = `${family}, ${given}`.trim() || "Unknown Patient";
@@ -316,15 +320,19 @@ export function AdmissionForm({ wardId = null }) {
             </CardContent>
           </Card>
         )}
-        <Card>
-          <CardHeader>
-            <CardTitle>Patient Admission</CardTitle>
-            <CardDescription>Enter the details for patient admission</CardDescription>
+        <Card className="border-border">
+          <CardHeader className="pb-4">
+            <CardTitle className="font-display text-xl">Patient Details</CardTitle>
+            <CardDescription className="font-mono text-xs">
+              Enter the details for patient admission
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             {/* Patient selection */}
             <div className="space-y-2">
-              <Label htmlFor="patient">Patient</Label>
+              <Label htmlFor="patient" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Patient
+              </Label>
               <SearchBar
                 options={patientOptions}
                 value={formData.patient}
@@ -344,7 +352,9 @@ export function AdmissionForm({ wardId = null }) {
 
             {/* Admission type */}
             <div className="space-y-2">
-              <Label htmlFor="admission_type">Admission Type</Label>
+              <Label htmlFor="admission_type" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Admission Type
+              </Label>
               <Select
                 value={formData.admission_type}
                 onValueChange={(value) => handleSelectChange('admission_type', value)}
@@ -363,7 +373,9 @@ export function AdmissionForm({ wardId = null }) {
 
             {/* Admitting doctor */}
             <div className="space-y-2">
-              <Label htmlFor="admitting_doctor">Admitting Doctor</Label>
+              <Label htmlFor="admitting_doctor" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Admitting Doctor
+              </Label>
               <SearchBar
                 options={practitionerOptions}
                 value={formData.admitting_doctor}
@@ -383,7 +395,9 @@ export function AdmissionForm({ wardId = null }) {
 
             {/* Admission date */}
             <div className="space-y-2">
-              <Label htmlFor="admission_date">Admission Date</Label>
+              <Label htmlFor="admission_date" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Admission Date
+              </Label>
               <DatePicker
                 date={formData.admission_date}
                 setDate={(date) => handleDateChange('admission_date', date)}
@@ -392,7 +406,9 @@ export function AdmissionForm({ wardId = null }) {
 
             {/* Expected discharge date */}
             <div className="space-y-2">
-              <Label htmlFor="expected_discharge_date">Expected Discharge Date (Optional)</Label>
+              <Label htmlFor="expected_discharge_date" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Expected Discharge Date (Optional)
+              </Label>
               <DatePicker
                 date={formData.expected_discharge_date}
                 setDate={(date) => handleDateChange('expected_discharge_date', date)}
@@ -401,7 +417,9 @@ export function AdmissionForm({ wardId = null }) {
 
             {/* Admission notes */}
             <div className="space-y-2">
-              <Label htmlFor="admission_notes">Admission Notes</Label>
+              <Label htmlFor="admission_notes" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Admission Notes
+              </Label>
               <Textarea
                 id="admission_notes"
                 name="admission_notes"
@@ -415,10 +433,11 @@ export function AdmissionForm({ wardId = null }) {
         </Card>
 
         {/* Bed assignment */}
-        <BedAssignment 
-          onBedSelect={handleBedSelect} 
-          selectedBedId={selectedBed?.id} 
+        <BedAssignment
+          onBedSelect={handleBedSelect}
+          selectedBedId={selectedBed?.id}
           wardId={wardId}
+          wardData={wardData}
         />
 
         {/* Form actions */}

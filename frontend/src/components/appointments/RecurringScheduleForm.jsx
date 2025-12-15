@@ -281,8 +281,13 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
               <FormControl>
                 <SearchBar
                   options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                    // Handle both old and new response structures
-                    if (practitioner.fhir_resource) {
+                    // Check for simple name field first (from search API)
+                    if (practitioner?.name) {
+                      return {
+                        label: practitioner.name,
+                        value: practitioner.id
+                      };
+                    } else if (practitioner.fhir_resource) {
                       // New structure with FHIR resource
                       const name = practitioner.fhir_resource.name?.[0];
                       const given = name?.given?.join(' ') || '';

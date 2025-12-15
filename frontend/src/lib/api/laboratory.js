@@ -342,4 +342,20 @@ export const laboratoryApi = {
       throw new Error(handleApiError(error, 'Failed to verify result'));
     }
   },
+
+  /**
+   * Create multiple lab results in bulk
+   * @param {Object} data - Bulk result data
+   * @param {string} data.order_id - Lab order ID
+   * @param {string} data.specimen_id - Specimen ID
+   * @param {Array} data.results - Array of result items
+   * @returns {Promise<Object>} Created results response
+   */
+  bulkCreateResults: async (data) => {
+    try {
+      return await apiClient.post('/laboratory/results/bulk/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to save lab results'));
+    }
+  },
 };

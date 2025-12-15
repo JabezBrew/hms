@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format, addMinutes, parseISO } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, normalizeApiResults } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
 
@@ -199,8 +199,7 @@ const AppointmentCreatePage = () => {
       setIsLoadingPatients(true);
       try {
         const response = await searchPatients(debouncedPatientQuery);
-        const patientsData = response.patients || [];
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
+        setPatients(normalizeApiResults(response));
       } catch (error) {
         console.error('Error searching patients:', error);
         setPatients([]);
@@ -278,7 +277,10 @@ const AppointmentCreatePage = () => {
     });
     if (!patient) return null;
 
-    if (patient?.fhir_resource?.name?.[0]) {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      return patient.name;
+    } else if (patient?.fhir_resource?.name?.[0]) {
       const given = patient.fhir_resource.name[0].given?.join(' ') || '';
       const family = patient.fhir_resource.name[0].family || '';
       return `${given} ${family}`.trim();
@@ -302,7 +304,10 @@ const AppointmentCreatePage = () => {
     });
     if (!practitioner) return null;
 
-    if (practitioner?.fhir_resource?.name?.[0]) {
+    // Check for simple name field first (from search API)
+    if (practitioner?.name) {
+      return `Dr. ${practitioner.name}`;
+    } else if (practitioner?.fhir_resource?.name?.[0]) {
       const given = practitioner.fhir_resource.name[0].given?.join(' ') || '';
       const family = practitioner.fhir_resource.name[0].family || '';
       return `Dr. ${given} ${family}`.trim();
@@ -352,7 +357,7 @@ const AppointmentCreatePage = () => {
                   variant="ghost"
                   size="sm"
                   onClick={() => navigate('/appointments')}
-                  className="-ml-2"
+                  className="-ml-2 font-mono text-xs"
                 >
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Back
@@ -360,7 +365,7 @@ const AppointmentCreatePage = () => {
                 <div className="h-6 w-px bg-border" />
                 <div className="flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-primary" />
-                  <h1 className="text-lg font-semibold text-foreground">Schedule Appointment</h1>
+                  <h1 className="font-display text-lg text-foreground">Schedule Appointment</h1>
                 </div>
               </div>
 
@@ -427,7 +432,7 @@ const AppointmentCreatePage = () => {
                 <div className="border-r border-border bg-card/30 p-6 space-y-6 overflow-y-auto">
                   {/* Patient Selection */}
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
                       <User className="h-4 w-4 text-primary" />
                       Patient
                     </label>
@@ -442,7 +447,11 @@ const AppointmentCreatePage = () => {
                                 let name = 'Unknown Patient';
                                 let id = '';
 
-                                if (patient?.fhir_resource?.name?.[0]) {
+                                // Check for simple name field first (from search API)
+                                if (patient?.name) {
+                                  name = patient.name;
+                                  id = patient.id;
+                                } else if (patient?.fhir_resource?.name?.[0]) {
                                   const given = patient.fhir_resource.name[0].given?.join(' ') || '';
                                   const family = patient.fhir_resource.name[0].family || '';
                                   name = `${family}, ${given}`.trim() || 'Unknown Patient';
@@ -475,7 +484,7 @@ const AppointmentCreatePage = () => {
 
                   {/* Practitioner Selection */}
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
                       <Stethoscope className="h-4 w-4 text-emerald-500" />
                       Doctor
                     </label>
@@ -487,7 +496,10 @@ const AppointmentCreatePage = () => {
                           <FormControl>
                             <SearchBar
                               options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                                if (practitioner.fhir_resource) {
+                                // Check for simple name field first (from search API)
+                                if (practitioner?.name) {
+                                  return { label: `Dr. ${practitioner.name}`, value: practitioner.id };
+                                } else if (practitioner.fhir_resource) {
                                   const name = practitioner.fhir_resource.name?.[0];
                                   const given = name?.given?.join(' ') || '';
                                   const family = name?.family || '';
@@ -523,7 +535,7 @@ const AppointmentCreatePage = () => {
 
                   {/* Appointment Type Selection */}
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
                       <FileText className="h-4 w-4 text-amber-500" />
                       Appointment Type
                     </label>
@@ -575,7 +587,7 @@ const AppointmentCreatePage = () => {
                       name="description"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm">Reason for Visit</FormLabel>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Reason for Visit</FormLabel>
                           <FormControl>
                             <Textarea
                               placeholder="Brief description..."
@@ -593,7 +605,7 @@ const AppointmentCreatePage = () => {
                       name="comment"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm">Additional Notes</FormLabel>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Additional Notes</FormLabel>
                           <FormControl>
                             <Textarea
                               placeholder="Special instructions..."
@@ -612,7 +624,7 @@ const AppointmentCreatePage = () => {
                   <div className="pt-4 border-t border-border/50 space-y-3">
                     <Button
                       type="submit"
-                      className="w-full"
+                      className="w-full font-mono text-xs bg-primary hover:bg-primary/90"
                       disabled={submitting || !watchSlotId}
                     >
                       {submitting ? (
@@ -630,7 +642,7 @@ const AppointmentCreatePage = () => {
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full"
+                      className="w-full font-mono text-xs"
                       onClick={() => navigate('/appointments')}
                       disabled={submitting}
                     >
@@ -643,7 +655,7 @@ const AppointmentCreatePage = () => {
                 <div className="p-6 overflow-y-auto bg-background">
                   <div className="flex items-center gap-2 mb-6">
                     <Clock className="h-5 w-5 text-rose-500" />
-                    <h2 className="text-lg font-semibold text-foreground">Select Date & Time</h2>
+                    <h2 className="font-display text-lg text-foreground">Select Date & Time</h2>
                   </div>
 
                   {watchPractitionerId ? (

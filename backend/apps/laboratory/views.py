@@ -27,6 +27,7 @@ from .serializers import (
     LabSpecimenReceiptSerializer, LabSpecimenListSerializer,
     LabResultSerializer, LabResultCreateSerializer,
     LabResultVerifySerializer, LabResultListSerializer,
+    BulkLabResultCreateSerializer,
     LabOrderSearchSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
@@ -944,3 +945,105 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(result)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    @transaction.atomic
+    def bulk_create(self, request):
+        """
+        Create multiple lab results in a single request.
+
+        Payload:
+        {
+            "order_id": "uuid",
+            "specimen_id": "uuid",
+            "performed_at": "2024-01-15T10:30:00Z",  # optional
+            "results": [
+                {
+                    "order_test_id": "uuid",
+                    "value": "7.5",
+                    "unit": "K/uL",
+                    "reference_low": 4.5,
+                    "reference_high": 11.0,
+                    "flag": "normal",
+                    "interpretation": ""  # optional
+                },
+                ...
+            ]
+        }
+        """
+        serializer = BulkLabResultCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+        order = validated_data['_order']
+        specimen = validated_data['_specimen']
+        performed_at = validated_data.get('performed_at', timezone.now())
+
+        # Get practitioner profile for performed_by
+        practitioner = None
+        try:
+            practitioner = request.user.staff_profile.practitioner_profile
+        except AttributeError:
+            pass
+
+        # Create all results
+        created_results = []
+        for result_item in validated_data['results']:
+            order_test = LabOrderTest.objects.get(id=result_item['order_test_id'])
+
+            result = LabResult.objects.create(
+                order_test=order_test,
+                specimen=specimen,
+                value=result_item['value'],
+                unit=result_item.get('unit', order_test.test.unit or ''),
+                reference_low=result_item.get('reference_low'),
+                reference_high=result_item.get('reference_high'),
+                flag=result_item.get('flag', 'normal'),
+                interpretation=result_item.get('interpretation', ''),
+                performed_by=practitioner,
+                performed_at=performed_at
+            )
+            created_results.append(result)
+
+            # Update order_test status
+            order_test.status = LabOrderStatus.COMPLETED
+            order_test.save(update_fields=['status'])
+
+        # Update order status to processing if not already
+        if order.status == LabOrderStatus.RECEIVED:
+            order.status = LabOrderStatus.PROCESSING
+            order.save(update_fields=['status'])
+
+        # Check if all tests have results - if so, mark order as completed
+        all_tests_count = order.order_tests.count()
+        results_count = LabResult.objects.filter(order_test__order=order).count()
+
+        if results_count >= all_tests_count:
+            # All results entered, but not verified yet - keep as processing
+            logger.info(
+                f"All {results_count} results entered for order {order.order_number}. "
+                f"Awaiting verification."
+            )
+
+        logger.info(
+            f"Bulk created {len(created_results)} lab results for order {order.order_number} "
+            f"by {request.user.get_full_name()}"
+        )
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.CREATE,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabResult',
+            resource_id=order.id,
+            resource_name=f"Bulk results for {order.order_number}",
+            description=f"Recorded {len(created_results)} lab results for order {order.order_number}",
+        )
+
+        # Return created results
+        result_serializer = LabResultSerializer(created_results, many=True)
+        return Response({
+            'created_count': len(created_results),
+            'results': result_serializer.data
+        }, status=status.HTTP_201_CREATED)

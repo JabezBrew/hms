@@ -121,7 +121,13 @@ const PractitionerAvailabilityPage = () => {
   const practitionerOptions = useMemo(() => {
     if (!Array.isArray(practitioners)) return [];
     return practitioners.map(practitioner => {
-      if (practitioner.fhir_resource) {
+      // Check for simple name field first (from search API)
+      if (practitioner?.name) {
+        return {
+          label: practitioner.name,
+          value: practitioner.id
+        };
+      } else if (practitioner.fhir_resource) {
         const name = practitioner.fhir_resource.name?.[0];
         const given = name?.given?.join(' ') || '';
         const family = name?.family || '';

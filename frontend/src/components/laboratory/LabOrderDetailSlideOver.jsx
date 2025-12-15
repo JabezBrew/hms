@@ -15,11 +15,13 @@ import {
   FileText,
   Loader2,
   Droplet,
+  ClipboardEdit,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useLabOrder } from "@/hooks/useLabQueries";
 import { CancelOrderDialog } from "./CancelOrderDialog";
 import { SpecimenCollectionDialog } from "./SpecimenCollectionDialog";
+import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
 
 /**
  * LabOrderDetailSlideOver - Chronicle-styled slide-over for viewing lab order details
@@ -36,9 +38,11 @@ const LabOrderDetailSlideOver = ({
   orderId,
   onOrderCancelled,
   onSpecimenCollected,
+  onResultsEntered,
 }) => {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [collectDialogOpen, setCollectDialogOpen] = useState(false);
+  const [resultEntryOpen, setResultEntryOpen] = useState(false);
 
   // Fetch full order details
   const { data: order, isLoading, refetch } = useLabOrder(orderId);
@@ -83,6 +87,15 @@ const LabOrderDetailSlideOver = ({
   // Can collect check - only when status is "ordered"
   const canCollect = order && order.status === "ordered";
 
+  // Can enter results check - when status is "received" or "processing" and has specimens
+  const canEnterResults = order &&
+    ["received", "processing"].includes(order.status) &&
+    order.specimens &&
+    order.specimens.length > 0;
+
+  // Get the first collected specimen for result entry
+  const specimenForResults = order?.specimens?.find(s => s.status !== "rejected") || order?.specimens?.[0];
+
   const handleCancelSuccess = () => {
     refetch();
     onOrderCancelled?.();
@@ -91,6 +104,11 @@ const LabOrderDetailSlideOver = ({
   const handleCollectSuccess = () => {
     refetch();
     onSpecimenCollected?.();
+  };
+
+  const handleResultsSuccess = () => {
+    refetch();
+    onResultsEntered?.();
   };
 
   const statusConfig = order ? getStatusConfig(order.status) : null;
@@ -376,11 +394,11 @@ const LabOrderDetailSlideOver = ({
         </div>
 
         {/* Footer with Action Buttons */}
-        {order && (canCancel || canCollect) && (
+        {order && (canCancel || canCollect || canEnterResults) && (
           <footer className="px-6 py-4 border-t border-border bg-card">
-            <div className="flex justify-between items-center">
-              {/* Collect Specimen Button */}
-              <div>
+            <div className="flex justify-between items-center gap-3">
+              {/* Left Side - Primary Actions */}
+              <div className="flex items-center gap-2">
                 {canCollect && (
                   <Button
                     onClick={() => setCollectDialogOpen(true)}
@@ -390,9 +408,19 @@ const LabOrderDetailSlideOver = ({
                     Collect Specimen
                   </Button>
                 )}
+
+                {canEnterResults && (
+                  <Button
+                    onClick={() => setResultEntryOpen(true)}
+                    className="bg-sky-600 hover:bg-sky-700 text-white"
+                  >
+                    <ClipboardEdit className="h-4 w-4 mr-2" />
+                    Enter Results
+                  </Button>
+                )}
               </div>
 
-              {/* Cancel Button */}
+              {/* Right Side - Cancel Button */}
               <div>
                 {canCancel && (
                   <Button
@@ -424,6 +452,15 @@ const LabOrderDetailSlideOver = ({
         onOpenChange={setCollectDialogOpen}
         order={order}
         onSuccess={handleCollectSuccess}
+      />
+
+      {/* Result Entry Slide-Over */}
+      <LabResultEntrySlideOver
+        open={resultEntryOpen}
+        onClose={() => setResultEntryOpen(false)}
+        order={order}
+        specimen={specimenForResults}
+        onSuccess={handleResultsSuccess}
       />
     </>
   );

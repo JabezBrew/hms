@@ -290,23 +290,40 @@ class PatientRegistrationSerializer(serializers.Serializer):
             
             # Handle Admission if details provided
             if admission_details and admission_details.get('type') == 'inpatient':
-                from ..wards.models import Bed, Admission
+                from ..wards.models import Bed, Ward, Admission
                 from ..wards.proxies import EncounterProxy
-                
+
                 bed_id = admission_details.get('bed_id')
+                ward_id = admission_details.get('ward_id')
                 admission_notes = admission_details.get('notes', '')
-                
+
                 bed = None
                 location_display = "Waiting List"
                 admission_status = 'waiting'
                 daily_rate = 0.00
-                
+
                 if bed_id:
-                    # Get the bed
+                    # Specific bed was selected
                     bed = Bed.objects.get(id=bed_id)
                     location_display = bed.ward.name
                     admission_status = 'admitted'
                     daily_rate = bed.total_rate
+                elif ward_id:
+                    # Ward selected but no specific bed - auto-assign first available bed
+                    ward = Ward.objects.get(id=ward_id)
+                    available_bed = Bed.objects.filter(
+                        ward=ward,
+                        status='available'
+                    ).first()
+
+                    if available_bed:
+                        bed = available_bed
+                        location_display = ward.name
+                        admission_status = 'admitted'
+                        daily_rate = bed.total_rate
+                    else:
+                        # No beds available in ward - put on waiting list for this ward
+                        location_display = f"{ward.name} (Waiting List)"
                 
                 # Create Encounter first
                 encounter = EncounterProxy.create(

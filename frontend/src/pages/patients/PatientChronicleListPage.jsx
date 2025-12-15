@@ -12,7 +12,7 @@ import {
 import { myPatientsKeys } from "@/hooks/useMyPatientsQueries";
 import { patientsApi } from "@/lib/api/patients";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
+import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PatientChronicleCard } from "@/components/chronicle";
@@ -96,13 +96,12 @@ const PatientChronicleListPage = () => {
   // Get search results
   const searchPatients = useMemo(() => {
     if (!isSearching) return [];
-    return searchResults?.results || searchResults?.patients || [];
+    return normalizeApiResults(searchResults);
   }, [searchResults, isSearching]);
 
   // Get recent patients array
   const recentPatients = useMemo(() => {
-    const results = recentPatientsData?.results || recentPatientsData || [];
-    return Array.isArray(results) ? results : [];
+    return normalizeApiResults(recentPatientsData);
   }, [recentPatientsData]);
 
   // Event handlers
