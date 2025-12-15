@@ -26,4 +26,5 @@ channels-redis>=4.2.0
 daphne>=4.0.0
 
 # Load testing
-locust>=2.15.0argon2-cffi==23.1.0
+locust>=2.15.0
+argon2-cffi==23.1.0
