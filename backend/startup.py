@@ -1,84 +1,114 @@
+#!/usr/bin/env python
+"""
+Railway production startup script.
+Handles database waiting, migrations with advisory locks, and config verification.
+"""
 import os
 import sys
 import time
-import django
-from django.conf import settings
-from django.db import connection
-from django.core.management import call_command
 
-def wait_for_db():
-    """Wait for the database to be available."""
-    print("Waiting for database...")
+# Force unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
+
+def log(msg):
+    """Print with immediate flush to stderr for visibility."""
+    print(f"[startup.py] {msg}", file=sys.stderr, flush=True)
+
+def main():
+    log("Starting...")
+
+    # Set Django settings before importing Django
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hms_backend.settings")
+
+    log("Importing Django...")
+    try:
+        import django
+        log(f"Django version: {django.__version__}")
+    except Exception as e:
+        log(f"ERROR importing Django: {e}")
+        return 1
+
+    log("Running django.setup()...")
+    try:
+        django.setup()
+        log("Django setup complete")
+    except Exception as e:
+        log(f"ERROR in django.setup(): {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+    # Now import Django components
+    from django.conf import settings
+    from django.db import connection
+    from django.core.management import call_command
+
+    # Wait for database
+    log("Waiting for database...")
     for i in range(30):
         try:
             connection.ensure_connection()
-            print("Database is ready!")
-            return True
-        except Exception:
-            print(f"Database not ready yet, retrying ({i+1}/30)...")
+            log("Database connection successful!")
+            break
+        except Exception as e:
+            log(f"Database not ready ({i+1}/30): {e}")
             time.sleep(2)
-    return False
+    else:
+        log("ERROR: Could not connect to database after 30 attempts")
+        return 1
 
-def run_migrations():
-    """Run migrations with advisory lock to prevent race conditions."""
-    print("Attempting to acquire migration lock...")
+    # Run migrations with advisory lock
+    log("Attempting to acquire migration lock...")
     try:
         with connection.cursor() as cursor:
-            # Try to acquire advisory lock (non-blocking)
-            # Lock ID 1 is used for migrations
             cursor.execute('SELECT pg_try_advisory_lock(1)')
             acquired = cursor.fetchone()[0]
 
             if acquired:
-                print('Lock acquired - running migrations...')
+                log("Lock acquired - running migrations...")
                 try:
-                    call_command('migrate', '--noinput')
-                    
-                    # We run ensure_admin if it exists
+                    call_command('migrate', '--noinput', verbosity=1)
+                    log("Migrations complete")
+
                     try:
                         call_command('ensure_admin')
+                        log("ensure_admin complete")
                     except Exception as e:
-                        # If command doesn't exist or fails, just log it
-                        print(f'ensure_admin skipped or failed: {e}')
-                        
-                except Exception as e:
-                    print(f"Migration failed: {e}")
-                    # Release lock even if migration fails
-                    raise e
+                        log(f"ensure_admin skipped: {e}")
                 finally:
                     cursor.execute('SELECT pg_advisory_unlock(1)')
-                    print('Lock released.')
+                    log("Lock released")
             else:
-                print('Another instance is running migrations, waiting...')
-                # Wait for lock (blocking) then immediately release
+                log("Another instance running migrations, waiting...")
                 cursor.execute('SELECT pg_advisory_lock(1)')
                 cursor.execute('SELECT pg_advisory_unlock(1)')
-                print('Migrations completed by another instance.')
+                log("Migrations completed by another instance")
     except Exception as e:
-        print(f"Error during migration lock handling: {e}")
-        # We don't exit here, we let the app try to start, 
-        # though it might fail if migrations didn't run.
-        raise e
+        log(f"ERROR during migrations: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
-def verify_settings():
-    """Print key settings for debugging."""
-    print("=== Verifying Django configuration ===")
-    print(f"ALLOWED_HOSTS: {settings.ALLOWED_HOSTS}")
-    print(f"CORS_ALLOWED_ORIGINS: {getattr(settings, 'CORS_ALLOWED_ORIGINS', 'Not Set')}")
-    print(f"DEBUG: {settings.DEBUG}")
-    
-    # Check DB host safely
-    db_settings = settings.DATABASES.get("default", {})
-    print(f"Database Host: {db_settings.get('HOST', 'Unknown')}")
+    # Verify settings
+    log("=== Configuration ===")
+    log(f"DEBUG: {settings.DEBUG}")
+    log(f"ALLOWED_HOSTS: {settings.ALLOWED_HOSTS}")
+
+    db_host = settings.DATABASES.get('default', {}).get('HOST', 'unknown')
+    log(f"Database host: {db_host}")
+
+    cors_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
+    log(f"CORS origins: {cors_origins}")
+
+    log("Startup complete - ready for Gunicorn")
+    return 0
 
 if __name__ == "__main__":
-    # Initialize Django
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hms_backend.settings")
-    django.setup()
-
-    if not wait_for_db():
-        print("Could not connect to database. Exiting.")
+    try:
+        exit_code = main()
+        sys.exit(exit_code)
+    except Exception as e:
+        log(f"FATAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
-
-    run_migrations()
-    verify_settings()
