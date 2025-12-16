@@ -8,8 +8,6 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "generate-pwa-icons": "node scripts/generate-pwa-icons.js",
-    "test:pwa": "node scripts/test-pwa.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
@@ -86,8 +84,6 @@
     "msw": "^2.0.11",
     "sharp": "^0.34.5",
     "vite": "^6.2.0",
-    "vite-plugin-pwa": "^1.2.0",
-    "vitest": "^1.1.0",
-    "workbox-window": "^7.4.0"
+    "vitest": "^1.1.0"
   }
 }
