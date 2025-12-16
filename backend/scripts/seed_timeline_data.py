@@ -345,9 +345,22 @@ def create_note_entry(patient_id, practitioner_id, template_id, data, created_at
 
 
 def create_vital_signs(patient_id, practitioner_id, vitals_data, recorded_at=None):
-    """Create vital signs entry."""
+    """Create vital signs entry (idempotent - checks for existing record)."""
     patient = PatientProfile.objects.get(id=patient_id)
     practitioner = PractitionerProfile.objects.get(id=practitioner_id)
+
+    actual_recorded_at = recorded_at or timezone.now()
+
+    # Check for existing record within 1 minute of the target time to prevent duplicates
+    from datetime import timedelta
+    existing = VitalSigns.objects.filter(
+        patient=patient,
+        recorded_at__gte=actual_recorded_at - timedelta(minutes=1),
+        recorded_at__lte=actual_recorded_at + timedelta(minutes=1)
+    ).first()
+
+    if existing:
+        return existing  # Return existing record instead of creating duplicate
 
     vital = VitalSigns.objects.create(
         patient=patient,
@@ -359,7 +372,7 @@ def create_vital_signs(patient_id, practitioner_id, vitals_data, recorded_at=Non
         respiratory_rate=vitals_data.get('rr'),
         oxygen_saturation=vitals_data.get('spo2'),
         pain_level=vitals_data.get('pain'),
-        recorded_at=recorded_at or timezone.now()
+        recorded_at=actual_recorded_at
     )
 
     return vital

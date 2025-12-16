@@ -60,13 +60,18 @@ export function useDrugForms(rxcui, options = {}) {
 /**
  * Get patient allergies
  * @param {string} patientId - Patient ID
+ * @param {Object} options - Query options
+ * @param {boolean} options.enabled - Enable/disable the query
  * @returns {Object} Query result
  */
-export function usePatientAllergies(patientId) {
+export function usePatientAllergies(patientId, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: drugSafetyKeys.patientAllergies(patientId),
     queryFn: () => drugSafetyApi.getPatientAllergies(patientId),
-    enabled: !!patientId,
+    enabled: !!patientId && enabled,
+    staleTime: 60000, // 1 minute - allergies don't change often
+    refetchOnWindowFocus: false,
   });
 }
 

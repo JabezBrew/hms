@@ -142,32 +142,105 @@ const LabTestCustomizeSlideOver = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  // Parse reference ranges from text
-  const parseReferenceRanges = () => {
-    if (!referenceRangeText.trim()) return {};
+  // Parse reference ranges from text with improved handling
+  const parseReferenceRanges = (text = referenceRangeText) => {
+    if (!text || !text.trim()) return { parsed: {}, errors: [], valid: true };
 
     const ranges = {};
-    const lines = referenceRangeText.split("\n").filter((l) => l.trim());
+    const errors = [];
+    const lines = text.split("\n").filter((l) => l.trim());
 
-    for (const line of lines) {
-      const [key, ...valueParts] = line.split(":");
-      if (key && valueParts.length) {
-        const value = valueParts.join(":").trim();
-        // Try to parse range format "min-max unit"
-        const rangeMatch = value.match(/^([\d.]+)?\s*-\s*([\d.]+)?\s*(.*)$/);
-        if (rangeMatch) {
-          ranges[key.trim()] = {
-            min: rangeMatch[1] ? parseFloat(rangeMatch[1]) : null,
-            max: rangeMatch[2] ? parseFloat(rangeMatch[2]) : null,
-            unit: rangeMatch[3]?.trim() || "",
-          };
-        } else {
-          ranges[key.trim()] = value;
-        }
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const colonIndex = line.indexOf(":");
+
+      if (colonIndex === -1) {
+        errors.push({ line: i + 1, message: "Missing colon separator" });
+        continue;
       }
+
+      const key = line.substring(0, colonIndex).trim();
+      const value = line.substring(colonIndex + 1).trim();
+
+      if (!key) {
+        errors.push({ line: i + 1, message: "Missing population name" });
+        continue;
+      }
+
+      if (!value) {
+        errors.push({ line: i + 1, message: "Missing value" });
+        continue;
+      }
+
+      // Try different formats:
+      // 1. Range format: "4.5-11.0 K/uL" or "4.5 - 11.0 K/uL"
+      // 2. Open-ended: ">5.0 K/uL" or "<10 K/uL"
+      // 3. Single value with unit: "7.0 pH"
+
+      // Range format with optional spaces
+      const rangeMatch = value.match(/^([\d.]+)?\s*[-–]\s*([\d.]+)?\s*(.*)$/);
+      if (rangeMatch) {
+        const min = rangeMatch[1] ? parseFloat(rangeMatch[1]) : null;
+        const max = rangeMatch[2] ? parseFloat(rangeMatch[2]) : null;
+        const unit = rangeMatch[3]?.trim() || "";
+
+        if (min !== null && isNaN(min)) {
+          errors.push({ line: i + 1, message: "Invalid minimum value" });
+          continue;
+        }
+        if (max !== null && isNaN(max)) {
+          errors.push({ line: i + 1, message: "Invalid maximum value" });
+          continue;
+        }
+
+        ranges[key] = { min, max, unit };
+        continue;
+      }
+
+      // Open-ended format: >5.0 or <10
+      const openEndedMatch = value.match(/^([<>])\s*([\d.]+)\s*(.*)$/);
+      if (openEndedMatch) {
+        const operator = openEndedMatch[1];
+        const num = parseFloat(openEndedMatch[2]);
+        const unit = openEndedMatch[3]?.trim() || "";
+
+        if (isNaN(num)) {
+          errors.push({ line: i + 1, message: "Invalid numeric value" });
+          continue;
+        }
+
+        ranges[key] = {
+          min: operator === ">" ? num : null,
+          max: operator === "<" ? num : null,
+          unit,
+        };
+        continue;
+      }
+
+      // Fallback: store as plain string
+      ranges[key] = value;
     }
 
-    return ranges;
+    return {
+      parsed: ranges,
+      errors,
+      valid: errors.length === 0,
+    };
+  };
+
+  // Get live preview of parsed ranges
+  const parsedPreview = parseReferenceRanges();
+
+  // Population labels for display
+  const populationLabels = {
+    adult_male: "Adult Male",
+    adult_female: "Adult Female",
+    adult: "Adult",
+    pediatric: "Pediatric",
+    child: "Child",
+    infant: "Infant",
+    elderly: "Elderly",
+    pregnant: "Pregnant",
   };
 
   // Handle submit
@@ -189,7 +262,14 @@ const LabTestCustomizeSlideOver = ({
 
     // Parse and include reference ranges for tests
     if (!isPanel && referenceRangeText.trim()) {
-      data.reference_ranges = parseReferenceRanges();
+      const result = parseReferenceRanges();
+      if (!result.valid) {
+        toast.error("Invalid reference ranges format", {
+          description: result.errors.map(e => `Line ${e.line}: ${e.message}`).join(", "),
+        });
+        return;
+      }
+      data.reference_ranges = result.parsed;
     }
 
     try {
@@ -363,19 +443,107 @@ const LabTestCustomizeSlideOver = ({
 
           {/* Reference Ranges (tests only) */}
           {!isPanel && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                 Reference Ranges
               </Label>
               <Textarea
-                placeholder={`Enter reference ranges, one per line:\nadult_male: 4.5-5.5 M/uL\nadult_female: 4.0-5.0 M/uL\nchild: 4.0-5.5 M/uL`}
+                placeholder={`Enter reference ranges, one per line:
+adult_male: 4.5-5.5 M/uL
+adult_female: 4.0-5.0 M/uL
+pediatric: 3.8-5.2 M/uL`}
                 value={referenceRangeText}
                 onChange={(e) => setReferenceRangeText(e.target.value)}
-                className="font-mono min-h-[120px]"
+                className={cn(
+                  "font-mono min-h-[120px] text-sm",
+                  !parsedPreview.valid && "border-amber-500"
+                )}
               />
-              <p className="text-xs text-muted-foreground">
-                Format: name: min-max unit (e.g., "adult: 4.5-5.5 mg/dL")
-              </p>
+
+              {/* Help text */}
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground">
+                  Format guide
+                </summary>
+                <div className="mt-2 p-3 bg-muted/50 rounded-lg space-y-2 text-[11px]">
+                  <p className="font-medium">Supported formats:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><code className="bg-muted px-1 rounded">population: min-max unit</code> - Range (e.g., adult: 4.5-5.5 mg/dL)</li>
+                    <li><code className="bg-muted px-1 rounded">population: &gt;value unit</code> - Greater than (e.g., adult: &gt;5.0 mg/dL)</li>
+                    <li><code className="bg-muted px-1 rounded">population: &lt;value unit</code> - Less than (e.g., adult: &lt;10 mg/dL)</li>
+                  </ul>
+                  <p className="font-medium mt-2">Common population keys:</p>
+                  <p className="ml-2">adult_male, adult_female, pediatric, infant, elderly, pregnant</p>
+                </div>
+              </details>
+
+              {/* Live Preview Panel */}
+              {referenceRangeText.trim() && (
+                <div className={cn(
+                  "rounded-lg border p-3",
+                  parsedPreview.valid
+                    ? "bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800"
+                    : "bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800"
+                )}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {parsedPreview.valid ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        <span className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                          Parsed successfully
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                        <span className="font-mono text-xs text-amber-700 dark:text-amber-400">
+                          {parsedPreview.errors.length} error(s)
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Errors */}
+                  {parsedPreview.errors.length > 0 && (
+                    <div className="mb-2 space-y-1">
+                      {parsedPreview.errors.map((err, idx) => (
+                        <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
+                          Line {err.line}: {err.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Parsed Values */}
+                  {Object.keys(parsedPreview.parsed).length > 0 && (
+                    <div className="space-y-1.5">
+                      {Object.entries(parsedPreview.parsed).map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between py-1 px-2 bg-background/50 rounded text-xs"
+                        >
+                          <span className="font-medium text-foreground">
+                            {populationLabels[key] || key}
+                          </span>
+                          <span className="font-mono text-muted-foreground">
+                            {typeof value === "object"
+                              ? value.min !== null && value.max !== null
+                                ? `${value.min} - ${value.max} ${value.unit}`
+                                : value.min !== null
+                                ? `> ${value.min} ${value.unit}`
+                                : value.max !== null
+                                ? `< ${value.max} ${value.unit}`
+                                : value.unit
+                              : value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* System defaults */}
               {systemDefaults.reference_ranges && (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer hover:text-foreground">

@@ -420,7 +420,7 @@ class LabSpecimen(models.Model):
 
     # Collection information
     collected_by = models.ForeignKey(
-        'users.PractitionerProfile',
+        'users.Staff',
         on_delete=models.SET_NULL,
         null=True,
         related_name='collected_specimens'
@@ -446,7 +446,7 @@ class LabSpecimen(models.Model):
 
     # Lab receipt
     received_by = models.ForeignKey(
-        'users.PractitionerProfile',
+        'users.Staff',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -537,7 +537,7 @@ class LabResult(models.Model):
 
     # Performer tracking
     performed_by = models.ForeignKey(
-        'users.PractitionerProfile',
+        'users.Staff',
         on_delete=models.SET_NULL,
         null=True,
         related_name='performed_results',
@@ -551,7 +551,7 @@ class LabResult(models.Model):
         help_text="Whether result has been verified by supervisor/pathologist"
     )
     verified_by = models.ForeignKey(
-        'users.PractitionerProfile',
+        'users.Staff',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

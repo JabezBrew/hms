@@ -233,17 +233,17 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
             # Only admins can create practitioner profiles
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
         elif self.action in ['list', 'search']:
-            # Admins, doctors, and nurses can view practitioner list
+            # Clinical and support staff can view practitioner list
             permission_classes = [
                 permissions.IsAuthenticated,
-                IsAdmin | IsDoctor | IsNurse
+                IsAdmin | IsDoctor | IsNurse | IsReceptionist | IsLabTechnician | IsPharmacist
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             # Admins can edit any practitioner, others can only view
             if self.request.method in permissions.SAFE_METHODS:
                 permission_classes = [
                     permissions.IsAuthenticated,
-                    IsAdmin | IsDoctor | IsNurse
+                    IsAdmin | IsDoctor | IsNurse | IsReceptionist | IsLabTechnician | IsPharmacist
                 ]
             else:
                 permission_classes = [permissions.IsAuthenticated, IsAdmin]
@@ -258,7 +258,7 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.user_type == 'admin':
             queryset = PractitionerProfile.objects.all()
-        elif user.user_type in ['doctor', 'nurse']:
+        elif user.user_type in ['doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist']:
             # These roles can see all practitioners but not modify them
             queryset = PractitionerProfile.objects.all()
         else:

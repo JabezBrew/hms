@@ -16,13 +16,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   TestTube2,
   AlertTriangle,
   Clock,
@@ -31,20 +24,17 @@ import {
   Search,
   Package,
   CheckCircle2,
-  XCircle,
   Play,
   Beaker,
-  FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
   useLabOrders,
   useCollectLabOrder,
   useStartProcessingLabOrder,
-  useCompleteLabOrder,
-  useCreateLabResult,
 } from "@/hooks/useLabQueries";
 import { toast } from "sonner";
+import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
 
 /**
  * LabTechnicianDashboard - Lab technician worklist and workflow management
@@ -64,20 +54,11 @@ const LabTechnicianDashboard = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [currentAction, setCurrentAction] = useState(null);
-  const [resultDialogOpen, setResultDialogOpen] = useState(false);
-  const [selectedTest, setSelectedTest] = useState(null);
+  const [resultEntryOpen, setResultEntryOpen] = useState(false);
 
   // Form states
   const [specimenBarcode, setSpecimenBarcode] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
-  const [resultData, setResultData] = useState({
-    value: "",
-    unit: "",
-    result_notes: "",
-    is_abnormal: false,
-    is_critical: false,
-    reference_range: { low: "", high: "", unit: "" },
-  });
 
   // API queries - Lab worklist only shows collected onwards (not submitted/ordered)
   // Include expand=tests to get full order_tests array with test details
@@ -87,8 +68,6 @@ const LabTechnicianDashboard = () => {
   // Mutations
   const collectOrder = useCollectLabOrder();
   const startProcessing = useStartProcessingLabOrder();
-  const completeOrder = useCompleteLabOrder();
-  const createResult = useCreateLabResult();
 
   // Get orders for active tab
   const getActiveOrders = () => {
@@ -165,60 +144,21 @@ const LabTechnicianDashboard = () => {
     }
   };
 
-  // Handle result entry
-  const handleResultEntryClick = (order, test) => {
+  // Handle bulk result entry - opens the slide-over for all tests in order
+  const handleEnterResults = (order) => {
     setSelectedOrder(order);
-    setSelectedTest(test);
-
-    // Pre-populate reference range if available
-    const refRange = test.test?.reference_range || {};
-    setResultData({
-      value: "",
-      unit: test.test?.unit || "",
-      result_notes: "",
-      is_abnormal: false,
-      is_critical: false,
-      reference_range: {
-        low: refRange.low || "",
-        high: refRange.high || "",
-        unit: refRange.unit || test.test?.unit || "",
-      },
-    });
-
-    setResultDialogOpen(true);
+    setResultEntryOpen(true);
   };
 
-  // Handle result submit
-  const handleResultSubmit = async () => {
-    if (!selectedTest || !resultData.value) {
-      toast.error("Please enter a result value");
-      return;
-    }
+  // Handle result entry success
+  const handleResultEntrySuccess = () => {
+    setResultEntryOpen(false);
+    setSelectedOrder(null);
+  };
 
-    try {
-      await createResult.mutateAsync({
-        order_test: selectedTest.id,
-        value: resultData.value,
-        unit: resultData.unit,
-        result_notes: resultData.result_notes,
-        is_abnormal: resultData.is_abnormal,
-        is_critical: resultData.is_critical,
-        reference_range: resultData.reference_range,
-      });
-
-      toast.success("Result recorded", {
-        description: `Result for ${selectedTest.test?.name}`,
-      });
-
-      setResultDialogOpen(false);
-      setSelectedTest(null);
-      setSelectedOrder(null);
-    } catch (error) {
-      console.error("Error recording result:", error);
-      toast.error("Failed to record result", {
-        description: error.message || "Please try again",
-      });
-    }
+  // Get the first non-rejected specimen for result entry
+  const getSpecimenForOrder = (order) => {
+    return order?.specimens?.find(s => s.status !== "rejected") || order?.specimens?.[0];
   };
 
   // Priority config
@@ -360,42 +300,30 @@ const LabTechnicianDashboard = () => {
                       {/* Tests */}
                       <div>
                         <p className="text-sm font-medium text-stone-700 mb-2">
-                          Tests Ordered:
+                          Tests Ordered ({order.order_tests?.length || 0}):
                         </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {order.order_tests?.map((orderTest) => (
-                            <div
+                            <Badge
                               key={orderTest.id}
-                              className="flex items-center justify-between bg-white border border-stone-200 rounded-lg p-3"
+                              variant="outline"
+                              className="bg-white border-stone-200 text-stone-700 gap-1.5 py-1.5 px-2.5"
                             >
-                              <div className="flex items-center gap-2">
-                                {orderTest.panel ? (
-                                  <>
-                                    <Package className="h-4 w-4 text-stone-500" />
-                                    <span className="text-sm text-stone-900">
-                                      {orderTest.panel.name}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <TestTube2 className="h-4 w-4 text-stone-500" />
-                                    <span className="text-sm text-stone-900">
-                                      {orderTest.test?.name}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                              {tab === "processing" && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleResultEntryClick(order, orderTest)}
-                                >
-                                  <Beaker className="h-3 w-3 mr-1" />
-                                  Enter Result
-                                </Button>
+                              {orderTest.panel ? (
+                                <>
+                                  <Package className="h-3 w-3 text-stone-500" />
+                                  {orderTest.panel.name}
+                                </>
+                              ) : (
+                                <>
+                                  <TestTube2 className="h-3 w-3 text-stone-500" />
+                                  {orderTest.test?.name}
+                                </>
                               )}
-                            </div>
+                              {orderTest.result && (
+                                <CheckCircle2 className="h-3 w-3 text-emerald-500 ml-1" />
+                              )}
+                            </Badge>
                           ))}
                         </div>
                       </div>
@@ -428,6 +356,15 @@ const LabTechnicianDashboard = () => {
                           >
                             <Play className="h-4 w-4 mr-2" />
                             Start Processing
+                          </Button>
+                        )}
+                        {tab === "processing" && (
+                          <Button
+                            onClick={() => handleEnterResults(order)}
+                            className="bg-sky-600 hover:bg-sky-700"
+                          >
+                            <Beaker className="h-4 w-4 mr-2" />
+                            Enter Results
                           </Button>
                         )}
                       </div>
@@ -525,175 +462,17 @@ const LabTechnicianDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Result Entry Dialog */}
-      <Dialog open={resultDialogOpen} onOpenChange={setResultDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Enter Lab Result</DialogTitle>
-            <DialogDescription>
-              Record the result for {selectedTest?.test?.name}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4 space-y-4">
-            {/* Test Info */}
-            <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-stone-600">Test:</span>
-                  <span className="font-semibold text-stone-900">
-                    {selectedTest?.test?.name}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-stone-600">Patient:</span>
-                  <span className="font-semibold text-stone-900">
-                    {selectedOrder?.patient_name}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Result Value */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="result_value">Result Value *</Label>
-                <Input
-                  id="result_value"
-                  placeholder="Enter value..."
-                  value={resultData.value}
-                  onChange={(e) =>
-                    setResultData((prev) => ({ ...prev, value: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="result_unit">Unit</Label>
-                <Input
-                  id="result_unit"
-                  placeholder="e.g., mg/dL"
-                  value={resultData.unit}
-                  onChange={(e) =>
-                    setResultData((prev) => ({ ...prev, unit: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Reference Range */}
-            <div className="space-y-2">
-              <Label>Reference Range</Label>
-              <div className="grid grid-cols-3 gap-2">
-                <Input
-                  placeholder="Low"
-                  value={resultData.reference_range.low}
-                  onChange={(e) =>
-                    setResultData((prev) => ({
-                      ...prev,
-                      reference_range: {
-                        ...prev.reference_range,
-                        low: e.target.value,
-                      },
-                    }))
-                  }
-                />
-                <Input
-                  placeholder="High"
-                  value={resultData.reference_range.high}
-                  onChange={(e) =>
-                    setResultData((prev) => ({
-                      ...prev,
-                      reference_range: {
-                        ...prev.reference_range,
-                        high: e.target.value,
-                      },
-                    }))
-                  }
-                />
-                <Input
-                  placeholder="Unit"
-                  value={resultData.reference_range.unit}
-                  onChange={(e) =>
-                    setResultData((prev) => ({
-                      ...prev,
-                      reference_range: {
-                        ...prev.reference_range,
-                        unit: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Flags */}
-            <div className="space-y-3">
-              <Label>Result Flags</Label>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={resultData.is_abnormal}
-                    onChange={(e) =>
-                      setResultData((prev) => ({
-                        ...prev,
-                        is_abnormal: e.target.checked,
-                      }))
-                    }
-                    className="rounded border-stone-300"
-                  />
-                  <span className="text-sm text-stone-700">Abnormal</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={resultData.is_critical}
-                    onChange={(e) =>
-                      setResultData((prev) => ({
-                        ...prev,
-                        is_critical: e.target.checked,
-                      }))
-                    }
-                    className="rounded border-stone-300"
-                  />
-                  <span className="text-sm text-rose-700 font-medium">Critical Value</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-2">
-              <Label htmlFor="result_notes">Result Notes</Label>
-              <Textarea
-                id="result_notes"
-                placeholder="Any additional notes about the result..."
-                value={resultData.result_notes}
-                onChange={(e) =>
-                  setResultData((prev) => ({ ...prev, result_notes: e.target.value }))
-                }
-                className="min-h-[80px]"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setResultDialogOpen(false)}
-              disabled={createResult.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleResultSubmit}
-              disabled={createResult.isPending || !resultData.value}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {createResult.isPending ? "Recording..." : "Record Result"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Bulk Result Entry Slide-Over */}
+      <LabResultEntrySlideOver
+        open={resultEntryOpen}
+        onClose={() => {
+          setResultEntryOpen(false);
+          setSelectedOrder(null);
+        }}
+        order={selectedOrder}
+        specimen={getSpecimenForOrder(selectedOrder)}
+        onSuccess={handleResultEntrySuccess}
+      />
     </div>
   );
 };

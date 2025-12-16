@@ -143,12 +143,16 @@ export function useDeleteNoteTemplate() {
 /**
  * Get available templates for the current user (for note creation)
  * Only returns active templates that the user can see
+ * @param {Object} options - Query options
+ * @param {boolean} options.enabled - Enable/disable the query (for lazy loading)
  * @returns {Object} Query result
  */
-export function useAvailableNoteTemplates() {
+export function useAvailableNoteTemplates(options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: clinicalNotesKeys.availableTemplates(),
     queryFn: () => clinicalNotesApi.getAvailableTemplates(),
+    enabled,
   });
 }
 

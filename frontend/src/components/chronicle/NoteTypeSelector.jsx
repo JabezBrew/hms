@@ -62,10 +62,15 @@ const VISIBILITY_ICONS = {
  * - Groups templates by category
  * - Shows visibility indicators
  * - Chronicle-styled cards with icons
+ *
+ * @param {function} onSelect - Callback when a template is selected
+ * @param {array} templates - Optional pre-loaded templates (overrides API fetch)
+ * @param {boolean} isLoading - Optional loading state for pre-loaded templates
+ * @param {boolean} enabled - Enable/disable the API fetch (for lazy loading)
  */
-const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propIsLoading }) => {
-  // Use provided templates or fetch from API
-  const { data: apiTemplates, isLoading: apiIsLoading } = useAvailableNoteTemplates();
+const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propIsLoading, enabled = true }) => {
+  // Use provided templates or fetch from API (with lazy loading support)
+  const { data: apiTemplates, isLoading: apiIsLoading } = useAvailableNoteTemplates({ enabled: enabled && !propTemplates });
 
   const templates = propTemplates || apiTemplates || [];
   const isLoading = propIsLoading || apiIsLoading;

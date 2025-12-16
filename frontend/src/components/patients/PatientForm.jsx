@@ -274,17 +274,14 @@ const PatientForm = ({ patient, onSuccess }) => {
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>{isEditMode ? "Edit Patient" : "Register New Patient"}</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Card className="w-full border-border">
+      <CardContent className="pt-6">
         <Tabs defaultValue="personal">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="personal">Personal Information</TabsTrigger>
-            <TabsTrigger value="medical">Medical Information</TabsTrigger>
-            <TabsTrigger value="contact">Contact Information</TabsTrigger>
-            <TabsTrigger value="admission">Admission</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="personal" className="font-mono text-xs">Personal Information</TabsTrigger>
+            <TabsTrigger value="medical" className="font-mono text-xs">Medical Information</TabsTrigger>
+            <TabsTrigger value="contact" className="font-mono text-xs">Contact Information</TabsTrigger>
+            <TabsTrigger value="admission" className="font-mono text-xs">Admission</TabsTrigger>
           </TabsList>
 
           <Form {...form}>
@@ -296,7 +293,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="first_name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>First Name</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">First Name</FormLabel>
                         <FormControl>
                           <Input placeholder="First name" {...field} />
                         </FormControl>
@@ -310,7 +307,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="last_name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Last Name</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Last Name</FormLabel>
                         <FormControl>
                           <Input placeholder="Last name" {...field} />
                         </FormControl>
@@ -325,7 +322,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="date_of_birth"
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
-                      <FormLabel>Date of Birth</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Date of Birth</FormLabel>
                       <Popover>
                         <PopoverTrigger asChild>
                           <FormControl>
@@ -367,7 +364,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Email</FormLabel>
                       <FormControl>
                         <Input type="email" placeholder="Email address" {...field} />
                       </FormControl>
@@ -385,7 +382,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="medical_record_number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Medical Record Number</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Medical Record Number</FormLabel>
                         <FormControl>
                           <Input placeholder="Medical record number" {...field} readOnly />
                         </FormControl>
@@ -400,7 +397,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="nhis_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>NHIS ID</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">NHIS ID</FormLabel>
                       <FormControl>
                         <Input placeholder="NHIS ID" {...field} />
                       </FormControl>
@@ -414,7 +411,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="blood_group"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Blood Group</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Blood Group</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
@@ -442,7 +439,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="allergies"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Allergies</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Allergies</FormLabel>
                       <FormControl>
                         <Textarea placeholder="List any allergies" {...field} />
                       </FormControl>
@@ -458,7 +455,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="phone_number"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Phone Number</FormLabel>
                       <FormControl>
                         <Input placeholder="Phone number" {...field} />
                       </FormControl>
@@ -468,7 +465,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                 />
 
                 <Separator className="my-4" />
-                <h3 className="text-lg font-medium">Address</h3>
+                <h3 className="font-display text-lg text-foreground">Address</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
@@ -476,7 +473,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="address_line1"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Address Line 1</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Address Line 1</FormLabel>
                         <FormControl>
                           <Input placeholder="Address line 1" {...field} />
                         </FormControl>
@@ -490,7 +487,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="address_line2"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Address Line 2</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Address Line 2</FormLabel>
                         <FormControl>
                           <Input placeholder="Address line 2" {...field} />
                         </FormControl>
@@ -506,7 +503,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">City</FormLabel>
                         <FormControl>
                           <Input placeholder="City" {...field} />
                         </FormControl>
@@ -520,7 +517,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="state"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>State/Province</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">State/Province</FormLabel>
                         <FormControl>
                           <Input placeholder="State/Province" {...field} />
                         </FormControl>
@@ -536,7 +533,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="postal_code"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Postal Code</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Postal Code</FormLabel>
                         <FormControl>
                           <Input placeholder="Postal code" {...field} />
                         </FormControl>
@@ -550,7 +547,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     name="country"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Country</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Country</FormLabel>
                         <FormControl>
                           <Input placeholder="Country" {...field} />
                         </FormControl>
@@ -561,14 +558,14 @@ const PatientForm = ({ patient, onSuccess }) => {
                 </div>
 
                 <Separator className="my-4" />
-                <h3 className="text-lg font-medium">Emergency Contact</h3>
+                <h3 className="font-display text-lg text-foreground">Emergency Contact</h3>
 
                 <FormField
                   control={form.control}
                   name="emergency_contact_name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Emergency Contact Name</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Emergency Contact Name</FormLabel>
                       <FormControl>
                         <Input placeholder="Emergency contact name" {...field} />
                       </FormControl>
@@ -582,7 +579,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="emergency_contact_phone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Emergency Contact Phone</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Emergency Contact Phone</FormLabel>
                       <FormControl>
                         <Input placeholder="Emergency contact phone" {...field} />
                       </FormControl>
@@ -596,7 +593,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   name="emergency_contact_relationship"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Relationship</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Relationship</FormLabel>
                       <FormControl>
                         <Input placeholder="Relationship to patient" {...field} />
                       </FormControl>
@@ -609,7 +606,7 @@ const PatientForm = ({ patient, onSuccess }) => {
 
               <TabsContent value="admission" className="space-y-4 mt-4">
                 <div className="space-y-4">
-                  <FormLabel>Admission Type</FormLabel>
+                  <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Admission Type</FormLabel>
                   <RadioGroup
                     defaultValue="outpatient"
                     value={admissionType}
@@ -618,11 +615,11 @@ const PatientForm = ({ patient, onSuccess }) => {
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="outpatient" id="outpatient" />
-                      <FormLabel htmlFor="outpatient" className="font-normal">Outpatient (No admission)</FormLabel>
+                      <FormLabel htmlFor="outpatient" className="font-normal cursor-pointer">Outpatient (No admission)</FormLabel>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="inpatient" id="inpatient" />
-                      <FormLabel htmlFor="inpatient" className="font-normal">Inpatient (Admit to ward)</FormLabel>
+                      <FormLabel htmlFor="inpatient" className="font-normal cursor-pointer">Inpatient (Admit to ward)</FormLabel>
                     </div>
                   </RadioGroup>
                 </div>
@@ -651,7 +648,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     {!isWaitingList && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormItem>
-                          <FormLabel>Ward</FormLabel>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</FormLabel>
                           <Select onValueChange={setSelectedWard} value={selectedWard}>
                             <FormControl>
                               <SelectTrigger>
@@ -673,7 +670,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           name="bed_id"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Bed</FormLabel>
+                              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Bed</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value} disabled={!selectedWard}>
                                 <FormControl>
                                   <SelectTrigger>
@@ -703,7 +700,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                       name="admission_notes"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Admission Notes</FormLabel>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Admission Notes</FormLabel>
                           <FormControl>
                             <Textarea placeholder="Reason for admission, initial observations..." {...field} />
                           </FormControl>
@@ -715,8 +712,12 @@ const PatientForm = ({ patient, onSuccess }) => {
                 )}
               </TabsContent>
 
-              <div className="flex justify-end pt-4">
-                <Button type="submit" disabled={isLoading}>
+              <div className="flex justify-end pt-6">
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="font-mono text-sm bg-primary hover:bg-primary/90"
+                >
                   {isLoading ? "Saving..." : isEditMode ? "Update Patient" : "Register Patient"}
                 </Button>
               </div>

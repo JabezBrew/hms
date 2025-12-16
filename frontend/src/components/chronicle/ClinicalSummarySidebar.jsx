@@ -22,12 +22,12 @@ const ClinicalSummarySidebar = ({
   // Check if patient is admitted (has active admission)
   // Check multiple fields for backward compatibility
   const isAdmitted = patient?.local_data?.current_admission_id ||
-                     patient?.current_admission_id ||
-                     patient?.local_data?.admission_status === 'admitted' ||
-                     patient?.admission_status === 'admitted' ||
-                     // Fallback: check if current_ward_id exists (means patient has a bed)
-                     patient?.local_data?.current_ward_id ||
-                     patient?.current_ward_id;
+    patient?.current_admission_id ||
+    patient?.local_data?.admission_status === 'admitted' ||
+    patient?.admission_status === 'admitted' ||
+    // Fallback: check if current_ward_id exists (means patient has a bed)
+    patient?.local_data?.current_ward_id ||
+    patient?.current_ward_id;
 
   const patientId = patient?.local_data?.id || patient?.id;
 
@@ -266,18 +266,18 @@ const LabResultsSection = ({ results, maxVisible = 4 }) => {
   // Get the most recent timestamp
   const latestDate = results[0]?.timestamp
     ? new Date(results[0].timestamp).toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
     : 'Recent';
 
   return (
     <section>
       <header className="flex items-center justify-between mb-4">
         <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Recent Labs
+          Recent Vitals
         </h3>
         <time className="font-mono text-xs text-muted-foreground/70">
           {latestDate}
@@ -313,16 +313,6 @@ const LabResultsSection = ({ results, maxVisible = 4 }) => {
         ))}
       </div>
 
-      {results.length > maxVisible && (
-        <button className={cn(
-          "mt-3 w-full py-2 text-center font-mono text-xs",
-          "text-primary hover:text-primary/80 transition-colors",
-          "flex items-center justify-center gap-1"
-        )}>
-          View all {results.length} results
-          <ChevronRight className="h-3 w-3" />
-        </button>
-      )}
     </section>
   );
 };

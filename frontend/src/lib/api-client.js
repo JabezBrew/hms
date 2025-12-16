@@ -19,9 +19,10 @@ const AUTH_ENDPOINTS = [
 
 // Token provider - will be set by the auth context
 let getAccessToken = () => null;
-let refreshAccessToken = async () => null;
+let setAccessTokenFn = () => {};
+let onRefreshFailure = async () => {};
 
-// Flag to track if a token refresh is in progress
+// Flag to track if a token refresh is in progress (singleton across all callers)
 let isRefreshing = false;
 // Promise to track the current refresh operation
 let refreshPromise = null;
@@ -30,9 +31,67 @@ let consecutiveRefreshAttempts = 0;
 const MAX_CONSECUTIVE_REFRESHES = 3;
 
 // Function to set the token provider from the auth context
-export function setAuthTokenProvider(tokenGetter, tokenRefresher) {
+export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHandler) {
   getAccessToken = tokenGetter;
-  refreshAccessToken = tokenRefresher;
+  setAccessTokenFn = tokenSetter;
+  onRefreshFailure = refreshFailureHandler;
+}
+
+/**
+ * Centralized token refresh function - ensures only one refresh request at a time.
+ * This is the ONLY place refresh requests should originate from.
+ * @returns {Promise<string|null>} The new access token or null if refresh failed
+ */
+export async function performTokenRefresh() {
+  // If a refresh is already in progress, wait for it
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  // Check consecutive attempts to prevent infinite loops
+  if (consecutiveRefreshAttempts >= MAX_CONSECUTIVE_REFRESHES) {
+    consecutiveRefreshAttempts = 0;
+    await onRefreshFailure();
+    return null;
+  }
+
+  // Start a new refresh
+  isRefreshing = true;
+  consecutiveRefreshAttempts++;
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies for refresh token
+      });
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const data = await response.json();
+
+      // Update the access token in memory
+      setAccessTokenFn(data.access);
+
+      // Reset consecutive attempts on success
+      consecutiveRefreshAttempts = 0;
+
+      return data.access;
+    } catch (_error) {
+      // Reset attempts and notify auth context of failure
+      consecutiveRefreshAttempts = 0;
+      await onRefreshFailure();
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 /**
@@ -145,54 +204,28 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
         throw new ApiError(message, response.status, data);
       }
 
-      // Skip token refresh for auth endpoints or if we're already refreshing
+      // Skip token refresh for auth endpoints
       const isAuthEndpoint = AUTH_ENDPOINTS.some(authPath => endpoint.includes(authPath));
 
       // If unauthorized and we haven't retried yet, try to refresh the token
       if (response.status === 401 && retryWithRefresh && !isAuthEndpoint) {
-        // Don't attempt to refresh the token if we're already trying to refresh it
-        // or if this is the token refresh endpoint itself
+        // Don't attempt to refresh for the refresh endpoint itself
         if (endpoint === '/auth/token/refresh/') {
-          consecutiveRefreshAttempts = 0; // Reset on explicit refresh failure
           throw new ApiError(message, response.status, data);
         }
 
-        // Check if we've exceeded maximum refresh attempts
-        if (consecutiveRefreshAttempts >= MAX_CONSECUTIVE_REFRESHES) {
-          consecutiveRefreshAttempts = 0;
-          throw new ApiError('Maximum authentication attempts exceeded. Please log in again.', response.status, data);
-        }
-
         try {
-          consecutiveRefreshAttempts++;
+          // Use centralized refresh - handles deduplication internally
+          const newToken = await performTokenRefresh();
 
-          // If a refresh is already in progress, wait for it to complete
-          if (isRefreshing) {
-            if (refreshPromise) {
-              await refreshPromise;
-            } else {
-              throw new Error('Token refresh in progress but no promise available');
-            }
+          if (newToken) {
+            // Retry the original request with the new token
+            return await fetchWithAuth(endpoint, options, false);
           } else {
-            // Start a new refresh
-            isRefreshing = true;
-            refreshPromise = refreshAccessToken();
-
-            try {
-              await refreshPromise;
-              // Refresh succeeded, reset counter
-              consecutiveRefreshAttempts = 0;
-            } finally {
-              isRefreshing = false;
-              refreshPromise = null;
-            }
+            // Refresh failed, throw error
+            throw new ApiError(message, response.status, data);
           }
-
-          // Retry the original request with the new token
-          return await fetchWithAuth(endpoint, options, false);
-        } catch (refreshError) {
-          // Reset counter on failure
-          consecutiveRefreshAttempts = 0;
+        } catch (_refreshError) {
           // If refresh fails, throw the original error
           throw new ApiError(message, response.status, data);
         }

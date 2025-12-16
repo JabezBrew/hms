@@ -4,7 +4,8 @@ import { usePatient } from "@/hooks/usePatientQueries";
 import { toast } from "sonner";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
-import { useClinicalSummary } from "@/hooks/useClinicalSummaryQueries";
+// useClinicalSummary removed - context endpoint now provides all sidebar data
+import { useChronicleContext, useTimelineV2 } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,14 @@ const PatientChroniclePage = () => {
   // Fetch patient data
   const { data: patient, isLoading, error, refetch } = usePatient(id);
 
+  // ====== TIER 1: Chronicle Context (optimized single-call) ======
+  // Fetches patient info, allergies, problems, medications, admission in one request
+  const {
+    data: chronicleContext,
+    isLoading: isContextLoading,
+    refetch: refetchContext,
+  } = useChronicleContext(id);
+
   // Fetch patient encounters for grouping
   const { data: encounters } = usePatientEncounters(id);
 
@@ -101,18 +110,88 @@ const PatientChroniclePage = () => {
   // The URL id is the patient UUID which works for all clinical endpoints
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
 
-  // Fetch clinical summary data (medications, vitals/labs)
-  // Uses id from URL params to start fetching immediately in parallel with patient data
-  const {
-    medications,
-    labResults,
-    allergies: parsedAllergies,
-    problems,
-    isLoading: isClinicalLoading,
-    refetch: refetchClinical,
-  } = useClinicalSummary(id, patient?.local_data || patient, {
-    enabled: !!id, // Use URL id to start immediately
-  });
+  // Use chronicle context data directly - no more legacy fallback needed
+  const medications = chronicleContext?.active_medications || [];
+  const parsedAllergies = chronicleContext?.allergies || [];
+  const problems = chronicleContext?.active_problems || [];
+  const admissionStatus = chronicleContext?.admission_status;
+
+  // Transform latest_vitals from context into labResults format for sidebar
+  const labResults = useMemo(() => {
+    const vitals = chronicleContext?.latest_vitals;
+    if (!vitals) return [];
+
+    const results = [];
+    const timestamp = vitals.recorded_at;
+
+    if (vitals.temperature) {
+      const temp = parseFloat(vitals.temperature);
+      results.push({
+        id: `temp-${vitals.id}`,
+        name: 'Temp',
+        value: vitals.temperature,
+        unit: '°C',
+        timestamp,
+        is_abnormal: temp > 38 || temp < 36,
+        abnormal_direction: temp > 38 ? 'high' : 'low',
+      });
+    }
+
+    if (vitals.heart_rate) {
+      const hr = parseInt(vitals.heart_rate);
+      results.push({
+        id: `hr-${vitals.id}`,
+        name: 'HR',
+        value: vitals.heart_rate,
+        unit: 'bpm',
+        timestamp,
+        is_abnormal: hr > 100 || hr < 60,
+        abnormal_direction: hr > 100 ? 'high' : 'low',
+      });
+    }
+
+    if (vitals.blood_pressure) {
+      const parts = vitals.blood_pressure.split('/');
+      const systolic = parts.length > 0 ? Number(parts[0]) : null;
+      results.push({
+        id: `bp-${vitals.id}`,
+        name: 'BP',
+        value: vitals.blood_pressure,
+        unit: 'mmHg',
+        timestamp,
+        is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
+        abnormal_direction: systolic > 140 ? 'high' : 'low',
+      });
+    }
+
+    if (vitals.oxygen_saturation) {
+      const spo2 = parseInt(vitals.oxygen_saturation);
+      results.push({
+        id: `spo2-${vitals.id}`,
+        name: 'SpO2',
+        value: vitals.oxygen_saturation,
+        unit: '%',
+        timestamp,
+        is_abnormal: spo2 < 95,
+        abnormal_direction: 'low',
+      });
+    }
+
+    if (vitals.respiratory_rate) {
+      const rr = parseInt(vitals.respiratory_rate);
+      results.push({
+        id: `rr-${vitals.id}`,
+        name: 'RR',
+        value: vitals.respiratory_rate,
+        unit: '/min',
+        timestamp,
+        is_abnormal: rr > 20 || rr < 12,
+        abnormal_direction: rr > 20 ? 'high' : 'low',
+      });
+    }
+
+    return results;
+  }, [chronicleContext?.latest_vitals]);
 
   // Fetch active chart assignments for this patient
   const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments({
@@ -126,7 +205,7 @@ const PatientChroniclePage = () => {
     'progress_note': 'notes',
     'vitals': 'vitals',
     'medication': 'prescriptions',
-    'lab_result': 'all', // No specific lab results endpoint yet
+    'lab_result': 'labs',
   };
 
   // Fetch timeline with infinite scroll
@@ -247,9 +326,7 @@ const PatientChroniclePage = () => {
         entry.type === 'nursing_note'
       );
     }
-    if (activeFilter === 'lab_result') {
-      return timelineEntries.filter(entry => entry.type === 'lab_result');
-    }
+    // Labs are now filtered by API, no local filtering needed
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
 
@@ -362,9 +439,9 @@ const PatientChroniclePage = () => {
     Promise.all([
       invalidateTimeline(id),
       refetch(),
-      refetchClinical(),
+      refetchContext(),
     ]);
-  }, [refetch, refetchClinical, id, invalidateTimeline]);
+  }, [refetch, refetchContext, id, invalidateTimeline]);
 
   // Slide-over handlers - using the centralized hook
   const handleAddNote = useCallback(() => slideOvers.open('note'), [slideOvers]);

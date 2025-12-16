@@ -111,7 +111,7 @@ class NurseDashboardTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as nurse user."""
-        self.login("nurse@hms.local", "testpass123")
+        self.login("nurse@hms.com", "Admin123!")
         self.patient_ids = []
         self.ward_id = None
 
@@ -209,6 +209,477 @@ class NurseDashboardTasks(TaskSet, AuthMixin):
         )
 
 
+class PrescribingDoctorTasks(TaskSet, AuthMixin):
+    """
+    Simulates doctor prescribing and ordering workflows.
+    
+    1. Create prescription (triggers safety checks)
+    2. Create lab order
+    3. View patient timeline (to verify entries)
+    4. Discontinue prescription (lifecycle)
+    """
+    
+    def on_start(self):
+        """Login as doctor user."""
+        self.login("doctor@hms.com", "Admin123!")
+        self.patient_ids = []
+        self.lab_tests = []
+        # Get list of patients first
+        headers = self.get_auth_headers()
+        response = self.client.get(
+            "/api/patients/search/?query=",
+            headers=headers,
+            name="Doctor: Get Patients"
+        )
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            self.patient_ids = [p.get("id") for p in results[:20]]
+            
+        # Get available lab tests
+        response = self.client.get(
+            "/api/laboratory/tests/?is_active=true",
+            headers=headers,
+            name="Doctor: Get Lab Tests"
+        )
+        if response.status_code == 200:
+            self.lab_tests = response.json().get("results", [])
+
+    @task(5)
+    def create_prescription(self):
+        """Create a new prescription with prior drug search."""
+        if not self.patient_ids:
+            return
+            
+        patient_id = random.choice(self.patient_ids)
+        headers = self.get_auth_headers()
+        
+        # 1. Search for drug (Real user workflow)
+        search_terms = ["amox", "lisin", "metfor", "ibupro", "acetam"]
+        term = random.choice(search_terms)
+        
+        with self.client.get(
+            f"/api/drug-safety/safety/search_drugs/?q={term}",
+            headers=headers,
+            name="Doctor: Search Drugs",
+            catch_response=True
+        ) as search_response:
+            if search_response.status_code == 200:
+                search_response.success()
+            else:
+                # If search fails, we probably shouldn't proceed with prescribing in a real scenario,
+                # but for load testing we might want to continue or just return.
+                # Let's log it and return to simulate "user gave up".
+                search_response.failure(f"Drug search failed: {search_response.status_code}")
+                return
+
+        # 2. Create Prescription
+        medications = [
+            ("Amoxicillin", "500mg", "oral", "tid"),
+            ("Lisinopril", "10mg", "oral", "daily"),
+            ("Metformin", "500mg", "oral", "bid"),
+            ("Ibuprofen", "400mg", "oral", "q4h")
+        ]
+        med, dose, route, freq = random.choice(medications)
+        
+        payload = {
+            "patient": patient_id,
+            "medication_name": med,
+            "dosage": dose,
+            "route": route,
+            "frequency": freq,
+            "start_date": datetime.now().strftime("%Y-%m-%d"),
+            "duration_days": 7,
+            "instructions": "Take with food",
+            "reason": "Routine care"
+        }
+        
+        with self.client.post(
+            "/api/clinical-notes/prescriptions/",
+            json=payload,
+            headers=headers,
+            name="Doctor: Create Prescription",
+            catch_response=True
+        ) as response:
+            if response.status_code == 201:
+                response.success()
+            elif response.status_code == 400 and "safety" in response.text.lower():
+                # Safety check failure is a valid business outcome
+                response.success()
+            else:
+                response.failure(f"Prescription failed: {response.status_code}")
+
+    @task(3)
+    def create_lab_order(self):
+        """Create a new lab order."""
+        if not self.patient_ids or not self.lab_tests:
+            return
+            
+        patient_id = random.choice(self.patient_ids)
+        headers = self.get_auth_headers()
+        
+        # Select 1-3 random tests
+        selected_tests = random.sample(self.lab_tests, k=random.randint(1, 3))
+        test_ids = [t["id"] for t in selected_tests]
+        
+        payload = {
+            "patient": patient_id,
+            "test_ids": test_ids,
+            "priority": random.choice(["routine", "urgent"]),
+            "clinical_notes": "Routine checkup",
+            "fasting_required": False
+        }
+        
+        with self.client.post(
+            "/api/laboratory/orders/",
+            json=payload,
+            headers=headers,
+            name="Doctor: Create Lab Order",
+            catch_response=True
+        ) as response:
+            if response.status_code == 201:
+                order_id = response.json().get("id")
+                # Immediately submit the order
+                self.client.post(
+                    f"/api/laboratory/orders/{order_id}/submit/",
+                    headers=headers,
+                    name="Doctor: Submit Lab Order"
+                )
+                response.success()
+            else:
+                response.failure(f"Lab Order failed: {response.status_code}")
+
+    @task(2)
+    def discontinue_prescription(self):
+        """Discontinue an active prescription."""
+        if not self.patient_ids:
+            return
+            
+        patient_id = random.choice(self.patient_ids)
+        headers = self.get_auth_headers()
+        
+        # Find active prescriptions
+        response = self.client.get(
+            f"/api/clinical-notes/prescriptions/?patient={patient_id}&status=active",
+            headers=headers,
+            name="Doctor: Find Active Rx"
+        )
+        
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            if results:
+                rx_id = random.choice(results)["id"]
+                self.client.post(
+                    f"/api/clinical-notes/prescriptions/{rx_id}/discontinue/",
+                    json={"reason": "Discontinued by doctor"},
+                    headers=headers,
+                    name="Doctor: Discontinue Rx"
+                )
+
+
+class LabTechnicianTasks(TaskSet, AuthMixin):
+    """
+    Simulates lab technician workflow.
+    
+    1. View pending orders
+    2. Collect specimens
+    3. Receive specimens in lab
+    4. Enter results
+    5. Verify results (if authorized)
+    6. Complete orders
+    """
+    
+    def on_start(self):
+        # Use admin user who has permissions for lab ops in test env
+        self.login("lab_tech@hms.com", "Admin123!") 
+        
+    @task(5)
+    def process_lab_orders(self):
+        """Find and process ordered lab tests."""
+        headers = self.get_auth_headers()
+        
+        # 1. Find orders needing collection or processing
+        # Status: ORDERED -> COLLECTED -> RECEIVED -> PROCESSING -> COMPLETED
+        response = self.client.get(
+            "/api/laboratory/orders/?status=ordered&pending_only=true",
+            headers=headers,
+            name="Lab: Find Pending Orders"
+        )
+        
+        if response.status_code != 200:
+            return
+            
+        orders = response.json().get("results", [])
+        if not orders:
+            return
+            
+        # Pick one order to process
+        order = random.choice(orders)
+        order_id = order["id"]
+        
+        # 2. Collect Specimen
+        # First create specimen record
+        specimen_payload = {
+            "order": order_id,
+            "specimen_type": "blood",
+            "container_type": "lavender_top",
+            "volume_collected": "5ml",
+            "collection_site": "Left arm",
+            "collected_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        }
+        
+        spec_resp = self.client.post(
+            "/api/laboratory/specimens/",
+            json=specimen_payload,
+            headers=headers,
+            name="Lab: Collect Specimen"
+        )
+        
+        if spec_resp.status_code == 201:
+            specimen_id = spec_resp.json().get("id")
+            
+            # Mark order as collected
+            self.client.post(
+                f"/api/laboratory/orders/{order_id}/collect/",
+                headers=headers,
+                name="Lab: Mark Collected"
+            )
+            
+            # 3. Receive Specimen
+            self.client.post(
+                f"/api/laboratory/specimens/{specimen_id}/receive/",
+                json={"storage_location": "Rack A1"},
+                headers=headers,
+                name="Lab: Receive Specimen"
+            )
+            
+            # Mark order as received
+            self.client.post(
+                f"/api/laboratory/orders/{order_id}/receive/",
+                headers=headers,
+                name="Lab: Mark Received"
+            )
+            
+            # 4. Start Processing
+            self.client.post(
+                f"/api/laboratory/orders/{order_id}/start_processing/",
+                headers=headers,
+                name="Lab: Start Processing"
+            )
+            
+            # 5. Enter Results (for each test in order)
+            # Need to fetch full order details to get test IDs
+            detail_resp = self.client.get(
+                f"/api/laboratory/orders/{order_id}/?expand=tests",
+                headers=headers,
+                name="Lab: Get Order Details"
+            )
+            
+            if detail_resp.status_code == 200:
+                order_detail = detail_resp.json()
+                for order_test in order_detail.get("order_tests", []):
+                    result_payload = {
+                        "order_test": order_test["id"],
+                        "specimen": specimen_id,
+                        "value": str(random.randint(50, 150)),
+                        "unit": "mg/dL",
+                        "performed_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                    }
+                    
+                    res_resp = self.client.post(
+                        "/api/laboratory/results/",
+                        json=result_payload,
+                        headers=headers,
+                        name="Lab: Enter Result"
+                    )
+                    
+                    if res_resp.status_code == 201:
+                        result_id = res_resp.json().get("id")
+                        # 6. Verify Result
+                        self.client.post(
+                            f"/api/laboratory/results/{result_id}/verify/",
+                            json={"verification_notes": "Verified by system"},
+                            headers=headers,
+                            name="Lab: Verify Result"
+                        )
+                
+                # 7. Complete Order
+                self.client.post(
+                    f"/api/laboratory/orders/{order_id}/complete/",
+                    headers=headers,
+                    name="Lab: Complete Order"
+                )
+
+
+class ReceptionistTasks(TaskSet, AuthMixin):
+    """
+    Simulates receptionist workflow:
+    1. Search for available appointment slots
+    2. Book appointments
+    """
+    
+    def on_start(self):
+        self.login("receptionist@hms.com", "Admin123!")
+        self.patient_ids = []
+        self.practitioner_ids = []
+        self.appointment_type_ids = []
+        
+        # Cache patients
+        resp = self.client.get("/api/patients/search/?query=")
+        if resp.status_code == 200:
+            self.patient_ids = [p.get("id") for p in resp.json().get("results", [])[:20]]
+            
+        # Cache practitioners
+        resp = self.client.get("/api/users/practitioners/")
+        if resp.status_code == 200:
+            self.practitioner_ids = [p.get("id") for p in resp.json().get("results", [])]
+            
+        # Cache appointment types
+        resp = self.client.get("/api/appointments/types/")
+        if resp.status_code == 200:
+            self.appointment_type_ids = [t.get("id") for t in resp.json().get("results", [])]
+
+    @task(10)
+    def search_slots(self):
+        """Search for available slots."""
+        if not self.practitioner_ids or not self.appointment_type_ids:
+            return
+            
+        practitioner_id = random.choice(self.practitioner_ids)
+        appt_type_id = random.choice(self.appointment_type_ids)
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        self.client.get(
+            f"/api/appointments/appointments/available_slots/?practitioner_id={practitioner_id}&start_date={start_date}&end_date={end_date}&appointment_type_id={appt_type_id}",
+            headers=self.get_auth_headers(),
+            name="Reception: Search Slots"
+        )
+
+    @task(5)
+    def book_appointment(self):
+        """Book an appointment."""
+        if not self.patient_ids or not self.practitioner_ids or not self.appointment_type_ids:
+            return
+            
+        practitioner_id = random.choice(self.practitioner_ids)
+        appt_type_id = random.choice(self.appointment_type_ids)
+        patient_id = random.choice(self.patient_ids)
+        
+        # Get slots first
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        
+        resp = self.client.get(
+            f"/api/appointments/appointments/available_slots/?practitioner_id={practitioner_id}&start_date={start_date}&end_date={end_date}&appointment_type_id={appt_type_id}",
+            headers=self.get_auth_headers(),
+            name="Reception: Get Slots for Booking"
+        )
+        
+        if resp.status_code == 200:
+            slots = resp.json().get("slots", [])
+            if slots:
+                slot = random.choice(slots)
+                payload = {
+                    "patient_id": patient_id,
+                    "practitioner_id": practitioner_id,
+                    "appointment_type_id": appt_type_id,
+                    "start_time": slot["start"],
+                    "end_time": slot["end"],
+                    "description": "Routine checkup",
+                    "comment": "Booked via load test"
+                }
+                
+                self.client.post(
+                    "/api/appointments/appointments/",
+                    json=payload,
+                    headers=self.get_auth_headers(),
+                    name="Reception: Book Appointment"
+                )
+
+
+class AdmissionsClerkTasks(TaskSet, AuthMixin):
+    """
+    Simulates ADT (Admission, Discharge, Transfer) workflow.
+    """
+    
+    def on_start(self):
+        self.login("admin@hms.com", "Admin123!") # Use admin for now
+        self.patient_ids = []
+        self.ward_ids = []
+        self.practitioner_ids = []
+        
+        # Cache patients
+        resp = self.client.get("/api/patients/search/?query=")
+        if resp.status_code == 200:
+            self.patient_ids = [p.get("id") for p in resp.json().get("results", [])[:20]]
+            
+        # Cache wards
+        resp = self.client.get("/api/wards/wards/")
+        if resp.status_code == 200:
+            self.ward_ids = [w.get("id") for w in resp.json().get("results", [])]
+            
+        # Cache practitioners (admitting doctors)
+        resp = self.client.get("/api/users/practitioners/")
+        if resp.status_code == 200:
+            self.practitioner_ids = [p.get("id") for p in resp.json().get("results", [])]
+
+    @task(8)
+    def check_bed_availability(self):
+        """Check for available beds in a ward."""
+        if not self.ward_ids:
+            return
+            
+        ward_id = random.choice(self.ward_ids)
+        self.client.get(
+            f"/api/wards/beds/?ward={ward_id}&status=available",
+            headers=self.get_auth_headers(),
+            name="ADT: Check Beds"
+        )
+
+    @task(2)
+    def admit_patient(self):
+        """Admit a patient to a ward."""
+        if not self.patient_ids or not self.ward_ids or not self.practitioner_ids:
+            return
+            
+        ward_id = random.choice(self.ward_ids)
+        
+        # Find a bed
+        bed_resp = self.client.get(
+            f"/api/wards/beds/?ward={ward_id}&status=available",
+            headers=self.get_auth_headers(),
+            name="ADT: Find Bed"
+        )
+        
+        if bed_resp.status_code == 200:
+            beds = bed_resp.json().get("results", [])
+            if beds:
+                bed = random.choice(beds)
+                payload = {
+                    "patient": random.choice(self.patient_ids),
+                    "bed": bed["id"],
+                    "admission_date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "admission_type": "emergency",
+                    "admitting_doctor": random.choice(self.practitioner_ids),
+                    "admission_notes": "Admitted via load test"
+                }
+                
+                with self.client.post(
+                    "/api/wards/admissions/",
+                    json=payload,
+                    headers=self.get_auth_headers(),
+                    name="ADT: Admit Patient",
+                    catch_response=True
+                ) as resp:
+                    if resp.status_code == 201:
+                        resp.success()
+                    elif resp.status_code == 400 and "occupied" in resp.text.lower():
+                        # Race condition handled correctly
+                        resp.success()
+                    else:
+                        resp.failure(f"Admission failed: {resp.status_code}")
+
+
 class DoctorDashboardTasks(TaskSet, AuthMixin):
     """
     Simulates doctor dashboard usage patterns.
@@ -223,7 +694,7 @@ class DoctorDashboardTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as doctor user."""
-        self.login("doctor@hms.local", "testpass123")
+        self.login("doctor@hms.com", "Admin123!")
         self.patient_ids = []
 
     @task(8)
@@ -294,7 +765,7 @@ class WardManagementTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as admin user."""
-        self.login("admin@example.com", "AdminPassword123")
+        self.login("admin@hms.com", "Admin123!")
         self.ward_ids = []
 
     @task(5)
@@ -386,6 +857,43 @@ class AdminUser(HttpUser):
     tasks = [WardManagementTasks]
     wait_time = between(5, 15)  # 5-15 seconds between tasks
     weight = 10  # 10% of users are admins
+
+
+class PrescribingDoctorUser(HttpUser):
+    """
+    Simulates a doctor actively prescribing and ordering labs.
+    Separated from viewing dashboard for more specific load targeting.
+    """
+    tasks = [PrescribingDoctorTasks]
+    wait_time = between(10, 30) # Slower paced, more complex actions
+    weight = 15 # 15% of users
+
+
+class LabTechUser(HttpUser):
+    """
+    Simulates a lab technician processing orders.
+    """
+    tasks = [LabTechnicianTasks]
+    wait_time = between(2, 10) # Fast paced processing
+    weight = 15 # 15% of users
+
+
+class ReceptionistUser(HttpUser):
+    """
+    Simulates a receptionist booking appointments.
+    """
+    tasks = [ReceptionistTasks]
+    wait_time = between(5, 20)
+    weight = 5 # 5% of users
+
+
+class AdmissionsClerkUser(HttpUser):
+    """
+    Simulates an ADT clerk managing admissions.
+    """
+    tasks = [AdmissionsClerkTasks]
+    wait_time = between(10, 40)
+    weight = 5 # 5% of users
 
 
 class HealthCheckUser(HttpUser):

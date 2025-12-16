@@ -207,25 +207,24 @@ export function WardOccupancyReports() {
   }
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-2xl font-bold">Ward Occupancy Reports</h1>
-        
-        <Button onClick={exportReport} variant="outline">
+    <div className="space-y-6">
+      {/* Export Button */}
+      <div className="flex justify-end">
+        <Button onClick={exportReport} variant="outline" className="font-mono text-xs">
           <Download className="h-4 w-4 mr-2" />
           Export Report
         </Button>
       </div>
-      
+
       {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Report Filters</CardTitle>
+      <Card className="border-border">
+        <CardHeader className="pb-4">
+          <CardTitle className="font-display text-lg">Report Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
-              <Label htmlFor="ward">Ward</Label>
+              <Label htmlFor="ward" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</Label>
               <Select
                 value={selectedWard}
                 onValueChange={handleWardChange}
@@ -245,7 +244,7 @@ export function WardOccupancyReports() {
             </div>
             
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Start Date</Label>
               <DatePicker
                 date={dateRange.start}
                 setDate={(date) => handleDateChange('start', date)}
@@ -253,7 +252,7 @@ export function WardOccupancyReports() {
             </div>
             
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">End Date</Label>
               <DatePicker
                 date={dateRange.end}
                 setDate={(date) => handleDateChange('end', date)}
@@ -264,32 +263,32 @@ export function WardOccupancyReports() {
       </Card>
       
       <Tabs defaultValue="occupancy">
-        <TabsList>
-          <TabsTrigger value="occupancy">
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="occupancy" className="font-mono text-xs">
             <TrendingUp className="h-4 w-4 mr-2" />
             Occupancy Trends
           </TabsTrigger>
-          <TabsTrigger value="los">
+          <TabsTrigger value="los" className="font-mono text-xs">
             <Clock className="h-4 w-4 mr-2" />
             Length of Stay
           </TabsTrigger>
-          <TabsTrigger value="utilization">
+          <TabsTrigger value="utilization" className="font-mono text-xs">
             <Bed className="h-4 w-4 mr-2" />
             Ward Utilization
           </TabsTrigger>
-          <TabsTrigger value="admissions">
+          <TabsTrigger value="admissions" className="font-mono text-xs">
             <Users className="h-4 w-4 mr-2" />
             Admissions
           </TabsTrigger>
         </TabsList>
         
         {/* Occupancy Trends Tab */}
-        <TabsContent value="occupancy" className="mt-4">
+        <TabsContent value="occupancy" className="mt-6">
           <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Occupancy Rate Trends</CardTitle>
-                <CardDescription>
+            <Card className="border-border">
+              <CardHeader className="pb-4">
+                <CardTitle className="font-display text-lg">Occupancy Rate Trends</CardTitle>
+                <CardDescription className="font-mono text-xs">
                   Daily occupancy rates over time
                 </CardDescription>
               </CardHeader>

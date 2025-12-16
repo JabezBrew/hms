@@ -7,7 +7,7 @@ import {
 } from "@/hooks/useMyPatientsQueries";
 import { useSearchPatients } from "@/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
+import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,8 +53,8 @@ const MyPatientsPage = () => {
 
   // Process patient list
   const patients = useMemo(() => {
-    const entries = myPatientsData?.results || myPatientsData || [];
-    if (!Array.isArray(entries)) return [];
+    const entries = normalizeApiResults(myPatientsData);
+    if (!entries.length) return [];
 
     // Transform entries to include metadata
     let patientList = entries.map(entry => ({
@@ -87,9 +87,9 @@ const MyPatientsPage = () => {
 
   // Stats
   const stats = useMemo(() => {
-    const entries = myPatientsData?.results || myPatientsData || [];
-    const total = Array.isArray(entries) ? entries.length : 0;
-    const pinned = Array.isArray(entries) ? entries.filter(e => e.is_pinned).length : 0;
+    const entries = normalizeApiResults(myPatientsData);
+    const total = entries.length;
+    const pinned = entries.filter(e => e.is_pinned).length;
     return { total, pinned };
   }, [myPatientsData]);
 

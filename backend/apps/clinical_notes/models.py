@@ -388,3 +388,108 @@ class Prescription(models.Model):
             return None
         delta = self.end_date - timezone.now().date()
         return max(0, delta.days)
+
+
+class TimelineEvent(models.Model):
+    """
+    Denormalized table for efficient patient timeline queries.
+
+    This table enables O(1) database pagination for patient timelines,
+    eliminating the 500-item cliff and in-memory sorting issues.
+
+    The timeline API uses this for pagination/filtering, then joins
+    back to source models to return full details.
+    """
+    # Event type choices
+    EVENT_TYPE_CHOICES = [
+        ('note', 'Clinical Note'),
+        ('prescription', 'Prescription'),
+        ('vitals', 'Vital Signs'),
+        ('lab', 'Lab Order'),
+        ('referral', 'Referral'),
+        ('fluid', 'Fluid Balance'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Core identifiers
+    patient = models.ForeignKey(
+        'users.PatientProfile',
+        on_delete=models.CASCADE,
+        related_name='timeline_events',
+        db_index=True
+    )
+    encounter = models.ForeignKey(
+        'wards.Encounter',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='timeline_events',
+        db_index=True
+    )
+
+    # Event classification
+    event_type = models.CharField(
+        max_length=20,
+        choices=EVENT_TYPE_CHOICES,
+        db_index=True
+    )
+    event_subtype = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="E.g., 'soap_note', 'admission_note' for notes"
+    )
+
+    # Polymorphic source reference
+    source_model = models.CharField(
+        max_length=50,
+        help_text="Model name: 'NoteEntry', 'Prescription', etc."
+    )
+    source_id = models.UUIDField(db_index=True)
+
+    # Pre-computed display data for fast filtering
+    timestamp = models.DateTimeField(db_index=True)
+    title = models.CharField(max_length=255)
+    content_summary = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Short summary for search/preview"
+    )
+    author_name = models.CharField(max_length=150, blank=True)
+    author_id = models.UUIDField(null=True, blank=True)
+
+    # Denormalized flags for filtering
+    is_critical = models.BooleanField(default=False)
+    status = models.CharField(max_length=30, blank=True)
+
+    # Version tracking (for notes)
+    has_edits = models.BooleanField(default=False)
+    version_count = models.PositiveIntegerField(default=0)
+
+    # Template info (for notes - enables copy-forward)
+    template_id = models.UUIDField(null=True, blank=True)
+    template_title = models.CharField(max_length=100, blank=True)
+
+    # Full-text search optimization
+    search_text = models.TextField(
+        blank=True,
+        help_text="Concatenated searchable text"
+    )
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        db_table = 'clinical_timeline_events'
+        indexes = [
+            models.Index(fields=['patient', '-timestamp']),
+            models.Index(fields=['patient', 'event_type', '-timestamp']),
+            models.Index(fields=['source_model', 'source_id']),
+        ]
+        # Ensure one timeline event per source record
+        unique_together = ('source_model', 'source_id')
+
+    def __str__(self):
+        return f"{self.event_type}: {self.title} ({self.timestamp})"

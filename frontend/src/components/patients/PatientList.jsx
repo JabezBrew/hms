@@ -28,7 +28,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Plus, Loader2, Calendar as CalendarIcon, X } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, normalizeApiResults } from "@/lib/utils";
 
 const PatientList = ({ onPatientSelect, onAddPatient }) => {
   const navigate = useNavigate();
@@ -77,6 +77,10 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
 
   // Function to get patient display name
   const getDisplayName = (patient) => {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      return patient.name;
+    }
     // 1. Direct patient profile (from /users/patients/)
     if (patient?.user_details) {
       const { first_name, last_name } = patient.user_details;
@@ -190,6 +194,14 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
 
   // Function to get patient initials for avatar
   const getInitials = (patient) => {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      const parts = patient.name.trim().split(' ');
+      if (parts.length >= 2) {
+        return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+      }
+      return patient.name.charAt(0).toUpperCase();
+    }
     // 1. Direct patient profile (from /users/patients/)
     if (patient?.user_details) {
       const firstName = patient.user_details.first_name || "";
@@ -306,11 +318,11 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
 
   // Determine which data to display based on search state
   const displayedPatients = debouncedSearchTerm
-    ? (searchResults?.results || searchResults?.patients || [])
-    : (allPatientsData?.results || allPatientsData?.patients || allPatientsData || []);
+    ? normalizeApiResults(searchResults)
+    : normalizeApiResults(allPatientsData);
 
-  // Ensure displayedPatients is always an array
-  const safeDisplayedPatients = Array.isArray(displayedPatients) ? displayedPatients : [];
+  // Ensure displayedPatients is always an array (normalizeApiResults already guarantees this)
+  const safeDisplayedPatients = displayedPatients;
 
   // Extract unique wards from patient data for filter dropdown
   const uniqueWards = safeDisplayedPatients.reduce((wards, patient) => {

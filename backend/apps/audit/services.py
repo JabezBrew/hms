@@ -1,105 +1,124 @@
 from django.utils import timezone
-from .models import AuditLog, AuditCategory, AuditAction
+from .models import AuditLog, AuditAction, AuditCategory
+from .tasks import log_audit_async
 
 
 class AuditService:
-    """
-    Centralized service for creating audit log entries.
-    Provides consistent logging across the application.
-    """
-
-    @classmethod
-    def log(cls, request, action, category, resource_type=None, resource_id=None,
-            resource_name=None, description=None, changes=None, user=None):
+    @staticmethod
+    def log(
+        request,
+        action,
+        category,
+        resource_type,
+        resource_id,
+        description,
+        user=None,
+        resource_name=None,
+        changes=None,
+    ):
         """
-        Create an audit log entry.
-
-        Args:
-            request: Django request object (can be None for system actions)
-            action: Action type from AuditAction
-            category: Category from AuditCategory
-            resource_type: Type of resource affected (e.g., 'Patient', 'Encounter')
-            resource_id: ID of the affected resource
-            resource_name: Human-readable name of the resource
-            description: Human-readable description of the action
-            changes: Dict of field changes for UPDATE actions
-            user: User who performed the action (defaults to request.user)
-
-        Returns:
-            AuditLog instance
+        Create an audit log entry asynchronously.
         """
-        # Get user from request or parameter
-        if user is None and request and hasattr(request, 'user') and request.user.is_authenticated:
-            user = request.user
+        if not user and request:
+            user = getattr(request, 'user', None)
+            if user and not user.is_authenticated:
+                user = None
 
-        # Extract user info
-        user_email = user.email if user else 'system'
-        user_type = user.user_type if user else 'system'
+        user_id = str(user.id) if user else None
+        user_email = user.email if user else None
+        user_type = getattr(user, 'user_type', 'unknown') if user else None
 
-        # Get IP address
-        ip_address = cls.get_client_ip(request) if request else None
-
-        # Get user agent
+        # Get IP and User Agent safely
+        ip_address = None
         user_agent = None
+
         if request:
-            user_agent = request.META.get('HTTP_USER_AGENT', '')[:500]
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(',')[0]
+            else:
+                ip_address = request.META.get('REMOTE_ADDR')
 
-        # Build description if not provided
-        if not description:
-            description = cls._build_description(action, resource_type, resource_name, user_email)
+            user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
-        # Create audit log
-        audit_log = AuditLog.objects.create(
-            user=user,
-            user_email=user_email,
-            user_type=user_type,
+        # Dispatch async task
+        log_audit_async.delay(
+            user_id=user_id,
             action=action,
             category=category,
-            resource_type=resource_type or '',
+            resource_type=resource_type,
             resource_id=str(resource_id) if resource_id else None,
-            resource_name=resource_name,
             description=description,
-            changes=changes,
             ip_address=ip_address,
             user_agent=user_agent,
+            user_email=user_email,
+            user_type=user_type,
+            resource_name=resource_name,
+            changes=changes,
         )
 
-        return audit_log
-
-    @classmethod
-    def log_authentication(cls, request, action, success=True, user=None, email=None):
+    @staticmethod
+    def log_authentication(request, action, user=None, email=None, details=None):
         """
-        Log authentication events (login, logout, failed attempts).
+        Log authentication events (login/logout/failed) asynchronously.
 
         Args:
-            request: Django request object
-            action: LOGIN, LOGOUT, or LOGIN_FAILED
-            success: Whether the action succeeded
-            user: User object (if available)
-            email: Email attempted (for failed logins)
+            request: The HTTP request object
+            action: AuditAction (LOGIN, LOGOUT, LOGIN_FAILED, OFFSITE_ACCESS)
+            user: The user object (for successful auth events)
+            email: Email address (for failed login attempts where user may not exist)
+            details: Additional details to append to description
         """
-        description = ''
+        # Build description based on action
         if action == AuditAction.LOGIN:
-            description = f"User {user.email if user else email} logged in successfully"
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} logged in successfully"
         elif action == AuditAction.LOGOUT:
-            description = f"User {user.email if user else 'unknown'} logged out"
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} logged out"
         elif action == AuditAction.LOGIN_FAILED:
-            description = f"Failed login attempt for {email or 'unknown email'}"
-        elif action == AuditAction.PASSWORD_CHANGE:
-            description = f"User {user.email if user else email} changed their password"
+            user_identifier = email or 'unknown'
+            description = f"Failed login attempt for {user_identifier}"
         elif action == AuditAction.OFFSITE_ACCESS:
-            ip = cls.get_client_ip(request) if request else 'unknown'
-            description = f"Off-site access by {user.email if user else 'unknown'} from IP {ip}"
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"User {user_identifier} accessed from off-site location"
+        else:
+            user_identifier = user.email if user else email or 'unknown'
+            description = f"Authentication event for {user_identifier}"
 
-        return cls.log(
-            request=request,
+        if details:
+            description += f". {details}"
+
+        # Get request details
+        ip_address = None
+        user_agent = None
+
+        if request:
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(',')[0]
+            else:
+                ip_address = request.META.get('REMOTE_ADDR')
+
+            user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
+
+        # Get user details
+        user_id = str(user.id) if user else None
+        user_email = user.email if user else email
+        user_type = getattr(user, 'user_type', 'unknown') if user else 'unknown'
+
+        log_audit_async.delay(
+            user_id=user_id,
             action=action,
             category=AuditCategory.AUTHENTICATION,
             resource_type='User',
-            resource_id=str(user.id) if user else None,
-            resource_name=user.email if user else email,
+            resource_id=user_id,
             description=description,
-            user=user,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            user_email=user_email,
+            user_type=user_type,
+            resource_name=user_email,
         )
 
     @classmethod
@@ -196,9 +215,9 @@ class AuditService:
             'User': AuditCategory.ADMIN,
             'Staff': AuditCategory.ADMIN,
             'PractitionerProfile': AuditCategory.ADMIN,
-            'WardAdmission': AuditCategory.WARD,
-            'Bed': AuditCategory.WARD,
             'Ward': AuditCategory.WARD,
+            'Admission': AuditCategory.WARD,
+            'Bed': AuditCategory.WARD,
             'Appointment': AuditCategory.APPOINTMENT,
             'FluidBalance': AuditCategory.NURSING,
             'VitalSigns': AuditCategory.VITALS,

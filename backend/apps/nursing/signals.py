@@ -200,3 +200,79 @@ def broadcast_alert_acknowledged(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.error(f"Failed to broadcast alert acknowledgment: {e}")
+
+
+# ============================================================================
+# Timeline Event Sync Signals
+# ============================================================================
+
+@receiver(post_save, sender='nursing.VitalSigns')
+def sync_vitals_to_timeline(sender, instance, created, **kwargs):
+    """Sync VitalSigns to TimelineEvent on save."""
+    from apps.clinical_notes.models import TimelineEvent
+
+    # Get author info
+    author_name = ''
+    author_id = None
+    if instance.recorded_by and instance.recorded_by.staff:
+        staff = instance.recorded_by.staff
+        if staff.user:
+            author_name = staff.user.get_full_name()
+            author_id = staff.user.id
+
+    # Build summary
+    parts = []
+    if instance.blood_pressure:
+        parts.append(f"BP: {instance.blood_pressure}")
+    if instance.heart_rate:
+        parts.append(f"HR: {instance.heart_rate}")
+    if instance.temperature:
+        parts.append(f"Temp: {instance.temperature}°C")
+    if instance.oxygen_saturation:
+        parts.append(f"SpO2: {instance.oxygen_saturation}%")
+    if instance.respiratory_rate:
+        parts.append(f"RR: {instance.respiratory_rate}")
+
+    summary = " | ".join(parts) if parts else "Vital signs recorded"
+
+    # Build search text
+    search_parts = [summary]
+    if instance.notes:
+        search_parts.append(instance.notes)
+
+    TimelineEvent.objects.update_or_create(
+        source_model='VitalSigns',
+        source_id=instance.id,
+        defaults={
+            'patient': instance.patient,
+            'encounter': instance.encounter,
+            'event_type': 'vitals',
+            'event_subtype': 'critical' if instance.is_critical else 'normal',
+            'timestamp': instance.recorded_at,
+            'title': 'Vital Signs',
+            'content_summary': summary,
+            'author_name': author_name,
+            'author_id': author_id,
+            'is_critical': instance.is_critical,
+            'status': '',
+            'has_edits': False,
+            'version_count': 0,
+            'template_id': None,
+            'template_title': '',
+            'search_text': ' '.join(search_parts),
+        }
+    )
+
+
+from django.db.models.signals import post_delete
+
+
+@receiver(post_delete, sender='nursing.VitalSigns')
+def delete_vitals_timeline_event(sender, instance, **kwargs):
+    """Delete TimelineEvent when VitalSigns is deleted."""
+    from apps.clinical_notes.models import TimelineEvent
+
+    TimelineEvent.objects.filter(
+        source_model='VitalSigns',
+        source_id=instance.id
+    ).delete()

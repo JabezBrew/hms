@@ -27,9 +27,11 @@ from .serializers import (
     LabSpecimenReceiptSerializer, LabSpecimenListSerializer,
     LabResultSerializer, LabResultCreateSerializer,
     LabResultVerifySerializer, LabResultListSerializer,
+    BulkLabResultCreateSerializer,
     LabOrderSearchSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
+from ..users.rbac import IsLabTechnician
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 
@@ -384,7 +386,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             Prefetch('order_tests', queryset=LabOrderTest.objects.select_related('test')),
             'panels__tests',
-            Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__staff__user'))
+            Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__user'))
         )
 
         # Filter by patient
@@ -714,8 +716,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         """Filter specimens with optimized queries."""
         queryset = LabSpecimen.objects.select_related(
             'order__patient__user',
-            'collected_by__staff__user',
-            'received_by__staff__user'
+            'collected_by__user',
+            'received_by__user'
         )
 
         # Filter by order
@@ -752,8 +754,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         # Set collected_by if not specified
         if not serializer.validated_data.get('collected_by'):
             try:
-                practitioner = self.request.user.staff_profile.practitioner_profile
-                specimen = serializer.save(collected_by=practitioner)
+                staff = self.request.user.staff_profile
+                specimen = serializer.save(collected_by=staff)
             except AttributeError:
                 specimen = serializer.save()
         else:
@@ -792,9 +794,9 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         receipt_serializer = LabSpecimenReceiptSerializer(data=request.data)
         receipt_serializer.is_valid(raise_exception=True)
 
-        # Get practitioner profile
+        # Get staff profile
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             return Response(
                 {'error': 'Only lab staff can receive specimens'},
@@ -806,7 +808,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         specimen.is_rejected = receipt_serializer.validated_data.get('is_rejected', False)
         specimen.rejection_reason = receipt_serializer.validated_data.get('rejection_reason', '')
         specimen.storage_location = receipt_serializer.validated_data.get('storage_location', '')
-        specimen.received_by = practitioner
+        specimen.received_by = staff
         specimen.received_at = timezone.now()
         specimen.save()
 
@@ -853,9 +855,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
         queryset = LabResult.objects.select_related(
             'order_test__test',
             'order_test__order__patient__user',
+            'order_test__order__ordering_provider',
             'specimen',
-            'performed_by__staff__user',
-            'verified_by__staff__user'
+            'performed_by__user',
+            'verified_by__user'
+        ).prefetch_related(
+            'order_test__order__panels'  # M2M field
         )
 
         # Filter by order
@@ -889,16 +894,16 @@ class LabResultViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
         try:
-            practitioner = self.request.user.staff_profile.practitioner_profile
-            serializer.save(performed_by=practitioner)
+            staff = self.request.user.staff_profile
+            serializer.save(performed_by=staff)
         except AttributeError:
             serializer.save()
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor | IsLabTechnician])
     @transaction.atomic
     def verify(self, request, pk=None):
         """
-        Verify a lab result (supervisor/pathologist only).
+        Verify a lab result (lab technicians, doctors, or admins).
         """
         result = self.get_object()
 
@@ -908,12 +913,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get practitioner profile
+        # Get staff profile (lab technicians can verify results)
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             return Response(
-                {'error': 'Only practitioners can verify results'},
+                {'error': 'Only lab staff can verify results'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -923,13 +928,28 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         # Update result
         result.is_verified = True
-        result.verified_by = practitioner
-        result.verified_at = timezone.now()
+        result.verified_by = staff
+        now = timezone.now()
+        result.verified_at = now
         result.save()
 
         logger.info(
             f"Lab result for {result.order_test.test.short_name} verified by {request.user.get_full_name()}"
         )
+
+        # Check if all results for the order are now verified - if so, mark order as completed
+        order = result.order_test.order
+        all_results = LabResult.objects.filter(order_test__order=order)
+        unverified_count = all_results.filter(is_verified=False).count()
+
+        if unverified_count == 0 and all_results.exists():
+            # All results verified - mark order as completed
+            order.status = LabOrderStatus.COMPLETED
+            order.completed_at = now
+            order.save(update_fields=['status', 'completed_at'])
+            logger.info(
+                f"Order {order.order_number} marked as completed - all results verified"
+            )
 
         # Audit log - lab result verified
         AuditService.log(
@@ -944,3 +964,215 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(result)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    @transaction.atomic
+    def bulk_create(self, request):
+        """
+        Create multiple lab results in a single request.
+
+        Payload:
+        {
+            "order_id": "uuid",
+            "specimen_id": "uuid",
+            "performed_at": "2024-01-15T10:30:00Z",  # optional
+            "results": [
+                {
+                    "order_test_id": "uuid",
+                    "value": "7.5",
+                    "unit": "K/uL",
+                    "reference_low": 4.5,
+                    "reference_high": 11.0,
+                    "flag": "normal",
+                    "interpretation": ""  # optional
+                },
+                ...
+            ]
+        }
+        """
+        serializer = BulkLabResultCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+        order = validated_data['_order']
+        specimen = validated_data['_specimen']
+        performed_at = validated_data.get('performed_at', timezone.now())
+
+        # Get staff profile for performed_by
+        staff = None
+        try:
+            staff = request.user.staff_profile
+        except AttributeError:
+            pass
+
+        # Create all results
+        created_results = []
+        for result_item in validated_data['results']:
+            order_test = LabOrderTest.objects.get(id=result_item['order_test_id'])
+
+            result = LabResult.objects.create(
+                order_test=order_test,
+                specimen=specimen,
+                value=result_item['value'],
+                unit=result_item.get('unit', order_test.test.unit or ''),
+                reference_low=result_item.get('reference_low'),
+                reference_high=result_item.get('reference_high'),
+                flag=result_item.get('flag', 'normal'),
+                interpretation=result_item.get('interpretation', ''),
+                performed_by=staff,
+                performed_at=performed_at
+            )
+            created_results.append(result)
+
+            # Update order_test status
+            order_test.status = LabOrderStatus.COMPLETED
+            order_test.save(update_fields=['status'])
+
+        # Update order status to processing if not already
+        if order.status == LabOrderStatus.RECEIVED:
+            order.status = LabOrderStatus.PROCESSING
+            order.save(update_fields=['status'])
+
+        # Check if all tests have results - if so, mark order as completed
+        all_tests_count = order.order_tests.count()
+        results_count = LabResult.objects.filter(order_test__order=order).count()
+
+        if results_count >= all_tests_count:
+            # All results entered - mark order as completed
+            order.status = LabOrderStatus.COMPLETED
+            order.completed_at = timezone.now()
+            order.save(update_fields=['status', 'completed_at'])
+            logger.info(
+                f"All {results_count} results entered for order {order.order_number}. "
+                f"Order auto-completed."
+            )
+
+        logger.info(
+            f"Bulk created {len(created_results)} lab results for order {order.order_number} "
+            f"by {request.user.get_full_name()}"
+        )
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.CREATE,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabResult',
+            resource_id=order.id,
+            resource_name=f"Bulk results for {order.order_number}",
+            description=f"Recorded {len(created_results)} lab results for order {order.order_number}",
+        )
+
+        # Return created results
+        result_serializer = LabResultSerializer(created_results, many=True)
+        return Response({
+            'created_count': len(created_results),
+            'results': result_serializer.data
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='bulk-verify', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor | IsLabTechnician])
+    @transaction.atomic
+    def bulk_verify(self, request):
+        """
+        Verify multiple lab results in a single request.
+
+        Payload:
+        {
+            "result_ids": ["uuid1", "uuid2", ...],
+            "verification_notes": "Optional notes"  # optional
+        }
+
+        Can also verify by order:
+        {
+            "order_id": "uuid",
+            "verification_notes": "Optional notes"
+        }
+        """
+        result_ids = request.data.get('result_ids', [])
+        order_id = request.data.get('order_id')
+        verification_notes = request.data.get('verification_notes', '')
+
+        # Get staff profile (lab technicians can verify results)
+        try:
+            staff = request.user.staff_profile
+        except AttributeError:
+            return Response(
+                {'error': 'Only lab staff can verify lab results'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get results to verify
+        if order_id:
+            # Verify all unverified results for an order
+            results = LabResult.objects.filter(
+                order_test__order_id=order_id,
+                is_verified=False
+            )
+        elif result_ids:
+            # Verify specific results
+            results = LabResult.objects.filter(
+                id__in=result_ids,
+                is_verified=False
+            )
+        else:
+            return Response(
+                {'error': 'Provide either result_ids or order_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not results.exists():
+            return Response(
+                {'error': 'No unverified results found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Verify all results
+        verified_count = results.count()
+        now = timezone.now()
+        results.update(
+            is_verified=True,
+            verified_by=staff,
+            verified_at=now
+        )
+
+        # Get order info for logging and check if order should be completed
+        order_info = ""
+        order = None
+        if order_id:
+            order = LabOrder.objects.filter(id=order_id).first()
+            if order:
+                order_info = f" for order {order.order_number}"
+
+        # Check if all results for the order are now verified - if so, mark order as completed
+        if order:
+            all_results = LabResult.objects.filter(order_test__order=order)
+            unverified_count = all_results.filter(is_verified=False).count()
+
+            if unverified_count == 0 and all_results.exists():
+                # All results verified - mark order as completed
+                order.status = LabOrderStatus.COMPLETED
+                order.completed_at = now
+                order.save(update_fields=['status', 'completed_at'])
+                logger.info(
+                    f"Order {order.order_number} marked as completed - all results verified"
+                )
+
+        logger.info(
+            f"Bulk verified {verified_count} lab results{order_info} by {request.user.get_full_name()}"
+        )
+
+        # Audit log
+        AuditService.log(
+            request=request,
+            action=AuditAction.LAB_RESULT_VERIFY,
+            category=AuditCategory.LABORATORY,
+            resource_type='LabResult',
+            resource_id=order_id or str(result_ids[0]) if result_ids else None,
+            resource_name=f"Bulk verification{order_info}",
+            description=f"Verified {verified_count} lab results{order_info}",
+        )
+
+        return Response({
+            'verified_count': verified_count,
+            'message': f'Successfully verified {verified_count} result(s)'
+        })

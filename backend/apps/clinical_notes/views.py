@@ -29,6 +29,7 @@ from ..wards.services import ensure_encounter_for_entry
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
+from ..laboratory.models import LabOrder, LabOrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -1829,6 +1830,11 @@ def patient_timeline(request, patient_id):
         referrals = _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(referrals)
 
+    # Fetch lab results (bundled by order)
+    if entry_type in ['all', 'labs']:
+        labs = _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id)
+        timeline_entries.extend(labs)
+
     # Sort all entries by timestamp (newest first)
     timeline_entries.sort(key=lambda x: x['timestamp'], reverse=True)
 
@@ -2233,6 +2239,146 @@ def _get_patient_referrals(patient, search_query, start_datetime, end_datetime, 
     return entries
 
 
+def _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id=None):
+    """
+    Fetch and format completed lab orders for a patient's timeline.
+
+    Lab results are bundled by order, not shown as individual results.
+    Only completed orders (all results verified) are shown.
+    """
+    from django.db.models import Q as DQ, Prefetch
+    from ..laboratory.models import LabOrderTest
+
+    # Base queryset - only completed orders with verified results
+    labs_queryset = LabOrder.objects.filter(
+        patient=patient,
+        status=LabOrderStatus.COMPLETED
+    ).select_related(
+        'ordering_provider', 'ordering_provider__staff', 'ordering_provider__staff__user',
+        'encounter'
+    ).prefetch_related(
+        Prefetch(
+            'order_tests',
+            queryset=LabOrderTest.objects.select_related('test', 'result')
+        ),
+        'panels'
+    )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        labs_queryset = labs_queryset.filter(encounter_id=encounter_id)
+
+    # Apply date filters - use completed_at as the primary timestamp
+    if start_datetime:
+        labs_queryset = labs_queryset.filter(completed_at__gte=start_datetime)
+    if end_datetime:
+        labs_queryset = labs_queryset.filter(completed_at__lte=end_datetime)
+
+    # Apply search filter
+    if search_query:
+        labs_queryset = labs_queryset.filter(
+            DQ(order_number__icontains=search_query) |
+            DQ(order_tests__test__name__icontains=search_query) |
+            DQ(order_tests__test__short_name__icontains=search_query) |
+            DQ(clinical_notes__icontains=search_query)
+        ).distinct()
+
+    entries = []
+    for order in labs_queryset[:100]:
+        # Get ordering provider name
+        provider_name = 'Unknown'
+        if order.ordering_provider and order.ordering_provider.staff and order.ordering_provider.staff.user:
+            user = order.ordering_provider.staff.user
+            provider_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+        # Build test names and results
+        order_tests = list(order.order_tests.all())
+        test_names = [ot.test.short_name for ot in order_tests]
+
+        # Gather results and calculate summary
+        results = []
+        summary = {'total': 0, 'normal': 0, 'abnormal': 0, 'critical': 0}
+
+        for order_test in order_tests:
+            result = getattr(order_test, 'result', None)
+            if result:
+                summary['total'] += 1
+
+                # Categorize by flag
+                if result.flag in ['critical_low', 'critical_high']:
+                    summary['critical'] += 1
+                elif result.flag in ['low', 'high', 'abnormal']:
+                    summary['abnormal'] += 1
+                else:
+                    summary['normal'] += 1
+
+                # Format reference range
+                ref_range = None
+                if result.reference_low is not None and result.reference_high is not None:
+                    ref_range = f"{result.reference_low} - {result.reference_high}"
+                elif result.reference_low is not None:
+                    ref_range = f"> {result.reference_low}"
+                elif result.reference_high is not None:
+                    ref_range = f"< {result.reference_high}"
+
+                results.append({
+                    'test_name': order_test.test.short_name,
+                    'test_full_name': order_test.test.name,
+                    'value': result.value,
+                    'unit': result.unit,
+                    'reference_range': ref_range,
+                    'flag': result.flag,
+                    'flag_display': result.get_flag_display(),
+                    'is_critical': result.is_critical(),
+                    'is_abnormal': result.flag not in ['normal', None],
+                    'interpretation': result.interpretation,
+                })
+
+        # Build title - use panel names if available, otherwise test names
+        panels = list(order.panels.all())
+        if panels:
+            title = ', '.join(p.name for p in panels)
+        elif len(test_names) <= 3:
+            title = ', '.join(test_names)
+        else:
+            title = f"{test_names[0]} + {len(test_names) - 1} more tests"
+
+        # Build content summary
+        content_parts = [f"{summary['total']} results"]
+        if summary['critical'] > 0:
+            content_parts.append(f"{summary['critical']} critical")
+        if summary['abnormal'] > 0:
+            content_parts.append(f"{summary['abnormal']} abnormal")
+        content = ' · '.join(content_parts)
+
+        entries.append({
+            'id': str(order.id),
+            'type': 'lab_result',
+            'entry_type': 'lab_result',
+            'timestamp': order.completed_at.isoformat() if order.completed_at else order.created_at.isoformat(),
+            'title': title,
+            'content': content,
+            'author': provider_name,
+            'data': {
+                'order_id': str(order.id),
+                'order_number': order.order_number,
+                'status': order.status,
+                'priority': order.priority,
+                'priority_display': order.get_priority_display(),
+                'clinical_notes': order.clinical_notes,
+                'ordered_at': order.ordered_at.isoformat() if order.ordered_at else None,
+                'completed_at': order.completed_at.isoformat() if order.completed_at else None,
+                'tests_ordered': test_names,
+                'results_summary': summary,
+                'results': results,
+            },
+            'encounter_id': str(order.encounter_id) if order.encounter_id else None,
+            'encounter': _format_encounter_details(order.encounter),
+        })
+
+    return entries
+
+
 @api_view(['GET'])
 @api_permission_classes([permissions.IsAuthenticated])
 def patient_clinical_summary(request, patient_id):
@@ -2466,3 +2612,645 @@ def timeline_stats(request, patient_id):
             Q(end_date__isnull=True)
         ).count()
     })
+
+
+# =============================================================================
+# Chronicle V2 Endpoints (Optimized)
+# =============================================================================
+
+@api_view(['GET'])
+@api_permission_classes([permissions.IsAuthenticated])
+def chronicle_context(request, patient_id):
+    """
+    Get patient context data for the Chronicle page.
+
+    Returns consolidated patient info, allergies, active problems,
+    active medications, and admission status in a single call.
+
+    This endpoint consolidates multiple API calls into one for efficiency.
+    """
+    from datetime import date
+    from apps.wards.models import Encounter
+
+    # Validate patient exists
+    try:
+        patient = PatientProfile.objects.select_related('user').get(id=patient_id)
+    except PatientProfile.DoesNotExist:
+        return Response(
+            {'error': 'Patient not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    user = patient.user
+
+    # Calculate age
+    age = None
+    date_of_birth = user.date_of_birth if user else None
+    if date_of_birth:
+        today = date.today()
+        age = today.year - date_of_birth.year - (
+            (today.month, today.day) < (date_of_birth.month, date_of_birth.day)
+        )
+
+    # Build patient info
+    patient_info = {
+        'id': str(patient.id),
+        'mrn': patient.medical_record_number,
+        'name': user.get_full_name() if user else 'Unknown',
+        'first_name': user.first_name if user else '',
+        'last_name': user.last_name if user else '',
+        'age': age,
+        'gender': user.gender if user else None,
+        'date_of_birth': date_of_birth.isoformat() if date_of_birth else None,
+        'blood_type': patient.blood_group,
+        'phone': user.phone_number if user else None,
+        'email': user.email if user else None,
+        'photo_url': None,  # PatientProfile doesn't have a photo field
+    }
+
+    # Parse allergies
+    allergies = []
+    if patient.allergies:
+        allergy_text = patient.allergies
+        if isinstance(allergy_text, str):
+            # Split by common separators
+            for sep in [',', ';', '\n']:
+                if sep in allergy_text:
+                    allergies = [a.strip() for a in allergy_text.split(sep) if a.strip()]
+                    break
+            if not allergies and allergy_text.strip():
+                allergies = [allergy_text.strip()]
+
+    # Get active problems/diagnoses from multiple sources
+    problems = []
+    seen_problems = set()  # Track unique problems by name to avoid duplicates
+
+    # Source 1: Get diagnoses from recent clinical notes (Assessment section)
+    notes_start_date = timezone.now() - timezone.timedelta(days=30)
+    recent_notes = NoteEntry.objects.filter(
+        patient=patient,
+        created_at__gte=notes_start_date
+    ).select_related('template').order_by('-created_at')[:20]
+
+    for note in recent_notes:
+        note_data = note.data or {}
+        assessment = note_data.get('Assessment', {})
+
+        if isinstance(assessment, dict):
+            # Extract primary diagnosis from structured SOAP notes
+            primary_dx = assessment.get('Primary Diagnosis', '')
+            if primary_dx and primary_dx.strip():
+                dx_text = primary_dx.strip()
+                if dx_text.lower() not in seen_problems:
+                    seen_problems.add(dx_text.lower())
+                    problems.append({
+                        'id': f'note-{note.id}-primary',
+                        'name': dx_text,
+                        'source': 'clinical_note',
+                        'source_date': note.created_at.isoformat(),
+                        'is_primary': True,
+                        'severity': 'medium',
+                    })
+
+            # Extract differential diagnoses
+            differential = assessment.get('Differential Diagnoses', '')
+            if differential and differential.strip():
+                for dx in differential.replace('\n', ',').split(','):
+                    dx_text = dx.strip().strip('-').strip('•').strip()
+                    if dx_text and dx_text.lower() not in seen_problems:
+                        seen_problems.add(dx_text.lower())
+                        problems.append({
+                            'id': f'note-{note.id}-diff-{len(problems)}',
+                            'name': dx_text,
+                            'source': 'clinical_note',
+                            'source_date': note.created_at.isoformat(),
+                            'is_primary': False,
+                            'severity': 'low',
+                        })
+        elif isinstance(assessment, str) and assessment.strip():
+            # Handle plain text Assessment
+            dx_text = assessment.strip().split('.')[0].split('\n')[0].strip()
+            if dx_text and dx_text.lower() not in seen_problems:
+                seen_problems.add(dx_text.lower())
+                problems.append({
+                    'id': f'note-{note.id}-assessment',
+                    'name': dx_text,
+                    'source': 'clinical_note',
+                    'source_date': note.created_at.isoformat(),
+                    'is_primary': True,
+                    'severity': 'medium',
+                })
+
+    # Source 2: Get initial diagnosis from active admission workflow
+    try:
+        from apps.workflows.models import AdmissionWorkflow
+        active_admission_wf = AdmissionWorkflow.objects.filter(
+            workflow__patient=patient,
+            workflow__status='in_progress'
+        ).select_related('workflow').order_by('-workflow__created_at').first()
+
+        if active_admission_wf and active_admission_wf.initial_diagnosis:
+            dx_text = active_admission_wf.initial_diagnosis.strip()
+            if dx_text and dx_text.lower() not in seen_problems:
+                seen_problems.add(dx_text.lower())
+                problems.insert(0, {
+                    'id': f'admission-{active_admission_wf.id}',
+                    'name': dx_text,
+                    'source': 'admission',
+                    'source_date': active_admission_wf.workflow.created_at.isoformat(),
+                    'is_primary': True,
+                    'severity': 'high',
+                })
+    except (ImportError, Exception):
+        pass
+
+    # Get admission status
+    admission_status = None
+    try:
+        from apps.wards.models import Admission
+        active_admission = Admission.objects.filter(
+            patient=patient,
+            status__in=['admitted', 'waiting']
+        ).select_related('bed__ward').first()
+
+        if active_admission:
+            admission_status = {
+                'is_admitted': True,
+                'admission_id': str(active_admission.id),
+                'ward_name': active_admission.bed.ward.name if active_admission.bed else None,
+                'ward_id': str(active_admission.bed.ward.id) if active_admission.bed else None,
+                'bed_number': active_admission.bed.bed_number if active_admission.bed else None,
+                'admitted_at': active_admission.admission_date.isoformat() if active_admission.admission_date else None,
+            }
+    except (ImportError, Exception):
+        pass
+
+    # Get active encounter
+    active_encounter = None
+    try:
+        encounter = Encounter.objects.filter(
+            patient=patient,
+            status__in=['planned', 'in-progress', 'onleave']
+        ).order_by('-start_time').first()
+
+        if encounter:
+            active_encounter = {
+                'id': str(encounter.id),
+                'type': encounter.encounter_type,
+                'status': encounter.status,
+                'start_time': encounter.start_time.isoformat() if encounter.start_time else None,
+                'reason': encounter.reason,
+                'practitioner_name': encounter.practitioner_name,
+            }
+    except Exception:
+        pass
+
+    # Get active medications - show all with status='active'
+    active_medications = []
+    active_meds = Prescription.objects.filter(
+        patient=patient,
+        status='active'
+    ).select_related('prescribed_by__staff__user').order_by('-created_at')[:20]
+
+    for med in active_meds:
+        active_medications.append({
+            'id': str(med.id),
+            'name': f"{med.medication_name} {med.dosage}",
+            'medication_name': med.medication_name,
+            'dosage': med.dosage,
+            'frequency': med.get_frequency_display(),
+            'route': med.get_route_display(),
+            'status': med.status,
+            'start_date': med.start_date.isoformat() if med.start_date else None,
+            'end_date': med.end_date.isoformat() if med.end_date else None,
+        })
+
+    # Get latest vitals
+    latest_vitals = None
+    try:
+        from apps.nursing.models import VitalSigns
+        vital = VitalSigns.objects.filter(
+            patient=patient
+        ).order_by('-recorded_at').first()
+
+        if vital:
+            latest_vitals = {
+                'id': str(vital.id),
+                'recorded_at': vital.recorded_at.isoformat() if vital.recorded_at else None,
+                'temperature': str(vital.temperature) if vital.temperature else None,
+                'heart_rate': vital.heart_rate,
+                'blood_pressure': vital.blood_pressure,
+                'respiratory_rate': vital.respiratory_rate,
+                'oxygen_saturation': vital.oxygen_saturation,
+                'is_critical': getattr(vital, 'is_critical', False),
+            }
+    except (ImportError, Exception):
+        pass
+
+    return Response({
+        'patient': patient_info,
+        'allergies': allergies,
+        'active_problems': problems,
+        'active_medications': active_medications,
+        'admission_status': admission_status,
+        'active_encounter': active_encounter,
+        'latest_vitals': latest_vitals,
+    })
+
+
+@api_view(['GET'])
+@api_permission_classes([permissions.IsAuthenticated])
+def patient_timeline_v2(request, patient_id):
+    """
+    Get patient timeline using TimelineEvent for efficient pagination.
+
+    Uses the denormalized TimelineEvent table for O(1) database pagination,
+    then fetches full details from source models for the paginated results.
+
+    Query Parameters:
+    - type: Filter by type (note, vitals, prescription, lab, referral, all)
+    - search: Text search across entries
+    - page: Page number (default: 1)
+    - page_size: Items per page (default: 20, max: 100)
+    - start_date: Filter entries from this date (ISO format)
+    - end_date: Filter entries until this date (ISO format)
+    - encounter_id: Filter entries by specific encounter (UUID)
+
+    Returns paginated timeline entries with full source model details.
+    """
+    from .models import TimelineEvent
+    from apps.wards.models import Encounter
+
+    # Validate patient exists
+    try:
+        patient = PatientProfile.objects.get(id=patient_id)
+    except PatientProfile.DoesNotExist:
+        return Response(
+            {'error': 'Patient not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Parse query parameters
+    entry_type = request.query_params.get('type', 'all')
+    search_query = request.query_params.get('search', '').strip()
+    page = int(request.query_params.get('page', 1))
+    page_size = min(int(request.query_params.get('page_size', 20)), 100)
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    encounter_id = request.query_params.get('encounter_id')
+
+    # Build base queryset on TimelineEvent
+    events = TimelineEvent.objects.filter(patient=patient)
+
+    # Apply type filter
+    # Map frontend filter types to backend event_type
+    type_mapping = {
+        'notes': 'note',
+        'vitals': 'vitals',
+        'prescriptions': 'prescription',
+        'labs': 'lab',
+        'referrals': 'referral',
+    }
+    if entry_type != 'all':
+        backend_type = type_mapping.get(entry_type, entry_type)
+        events = events.filter(event_type=backend_type)
+
+    # Apply search filter
+    if search_query:
+        events = events.filter(
+            Q(title__icontains=search_query) |
+            Q(content_summary__icontains=search_query) |
+            Q(search_text__icontains=search_query)
+        )
+
+    # Apply date filters
+    if start_date:
+        try:
+            start_datetime = timezone.datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            events = events.filter(timestamp__gte=start_datetime)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_datetime = timezone.datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            events = events.filter(timestamp__lte=end_datetime)
+        except ValueError:
+            pass
+
+    # Apply encounter filter
+    if encounter_id:
+        events = events.filter(encounter_id=encounter_id)
+
+    # Order by timestamp (newest first)
+    events = events.order_by('-timestamp')
+
+    # Get total count (efficient single COUNT query)
+    total_count = events.count()
+
+    # Calculate pagination
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+    offset = (page - 1) * page_size
+
+    # Get paginated timeline events
+    paginated_events = list(events[offset:offset + page_size])
+
+    # Group events by source model to batch fetch details
+    events_by_model = {}
+    for event in paginated_events:
+        if event.source_model not in events_by_model:
+            events_by_model[event.source_model] = []
+        events_by_model[event.source_model].append(event.source_id)
+
+    # Fetch full source model data
+    source_data = {}
+
+    # Fetch NoteEntry details
+    if 'NoteEntry' in events_by_model:
+        notes = NoteEntry.objects.filter(
+            id__in=events_by_model['NoteEntry']
+        ).select_related(
+            'template', 'practitioner__staff__user', 'encounter'
+        ).prefetch_related('versions')
+        for note in notes:
+            source_data[('NoteEntry', str(note.id))] = note
+
+    # Fetch Prescription details
+    if 'Prescription' in events_by_model:
+        prescriptions = Prescription.objects.filter(
+            id__in=events_by_model['Prescription']
+        ).select_related('prescribed_by__staff__user', 'encounter')
+        for rx in prescriptions:
+            source_data[('Prescription', str(rx.id))] = rx
+
+    # Fetch VitalSigns details
+    if 'VitalSigns' in events_by_model:
+        vitals = VitalSigns.objects.filter(
+            id__in=events_by_model['VitalSigns']
+        ).select_related('recorded_by__staff__user', 'encounter')
+        for v in vitals:
+            source_data[('VitalSigns', str(v.id))] = v
+
+    # Fetch LabOrder details
+    if 'LabOrder' in events_by_model:
+        labs = LabOrder.objects.filter(
+            id__in=events_by_model['LabOrder']
+        ).select_related(
+            'ordering_provider__staff__user', 'encounter'
+        ).prefetch_related('order_tests__test', 'order_tests__results')
+        for lab in labs:
+            source_data[('LabOrder', str(lab.id))] = lab
+
+    # Fetch Referral details
+    if 'Referral' in events_by_model:
+        referrals = Referral.objects.filter(
+            id__in=events_by_model['Referral']
+        ).select_related(
+            'referring_provider__staff__user',
+            'referred_to_provider__staff__user',
+            'encounter'
+        )
+        for ref in referrals:
+            source_data[('Referral', str(ref.id))] = ref
+
+    # Build response entries with full details
+    results = []
+    for event in paginated_events:
+        source_obj = source_data.get((event.source_model, str(event.source_id)))
+        entry = _build_timeline_entry_v2(event, source_obj)
+        if entry:
+            results.append(entry)
+
+    return Response({
+        'count': total_count,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_previous': page > 1,
+        'results': results,
+    })
+
+
+def _build_timeline_entry_v2(event, source_obj):
+    """
+    Build a full timeline entry from TimelineEvent and source model.
+
+    Returns the same rich data structure as v1 patient_timeline.
+    """
+    if not source_obj:
+        # Fallback to event data only if source not found
+        return {
+            'id': str(event.id),
+            'type': event.event_type,
+            'subtype': event.event_subtype,
+            'timestamp': event.timestamp.isoformat(),
+            'title': event.title,
+            'content_summary': event.content_summary,
+            'author_name': event.author_name,
+            'is_critical': event.is_critical,
+            'status': event.status,
+            'encounter_id': str(event.encounter_id) if event.encounter_id else None,
+        }
+
+    # Build entry based on source model type
+    if event.source_model == 'NoteEntry':
+        return _format_note_entry_v2(source_obj, event)
+    elif event.source_model == 'Prescription':
+        return _format_prescription_entry_v2(source_obj, event)
+    elif event.source_model == 'VitalSigns':
+        return _format_vitals_entry_v2(source_obj, event)
+    elif event.source_model == 'LabOrder':
+        return _format_lab_entry_v2(source_obj, event)
+    elif event.source_model == 'Referral':
+        return _format_referral_entry_v2(source_obj, event)
+
+    return None
+
+
+def _format_note_entry_v2(note, event):
+    """Format NoteEntry for timeline (full details like v1)."""
+    # Get author name
+    author_name = event.author_name or 'Unknown'
+
+    # Extract note type from template
+    note_type = 'progress_note'
+    if note.template:
+        title_lower = note.template.title.lower()
+        if 'soap' in title_lower:
+            note_type = 'soap_note'
+        elif 'admission' in title_lower:
+            note_type = 'admission_note'
+        elif 'discharge' in title_lower:
+            note_type = 'discharge_note'
+        elif 'consult' in title_lower:
+            note_type = 'consult_note'
+        elif 'nursing' in title_lower:
+            note_type = 'nursing_note'
+
+    # Include template info for copy forward feature
+    template_info = None
+    if note.template:
+        template_info = {
+            'id': str(note.template.id),
+            'title': note.template.title,
+            'category': note.template.category,
+            'structure': note.template.structure,
+        }
+
+    return {
+        'id': str(note.id),
+        'type': 'note',
+        'note_type': note_type,
+        'timestamp': note.created_at.isoformat(),
+        'title': note.template.title if note.template else 'Clinical Note',
+        'content_summary': event.content_summary,
+        'author_name': author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'practitioner_id': str(note.practitioner_id) if note.practitioner_id else None,
+        'data': note.data,  # Full note data
+        'template': template_info,
+        'encounter': _format_encounter_details(note.encounter),
+        'encounter_id': str(note.encounter_id) if note.encounter_id else None,
+        'has_edits': event.has_edits,
+        'version_count': event.version_count,
+        'composition_fhir_id': note.composition_fhir_id,
+        'copied_from_id': str(note.copied_from_id) if note.copied_from_id else None,
+        'created_at': note.created_at.isoformat(),
+        'updated_at': note.updated_at.isoformat(),
+    }
+
+
+def _format_prescription_entry_v2(rx, event):
+    """Format Prescription for timeline (full details like v1)."""
+    return {
+        'id': str(rx.id),
+        'type': 'prescription',
+        'timestamp': rx.created_at.isoformat(),
+        'title': f"Rx: {rx.medication_name}",
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'medication_name': rx.medication_name,
+        'dosage': rx.dosage,
+        'route': rx.route,
+        'route_display': rx.get_route_display(),
+        'frequency': rx.frequency,
+        'frequency_display': rx.get_frequency_display(),
+        'duration_days': rx.duration_days,
+        'start_date': rx.start_date.isoformat() if rx.start_date else None,
+        'end_date': rx.end_date.isoformat() if rx.end_date else None,
+        'instructions': rx.instructions,
+        'reason': rx.reason,
+        'status': rx.status,
+        'is_critical': event.is_critical,
+        'encounter': _format_encounter_details(rx.encounter),
+        'encounter_id': str(rx.encounter_id) if rx.encounter_id else None,
+        'created_at': rx.created_at.isoformat(),
+        'updated_at': rx.updated_at.isoformat(),
+    }
+
+
+def _format_vitals_entry_v2(v, event):
+    """Format VitalSigns for timeline (full details like v1)."""
+    return {
+        'id': str(v.id),
+        'type': 'vitals',
+        'timestamp': v.recorded_at.isoformat(),
+        'title': 'Vital Signs',
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'temperature': float(v.temperature) if v.temperature else None,
+        'heart_rate': v.heart_rate,
+        'blood_pressure_systolic': v.blood_pressure_systolic,
+        'blood_pressure_diastolic': v.blood_pressure_diastolic,
+        'blood_pressure': v.blood_pressure,
+        'respiratory_rate': v.respiratory_rate,
+        'oxygen_saturation': v.oxygen_saturation,
+        'pain_level': v.pain_level,
+        'notes': v.notes,
+        'is_critical': v.is_critical,
+        'encounter': _format_encounter_details(v.encounter),
+        'encounter_id': str(v.encounter_id) if v.encounter_id else None,
+        'recorded_at': v.recorded_at.isoformat(),
+        'created_at': v.created_at.isoformat(),
+    }
+
+
+def _format_lab_entry_v2(lab, event):
+    """Format LabOrder for timeline (full details like v1)."""
+    # Format tests
+    tests = []
+    for order_test in lab.order_tests.all():
+        test_data = {
+            'id': str(order_test.id),
+            'test_id': str(order_test.test_id),
+            'test_code': order_test.test.code,
+            'test_name': order_test.test.name,
+            'short_name': order_test.test.short_name,
+            'status': order_test.status,
+            'results': [],
+        }
+        # Include results if any
+        for result in order_test.results.all():
+            test_data['results'].append({
+                'id': str(result.id),
+                'value': result.value,
+                'unit': result.unit,
+                'reference_range': result.reference_range,
+                'interpretation': result.interpretation,
+                'is_abnormal': result.is_abnormal,
+                'verified_at': result.verified_at.isoformat() if result.verified_at else None,
+            })
+        tests.append(test_data)
+
+    return {
+        'id': str(lab.id),
+        'type': 'lab',
+        'timestamp': lab.created_at.isoformat(),
+        'title': f"Lab Order #{lab.order_number}",
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'order_number': lab.order_number,
+        'status': lab.status,
+        'priority': lab.priority,
+        'is_critical': event.is_critical,
+        'clinical_notes': getattr(lab, 'clinical_notes', ''),
+        'tests': tests,
+        'encounter': _format_encounter_details(lab.encounter),
+        'encounter_id': str(lab.encounter_id) if lab.encounter_id else None,
+        'created_at': lab.created_at.isoformat(),
+    }
+
+
+def _format_referral_entry_v2(ref, event):
+    """Format Referral for timeline (full details like v1)."""
+    return {
+        'id': str(ref.id),
+        'type': 'referral',
+        'timestamp': ref.created_at.isoformat(),
+        'title': f"Referral: {ref.referred_to_specialty}",
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'referral_number': ref.referral_number,
+        'referred_to_specialty': ref.referred_to_specialty,
+        'referred_to_department': ref.referred_to_department,
+        'referred_to_provider_name': (
+            ref.referred_to_provider.staff.user.get_full_name()
+            if ref.referred_to_provider and ref.referred_to_provider.staff and ref.referred_to_provider.staff.user
+            else None
+        ),
+        'urgency': ref.urgency,
+        'status': ref.status,
+        'is_critical': event.is_critical,
+        'reason': ref.reason,
+        'clinical_summary': ref.clinical_summary,
+        'questions_for_specialist': ref.questions_for_specialist,
+        'specialist_notes': ref.specialist_notes,
+        'recommendations': ref.recommendations,
+        'encounter': _format_encounter_details(ref.encounter),
+        'encounter_id': str(ref.encounter_id) if ref.encounter_id else None,
+        'created_at': ref.created_at.isoformat(),
+    }

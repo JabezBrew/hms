@@ -236,13 +236,13 @@ class LabSpecimenSerializer(serializers.ModelSerializer):
     def get_collected_by_name(self, obj):
         """Get name of person who collected specimen."""
         if obj.collected_by:
-            return obj.collected_by.staff.user.get_full_name()
+            return obj.collected_by.user.get_full_name()
         return None
 
     def get_received_by_name(self, obj):
         """Get name of person who received specimen."""
         if obj.received_by:
-            return obj.received_by.staff.user.get_full_name()
+            return obj.received_by.user.get_full_name()
         return None
 
 
@@ -279,13 +279,13 @@ class LabResultSerializer(serializers.ModelSerializer):
     def get_performed_by_name(self, obj):
         """Get name of person who performed test."""
         if obj.performed_by:
-            return obj.performed_by.staff.user.get_full_name()
+            return obj.performed_by.user.get_full_name()
         return None
 
     def get_verified_by_name(self, obj):
         """Get name of person who verified result."""
         if obj.verified_by:
-            return obj.verified_by.staff.user.get_full_name()
+            return obj.verified_by.user.get_full_name()
         return None
 
     def get_patient_name(self, obj):
@@ -327,6 +327,112 @@ class LabResultVerifySerializer(serializers.Serializer):
     Serializer for verifying lab results.
     """
     verification_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkLabResultItemSerializer(serializers.Serializer):
+    """
+    Serializer for individual result in bulk create.
+    """
+    order_test_id = serializers.UUIDField()
+    value = serializers.CharField(max_length=100)
+    unit = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    reference_low = serializers.DecimalField(
+        max_digits=10, decimal_places=3, required=False, allow_null=True
+    )
+    reference_high = serializers.DecimalField(
+        max_digits=10, decimal_places=3, required=False, allow_null=True
+    )
+    flag = serializers.ChoiceField(
+        choices=LabResult.FLAG_CHOICES,
+        default='normal'
+    )
+    interpretation = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkLabResultCreateSerializer(serializers.Serializer):
+    """
+    Serializer for bulk creation of lab results.
+    Allows recording multiple test results in a single request.
+    """
+    order_id = serializers.UUIDField()
+    specimen_id = serializers.UUIDField()
+    results = BulkLabResultItemSerializer(many=True)
+    performed_at = serializers.DateTimeField(required=False)
+
+    def validate_order_id(self, value):
+        """Validate order exists and is in correct status."""
+        from .models import LabOrder, LabOrderStatus
+        try:
+            order = LabOrder.objects.get(id=value)
+        except LabOrder.DoesNotExist:
+            raise serializers.ValidationError("Lab order not found.")
+
+        if order.status not in [LabOrderStatus.RECEIVED, LabOrderStatus.PROCESSING]:
+            raise serializers.ValidationError(
+                f"Order must be in 'received' or 'processing' status to record results. "
+                f"Current status: {order.get_status_display()}"
+            )
+        return value
+
+    def validate_specimen_id(self, value):
+        """Validate specimen exists."""
+        from .models import LabSpecimen
+        try:
+            LabSpecimen.objects.get(id=value)
+        except LabSpecimen.DoesNotExist:
+            raise serializers.ValidationError("Specimen not found.")
+        return value
+
+    def validate(self, data):
+        """Cross-field validation."""
+        from .models import LabOrder, LabSpecimen, LabOrderTest, LabResult
+
+        order = LabOrder.objects.get(id=data['order_id'])
+        specimen = LabSpecimen.objects.get(id=data['specimen_id'])
+
+        # Verify specimen belongs to the order
+        if specimen.order_id != order.id:
+            raise serializers.ValidationError({
+                'specimen_id': "Specimen does not belong to this order."
+            })
+
+        # Validate each result item
+        errors = []
+        valid_order_test_ids = set(
+            order.order_tests.values_list('id', flat=True)
+        )
+        existing_results = set(
+            LabResult.objects.filter(
+                order_test__order=order
+            ).values_list('order_test_id', flat=True)
+        )
+
+        for idx, result_item in enumerate(data['results']):
+            order_test_id = result_item['order_test_id']
+
+            # Check if order_test belongs to this order
+            if order_test_id not in valid_order_test_ids:
+                errors.append({
+                    'index': idx,
+                    'order_test_id': "Test does not belong to this order."
+                })
+                continue
+
+            # Check if result already exists
+            if order_test_id in existing_results:
+                errors.append({
+                    'index': idx,
+                    'order_test_id': "Result already exists for this test."
+                })
+
+        if errors:
+            raise serializers.ValidationError({'results': errors})
+
+        # Store validated objects for create
+        data['_order'] = order
+        data['_specimen'] = specimen
+
+        return data
 
 
 class LabOrderSerializer(serializers.ModelSerializer):
@@ -671,21 +777,67 @@ class LabResultListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for lab result lists.
     Used for patient result history and dashboard views.
-
-    Payload reduction: ~60% (12 fields vs 21 in full serializer)
     """
     test_name = serializers.CharField(source='order_test.test.short_name', read_only=True)
+    test_code = serializers.CharField(source='order_test.test.code', read_only=True)
     order_number = serializers.CharField(source='order_test.order.order_number', read_only=True)
+    order_id = serializers.UUIDField(source='order_test.order.id', read_only=True)
+    panel_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    patient_mrn = serializers.SerializerMethodField()
+    patient_id = serializers.SerializerMethodField()
+    ordering_provider = serializers.SerializerMethodField()
     flag_display = serializers.CharField(source='get_flag_display', read_only=True)
 
     class Meta:
         model = LabResult
         fields = [
-            'id', 'order_number', 'test_name',
+            'id', 'order_id', 'order_number', 'test_name', 'test_code',
+            'panel_name', 'patient_name', 'patient_mrn', 'patient_id',
+            'ordering_provider',
             'value', 'unit', 'reference_low', 'reference_high',
             'flag', 'flag_display', 'is_verified',
             'performed_at', 'verified_at'
         ]
+
+    def get_panel_name(self, obj):
+        """Get panel name(s) from the order's panels."""
+        try:
+            panels = obj.order_test.order.panels.all()
+            if panels:
+                # Return first panel name (most orders have one panel)
+                return panels[0].name
+            return None
+        except AttributeError:
+            return None
+
+    def get_patient_name(self, obj):
+        """Get patient full name from the order."""
+        try:
+            return obj.order_test.order.patient.user.get_full_name()
+        except AttributeError:
+            return None
+
+    def get_patient_mrn(self, obj):
+        """Get patient MRN from the order."""
+        try:
+            return obj.order_test.order.patient.medical_record_number
+        except AttributeError:
+            return None
+
+    def get_patient_id(self, obj):
+        """Get patient ID from the order."""
+        try:
+            return str(obj.order_test.order.patient.id)
+        except AttributeError:
+            return None
+
+    def get_ordering_provider(self, obj):
+        """Get ordering provider name from the order."""
+        try:
+            return obj.order_test.order.ordering_provider.get_full_name()
+        except AttributeError:
+            return None
 
 
 class LabSpecimenListSerializer(serializers.ModelSerializer):

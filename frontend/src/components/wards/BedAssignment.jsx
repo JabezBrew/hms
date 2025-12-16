@@ -16,15 +16,19 @@ export function BedAssignment({
   onBedSelect,
   selectedBedId = null,
   wardId = null,
+  wardData = null, // Pre-fetched ward data to avoid duplicate API calls
   patientGender = null, // 'M' or 'F'
   showAdvancedFilters = false
 }) {
   const [wards, setWards] = useState([]);
   const [selectedWard, setSelectedWard] = useState(wardId);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!wardId); // Skip loading if ward is pre-selected
   const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Track if ward was pre-selected (to determine if we need ward search)
+  const isWardPreSelected = !!wardId;
 
   // Advanced filters
   const [selectedSection, setSelectedSection] = useState(null);
@@ -55,8 +59,21 @@ export function BedAssignment({
   });
 
   // Fetch wards with search functionality
+  // Skip initial fetch if ward is pre-selected (only fetch on search or ward change)
   useEffect(() => {
     const fetchWardsData = async () => {
+      // Skip fetching all wards if:
+      // 1. Ward is pre-selected AND
+      // 2. There's no search query (user hasn't started searching for a different ward)
+      if (isWardPreSelected && !searchQuery) {
+        // Use pre-fetched ward data if available
+        if (wardData) {
+          setWards([wardData]);
+        }
+        setLoading(false);
+        return;
+      }
+
       try {
         setSearchLoading(true);
         const params = {};
@@ -87,7 +104,7 @@ export function BedAssignment({
     };
 
     fetchWardsData();
-  }, [searchQuery, selectedWard]);
+  }, [searchQuery, selectedWard, isWardPreSelected, wardData]);
 
   // Get ward options for search bar
   const wardOptions = Array.isArray(wards) ? wards.map(ward => ({
@@ -157,12 +174,16 @@ export function BedAssignment({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Assign Bed</CardTitle>
-        <CardDescription>Select a ward and then choose an available bed</CardDescription>
+    <Card className="border-border">
+      <CardHeader className="pb-4">
+        <CardTitle className="font-display text-xl">Assign Bed</CardTitle>
+        <CardDescription className="font-mono text-xs">
+          {isWardPreSelected
+            ? 'Select an available bed from the ward'
+            : 'Select a ward and then choose an available bed'}
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         {/* Gender compatibility alert */}
         {patientGender && (
           <Alert>
@@ -175,7 +196,9 @@ export function BedAssignment({
 
         {/* Ward selection */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Search for a Ward</label>
+          <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            {isWardPreSelected ? 'Ward' : 'Search for a Ward'}
+          </label>
           <SearchBar
             options={wardOptions}
             value={selectedWard}

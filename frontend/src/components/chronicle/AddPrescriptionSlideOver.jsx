@@ -72,12 +72,12 @@ const AddPrescriptionSlideOver = ({
   const [safetyAlerts, setSafetyAlerts] = useState([]);
   const [hasCriticalAlerts, setHasCriticalAlerts] = useState(false);
 
-  // Hooks for drug safety
+  // Hooks for drug safety - only fetch when slide-over is open
   const safetyCheck = useSafetyCheck();
-  const { data: allergiesData } = usePatientAllergies(patientId);
+  const { data: allergiesData } = usePatientAllergies(patientId, { enabled: open });
 
-  // Fetch drug forms when medication is selected
-  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui);
+  // Fetch drug forms when medication is selected and slide-over is open
+  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui, { enabled: open && !!selectedRxcui });
   const drugForms = drugFormsData?.forms || [];
 
   // Route options

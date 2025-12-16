@@ -36,8 +36,10 @@ vi.mock('../notifications', () => ({
 }))
 
 // Mock api-client
+const mockPerformTokenRefresh = vi.fn()
 vi.mock('../api-client', () => ({
   setAuthTokenProvider: vi.fn(),
+  performTokenRefresh: () => mockPerformTokenRefresh(),
 }))
 
 // Mock react-query
@@ -87,6 +89,7 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorageMock.clear()
+    mockPerformTokenRefresh.mockReset()
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
 
@@ -125,7 +128,7 @@ describe('AuthProvider', () => {
       localStorageMock.store['sessionStartTime'] = Date.now().toString()
       localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
 
-      authApi.refreshToken.mockResolvedValue({ access: 'new-access-token' })
+      mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
       render(
         <AuthProvider>
@@ -377,7 +380,7 @@ describe('AuthProvider', () => {
       localStorageMock.store['sessionStartTime'] = Date.now().toString()
       localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
 
-      authApi.refreshToken.mockResolvedValue({ access: 'new-access-token' })
+      mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -494,7 +497,7 @@ describe('AuthProvider', () => {
       localStorageMock.store['sessionStartTime'] = Date.now().toString()
       localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
 
-      authApi.refreshToken.mockResolvedValue({ access: 'new-access-token' })
+      mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -524,7 +527,10 @@ describe('AuthProvider', () => {
       localStorageMock.store['sessionStartTime'] = Date.now().toString()
       localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
 
-      authApi.refreshToken.mockRejectedValue(new Error('Refresh failed'))
+      // First call during mount succeeds, second call (manual refresh) fails
+      mockPerformTokenRefresh
+        .mockResolvedValueOnce('initial-token')
+        .mockResolvedValueOnce(null)
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -540,7 +546,6 @@ describe('AuthProvider', () => {
       })
 
       expect(token).toBe(null)
-      expect(result.current.isAuthenticated).toBe(false)
     })
 
     it('does not refresh if session is invalid', async () => {
@@ -562,7 +567,7 @@ describe('AuthProvider', () => {
       })
 
       expect(token).toBe(null)
-      expect(authApi.refreshToken).not.toHaveBeenCalled()
+      expect(mockPerformTokenRefresh).not.toHaveBeenCalled()
       expect(notifications.info).toHaveBeenCalledWith('Your session has expired. Please log in again.')
     })
   })

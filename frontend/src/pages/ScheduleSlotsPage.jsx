@@ -70,10 +70,11 @@ const ScheduleSlotsPage = () => {
         enabled: !!schedule?.practitioner
     });
 
-    // Determine practitioner name
-    const practitionerName = practitioner?.staff_details?.user_details
-        ? `${practitioner.staff_details.user_details.first_name} ${practitioner.staff_details.user_details.last_name}`
-        : 'Unknown';
+    // Determine practitioner name - check for simple name field first (from search API)
+    const practitionerName = practitioner?.name
+        || (practitioner?.staff_details?.user_details
+            ? `${practitioner.staff_details.user_details.first_name} ${practitioner.staff_details.user_details.last_name}`
+            : 'Unknown');
 
     // Show error toast if queries fail
     useEffect(() => {

@@ -80,7 +80,9 @@ export function usePatientTimeline(patientId, options = {}) {
   } = options;
 
   return useInfiniteQuery({
-    queryKey: timelineKeys.filtered(patientId, { type, search, pageSize, startDate, endDate, encounterId }),
+    // Use primitive values in query key to prevent unnecessary refetches
+    // React Query does deep comparison but object identity changes can cause issues
+    queryKey: ['timeline', 'list', patientId, type, search, pageSize, startDate, endDate, encounterId],
     queryFn: ({ pageParam = 1 }) => fetchTimeline(patientId, {
       type,
       search,
@@ -107,7 +109,7 @@ export function usePatientTimeline(patientId, options = {}) {
     },
     enabled: !!patientId && enabled,
     staleTime: 30000, // Consider data stale after 30 seconds
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false, // Disable - use manual refresh instead to prevent duplicate calls
   });
 }
 
@@ -153,10 +155,11 @@ export function useInvalidateTimeline() {
 
   return (patientId) => {
     if (patientId) {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
+      // Invalidate timeline list queries for this patient
+      queryClient.invalidateQueries({ queryKey: ['timeline', 'list', patientId] });
       queryClient.invalidateQueries({ queryKey: timelineKeys.stats(patientId) });
     } else {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['timeline'] });
     }
   };
 }

@@ -23,10 +23,17 @@ export const labKeys = {
 
 // ========== Lab Tests ==========
 
+/**
+ * Fetch lab tests with optional filters
+ * @param {object} filters - Query filters
+ * @param {boolean} filters.enabled - Enable/disable the query (for lazy loading)
+ */
 export function useLabTests(filters = {}) {
+  const { enabled = true, ...queryFilters } = filters;
   return useQuery({
-    queryKey: labKeys.testsList(filters),
-    queryFn: () => laboratoryApi.getLabTests(filters),
+    queryKey: labKeys.testsList(queryFilters),
+    queryFn: () => laboratoryApi.getLabTests(queryFilters),
+    enabled,
   });
 }
 
@@ -98,10 +105,17 @@ export function useDeleteLabTest() {
 
 // ========== Lab Panels ==========
 
+/**
+ * Fetch lab panels with optional filters
+ * @param {object} filters - Query filters
+ * @param {boolean} filters.enabled - Enable/disable the query (for lazy loading)
+ */
 export function useLabPanels(filters = {}) {
+  const { enabled = true, ...queryFilters } = filters;
   return useQuery({
-    queryKey: labKeys.panelsList(filters),
-    queryFn: () => laboratoryApi.getLabPanels(filters),
+    queryKey: labKeys.panelsList(queryFilters),
+    queryFn: () => laboratoryApi.getLabPanels(queryFilters),
+    enabled,
   });
 }
 
@@ -381,6 +395,54 @@ export function useVerifyLabResult() {
       if (data.order_test?.order) {
         queryClient.invalidateQueries({ queryKey: labKeys.order(data.order_test.order) });
       }
+    },
+  });
+}
+
+/**
+ * Hook for bulk creating lab results
+ * Used by the inline result entry table
+ */
+export function useBulkCreateLabResults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.bulkCreateResults(data),
+    onSuccess: (data, variables) => {
+      // Invalidate results queries
+      queryClient.invalidateQueries({ queryKey: labKeys.results() });
+
+      // Invalidate the specific order
+      if (variables.order_id) {
+        queryClient.invalidateQueries({ queryKey: labKeys.order(variables.order_id) });
+      }
+
+      // Invalidate orders list
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() });
+    },
+  });
+}
+
+/**
+ * Hook for bulk verifying lab results
+ * Used for batch verification by order or panel
+ */
+export function useBulkVerifyLabResults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => laboratoryApi.bulkVerifyResults(data),
+    onSuccess: (data, variables) => {
+      // Invalidate results queries
+      queryClient.invalidateQueries({ queryKey: labKeys.results() });
+
+      // Invalidate the specific order if provided
+      if (variables.order_id) {
+        queryClient.invalidateQueries({ queryKey: labKeys.order(variables.order_id) });
+      }
+
+      // Invalidate orders list
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() });
     },
   });
 }

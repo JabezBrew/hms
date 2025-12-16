@@ -20,6 +20,7 @@ class AuditCategory:
     PRESCRIPTION = 'PRESCRIPTION'
     VITALS = 'VITALS'
     NURSING = 'NURSING'
+    PHARMACY = 'PHARMACY'
 
     CHOICES = [
         (AUTHENTICATION, 'Authentication'),
@@ -35,6 +36,7 @@ class AuditCategory:
         (PRESCRIPTION, 'Prescription'),
         (VITALS, 'Vital Signs'),
         (NURSING, 'Nursing'),
+        (PHARMACY, 'Pharmacy'),
     ]
 
 

@@ -80,14 +80,14 @@ const AddFluidBalanceSlideOver = ({
   const historyDateString = format(historyDate, 'yyyy-MM-dd');
   const todayDateString = format(new Date(), 'yyyy-MM-dd');
 
-  // API hooks
+  // API hooks - only fetch when slide-over is open
   // Today's data for entry tab
-  const { data: todaySummary } = useTodayFluidBalance(patientId);
-  const { data: todayRecords = [], isLoading: todayLoading } = useFluidBalance(patientId, { date: todayDateString });
+  const { data: todaySummary } = useTodayFluidBalance(patientId, { enabled: open });
+  const { data: todayRecords = [], isLoading: todayLoading } = useFluidBalance(patientId, { date: todayDateString }, { enabled: open });
 
   // Historical data for history tab
-  const { data: historyRecords = [], isLoading: historyLoading } = useFluidBalance(patientId, { date: historyDateString });
-  const { data: historySummary } = useFluidBalanceSummary(patientId, historyDateString);
+  const { data: historyRecords = [], isLoading: historyLoading } = useFluidBalance(patientId, { date: historyDateString }, { enabled: open });
+  const { data: historySummary } = useFluidBalanceSummary(patientId, historyDateString, { enabled: open });
 
   const createMutation = useCreateFluidBalance();
   const deleteMutation = useDeleteFluidBalance();

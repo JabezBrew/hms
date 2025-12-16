@@ -223,10 +223,15 @@ export function EncounterForm({ isEditing = false }) {
   // Format patient options for SearchBar
   const patientOptions = Array.isArray(patients) ? patients.map(patient => {
     let name = "Unknown Patient";
-    let id = "";
+    let id = patient?.id || "";
 
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      name = patient.name;
+      id = patient.id;
+    }
     // Check for FHIR resource format
-    if (patient?.fhir_resource?.name?.[0]) {
+    else if (patient?.fhir_resource?.name?.[0]) {
       const given = patient.fhir_resource.name[0].given?.join(' ') || "";
       const family = patient.fhir_resource.name[0].family || "";
       name = `${family}, ${given}`.trim() || "Unknown Patient";
@@ -251,8 +256,13 @@ export function EncounterForm({ isEditing = false }) {
 
   // Format practitioner options for SearchBar
   const practitionerOptions = Array.isArray(practitioners) ? practitioners.map(practitioner => {
-    // Handle both old and new response structures
-    if (practitioner.fhir_resource) {
+    // Check for simple name field first (from search API)
+    if (practitioner?.name) {
+      return {
+        label: practitioner.name,
+        value: practitioner.id
+      };
+    } else if (practitioner.fhir_resource) {
       // New structure with FHIR resource
       const name = practitioner.fhir_resource.name?.[0];
       const given = name?.given?.join(' ') || '';

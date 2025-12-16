@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useContext, createContext, useRef, useCal
 
 import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
-import { setAuthTokenProvider } from "./api-client"
+import { setAuthTokenProvider, performTokenRefresh } from "./api-client"
 import { queryClient } from './react-query'
 
 // Create an authentication context
@@ -27,12 +27,12 @@ export function AuthProvider({ children }) {
   }, [])
 
   // Logout function - defined early to avoid circular dependency
-  const logout = async (localOnly = false) => {
+  const logout = useCallback(async (localOnly = false) => {
     try {
       if (!localOnly) {
         try {
           await authApi.logout()
-        } catch (error) {
+        } catch (_error) {
           // Suppress errors during logout - token may already be expired
           // Still proceed with local cleanup
         }
@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
       if (!localOnly) {
         notifications.success("Logged out successfully")
       }
-    } catch (error) {
+    } catch (_error) {
       // Always proceed with local cleanup even if logout fails
       localStorage.removeItem("user")
       localStorage.removeItem("sessionStartTime")
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
       setAccessToken(null)
       queryClient.clear()
     }
-  }
+  }, [setAccessToken])
 
   // Function to check if session is still valid
   const isSessionValid = useCallback(() => {
@@ -90,30 +90,31 @@ export function AuthProvider({ children }) {
     return true
   }, [])
 
-  // Function to refresh the access token
+  // Handler for when refresh fails - called by api-client
+  const handleRefreshFailure = useCallback(async () => {
+    await logout(true)
+    notifications.info("Your session has expired. Please log in again.")
+  }, [logout])
+
+  // Function to refresh the access token - uses centralized refresh from api-client
   const refreshAccessToken = useCallback(async () => {
-    try {
-      // Check if session is still valid before attempting refresh
-      if (!isSessionValid()) {
-        await logout(true)
-        notifications.info("Your session has expired. Please log in again.")
-        return null
-      }
+    // Check if session is still valid before attempting refresh
+    if (!isSessionValid()) {
+      await handleRefreshFailure()
+      return null
+    }
 
-      const response = await authApi.refreshToken()
-      setAccessToken(response.access)
+    // Use centralized refresh - this ensures only one refresh request at a time
+    const newToken = await performTokenRefresh()
 
+    if (newToken) {
       // Update refresh token issued time on successful refresh
       // (backend rotates refresh tokens)
       localStorage.setItem("refreshTokenIssuedAt", Date.now().toString())
-
-      return response.access
-    } catch (error) {
-      // If refresh fails, perform a local-only logout to avoid API call loops
-      await logout(true)
-      return null
     }
-  }, [isSessionValid])
+
+    return newToken
+  }, [isSessionValid, handleRefreshFailure])
 
   // Flag to track if user just logged in
   const justLoggedInRef = useRef(false)
@@ -147,7 +148,7 @@ export function AuthProvider({ children }) {
               // Silent fail - user will be redirected to login if needed
             }
           }
-        } catch (e) {
+        } catch (_e) {
           // Failed to parse stored user
           localStorage.removeItem("user")
           localStorage.removeItem("sessionStartTime")
@@ -162,8 +163,8 @@ export function AuthProvider({ children }) {
 
   // Connect auth context to api-client
   useEffect(() => {
-    setAuthTokenProvider(getAccessToken, refreshAccessToken)
-  }, [getAccessToken, refreshAccessToken])
+    setAuthTokenProvider(getAccessToken, setAccessToken, handleRefreshFailure)
+  }, [getAccessToken, setAccessToken, handleRefreshFailure])
 
   // Login function
   const login = async (email, password) => {

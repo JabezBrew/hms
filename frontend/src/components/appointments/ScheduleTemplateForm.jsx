@@ -140,8 +140,8 @@ const ScheduleTemplateForm = ({ initialData = null, onSuccess, practitioners = [
               <FormControl>
                 <Combobox
                   options={Array.isArray(practitioners) ? practitioners.map((practitioner) => ({
-                    label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} 
-                    - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`,
+                    label: practitioner?.name || `${practitioner.staff_details?.user_details?.first_name || ''} ${practitioner.staff_details?.user_details?.last_name || ''}
+                    - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`.trim(),
                     value: practitioner.id
                   })) : []}
                   value={field.value}

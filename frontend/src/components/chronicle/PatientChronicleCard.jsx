@@ -39,6 +39,10 @@ const PatientChronicleCard = ({
   };
 
   const getDisplayName = (patient) => {
+    // Check for simple name field first (from search API)
+    if (patient?.name) {
+      return patient.name;
+    }
     if (patient?.user_details) {
       const { first_name, last_name } = patient.user_details;
       return `${first_name || ''} ${last_name || ''}`.trim() || "Unknown Patient";

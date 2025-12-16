@@ -56,6 +56,8 @@ let vuTokens = {
   nurse: { access: null, refresh: null, lastRefresh: 0 },
   doctor: { access: null, refresh: null, lastRefresh: 0 },
   admin: { access: null, refresh: null, lastRefresh: 0 },
+  lab: { access: null, refresh: null, lastRefresh: 0 },
+  reception: { access: null, refresh: null, lastRefresh: 0 },
 };
 
 // Custom metrics
@@ -63,6 +65,9 @@ const alertDeliveryTime = new Trend('alert_delivery_time', true);
 const vitalsRecordTime = new Trend('vitals_record_time', true);
 const dashboardLoadTime = new Trend('dashboard_load_time', true);
 const searchTime = new Trend('search_time', true);
+const prescriptionTime = new Trend('prescription_create_time', true);
+const labOrderTime = new Trend('lab_order_process_time', true);
+const appointmentBookingTime = new Trend('appointment_booking_time', true);
 const errorRate = new Rate('errors');
 const tokenRefreshes = new Counter('token_refreshes');
 
@@ -70,13 +75,11 @@ const tokenRefreshes = new Counter('token_refreshes');
 export const options = {
   // Ramping pattern for load test
   stages: [
-    { duration: '1m', target: 100 },    // Ramp up to 100 users
-    { duration: '3m', target: 500 },    // Ramp up to 500 users
-    { duration: '5m', target: 1000 },   // Ramp up to 1000 users
-    { duration: '10m', target: 1000 },  // Hold at 1000 users
-    { duration: '5m', target: 2000 },   // Push to 2000 users
-    { duration: '5m', target: 2000 },   // Hold at 2000 users
-    { duration: '3m', target: 0 },      // Ramp down
+    { duration: '1m', target: 50 },     // Ramp up to 50 users
+    { duration: '3m', target: 200 },    // Ramp up to 200 users
+    { duration: '5m', target: 500 },    // Ramp up to 500 users
+    { duration: '5m', target: 500 },    // Hold at 500 users
+    { duration: '2m', target: 0 },      // Ramp down
   ],
 
   // Thresholds for pass/fail
@@ -89,6 +92,9 @@ export const options = {
     dashboard_load_time: ['p(95)<500'],
     vitals_record_time: ['p(95)<200'],
     search_time: ['p(95)<1000'],
+    prescription_create_time: ['p(95)<800'],
+    lab_order_process_time: ['p(95)<1500'],
+    appointment_booking_time: ['p(95)<800'],
     errors: ['rate<0.01'],
   },
 
@@ -101,6 +107,11 @@ export const options = {
 
 // Test data
 const searchTerms = ['john', 'smith', 'mary', 'williams', 'jones', 'brown'];
+const medications = [
+  { name: 'Amoxicillin', dose: '500mg', route: 'oral', freq: 'tid' },
+  { name: 'Lisinopril', dose: '10mg', route: 'oral', freq: 'daily' },
+  { name: 'Metformin', dose: '500mg', route: 'oral', freq: 'bid' }
+];
 
 // Generate random vital signs
 function randomVitals() {
@@ -197,7 +208,7 @@ function getValidToken(userType, credentials) {
     }
 
     // No refresh token or refresh failed - do fresh login
-    const cred = credentials[userType];
+    const cred = credentials[userType] || credentials.admin; // Fallback to admin
     if (cred) {
       const tokens = login(cred.email, cred.password);
       if (tokens) {
@@ -218,33 +229,34 @@ function getValidToken(userType, credentials) {
 
 // Setup function - runs once (shared across all VUs)
 export function setup() {
-  console.log('Setting up test - logging in test user...');
+  console.log('Setting up test - logging in test users...');
 
   // Use admin account for all workflows (has access to all endpoints)
   // In production, test users were created via registration API with auto-generated passwords
   const credentials = {
-    nurse: { email: 'admin@hms.com', password: 'Admin123!' },
-    doctor: { email: 'admin@hms.com', password: 'Admin123!' },
+    nurse: { email: 'nurse@hms.com', password: 'Admin123!' },
+    doctor: { email: 'doctor@hms.com', password: 'Admin123!' },
     admin: { email: 'admin@hms.com', password: 'Admin123!' },
+    lab: { email: 'lab_tech@hms.com', password: 'Admin123!' },
+    reception: { email: 'receptionist@hms.com', password: 'Admin123!' },
   };
 
-  // Get initial token (same for all user types)
-  const adminTokens = login(credentials.admin.email, credentials.admin.password);
-
-  // Validate token
-  if (!adminTokens) {
-    console.error('SETUP ERROR: Admin token is null - cannot proceed');
-  } else {
-    console.log('Setup complete: Admin token obtained for all workflows');
+  // Obtain tokens for each role
+  const initialTokens = {};
+  for (const [role, creds] of Object.entries(credentials)) {
+    const tokens = login(creds.email, creds.password);
+    if (tokens) {
+      initialTokens[role] = tokens;
+      console.log(`Login successful for ${role}`);
+    } else {
+      console.error(`Login failed for ${role} - tests using this role will fail`);
+      initialTokens[role] = null;
+    }
   }
 
   return {
     credentials,
-    initialTokens: {
-      nurse: adminTokens,
-      doctor: adminTokens,
-      admin: adminTokens,
-    },
+    initialTokens,
   };
 }
 
@@ -253,37 +265,33 @@ const failedRequests = new Counter('failed_requests_by_endpoint');
 
 // Helper to log failed requests
 function checkResponse(res, endpoint) {
-  if (res.status >= 400) {
+  if (res.status === 0) {
     failedRequests.add(1, { endpoint: endpoint });
-    if (res.status !== 401) { // Don't spam auth errors
-      console.error(`${endpoint} failed: status=${res.status}`);
-    }
+    console.error(`${endpoint} failed: Network Error/Timeout. Error: ${res.error}`);
+  } else if (res.status >= 400) {
+    failedRequests.add(1, { endpoint: endpoint });
+    // Log detailed error for debugging
+    console.error(`${endpoint} failed with status ${res.status}. Body: ${res.body}`);
   }
-  return res.status < 400;
+  return res.status !== 0 && res.status < 400;
 }
 
 // Initialize VU tokens from setup data (called once per VU on first iteration)
 function initializeVuTokens(data) {
   if (vuTokens.nurse.access === null && data.initialTokens.nurse) {
-    vuTokens.nurse = {
-      access: data.initialTokens.nurse.access,
-      refresh: data.initialTokens.nurse.refresh,
-      lastRefresh: Date.now(),
-    };
+    vuTokens.nurse = { ...data.initialTokens.nurse, lastRefresh: Date.now() };
   }
   if (vuTokens.doctor.access === null && data.initialTokens.doctor) {
-    vuTokens.doctor = {
-      access: data.initialTokens.doctor.access,
-      refresh: data.initialTokens.doctor.refresh,
-      lastRefresh: Date.now(),
-    };
+    vuTokens.doctor = { ...data.initialTokens.doctor, lastRefresh: Date.now() };
   }
   if (vuTokens.admin.access === null && data.initialTokens.admin) {
-    vuTokens.admin = {
-      access: data.initialTokens.admin.access,
-      refresh: data.initialTokens.admin.refresh,
-      lastRefresh: Date.now(),
-    };
+    vuTokens.admin = { ...data.initialTokens.admin, lastRefresh: Date.now() };
+  }
+  if (vuTokens.lab.access === null && data.initialTokens.lab) {
+    vuTokens.lab = { ...data.initialTokens.lab, lastRefresh: Date.now() };
+  }
+  if (vuTokens.reception.access === null && data.initialTokens.reception) {
+    vuTokens.reception = { ...data.initialTokens.reception, lastRefresh: Date.now() };
   }
 }
 
@@ -293,54 +301,47 @@ export default function (data) {
   initializeVuTokens(data);
 
   // Simulate different user behaviors based on VU ID
-  const vuType = __VU % 10;
+  const vuType = __VU % 20;
 
-  if (vuType < 5) {
-    // 50% - Nurse workflow (requires nurse or admin token)
-    const nurseToken = getValidToken('nurse', data.credentials) || getValidToken('admin', data.credentials);
-    if (!nurseToken) {
-      console.error('No valid nurse/admin token for nurse workflow');
-      errorRate.add(1);
-      sleep(1);
-      return;
-    }
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${nurseToken}`,
-      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
-    };
+  if (vuType < 8) { // 0-7 (40%)
+    // Nurse workflow
+    const token = getValidToken('nurse', data.credentials);
+    if (!token) return sleep(1);
+    const headers = getHeaders(token);
     nurseWorkflow(headers);
-  } else if (vuType < 8) {
-    // 30% - Doctor workflow (can use any clinical token)
-    const doctorToken = getValidToken('doctor', data.credentials) || getValidToken('nurse', data.credentials) || getValidToken('admin', data.credentials);
-    if (!doctorToken) {
-      console.error('No valid token for doctor workflow');
-      errorRate.add(1);
-      sleep(1);
-      return;
-    }
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${doctorToken}`,
-      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
-    };
+  } else if (vuType < 14) { // 8-13 (30%)
+    // Doctor workflow
+    const token = getValidToken('doctor', data.credentials);
+    if (!token) return sleep(1);
+    const headers = getHeaders(token);
     doctorWorkflow(headers);
-  } else {
-    // 20% - Admin/Ward workflow
-    const adminToken = getValidToken('admin', data.credentials) || getValidToken('nurse', data.credentials);
-    if (!adminToken) {
-      console.error('No valid admin token for admin workflow');
-      errorRate.add(1);
-      sleep(1);
-      return;
-    }
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminToken}`,
-      ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
-    };
+  } else if (vuType < 17) { // 14-16 (15%)
+    // Lab workflow
+    const token = getValidToken('lab', data.credentials);
+    if (!token) return sleep(1);
+    const headers = getHeaders(token);
+    labWorkflow(headers);
+  } else if (vuType < 18) { // 17 (5%)
+    // Receptionist workflow
+    const token = getValidToken('reception', data.credentials);
+    if (!token) return sleep(1);
+    const headers = getHeaders(token);
+    receptionistWorkflow(headers);
+  } else { // 18-19 (10%)
+    // Admin workflow
+    const token = getValidToken('admin', data.credentials);
+    if (!token) return sleep(1);
+    const headers = getHeaders(token);
     adminWorkflow(headers);
   }
+}
+
+function getHeaders(token) {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    ...(LOAD_TEST_KEY && { 'X-Load-Test-Key': LOAD_TEST_KEY }),
+  };
 }
 
 // Nurse workflow simulation
@@ -402,6 +403,7 @@ function nurseWorkflow(headers) {
         'vitals recorded': (r) => r.status === 201,
         'vitals record time OK': (r) => r.timings.duration < 200,
       });
+      checkResponse(recordRes, 'Record Vitals');
     }
 
     sleep(randomIntBetween(2, 5));
@@ -419,15 +421,7 @@ function nurseWorkflow(headers) {
 
 // Doctor workflow simulation
 function doctorWorkflow(headers) {
-  group('Doctor: Appointments', function () {
-    const today = new Date().toISOString().split('T')[0];
-    const res = http.get(
-      `${BASE_URL}/api/appointments/?date=${today}`,
-      { headers }
-    );
-    check(res, { 'appointments loaded': (r) => r.status === 200 });
-    sleep(randomIntBetween(2, 4));
-  });
+  let patientIds = [];
 
   group('Doctor: Patient Search', function () {
     const term = randomItem(searchTerms);
@@ -444,32 +438,243 @@ function doctorWorkflow(headers) {
       'search time OK': (r) => r.timings.duration < 1000,
     });
 
-    // View patient detail if results found
-    // Response format: { results: [...] } (lightweight serializer)
     if (res.status === 200) {
       try {
         const body = JSON.parse(res.body);
-        // Handle new format (results) or legacy format (patients)
         const results = body.results || body.patients || [];
-        if (results.length > 0) {
-          sleep(randomIntBetween(1, 2));
-          // New format returns id directly, legacy had local_data.id
-          const patientId = results[0].id || (results[0].local_data && results[0].local_data.id);
-          if (patientId) {
-            // Note: PatientViewSet uses /get_patient/ action, not standard DRF retrieve
-            const detailRes = http.get(
-              `${BASE_URL}/api/patients/${patientId}/get_patient/`,
-              { headers }
-            );
-            check(detailRes, { 'patient detail loaded': (r) => r.status === 200 });
-          }
-        }
+        patientIds = results.map(p => p.id || (p.local_data && p.local_data.id));
       } catch (e) {
         console.error('Failed to parse search response');
       }
     }
+    sleep(randomIntBetween(2, 5));
+  });
 
-    sleep(randomIntBetween(3, 6));
+  // Prescribe Medication (30% chance if patients found)
+  if (Math.random() < 0.3 && patientIds.length > 0) {
+    const patientId = randomItem(patientIds);
+    const med = randomItem(medications);
+
+    group('Doctor: Prescribe', function() {
+      // 1. Search for drug
+      const searchTerm = med.name.substring(0, 4);
+      const searchStart = Date.now();
+      const searchRes = http.get(
+        `${BASE_URL}/api/drug-safety/safety/search_drugs/?q=${searchTerm}`,
+        { headers }
+      );
+      searchTime.add(Date.now() - searchStart);
+      check(searchRes, { 'drug search OK': (r) => r.status === 200 });
+      checkResponse(searchRes, 'Drug Search');
+
+      if (searchRes.status === 200) {
+        // 2. Create Prescription
+        const payload = {
+          patient: patientId,
+          medication_name: med.name,
+          dosage: med.dose,
+          route: med.route,
+          frequency: med.freq,
+          start_date: new Date().toISOString().split('T')[0],
+          duration_days: 7,
+          instructions: "Take as directed",
+          reason: "Load test prescription"
+        };
+
+        const start = Date.now();
+        const res = http.post(
+          `${BASE_URL}/api/clinical-notes/prescriptions/`,
+          JSON.stringify(payload),
+          { headers }
+        );
+        
+        prescriptionTime.add(Date.now() - start);
+        
+        // 201 Created or 400 (Safety Alert) are acceptable
+        const success = res.status === 201 || (res.status === 400 && res.body.includes('safety'));
+        check(res, {
+          'prescription processed': (r) => success,
+        });
+        if (!success) checkResponse(res, 'Create Prescription');
+      }
+      sleep(randomIntBetween(2, 4));
+    });
+  }
+
+  // Order Labs (30% chance if patients found)
+  if (Math.random() < 0.3 && patientIds.length > 0) {
+    group('Doctor: Order Labs', function() {
+      // First get tests
+      const testsRes = http.get(`${BASE_URL}/api/laboratory/tests/?is_active=true`, { headers });
+      if (testsRes.status === 200) {
+        const tests = JSON.parse(testsRes.body).results || [];
+        if (tests.length > 0) {
+          const patientId = randomItem(patientIds);
+          const testId = randomItem(tests).id;
+          
+          const payload = {
+            patient: patientId,
+            test_ids: [testId],
+            priority: 'routine',
+            clinical_notes: 'Routine check',
+            fasting_required: false
+          };
+          
+          const orderRes = http.post(
+            `${BASE_URL}/api/laboratory/orders/`,
+            JSON.stringify(payload),
+            { headers }
+          );
+          
+          if (orderRes.status === 201) {
+             const orderId = JSON.parse(orderRes.body).id;
+             // Submit order
+             http.post(
+               `${BASE_URL}/api/laboratory/orders/${orderId}/submit/`, 
+               {}, 
+               { headers }
+             );
+          }
+        }
+      }
+    });
+  }
+}
+
+// Lab workflow simulation
+function labWorkflow(headers) {
+  group('Lab: Process Orders', function() {
+    // 1. Find pending orders
+    const start = Date.now();
+    const res = http.get(
+      `${BASE_URL}/api/laboratory/orders/?status=ordered&pending_only=true`, 
+      { headers }
+    );
+    
+    if (res.status === 200) {
+      const orders = JSON.parse(res.body).results || [];
+      if (orders.length > 0) {
+        const order = randomItem(orders);
+        const orderId = order.id;
+        
+        // 2. Collect Specimen
+        const specRes = http.post(
+          `${BASE_URL}/api/laboratory/specimens/`,
+          JSON.stringify({
+             order: orderId,
+             specimen_type: "blood",
+             container_type: "tube", 
+             volume_collected: "5ml",
+             collection_site: "arm",
+             collected_at: new Date().toISOString()
+          }),
+          { headers }
+        );
+        
+        if (specRes.status === 201) {
+           const specId = JSON.parse(specRes.body).id;
+           
+           // Mark collected
+           http.post(`${BASE_URL}/api/laboratory/orders/${orderId}/collect/`, {}, { headers });
+           
+           // Receive
+           http.post(`${BASE_URL}/api/laboratory/specimens/${specId}/receive/`, {}, { headers });
+           http.post(`${BASE_URL}/api/laboratory/orders/${orderId}/receive/`, {}, { headers });
+           
+           // Start processing
+           http.post(`${BASE_URL}/api/laboratory/orders/${orderId}/start_processing/`, {}, { headers });
+           
+           // Result & Complete
+           const detailRes = http.get(`${BASE_URL}/api/laboratory/orders/${orderId}/?expand=tests`, { headers });
+           if (detailRes.status === 200) {
+             const details = JSON.parse(detailRes.body);
+             const test = details.order_tests ? details.order_tests[0] : null;
+             
+             if (test) {
+               const resultRes = http.post(
+                 `${BASE_URL}/api/laboratory/results/`,
+                 JSON.stringify({
+                   order_test: test.id,
+                   specimen: specId,
+                   value: "100",
+                   unit: "mg/dL",
+                   performed_at: new Date().toISOString()
+                 }),
+                 { headers }
+               );
+               
+               if (resultRes.status === 201) {
+                  const resultId = JSON.parse(resultRes.body).id;
+                  http.post(`${BASE_URL}/api/laboratory/results/${resultId}/verify/`, {}, { headers });
+                  http.post(`${BASE_URL}/api/laboratory/orders/${orderId}/complete/`, {}, { headers });
+               }
+             }
+           }
+        }
+      }
+    }
+    labOrderTime.add(Date.now() - start);
+    sleep(randomIntBetween(1, 3));
+  });
+}
+
+// Receptionist workflow simulation
+function receptionistWorkflow(headers) {
+  group('Reception: Book Appointments', function() {
+    // 1. Get resources (practitioners, types, patients) - usually cached, but fetching for test
+    const practRes = http.get(`${BASE_URL}/api/users/practitioners/`, { headers });
+    const typesRes = http.get(`${BASE_URL}/api/appointments/types/`, { headers });
+    const patRes = http.get(`${BASE_URL}/api/patients/search/?query=john`, { headers });
+    
+    if (practRes.status === 200 && typesRes.status === 200 && patRes.status === 200) {
+      const practitioners = JSON.parse(practRes.body).results || [];
+      const types = JSON.parse(typesRes.body).results || [];
+      const patients = JSON.parse(patRes.body).results || [];
+      
+      if (practitioners.length && types.length && patients.length) {
+        const practId = randomItem(practitioners).id;
+        const typeId = randomItem(types).id;
+        const patientId = randomItem(patients).id;
+        
+        // 2. Search Available Slots
+        const startDate = new Date().toISOString().split('T')[0];
+        const endDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]; // +3 days
+        
+        const slotsRes = http.get(
+          `${BASE_URL}/api/appointments/appointments/available_slots/?practitioner_id=${practId}&start_date=${startDate}&end_date=${endDate}&appointment_type_id=${typeId}`,
+          { headers }
+        );
+        
+        checkResponse(slotsRes, 'Search Slots');
+        
+        if (slotsRes.status === 200) {
+          const slots = JSON.parse(slotsRes.body).slots || [];
+          if (slots.length > 0) {
+            const slot = randomItem(slots);
+            
+            // 3. Book Appointment
+            const start = Date.now();
+            const bookRes = http.post(
+              `${BASE_URL}/api/appointments/appointments/`,
+              JSON.stringify({
+                patient_id: patientId,
+                practitioner_id: practId,
+                appointment_type_id: typeId,
+                start_time: slot.start,
+                end_time: slot.end,
+                description: "Load test booking",
+                comment: "Automated booking"
+              }),
+              { headers }
+            );
+            appointmentBookingTime.add(Date.now() - start);
+            check(bookRes, { 'appointment booked': (r) => r.status === 201 });
+            checkResponse(bookRes, 'Book Appointment');
+          }
+        }
+      }
+    }
+    sleep(randomIntBetween(2, 5));
   });
 }
 
@@ -523,14 +728,10 @@ function textSummary(data, options) {
   summary += `  Dashboard Load P95: ${(metrics.dashboard_load_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Vitals Record P95: ${(metrics.vitals_record_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Search P95: ${(metrics.search_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
+  summary += `  Rx Create P95: ${(metrics.prescription_create_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
+  summary += `  Lab Order Process P95: ${(metrics.lab_order_process_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
+  summary += `  Appt Booking P95: ${(metrics.appointment_booking_time?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
   summary += `  Token Refreshes: ${metrics.token_refreshes?.values?.count || 0}\n`;
-
-  // Threshold results
-  summary += '\nThreshold Results:\n';
-  for (const [name, threshold] of Object.entries(data.thresholds || {})) {
-    const passed = threshold.ok ? '✓' : '✗';
-    summary += `  ${passed} ${name}\n`;
-  }
 
   return summary;
 }

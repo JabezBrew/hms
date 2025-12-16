@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, normalizeApiResults } from '@/lib/utils';
 
 import {
   usePatientMonitoring,
@@ -88,7 +88,7 @@ export default function ShiftHandoffPage() {
   const { data: medicationsDue } = useMedicationsDueNow();
 
   // Get patients list
-  const patients = patientsData?.results || [];
+  const patients = normalizeApiResults(patientsData);
 
   // Get nurses assigned to the ward (already filtered by 'nursing' category)
   const nurses = wardStaffData || [];

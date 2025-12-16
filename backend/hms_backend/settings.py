@@ -31,10 +31,33 @@ if env_file.exists():
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
 
+# Detect if we are running in a build environment (e.g. Docker build for collectstatic)
+IS_BUILD = (SECRET_KEY == 'build_dummy_key')
+
+def env_required(var_name, default=None):
+    """
+    Helper to get environment variables that are required in production
+    but can be dummy values during build.
+    """
+    if IS_BUILD:
+        return default or 'build_dummy_value'
+    # In production, default=None means it will raise ImproperlyConfigured if missing
+    return env(var_name, default=default) if default is not None else env(var_name)
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
+# Auto-add Railway domains to ALLOWED_HOSTS
+_railway_hosts = [
+    'backend-staging-8afc.up.railway.app',
+    'backend-production-40e0.up.railway.app',
+    '.railway.app',  # Wildcard for any Railway subdomain
+]
+for host in _railway_hosts:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
 
 # Application definition
 INSTALLED_APPS = [
@@ -76,11 +99,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Must be first to handle preflight requests
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.gzip.GZipMiddleware',  # Compress responses > 200 bytes
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -115,7 +138,7 @@ ASGI_APPLICATION = 'hms_backend.asgi.application'
 
 # Channels Layer Configuration (WebSocket support)
 # Uses Redis for cross-process communication in production
-if DEBUG:
+if DEBUG or IS_BUILD:
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
@@ -140,7 +163,15 @@ else:
 # 1. DATABASE_URL (Railway, Heroku, Render, etc.)
 # 2. Individual DB_* variables (Docker, traditional hosting)
 
-if env('DATABASE_URL', default=None):
+if IS_BUILD:
+    # Use SQLite for build process (collectstatic doesn't need real DB)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+elif env('DATABASE_URL', default=None):
     # Parse DATABASE_URL (e.g., postgresql://user:pass@host:5432/dbname)
     DATABASES = {
         'default': env.db('DATABASE_URL')
@@ -158,40 +189,48 @@ else:
         }
     }
 
-# Add connection pooling and health checks
-DATABASES['default'].update({
-    # Connection pooling - persistent connections for 10 minutes
-    'CONN_MAX_AGE': 600,
-    # Health checks ensure stale connections are recycled (Django 4.1+)
-    'CONN_HEALTH_CHECKS': True,
-    'OPTIONS': {
-        'connect_timeout': 10,
-        # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
-    },
-})
-
-# Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
-# Routes read queries to replica for horizontal scaling
-DB_REPLICA_HOST = env('DB_REPLICA_HOST', default='')
-if DB_REPLICA_HOST:
-    DATABASES['replica'] = {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DB_NAME'),
-        'USER': env('DB_REPLICA_USER', default=env('DB_USER')),
-        'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
-        'HOST': DB_REPLICA_HOST,
-        'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
+if not IS_BUILD:
+    # Add connection pooling and health checks
+    DATABASES['default'].update({
+        # Connection pooling - persistent connections for 10 minutes
         'CONN_MAX_AGE': 600,
+        # Health checks ensure stale connections are recycled (Django 4.1+)
         'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'connect_timeout': 10,
+            # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
         },
-    }
-    # Enable the read replica router
-    DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
+    })
+
+    # Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
+    # Routes read queries to replica for horizontal scaling
+    DB_REPLICA_HOST = env('DB_REPLICA_HOST', default='')
+    if DB_REPLICA_HOST:
+        DATABASES['replica'] = {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': env('DB_NAME'),
+            'USER': env('DB_REPLICA_USER', default=env('DB_USER')),
+            'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
+            'HOST': DB_REPLICA_HOST,
+            'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
+        # Enable the read replica router
+        DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+]
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -239,7 +278,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
 
 # Cache configuration
-if DEBUG:
+if DEBUG or IS_BUILD:
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -286,13 +325,48 @@ REST_FRAMEWORK = {
 # CORS settings
 # Filter out invalid origins (e.g., empty or just "https://")
 _cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+
+# Add known Railway domains explicitly to ensure they work even if env vars are missing them
+_railway_origins = [
+    'https://frontend-staging-e202.up.railway.app',
+    'https://frontend-production-40e0.up.railway.app',
+]
+for origin in _railway_origins:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
 CORS_ALLOWED_ORIGINS = [origin for origin in _cors_origins if origin and '://' in origin and len(origin) > 8]
 if not CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # CSRF settings
 _csrf_origins = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+
+# Add known Railway domains to CSRF trusted origins as well
+for origin in _railway_origins:
+    if origin not in _csrf_origins:
+        _csrf_origins.append(origin)
+
 CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins if origin and '://' in origin and len(origin) > 8]
 if not CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
@@ -312,16 +386,16 @@ CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG el
 
 # Email settings - SendGrid Web API
 EMAIL_BACKEND = 'hms_backend.email_backends.SendGridEmailBackend'
-SENDGRID_API_KEY = env('SENDGRID_API_KEY')
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+SENDGRID_API_KEY = env_required('SENDGRID_API_KEY')
+DEFAULT_FROM_EMAIL = env_required('DEFAULT_FROM_EMAIL')
 
 # Google Cloud Healthcare API settings
-GOOGLE_APPLICATION_CREDENTIALS = env('GOOGLE_APPLICATION_CREDENTIALS')
-GOOGLE_CLOUD_PROJECT = env('GOOGLE_CLOUD_PROJECT')
-GOOGLE_HEALTHCARE_DATASET = env('GOOGLE_HEALTHCARE_DATASET')
-GOOGLE_FHIR_STORE = env('GOOGLE_FHIR_STORE')
-GOOGLE_DICOM_STORE = env('GOOGLE_DICOM_STORE')
-GOOGLE_HL7V2_STORE = env('GOOGLE_HL7V2_STORE')
+GOOGLE_APPLICATION_CREDENTIALS = env_required('GOOGLE_APPLICATION_CREDENTIALS')
+GOOGLE_CLOUD_PROJECT = env_required('GOOGLE_CLOUD_PROJECT')
+GOOGLE_HEALTHCARE_DATASET = env_required('GOOGLE_HEALTHCARE_DATASET')
+GOOGLE_FHIR_STORE = env_required('GOOGLE_FHIR_STORE')
+GOOGLE_DICOM_STORE = env_required('GOOGLE_DICOM_STORE')
+GOOGLE_HL7V2_STORE = env_required('GOOGLE_HL7V2_STORE')
 
 # JWT Authentication settings
 from datetime import timedelta
@@ -436,8 +510,8 @@ LOGGING = {
             'propagate': True,
         },
         'django.request': {
-            'handlers': ['mail_admins', 'file'],
-            'level': 'ERROR',
+            'handlers': ['console', 'file', 'mail_admins'],
+            'level': 'INFO',
             'propagate': False,
         },
         'django.security': {

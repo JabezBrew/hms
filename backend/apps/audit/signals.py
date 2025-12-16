@@ -37,22 +37,40 @@ def clear_current_request():
 
 def _get_tracked_models():
     """Get models that should be tracked for audit logging."""
+    tracked = {}
+
+    # Patient models
     try:
         from apps.users.models import PatientProfile
-        from apps.clinical_notes.models import NoteEntry, NoteTemplate
-        from apps.wards.models import WardAdmission
-        from apps.appointments.models import Appointment
-
-        return {
-            'PatientProfile': (PatientProfile, AuditCategory.PATIENT),
-            'NoteEntry': (NoteEntry, AuditCategory.CLINICAL),
-            'NoteTemplate': (NoteTemplate, AuditCategory.CLINICAL),
-            'WardAdmission': (WardAdmission, AuditCategory.WARD),
-            'Appointment': (Appointment, AuditCategory.APPOINTMENT),
-        }
+        tracked['PatientProfile'] = (PatientProfile, AuditCategory.PATIENT)
     except ImportError:
-        # Return empty dict during migrations
-        return {}
+        pass
+
+    # Clinical notes models
+    try:
+        from apps.clinical_notes.models import NoteEntry, NoteTemplate
+        tracked['NoteEntry'] = (NoteEntry, AuditCategory.CLINICAL)
+        tracked['NoteTemplate'] = (NoteTemplate, AuditCategory.CLINICAL)
+    except ImportError:
+        pass
+
+    # Ward models
+    try:
+        from apps.wards.models import Ward, Admission, Bed
+        tracked['Ward'] = (Ward, AuditCategory.WARD)
+        tracked['Admission'] = (Admission, AuditCategory.WARD)
+        tracked['Bed'] = (Bed, AuditCategory.WARD)
+    except ImportError:
+        pass
+
+    # Appointment models
+    try:
+        from apps.appointments.models import AppointmentFHIRMapping
+        tracked['AppointmentFHIRMapping'] = (AppointmentFHIRMapping, AuditCategory.APPOINTMENT)
+    except ImportError:
+        pass
+
+    return tracked
 
 
 @receiver(post_save)

@@ -151,6 +151,14 @@ export default function WardsPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                title="Refresh wards"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
               <Button variant="outline" onClick={() => navigate('/wards/reports')}>
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Reports
