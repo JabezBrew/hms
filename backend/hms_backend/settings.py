@@ -293,6 +293,13 @@ REST_FRAMEWORK = {
 # CORS settings
 # Filter out invalid origins (e.g., empty or just "https://")
 _cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+
+# Add known staging domains explicitly to ensure they work even if env vars are missing them
+_staging_origins = ['https://frontend-staging-e202.up.railway.app']
+for origin in _staging_origins:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
 CORS_ALLOWED_ORIGINS = [origin for origin in _cors_origins if origin and '://' in origin and len(origin) > 8]
 if not CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
@@ -300,6 +307,12 @@ CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings
 _csrf_origins = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
+
+# Add known staging domains to CSRF trusted origins as well
+for origin in _staging_origins:
+    if origin not in _csrf_origins:
+        _csrf_origins.append(origin)
+
 CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins if origin and '://' in origin and len(origin) > 8]
 if not CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
