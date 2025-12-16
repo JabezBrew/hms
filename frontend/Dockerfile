@@ -16,10 +16,10 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Build arguments for environment configuration
-ARG VITE_API_URL
+ARG VITE_API_BASE_URL
 ARG VITE_WS_URL
 
-ENV VITE_API_URL=$VITE_API_URL \
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_WS_URL=$VITE_WS_URL
 
 # Build the application
