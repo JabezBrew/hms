@@ -236,13 +236,13 @@ class LabSpecimenSerializer(serializers.ModelSerializer):
     def get_collected_by_name(self, obj):
         """Get name of person who collected specimen."""
         if obj.collected_by:
-            return obj.collected_by.staff.user.get_full_name()
+            return obj.collected_by.user.get_full_name()
         return None
 
     def get_received_by_name(self, obj):
         """Get name of person who received specimen."""
         if obj.received_by:
-            return obj.received_by.staff.user.get_full_name()
+            return obj.received_by.user.get_full_name()
         return None
 
 
@@ -279,13 +279,13 @@ class LabResultSerializer(serializers.ModelSerializer):
     def get_performed_by_name(self, obj):
         """Get name of person who performed test."""
         if obj.performed_by:
-            return obj.performed_by.staff.user.get_full_name()
+            return obj.performed_by.user.get_full_name()
         return None
 
     def get_verified_by_name(self, obj):
         """Get name of person who verified result."""
         if obj.verified_by:
-            return obj.verified_by.staff.user.get_full_name()
+            return obj.verified_by.user.get_full_name()
         return None
 
     def get_patient_name(self, obj):

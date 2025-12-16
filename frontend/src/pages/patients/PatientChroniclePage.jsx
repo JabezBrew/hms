@@ -126,7 +126,7 @@ const PatientChroniclePage = () => {
     'progress_note': 'notes',
     'vitals': 'vitals',
     'medication': 'prescriptions',
-    'lab_result': 'all', // No specific lab results endpoint yet
+    'lab_result': 'labs',
   };
 
   // Fetch timeline with infinite scroll
@@ -247,9 +247,7 @@ const PatientChroniclePage = () => {
         entry.type === 'nursing_note'
       );
     }
-    if (activeFilter === 'lab_result') {
-      return timelineEntries.filter(entry => entry.type === 'lab_result');
-    }
+    // Labs are now filtered by API, no local filtering needed
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
 

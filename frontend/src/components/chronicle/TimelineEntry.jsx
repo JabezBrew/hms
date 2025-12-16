@@ -28,6 +28,8 @@ import {
   RefreshCw,
   Copy,
   Pencil,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import NoteDetailModal from "./NoteDetailModal";
 import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
@@ -450,34 +452,231 @@ const VitalsContent = ({ vitals }) => {
 };
 
 /**
- * LabResultContent - Renders lab result data
+ * LabResultContent - Renders bundled lab order results
+ *
+ * Shows order summary with expandable results table.
+ * Supports both old single-result format and new bundled format.
  */
 const LabResultContent = ({ result }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (!result) return null;
 
-  return (
-    <div className="space-y-2">
-      <h4 className="font-medium text-foreground/90">
-        {result.test_name}
-      </h4>
-      <div className="flex items-baseline gap-3">
-        <span className={cn(
-          "font-mono text-2xl",
-          result.is_abnormal ? "text-destructive" : "text-foreground"
-        )}>
-          {result.value} {result.unit}
-        </span>
-        {result.reference_range && (
-          <span className="font-mono text-xs text-muted-foreground">
-            Ref: {result.reference_range}
+  // Handle old single-result format (backwards compatibility)
+  if (result.test_name && !result.results) {
+    return (
+      <div className="space-y-2">
+        <h4 className="font-medium text-foreground/90">
+          {result.test_name}
+        </h4>
+        <div className="flex items-baseline gap-3">
+          <span className={cn(
+            "font-mono text-2xl",
+            result.is_abnormal ? "text-destructive" : "text-foreground"
+          )}>
+            {result.value} {result.unit}
           </span>
-        )}
-        {result.is_abnormal && (
-          <span className="badge-chronicle-rose">
-            {result.abnormal_flag || 'ABNORMAL'}
-          </span>
-        )}
+          {result.reference_range && (
+            <span className="font-mono text-xs text-muted-foreground">
+              Ref: {result.reference_range}
+            </span>
+          )}
+          {result.is_abnormal && (
+            <span className="badge-chronicle-rose">
+              {result.abnormal_flag || 'ABNORMAL'}
+            </span>
+          )}
+        </div>
       </div>
+    );
+  }
+
+  // New bundled order format
+  const { results_summary: summary, results, order_number, priority_display } = result;
+
+  // Get flag styling
+  const getFlagStyle = (flag, isCritical) => {
+    if (isCritical) return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 font-semibold';
+    if (flag === 'low' || flag === 'high' || flag === 'abnormal') {
+      return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
+    }
+    return 'text-emerald-600';
+  };
+
+  const getFlagLabel = (flag) => {
+    const labels = {
+      'critical_low': '↓↓ CRITICAL',
+      'critical_high': '↑↑ CRITICAL',
+      'low': '↓ Low',
+      'high': '↑ High',
+      'abnormal': '⚠ Abnormal',
+      'normal': '✓',
+    };
+    return labels[flag] || flag;
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Summary row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="font-mono text-xs text-muted-foreground">
+          {order_number}
+        </span>
+        {priority_display && priority_display !== 'Routine' && (
+          <span className="badge-chronicle-rose text-[10px]">
+            {priority_display.toUpperCase()}
+          </span>
+        )}
+
+        {/* Results summary badges */}
+        <div className="flex items-center gap-2 ml-auto">
+          {summary?.critical > 0 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+              {summary.critical} critical
+            </span>
+          )}
+          {summary?.abnormal > 0 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              {summary.abnormal} abnormal
+            </span>
+          )}
+          {summary?.normal > 0 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              {summary.normal} normal
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Results preview (collapsed) - show abnormal/critical only */}
+      {!isExpanded && results && results.length > 0 && (
+        <div className="space-y-1.5">
+          {results
+            .filter(r => r.is_abnormal || r.is_critical)
+            .slice(0, 3)
+            .map((r, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "flex items-center justify-between px-2 py-1 rounded text-sm",
+                  r.is_critical ? "bg-rose-50 dark:bg-rose-900/10" : "bg-amber-50 dark:bg-amber-900/10"
+                )}
+              >
+                <span className="font-mono text-xs text-muted-foreground">
+                  {r.test_name}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "font-mono text-sm font-medium",
+                    r.is_critical ? "text-rose-600" : "text-amber-600"
+                  )}>
+                    {r.value} {r.unit}
+                  </span>
+                  <span className={cn(
+                    "text-[10px] font-mono",
+                    getFlagStyle(r.flag, r.is_critical)
+                  )}>
+                    {getFlagLabel(r.flag)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          {results.filter(r => r.is_abnormal || r.is_critical).length > 3 && (
+            <p className="text-xs text-muted-foreground font-mono pl-2">
+              +{results.filter(r => r.is_abnormal || r.is_critical).length - 3} more abnormal...
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Results table (expanded) */}
+      {isExpanded && results && results.length > 0 && (
+        <div className="border border-border/50 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="px-3 py-2 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Test
+                </th>
+                <th className="px-3 py-2 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Value
+                </th>
+                <th className="px-3 py-2 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Ref Range
+                </th>
+                <th className="px-3 py-2 text-center font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Flag
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              {results.map((r, i) => (
+                <tr
+                  key={i}
+                  className={cn(
+                    "transition-colors",
+                    r.is_critical && "bg-rose-50/50 dark:bg-rose-900/10",
+                    r.is_abnormal && !r.is_critical && "bg-amber-50/50 dark:bg-amber-900/10"
+                  )}
+                >
+                  <td className="px-3 py-2">
+                    <span className="font-mono text-xs text-foreground/80">
+                      {r.test_name}
+                    </span>
+                    {r.test_full_name && r.test_full_name !== r.test_name && (
+                      <span className="block text-[10px] text-muted-foreground">
+                        {r.test_full_name}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <span className={cn(
+                      "font-mono font-medium",
+                      r.is_critical ? "text-rose-600" : r.is_abnormal ? "text-amber-600" : "text-foreground"
+                    )}>
+                      {r.value}
+                    </span>
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      {r.unit}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-muted-foreground">
+                    {r.reference_range || '—'}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono",
+                      getFlagStyle(r.flag, r.is_critical)
+                    )}>
+                      {getFlagLabel(r.flag)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Expand/collapse toggle */}
+      {results && results.length > 0 && (
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-mono transition-colors"
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Hide details
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              View all {results.length} results
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 };

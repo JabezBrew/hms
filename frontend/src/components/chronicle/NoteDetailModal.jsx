@@ -156,15 +156,20 @@ const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
           {/* Scrollable content */}
           <ScrollArea className="flex-1 -mx-6 px-6 overflow-auto">
             <div className="space-y-4 py-4">
-              {/* Render text content if present */}
-              {entry.content && (
+              {/* Render text content if present (not for lab results) */}
+              {entry.content && entry.type !== 'lab_result' && (
                 <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
                   {entry.content}
                 </div>
               )}
 
-              {/* Render structured data */}
-              {entry.data && typeof entry.data === 'object' && (
+              {/* Special rendering for lab results */}
+              {entry.type === 'lab_result' && entry.data && (
+                <LabResultsDetail data={entry.data} />
+              )}
+
+              {/* Render structured data for other types */}
+              {entry.type !== 'lab_result' && entry.data && typeof entry.data === 'object' && (
                 <GenericDataRenderer data={entry.data} />
               )}
             </div>
@@ -205,6 +210,152 @@ const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
     </DialogPrimitive.Root>
   );
 };
+
+/**
+ * LabResultsDetail - Renders lab results in a clean table format
+ *
+ * Shows order summary and results table similar to the timeline inline view.
+ */
+const LabResultsDetail = ({ data }) => {
+  if (!data) return null;
+
+  const { results_summary: summary, results, order_number, priority_display, clinical_notes } = data;
+
+  // Get flag styling
+  const getFlagStyle = (flag, isCritical) => {
+    if (isCritical) return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 font-semibold';
+    if (flag === 'low' || flag === 'high' || flag === 'abnormal') {
+      return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
+    }
+    return 'text-emerald-600';
+  };
+
+  const getFlagLabel = (flag) => {
+    const labels = {
+      'critical_low': '↓↓ CRITICAL',
+      'critical_high': '↑↑ CRITICAL',
+      'low': '↓ Low',
+      'high': '↑ High',
+      'abnormal': '⚠ Abnormal',
+      'normal': '✓',
+    };
+    return labels[flag] || flag;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Order info */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <span className="font-mono text-sm text-muted-foreground">
+          {order_number}
+        </span>
+        {priority_display && priority_display !== 'Routine' && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono font-semibold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+            {priority_display.toUpperCase()}
+          </span>
+        )}
+      </div>
+
+      {/* Clinical notes if present */}
+      {clinical_notes && (
+        <div className="text-sm text-muted-foreground italic border-l-2 border-border pl-3">
+          {clinical_notes}
+        </div>
+      )}
+
+      {/* Results summary badges */}
+      {summary && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {summary.critical > 0 && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+              {summary.critical} critical
+            </span>
+          )}
+          {summary.abnormal > 0 && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              {summary.abnormal} abnormal
+            </span>
+          )}
+          {summary.normal > 0 && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              {summary.normal} normal
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Results table */}
+      {results && results.length > 0 && (
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="px-3 py-2.5 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Test
+                </th>
+                <th className="px-3 py-2.5 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Value
+                </th>
+                <th className="px-3 py-2.5 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Ref Range
+                </th>
+                <th className="px-3 py-2.5 text-center font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Flag
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {results.map((r, i) => (
+                <tr
+                  key={i}
+                  className={cn(
+                    "transition-colors",
+                    r.is_critical && "bg-rose-50/50 dark:bg-rose-900/10",
+                    r.is_abnormal && !r.is_critical && "bg-amber-50/50 dark:bg-amber-900/10"
+                  )}
+                >
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono text-xs text-foreground/90 font-medium">
+                      {r.test_name}
+                    </span>
+                    {r.test_full_name && r.test_full_name !== r.test_name && (
+                      <span className="block text-[11px] text-muted-foreground">
+                        {r.test_full_name}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className={cn(
+                      "font-mono font-semibold",
+                      r.is_critical ? "text-rose-600" : r.is_abnormal ? "text-amber-600" : "text-foreground"
+                    )}>
+                      {r.value}
+                    </span>
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      {r.unit}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs text-muted-foreground">
+                    {r.reference_range || '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span className={cn(
+                      "inline-flex items-center px-2 py-0.5 rounded text-xs font-mono",
+                      getFlagStyle(r.flag, r.is_critical)
+                    )}>
+                      {getFlagLabel(r.flag)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 /**
  * Preferred ordering for clinical note sections

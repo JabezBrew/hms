@@ -79,7 +79,8 @@ export function OmniBar() {
             </div>
 
             <div className="ml-auto flex items-center space-x-4">
-                {user && <AppointmentNotifications />}
+                {/* Only show appointment notifications for roles that have access to appointments */}
+                {user && ['admin', 'doctor', 'nurse', 'receptionist'].includes(user.role) && <AppointmentNotifications />}
 
                 <ThemeToggle />
 

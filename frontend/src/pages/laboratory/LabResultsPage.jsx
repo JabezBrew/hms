@@ -532,6 +532,15 @@ export default function LabResultsPage() {
                               Critical
                             </Badge>
                           )}
+                          {unverifiedCount === 0 && group.results.length > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="bg-emerald-100 text-emerald-700 border-emerald-300"
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Verified
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1 font-mono">

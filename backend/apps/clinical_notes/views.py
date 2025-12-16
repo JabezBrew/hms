@@ -29,6 +29,7 @@ from ..wards.services import ensure_encounter_for_entry
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
+from ..laboratory.models import LabOrder, LabOrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -1829,6 +1830,11 @@ def patient_timeline(request, patient_id):
         referrals = _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id)
         timeline_entries.extend(referrals)
 
+    # Fetch lab results (bundled by order)
+    if entry_type in ['all', 'labs']:
+        labs = _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id)
+        timeline_entries.extend(labs)
+
     # Sort all entries by timestamp (newest first)
     timeline_entries.sort(key=lambda x: x['timestamp'], reverse=True)
 
@@ -2228,6 +2234,146 @@ def _get_patient_referrals(patient, search_query, start_datetime, end_datetime, 
             'encounter_id': str(referral.encounter_id) if referral.encounter_id else None,
             'encounter': _format_encounter_details(referral.encounter),
             'consultation_encounter_id': str(referral.consultation_encounter_id) if referral.consultation_encounter_id else None,
+        })
+
+    return entries
+
+
+def _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id=None):
+    """
+    Fetch and format completed lab orders for a patient's timeline.
+
+    Lab results are bundled by order, not shown as individual results.
+    Only completed orders (all results verified) are shown.
+    """
+    from django.db.models import Q as DQ, Prefetch
+    from ..laboratory.models import LabOrderTest
+
+    # Base queryset - only completed orders with verified results
+    labs_queryset = LabOrder.objects.filter(
+        patient=patient,
+        status=LabOrderStatus.COMPLETED
+    ).select_related(
+        'ordering_provider', 'ordering_provider__staff', 'ordering_provider__staff__user',
+        'encounter'
+    ).prefetch_related(
+        Prefetch(
+            'order_tests',
+            queryset=LabOrderTest.objects.select_related('test', 'result')
+        ),
+        'panels'
+    )
+
+    # Filter by encounter if specified
+    if encounter_id:
+        labs_queryset = labs_queryset.filter(encounter_id=encounter_id)
+
+    # Apply date filters - use completed_at as the primary timestamp
+    if start_datetime:
+        labs_queryset = labs_queryset.filter(completed_at__gte=start_datetime)
+    if end_datetime:
+        labs_queryset = labs_queryset.filter(completed_at__lte=end_datetime)
+
+    # Apply search filter
+    if search_query:
+        labs_queryset = labs_queryset.filter(
+            DQ(order_number__icontains=search_query) |
+            DQ(order_tests__test__name__icontains=search_query) |
+            DQ(order_tests__test__short_name__icontains=search_query) |
+            DQ(clinical_notes__icontains=search_query)
+        ).distinct()
+
+    entries = []
+    for order in labs_queryset[:100]:
+        # Get ordering provider name
+        provider_name = 'Unknown'
+        if order.ordering_provider and order.ordering_provider.staff and order.ordering_provider.staff.user:
+            user = order.ordering_provider.staff.user
+            provider_name = f"Dr. {user.first_name} {user.last_name}".strip()
+
+        # Build test names and results
+        order_tests = list(order.order_tests.all())
+        test_names = [ot.test.short_name for ot in order_tests]
+
+        # Gather results and calculate summary
+        results = []
+        summary = {'total': 0, 'normal': 0, 'abnormal': 0, 'critical': 0}
+
+        for order_test in order_tests:
+            result = getattr(order_test, 'result', None)
+            if result:
+                summary['total'] += 1
+
+                # Categorize by flag
+                if result.flag in ['critical_low', 'critical_high']:
+                    summary['critical'] += 1
+                elif result.flag in ['low', 'high', 'abnormal']:
+                    summary['abnormal'] += 1
+                else:
+                    summary['normal'] += 1
+
+                # Format reference range
+                ref_range = None
+                if result.reference_low is not None and result.reference_high is not None:
+                    ref_range = f"{result.reference_low} - {result.reference_high}"
+                elif result.reference_low is not None:
+                    ref_range = f"> {result.reference_low}"
+                elif result.reference_high is not None:
+                    ref_range = f"< {result.reference_high}"
+
+                results.append({
+                    'test_name': order_test.test.short_name,
+                    'test_full_name': order_test.test.name,
+                    'value': result.value,
+                    'unit': result.unit,
+                    'reference_range': ref_range,
+                    'flag': result.flag,
+                    'flag_display': result.get_flag_display(),
+                    'is_critical': result.is_critical(),
+                    'is_abnormal': result.flag not in ['normal', None],
+                    'interpretation': result.interpretation,
+                })
+
+        # Build title - use panel names if available, otherwise test names
+        panels = list(order.panels.all())
+        if panels:
+            title = ', '.join(p.name for p in panels)
+        elif len(test_names) <= 3:
+            title = ', '.join(test_names)
+        else:
+            title = f"{test_names[0]} + {len(test_names) - 1} more tests"
+
+        # Build content summary
+        content_parts = [f"{summary['total']} results"]
+        if summary['critical'] > 0:
+            content_parts.append(f"{summary['critical']} critical")
+        if summary['abnormal'] > 0:
+            content_parts.append(f"{summary['abnormal']} abnormal")
+        content = ' · '.join(content_parts)
+
+        entries.append({
+            'id': str(order.id),
+            'type': 'lab_result',
+            'entry_type': 'lab_result',
+            'timestamp': order.completed_at.isoformat() if order.completed_at else order.created_at.isoformat(),
+            'title': title,
+            'content': content,
+            'author': provider_name,
+            'data': {
+                'order_id': str(order.id),
+                'order_number': order.order_number,
+                'status': order.status,
+                'priority': order.priority,
+                'priority_display': order.get_priority_display(),
+                'clinical_notes': order.clinical_notes,
+                'ordered_at': order.ordered_at.isoformat() if order.ordered_at else None,
+                'completed_at': order.completed_at.isoformat() if order.completed_at else None,
+                'tests_ordered': test_names,
+                'results_summary': summary,
+                'results': results,
+            },
+            'encounter_id': str(order.encounter_id) if order.encounter_id else None,
+            'encounter': _format_encounter_details(order.encounter),
         })
 
     return entries

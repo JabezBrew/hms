@@ -31,6 +31,7 @@ from .serializers import (
     LabOrderSearchSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
+from ..users.rbac import IsLabTechnician
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 
@@ -385,7 +386,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             Prefetch('order_tests', queryset=LabOrderTest.objects.select_related('test')),
             'panels__tests',
-            Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__staff__user'))
+            Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__user'))
         )
 
         # Filter by patient
@@ -715,8 +716,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         """Filter specimens with optimized queries."""
         queryset = LabSpecimen.objects.select_related(
             'order__patient__user',
-            'collected_by__staff__user',
-            'received_by__staff__user'
+            'collected_by__user',
+            'received_by__user'
         )
 
         # Filter by order
@@ -753,8 +754,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         # Set collected_by if not specified
         if not serializer.validated_data.get('collected_by'):
             try:
-                practitioner = self.request.user.staff_profile.practitioner_profile
-                specimen = serializer.save(collected_by=practitioner)
+                staff = self.request.user.staff_profile
+                specimen = serializer.save(collected_by=staff)
             except AttributeError:
                 specimen = serializer.save()
         else:
@@ -793,9 +794,9 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         receipt_serializer = LabSpecimenReceiptSerializer(data=request.data)
         receipt_serializer.is_valid(raise_exception=True)
 
-        # Get practitioner profile
+        # Get staff profile
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             return Response(
                 {'error': 'Only lab staff can receive specimens'},
@@ -807,7 +808,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         specimen.is_rejected = receipt_serializer.validated_data.get('is_rejected', False)
         specimen.rejection_reason = receipt_serializer.validated_data.get('rejection_reason', '')
         specimen.storage_location = receipt_serializer.validated_data.get('storage_location', '')
-        specimen.received_by = practitioner
+        specimen.received_by = staff
         specimen.received_at = timezone.now()
         specimen.save()
 
@@ -856,8 +857,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'order_test__order__patient__user',
             'order_test__order__ordering_provider',
             'specimen',
-            'performed_by__staff__user',
-            'verified_by__staff__user'
+            'performed_by__user',
+            'verified_by__user'
         ).prefetch_related(
             'order_test__order__panels'  # M2M field
         )
@@ -893,16 +894,16 @@ class LabResultViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
         try:
-            practitioner = self.request.user.staff_profile.practitioner_profile
-            serializer.save(performed_by=practitioner)
+            staff = self.request.user.staff_profile
+            serializer.save(performed_by=staff)
         except AttributeError:
             serializer.save()
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor | IsLabTechnician])
     @transaction.atomic
     def verify(self, request, pk=None):
         """
-        Verify a lab result (supervisor/pathologist only).
+        Verify a lab result (lab technicians, doctors, or admins).
         """
         result = self.get_object()
 
@@ -912,12 +913,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get practitioner profile
+        # Get staff profile (lab technicians can verify results)
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             return Response(
-                {'error': 'Only practitioners can verify results'},
+                {'error': 'Only lab staff can verify results'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -927,13 +928,28 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         # Update result
         result.is_verified = True
-        result.verified_by = practitioner
-        result.verified_at = timezone.now()
+        result.verified_by = staff
+        now = timezone.now()
+        result.verified_at = now
         result.save()
 
         logger.info(
             f"Lab result for {result.order_test.test.short_name} verified by {request.user.get_full_name()}"
         )
+
+        # Check if all results for the order are now verified - if so, mark order as completed
+        order = result.order_test.order
+        all_results = LabResult.objects.filter(order_test__order=order)
+        unverified_count = all_results.filter(is_verified=False).count()
+
+        if unverified_count == 0 and all_results.exists():
+            # All results verified - mark order as completed
+            order.status = LabOrderStatus.COMPLETED
+            order.completed_at = now
+            order.save(update_fields=['status', 'completed_at'])
+            logger.info(
+                f"Order {order.order_number} marked as completed - all results verified"
+            )
 
         # Audit log - lab result verified
         AuditService.log(
@@ -982,10 +998,10 @@ class LabResultViewSet(viewsets.ModelViewSet):
         specimen = validated_data['_specimen']
         performed_at = validated_data.get('performed_at', timezone.now())
 
-        # Get practitioner profile for performed_by
-        practitioner = None
+        # Get staff profile for performed_by
+        staff = None
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             pass
 
@@ -1003,7 +1019,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
                 reference_high=result_item.get('reference_high'),
                 flag=result_item.get('flag', 'normal'),
                 interpretation=result_item.get('interpretation', ''),
-                performed_by=practitioner,
+                performed_by=staff,
                 performed_at=performed_at
             )
             created_results.append(result)
@@ -1054,7 +1070,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'results': result_serializer.data
         }, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=['post'], url_path='bulk-verify')
+    @action(detail=False, methods=['post'], url_path='bulk-verify', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor | IsLabTechnician])
     @transaction.atomic
     def bulk_verify(self, request):
         """
@@ -1076,12 +1092,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
         order_id = request.data.get('order_id')
         verification_notes = request.data.get('verification_notes', '')
 
-        # Get practitioner profile
+        # Get staff profile (lab technicians can verify results)
         try:
-            practitioner = request.user.staff_profile.practitioner_profile
+            staff = request.user.staff_profile
         except AttributeError:
             return Response(
-                {'error': 'Only practitioners can verify lab results'},
+                {'error': 'Only lab staff can verify lab results'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -1115,16 +1131,31 @@ class LabResultViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         results.update(
             is_verified=True,
-            verified_by=practitioner,
+            verified_by=staff,
             verified_at=now
         )
 
-        # Get order info for logging
+        # Get order info for logging and check if order should be completed
         order_info = ""
+        order = None
         if order_id:
             order = LabOrder.objects.filter(id=order_id).first()
             if order:
                 order_info = f" for order {order.order_number}"
+
+        # Check if all results for the order are now verified - if so, mark order as completed
+        if order:
+            all_results = LabResult.objects.filter(order_test__order=order)
+            unverified_count = all_results.filter(is_verified=False).count()
+
+            if unverified_count == 0 and all_results.exists():
+                # All results verified - mark order as completed
+                order.status = LabOrderStatus.COMPLETED
+                order.completed_at = now
+                order.save(update_fields=['status', 'completed_at'])
+                logger.info(
+                    f"Order {order.order_number} marked as completed - all results verified"
+                )
 
         logger.info(
             f"Bulk verified {verified_count} lab results{order_info} by {request.user.get_full_name()}"
