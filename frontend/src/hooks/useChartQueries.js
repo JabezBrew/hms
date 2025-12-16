@@ -41,20 +41,27 @@ export const chartKeys = {
 
 /**
  * Fetch list of chart templates with optional filters
+ * @param {object} filters - Query filters
+ * @param {boolean} filters.enabled - Enable/disable the query (for lazy loading)
  */
 export function useChartTemplates(filters = {}) {
+  const { enabled = true, category, visibility, search, is_active } = filters;
   const params = new URLSearchParams();
 
-  if (filters.category) params.append('category', filters.category);
-  if (filters.visibility) params.append('visibility', filters.visibility);
-  if (filters.search) params.append('search', filters.search);
-  if (filters.is_active !== undefined) params.append('is_active', filters.is_active);
+  if (category) params.append('category', category);
+  if (visibility) params.append('visibility', visibility);
+  if (search) params.append('search', search);
+  if (is_active !== undefined) params.append('is_active', is_active);
 
   return useQuery({
-    queryKey: chartKeys.templateList(filters),
+    // Use primitive values in query key to prevent duplicate calls from object reference changes
+    queryKey: ['charts', 'templates', 'list', category, visibility, search, is_active],
     queryFn: async () => {
       return await apiClient.get(`/charts/templates/?${params.toString()}`);
     },
+    enabled,
+    staleTime: 60000, // 1 minute - templates don't change often
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -73,8 +80,11 @@ export function useChartTemplate(templateId) {
 
 /**
  * Fetch available template categories
+ * @param {object} options - Query options
+ * @param {boolean} options.enabled - Enable/disable the query (for lazy loading)
  */
-export function useChartCategories() {
+export function useChartCategories(options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: chartKeys.categories(),
     queryFn: async () => {
@@ -82,13 +92,17 @@ export function useChartCategories() {
       return response.categories;
     },
     staleTime: 1000 * 60 * 60, // Categories rarely change
+    enabled,
   });
 }
 
 /**
  * Fetch available monitoring intervals
+ * @param {object} options - Query options
+ * @param {boolean} options.enabled - Enable/disable the query (for lazy loading)
  */
-export function useChartIntervals() {
+export function useChartIntervals(options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: chartKeys.intervals(),
     queryFn: async () => {
@@ -96,6 +110,7 @@ export function useChartIntervals() {
       return response.intervals;
     },
     staleTime: 1000 * 60 * 60,
+    enabled,
   });
 }
 
@@ -290,18 +305,23 @@ export function useReorderChartFields() {
  * Fetch list of chart assignments with optional filters
  */
 export function useChartAssignments(filters = {}) {
+  // Extract filter values to use as stable primitives in query key
+  const { patient, admission, template, status } = filters;
   const params = new URLSearchParams();
 
-  if (filters.patient) params.append('patient', filters.patient);
-  if (filters.admission) params.append('admission', filters.admission);
-  if (filters.template) params.append('template', filters.template);
-  if (filters.status) params.append('status', filters.status);
+  if (patient) params.append('patient', patient);
+  if (admission) params.append('admission', admission);
+  if (template) params.append('template', template);
+  if (status) params.append('status', status);
 
   return useQuery({
-    queryKey: chartKeys.assignmentList(filters),
+    // Use primitive values in query key to prevent duplicate calls from object reference changes
+    queryKey: ['charts', 'assignments', 'list', patient, admission, template, status],
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },
+    staleTime: 30000, // 30 seconds
+    refetchOnWindowFocus: false,
   });
 }
 

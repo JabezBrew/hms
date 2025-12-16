@@ -443,8 +443,8 @@ LOGGING = {
             'propagate': True,
         },
         'django.request': {
-            'handlers': ['mail_admins', 'file'],
-            'level': 'ERROR',
+            'handlers': ['console', 'file', 'mail_admins'],
+            'level': 'INFO',
             'propagate': False,
         },
         'django.security': {

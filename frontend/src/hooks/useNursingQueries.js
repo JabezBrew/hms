@@ -83,8 +83,12 @@ export const usePatientDetail = (patientId) => {
 // ========== Vital Signs ==========
 
 export const useVitalSigns = (filters = {}) => {
+  // Extract filter values to use as stable primitives in query key
+  const { patient, admission, date, start_date, end_date } = filters;
+
   return useQuery({
-    queryKey: ['vital-signs', filters],
+    // Use primitive values in query key to prevent duplicate calls
+    queryKey: ['vital-signs', patient, admission, date, start_date, end_date],
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`);
@@ -93,6 +97,8 @@ export const useVitalSigns = (filters = {}) => {
       return data ?? [];
     },
     placeholderData: [],
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -131,8 +137,12 @@ export const useCreateVitalSigns = () => {
 // ========== Nursing Tasks ==========
 
 export const useNursingTasks = (filters = {}) => {
+  // Extract filter values to use as stable primitives in query key
+  const { patient, status, ward, date } = filters;
+
   return useQuery({
-    queryKey: ['nursing-tasks', filters],
+    // Use primitive values in query key to prevent duplicate calls
+    queryKey: ['nursing-tasks', patient, status, ward, date],
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/tasks/?${params.toString()}`);
@@ -141,6 +151,8 @@ export const useNursingTasks = (filters = {}) => {
       return Array.isArray(data) ? data : [];
     },
     placeholderData: [],
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -208,8 +220,12 @@ export const useUpdateTask = () => {
 // ========== Nursing Alerts ==========
 
 export const useNursingAlerts = (filters = {}) => {
+  // Extract filter values to use as stable primitives in query key
+  const { patient, ward, severity, status } = filters;
+
   return useQuery({
-    queryKey: ['nursing-alerts', filters],
+    // Use primitive values in query key to prevent duplicate calls
+    queryKey: ['nursing-alerts', patient, ward, severity, status],
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`);
@@ -218,9 +234,8 @@ export const useNursingAlerts = (filters = {}) => {
       return Array.isArray(data) ? data : [];
     },
     placeholderData: [],
-    refetchInterval: () => !document.hidden ? 45000 : false, // 45 seconds when focused
-    refetchOnWindowFocus: true,
-    refetchIntervalInBackground: false,
+    refetchInterval: false, // Disable automatic polling - manually refresh when needed
+    refetchOnWindowFocus: false,
     staleTime: 20000,
   });
 };
@@ -271,8 +286,12 @@ export const useAcknowledgeAlert = () => {
 // ========== Medication Administration ==========
 
 export const useMedicationAdministrations = (filters = {}) => {
+  // Extract filter values to use as stable primitives in query key
+  const { patient, admission, date, status } = filters;
+
   return useQuery({
-    queryKey: ['medication-administrations', filters],
+    // Use primitive values in query key to prevent duplicate calls
+    queryKey: ['medication-administrations', patient, admission, date, status],
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/medications/?${params.toString()}`);
@@ -281,6 +300,8 @@ export const useMedicationAdministrations = (filters = {}) => {
       return Array.isArray(data) ? data : [];
     },
     placeholderData: [],
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -469,8 +490,12 @@ export const useBulkDispense = () => {
 // ========== Shift Handoffs ==========
 
 export const useShiftHandoffs = (filters = {}) => {
+  // Extract filter values to use as stable primitives in query key
+  const { ward, date, shift } = filters;
+
   return useQuery({
-    queryKey: ['shift-handoffs', filters],
+    // Use primitive values in query key to prevent duplicate calls
+    queryKey: ['shift-handoffs', ward, date, shift],
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/handoffs/?${params.toString()}`);
@@ -479,6 +504,8 @@ export const useShiftHandoffs = (filters = {}) => {
       return Array.isArray(data) ? data : [];
     },
     placeholderData: [],
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -740,10 +767,16 @@ export const useBulkDispenseSupply = () => {
  * Get fluid balance entries for a patient
  * @param {string} patientId - Patient ID
  * @param {Object} filters - Optional filters (entry_type, date, start_date, end_date)
+ * @param {Object} options - Query options including enabled
  */
-export const useFluidBalance = (patientId, filters = {}) => {
+export const useFluidBalance = (patientId, filters = {}, options = {}) => {
+  const { enabled = true } = options;
+  // Extract filter values to use as stable primitives in query key
+  const { entry_type, date, start_date, end_date } = filters;
+
   return useQuery({
-    queryKey: ['fluid-balance', patientId, filters],
+    // Use primitive values in query key to prevent duplicate calls from object reference changes
+    queryKey: ['fluid-balance', patientId, entry_type, date, start_date, end_date],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (patientId) params.append('patient', patientId);
@@ -756,9 +789,9 @@ export const useFluidBalance = (patientId, filters = {}) => {
       // Handle paginated response (results array) or direct array
       return data?.results ?? data ?? [];
     },
-    enabled: !!patientId,
-    refetchInterval: () => !document.hidden ? 60000 : false,
-    refetchOnWindowFocus: true,
+    enabled: !!patientId && enabled,
+    refetchInterval: false, // Disable polling - manually refresh when needed
+    refetchOnWindowFocus: false,
     staleTime: 30000,
     placeholderData: [],
   });
@@ -768,8 +801,10 @@ export const useFluidBalance = (patientId, filters = {}) => {
  * Get fluid balance summary/totals for a patient on a specific date
  * @param {string} patientId - Patient ID
  * @param {string} date - Optional date (YYYY-MM-DD format, defaults to today)
+ * @param {Object} options - Query options including enabled
  */
-export const useFluidBalanceSummary = (patientId, date = null) => {
+export const useFluidBalanceSummary = (patientId, date = null, options = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: ['fluid-balance-summary', patientId, date],
     queryFn: async () => {
@@ -781,9 +816,9 @@ export const useFluidBalanceSummary = (patientId, date = null) => {
       const data = response?.data ?? response;
       return data ?? { total_intake: 0, total_output: 0, balance: 0 };
     },
-    enabled: !!patientId,
-    refetchInterval: () => !document.hidden ? 60000 : false,
-    refetchOnWindowFocus: true,
+    enabled: !!patientId && enabled,
+    refetchInterval: false, // Disable polling - manually refresh when needed
+    refetchOnWindowFocus: false,
     staleTime: 30000,
     placeholderData: {
       total_intake: 0,
@@ -798,8 +833,10 @@ export const useFluidBalanceSummary = (patientId, date = null) => {
 /**
  * Get today's fluid balance for a patient
  * @param {string} patientId - Patient ID
+ * @param {Object} options - Query options including enabled
  */
-export const useTodayFluidBalance = (patientId) => {
+export const useTodayFluidBalance = (patientId, options = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: ['fluid-balance-today', patientId],
     queryFn: async () => {
@@ -808,9 +845,9 @@ export const useTodayFluidBalance = (patientId) => {
       const data = response?.data ?? response;
       return data ?? { total_intake: 0, total_output: 0, balance: 0 };
     },
-    enabled: !!patientId,
-    refetchInterval: () => !document.hidden ? 60000 : false,
-    refetchOnWindowFocus: true,
+    enabled: !!patientId && enabled,
+    refetchInterval: false, // Disable polling - manually refresh when needed
+    refetchOnWindowFocus: false,
     staleTime: 30000,
     placeholderData: {
       total_intake: 0,

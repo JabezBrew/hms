@@ -44,10 +44,10 @@ const AddChartSlideOver = ({
   admission,
   onChartAssigned,
 }) => {
-  // Fetch templates and options
-  const { data: templatesData, isLoading: templatesLoading } = useChartTemplates({ is_active: true });
-  const { data: categories = [] } = useChartCategories();
-  const { data: intervals = [] } = useChartIntervals();
+  // Fetch templates and options (lazy - only when slide-over is open)
+  const { data: templatesData, isLoading: templatesLoading } = useChartTemplates({ is_active: true, enabled: open });
+  const { data: categories = [] } = useChartCategories({ enabled: open });
+  const { data: intervals = [] } = useChartIntervals({ enabled: open });
   const createMutation = useCreateChartAssignment();
 
   // Form state

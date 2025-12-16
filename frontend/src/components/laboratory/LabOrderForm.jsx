@@ -75,9 +75,10 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   // To switch: pass { search: debouncedSearch } to useLabTests/useLabPanels hooks
   // and remove the client-side fuzzyMatch filtering below
 
-  // Load all tests and panels once (small catalog, ~200 items)
-  const { data: testsData, isLoading: testsLoading } = useLabTests();
-  const { data: panelsData, isLoading: panelsLoading } = useLabPanels();
+  // Load all tests and panels when form opens (small catalog, ~200 items)
+  // Uses lazy loading - only fetches when slide-over is open
+  const { data: testsData, isLoading: testsLoading } = useLabTests({ enabled: open });
+  const { data: panelsData, isLoading: panelsLoading } = useLabPanels({ enabled: open });
   const createOrder = useCreateLabOrder();
   const submitOrder = useSubmitLabOrder();
 

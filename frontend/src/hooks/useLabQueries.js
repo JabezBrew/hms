@@ -23,10 +23,17 @@ export const labKeys = {
 
 // ========== Lab Tests ==========
 
+/**
+ * Fetch lab tests with optional filters
+ * @param {object} filters - Query filters
+ * @param {boolean} filters.enabled - Enable/disable the query (for lazy loading)
+ */
 export function useLabTests(filters = {}) {
+  const { enabled = true, ...queryFilters } = filters;
   return useQuery({
-    queryKey: labKeys.testsList(filters),
-    queryFn: () => laboratoryApi.getLabTests(filters),
+    queryKey: labKeys.testsList(queryFilters),
+    queryFn: () => laboratoryApi.getLabTests(queryFilters),
+    enabled,
   });
 }
 
@@ -98,10 +105,17 @@ export function useDeleteLabTest() {
 
 // ========== Lab Panels ==========
 
+/**
+ * Fetch lab panels with optional filters
+ * @param {object} filters - Query filters
+ * @param {boolean} filters.enabled - Enable/disable the query (for lazy loading)
+ */
 export function useLabPanels(filters = {}) {
+  const { enabled = true, ...queryFilters } = filters;
   return useQuery({
-    queryKey: labKeys.panelsList(filters),
-    queryFn: () => laboratoryApi.getLabPanels(filters),
+    queryKey: labKeys.panelsList(queryFilters),
+    queryFn: () => laboratoryApi.getLabPanels(queryFilters),
+    enabled,
   });
 }
 

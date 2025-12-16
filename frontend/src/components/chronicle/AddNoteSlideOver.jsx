@@ -264,7 +264,7 @@ const AddNoteSlideOver = ({
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
         {!template ? (
-          <NoteTypeSelector onSelect={handleSelectTemplate} />
+          <NoteTypeSelector onSelect={handleSelectTemplate} enabled={open} />
         ) : currentStepConfig ? (
           <DynamicWorkflowStep
             stepConfig={currentStepConfig}
