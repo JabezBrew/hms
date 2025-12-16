@@ -46,8 +46,13 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY . .
 
-# Copy entrypoint script and make executable
+# Run collectstatic during build (bakes static files into image)
+# We need a dummy secret key for this to work
+RUN SECRET_KEY=build_dummy_key python manage.py collectstatic --noinput
+
+# Copy entrypoint script and startup script
 COPY entrypoint.sh /entrypoint.sh
+COPY startup.py /app/startup.py
 RUN chmod +x /entrypoint.sh
 
 # Create logs directory and set permissions
