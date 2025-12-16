@@ -4,6 +4,9 @@
 set -e
 
 echo "=== HMS Backend Startup ==="
+echo "PORT: ${PORT:-8000}"
+echo "DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-not set}"
+echo "Working directory: $(pwd)"
 
 # Wait for database to be ready
 echo "Waiting for database..."
@@ -53,11 +56,22 @@ with connection.cursor() as cursor:
         print('Migrations completed by another instance.')
 "
 
+# Verify Django settings before starting
+echo "=== Verifying Django configuration ==="
+python -c "
+import django
+django.setup()
+from django.conf import settings
+print(f'ALLOWED_HOSTS: {settings.ALLOWED_HOSTS}')
+print(f'DEBUG: {settings.DEBUG}')
+print(f'Database: {settings.DATABASES[\"default\"][\"HOST\"]}')
+"
+
 echo "=== Starting Gunicorn on port ${PORT:-8000} ==="
 exec gunicorn hms_backend.wsgi:application \
     --bind 0.0.0.0:${PORT:-8000} \
-    --workers 16 \
-    --threads 16 \
+    --workers 8 \
+    --threads 8 \
     --timeout 30 \
     --access-logfile - \
     --error-logfile -

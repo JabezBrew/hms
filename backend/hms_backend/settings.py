@@ -36,6 +36,16 @@ DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
+# Auto-add Railway domains to ALLOWED_HOSTS
+_railway_hosts = [
+    'backend-staging-8afc.up.railway.app',
+    'backend-production-40e0.up.railway.app',
+    '.railway.app',  # Wildcard for any Railway subdomain
+]
+for host in _railway_hosts:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
+
 # Application definition
 INSTALLED_APPS = [
     'daphne',  # ASGI server - must be first for static files handling
