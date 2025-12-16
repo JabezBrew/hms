@@ -5,6 +5,7 @@
 builder = "nixpacks"
 
 [deploy]
+startCommand = "npx serve dist -l $PORT"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
