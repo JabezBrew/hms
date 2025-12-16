@@ -252,6 +252,7 @@ import {
 5. **Losing data features** - Keep search/browse accessible, just deprioritize
 6. **Inconsistent patterns** - Establish consistent UI patterns across workflows
 7. **Forgetting mobile** - Design responsive from the start
+8. **Git commit**- Don't credit yourself in the git commit message!
 
 ---
 
