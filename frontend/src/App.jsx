@@ -22,7 +22,6 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { OfflineIndicator } from './components/OfflineIndicator'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
 import { CriticalAlertsMonitor } from './components/dashboard'
-import { PWAPrompt } from './components/pwa'
 import { ReadOnlyBanner } from './components/readonly'
 
 // Lazy load page components for code splitting
@@ -673,7 +672,6 @@ function App() {
                     <Toaster />
                     <OfflineIndicator />
                     <SessionTimeoutWarning />
-                    <PWAPrompt />
                   </WorkflowProvider>
                 </ViewModeProvider>
               </BreadcrumbProvider>
