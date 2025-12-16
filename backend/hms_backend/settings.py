@@ -31,6 +31,19 @@ if env_file.exists():
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
 
+# Detect if we are running in a build environment (e.g. Docker build for collectstatic)
+IS_BUILD = (SECRET_KEY == 'build_dummy_key')
+
+def env_required(var_name, default=None):
+    """
+    Helper to get environment variables that are required in production
+    but can be dummy values during build.
+    """
+    if IS_BUILD:
+        return default or 'build_dummy_value'
+    # In production, default=None means it will raise ImproperlyConfigured if missing
+    return env(var_name, default=default) if default is not None else env(var_name)
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
@@ -125,7 +138,7 @@ ASGI_APPLICATION = 'hms_backend.asgi.application'
 
 # Channels Layer Configuration (WebSocket support)
 # Uses Redis for cross-process communication in production
-if DEBUG:
+if DEBUG or IS_BUILD:
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
@@ -150,7 +163,15 @@ else:
 # 1. DATABASE_URL (Railway, Heroku, Render, etc.)
 # 2. Individual DB_* variables (Docker, traditional hosting)
 
-if env('DATABASE_URL', default=None):
+if IS_BUILD:
+    # Use SQLite for build process (collectstatic doesn't need real DB)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+elif env('DATABASE_URL', default=None):
     # Parse DATABASE_URL (e.g., postgresql://user:pass@host:5432/dbname)
     DATABASES = {
         'default': env.db('DATABASE_URL')
@@ -168,37 +189,38 @@ else:
         }
     }
 
-# Add connection pooling and health checks
-DATABASES['default'].update({
-    # Connection pooling - persistent connections for 10 minutes
-    'CONN_MAX_AGE': 600,
-    # Health checks ensure stale connections are recycled (Django 4.1+)
-    'CONN_HEALTH_CHECKS': True,
-    'OPTIONS': {
-        'connect_timeout': 10,
-        # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
-    },
-})
-
-# Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
-# Routes read queries to replica for horizontal scaling
-DB_REPLICA_HOST = env('DB_REPLICA_HOST', default='')
-if DB_REPLICA_HOST:
-    DATABASES['replica'] = {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DB_NAME'),
-        'USER': env('DB_REPLICA_USER', default=env('DB_USER')),
-        'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
-        'HOST': DB_REPLICA_HOST,
-        'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
+if not IS_BUILD:
+    # Add connection pooling and health checks
+    DATABASES['default'].update({
+        # Connection pooling - persistent connections for 10 minutes
         'CONN_MAX_AGE': 600,
+        # Health checks ensure stale connections are recycled (Django 4.1+)
         'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'connect_timeout': 10,
+            # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
         },
-    }
-    # Enable the read replica router
-    DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
+    })
+
+    # Read replica configuration (optional - enable by setting DB_REPLICA_HOST)
+    # Routes read queries to replica for horizontal scaling
+    DB_REPLICA_HOST = env('DB_REPLICA_HOST', default='')
+    if DB_REPLICA_HOST:
+        DATABASES['replica'] = {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': env('DB_NAME'),
+            'USER': env('DB_REPLICA_USER', default=env('DB_USER')),
+            'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
+            'HOST': DB_REPLICA_HOST,
+            'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
+        # Enable the read replica router
+        DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -256,7 +278,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
 
 # Cache configuration
-if DEBUG:
+if DEBUG or IS_BUILD:
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -364,16 +386,16 @@ CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG el
 
 # Email settings - SendGrid Web API
 EMAIL_BACKEND = 'hms_backend.email_backends.SendGridEmailBackend'
-SENDGRID_API_KEY = env('SENDGRID_API_KEY')
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+SENDGRID_API_KEY = env_required('SENDGRID_API_KEY')
+DEFAULT_FROM_EMAIL = env_required('DEFAULT_FROM_EMAIL')
 
 # Google Cloud Healthcare API settings
-GOOGLE_APPLICATION_CREDENTIALS = env('GOOGLE_APPLICATION_CREDENTIALS')
-GOOGLE_CLOUD_PROJECT = env('GOOGLE_CLOUD_PROJECT')
-GOOGLE_HEALTHCARE_DATASET = env('GOOGLE_HEALTHCARE_DATASET')
-GOOGLE_FHIR_STORE = env('GOOGLE_FHIR_STORE')
-GOOGLE_DICOM_STORE = env('GOOGLE_DICOM_STORE')
-GOOGLE_HL7V2_STORE = env('GOOGLE_HL7V2_STORE')
+GOOGLE_APPLICATION_CREDENTIALS = env_required('GOOGLE_APPLICATION_CREDENTIALS')
+GOOGLE_CLOUD_PROJECT = env_required('GOOGLE_CLOUD_PROJECT')
+GOOGLE_HEALTHCARE_DATASET = env_required('GOOGLE_HEALTHCARE_DATASET')
+GOOGLE_FHIR_STORE = env_required('GOOGLE_FHIR_STORE')
+GOOGLE_DICOM_STORE = env_required('GOOGLE_DICOM_STORE')
+GOOGLE_HL7V2_STORE = env_required('GOOGLE_HL7V2_STORE')
 
 # JWT Authentication settings
 from datetime import timedelta
