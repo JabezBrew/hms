@@ -1,12 +1,13 @@
 # Railway configuration for HMS Frontend
-# Using Nixpacks builder (auto-detects Node.js/Vite)
+# Using Dockerfile for reliable builds
 
 [build]
-builder = "nixpacks"
-buildCommand = "npm run build"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npx serve dist -s -l $PORT"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+healthcheckPath = "/health"
+healthcheckTimeout = 10
