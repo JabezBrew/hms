@@ -29,19 +29,19 @@ RUN npm run build
 FROM nginx:alpine
 
 # Copy custom nginx configuration
-COPY nginx.railway.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf.template
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Railway uses PORT environment variable
-# Create entrypoint script to substitute PORT at runtime
-RUN echo '#!/bin/sh' > /docker-entrypoint.d/40-configure-port.sh && \
-    echo 'envsubst "\$PORT" < /etc/nginx/conf.d/default.conf > /etc/nginx/conf.d/default.conf.tmp && mv /etc/nginx/conf.d/default.conf.tmp /etc/nginx/conf.d/default.conf' >> /docker-entrypoint.d/40-configure-port.sh && \
-    chmod +x /docker-entrypoint.d/40-configure-port.sh
+# Create startup script that substitutes PORT and starts nginx
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo 'sed "s/PORT_PLACEHOLDER/${PORT:-80}/g" /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf' >> /start.sh && \
+    echo 'exec nginx -g "daemon off;"' >> /start.sh && \
+    chmod +x /start.sh
 
-# Expose the port (Railway sets PORT env var)
-EXPOSE ${PORT:-80}
+# Expose port (Railway sets PORT env var, defaults to 80)
+EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start with our script
+CMD ["/start.sh"]
