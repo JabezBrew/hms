@@ -1,11 +1,13 @@
 # Railway configuration for HMS Backend API
-# Using Nixpacks builder (auto-detects Django)
+# Using Dockerfile for reliable builds
 
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
-# startCommand removed - set per-service in Railway UI
+healthcheckPath = "/api/health/"
+healthcheckTimeout = 30
