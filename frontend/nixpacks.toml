@@ -1,5 +1,0 @@
-# Nixpacks configuration for Vite static site
-# Tell Nixpacks to serve from dist/ directory after build
-
-[staticAssets]
-directory = "dist"
