@@ -306,6 +306,8 @@ const PatientChronicleCard = ({
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
             {admissionDays ? (
               `Day ${admissionDays}`
+            ) : ward ? (
+              "Inpatient"
             ) : (
               <span className="text-muted-foreground">Outpatient</span>
             )}

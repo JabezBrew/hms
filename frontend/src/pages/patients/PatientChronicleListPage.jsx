@@ -288,10 +288,6 @@ const PatientChronicleListPage = () => {
               showMyPatientsActions={isClinicalProvider}
             />
 
-            {/* Search hint when no search query */}
-            {!hasSearchQuery && recentPatients.length === 0 && !contextPatientsData?.patients?.length && (
-              <SearchHint />
-            )}
           </>
         )}
       </main>
@@ -375,22 +371,5 @@ const SearchResultsSection = ({
     </div>
   );
 };
-
-/**
- * SearchHint - Shown when no data and no search
- */
-const SearchHint = () => (
-  <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-      <Search className="h-8 w-8 text-muted-foreground" />
-    </div>
-    <h3 className="font-display text-xl text-foreground mb-2">
-      Search for patients
-    </h3>
-    <p className="text-muted-foreground text-sm max-w-md">
-      Use the search bar above to find patients by name, MRN, or phone number.
-    </p>
-  </div>
-);
 
 export default PatientChronicleListPage;

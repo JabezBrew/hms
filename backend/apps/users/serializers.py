@@ -244,11 +244,12 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
     date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
     gender = serializers.CharField(source='user.gender', read_only=True)
     current_ward = serializers.SerializerMethodField()
+    admission_date = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
         fields = ['id', 'medical_record_number', 'nhis_id', 'name', 'date_of_birth',
-                  'gender', 'blood_group', 'current_ward']
+                  'gender', 'blood_group', 'current_ward', 'admission_date']
 
     def get_name(self, obj):
         """Get full name directly from prefetched user."""
@@ -263,6 +264,14 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             if admission.bed:
                 return admission.bed.ward.name
             return "Admitted (No Bed)"
+        return None
+
+    def get_admission_date(self, obj):
+        """Get admission date from prefetched active_admissions_list."""
+        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
+            admission = obj.active_admissions_list[0]
+            if admission.admission_date:
+                return admission.admission_date.isoformat()
         return None
 
 
