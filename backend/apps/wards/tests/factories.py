@@ -36,6 +36,7 @@ class WardFactory(DjangoModelFactory):
     is_active = True
     total_beds = 10
     base_rate_per_night = Decimal('100.00')
+    department = None  # Nullable for backward compatibility (hierarchy: Facility → Department → Ward)
     created_by = factory.SubFactory(UserFactory, user_type='admin')
     updated_by = factory.LazyAttribute(lambda obj: obj.created_by)
 

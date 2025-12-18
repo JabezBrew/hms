@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
-    ServiceCategory, Service, InsuranceProvider, InsurancePlan,
-    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt
+    ServiceCategory, Service, ServicePrice, InsuranceProvider, InsurancePlan,
+    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt,
+    BillingRule, FacilityBillingSettings
 )
 from ..users.serializers import PatientProfileSerializer, UserSerializer
 
@@ -259,6 +260,8 @@ class InvoiceListSerializer(serializers.ModelSerializer):
     """
     patient_name = serializers.SerializerMethodField()
     patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+    facility_name = serializers.CharField(source='facility.name', read_only=True, default=None)
+    facility_code = serializers.CharField(source='facility.code', read_only=True, default=None)
     items_count = serializers.SerializerMethodField()
     payments_count = serializers.SerializerMethodField()
 
@@ -266,9 +269,10 @@ class InvoiceListSerializer(serializers.ModelSerializer):
         model = Invoice
         fields = [
             'id', 'invoice_number', 'patient', 'patient_name', 'patient_mrn',
+            'facility', 'facility_name', 'facility_code',
             'invoice_date', 'due_date', 'total_amount', 'status',
             'amount_paid', 'balance_due', 'is_fully_paid',
-            'items_count', 'payments_count'
+            'items_count', 'payments_count', 'price_context'
         ]
 
     def get_patient_name(self, obj):
@@ -349,3 +353,137 @@ class PatientInsuranceListSerializer(serializers.ModelSerializer):
         if obj.patient and obj.patient.user:
             return obj.patient.user.get_full_name()
         return None
+
+
+# =============================================================================
+# BILLING RULES SERIALIZERS
+# =============================================================================
+
+class BillingRuleListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for billing rule lists.
+    """
+    facility_name = serializers.CharField(source='facility.name', read_only=True, default='Global')
+    facility_code = serializers.CharField(source='facility.code', read_only=True, default=None)
+
+    class Meta:
+        model = BillingRule
+        fields = [
+            'id', 'code', 'name', 'rule_type', 'adjustment_type',
+            'adjustment_value', 'priority', 'is_stackable', 'is_active',
+            'facility', 'facility_name', 'facility_code',
+            'effective_from', 'effective_until'
+        ]
+
+
+class BillingRuleSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for billing rule details.
+    """
+    facility_name = serializers.CharField(source='facility.name', read_only=True, default='Global')
+    is_currently_effective = serializers.ReadOnlyField()
+
+    class Meta:
+        model = BillingRule
+        fields = [
+            'id', 'code', 'name', 'description', 'rule_type', 'parameters',
+            'adjustment_type', 'adjustment_value', 'priority', 'is_stackable',
+            'applies_to_insurance', 'applies_to_self_pay',
+            'facility', 'facility_name',
+            'effective_from', 'effective_until', 'is_active',
+            'is_currently_effective',
+            'created_at', 'updated_at', 'created_by', 'updated_by'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+
+class FacilityBillingSettingsSerializer(serializers.ModelSerializer):
+    """
+    Serializer for facility billing settings.
+    """
+    facility_name = serializers.CharField(source='facility.name', read_only=True)
+    currency = serializers.ReadOnlyField()
+
+    class Meta:
+        model = FacilityBillingSettings
+        fields = [
+            'id', 'facility', 'facility_name',
+            'invoice_prefix', 'invoice_number_length', 'invoice_due_days',
+            'invoice_footer_text',
+            'default_tax_rate', 'tax_inclusive_pricing', 'tax_registration_number',
+            'accepted_payment_methods', 'default_payment_method',
+            'auto_generate_invoice_on_encounter_complete',
+            'auto_generate_invoice_on_discharge',
+            'require_deposit_for_admission',
+            'minimum_deposit_amount', 'minimum_deposit_percentage',
+            'regular_hours_start', 'regular_hours_end',
+            'weekend_hours_start', 'weekend_hours_end',
+            'holidays', 'currency', 'decimal_places', 'rounding_method',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+# =============================================================================
+# DASHBOARD METRICS SERIALIZERS
+# =============================================================================
+
+class BillingDashboardMetricsSerializer(serializers.Serializer):
+    """
+    Serializer for billing dashboard metrics.
+    """
+    # Revenue metrics
+    revenue_today = serializers.DecimalField(max_digits=12, decimal_places=2)
+    revenue_this_week = serializers.DecimalField(max_digits=12, decimal_places=2)
+    revenue_this_month = serializers.DecimalField(max_digits=12, decimal_places=2)
+    revenue_trend = serializers.DecimalField(max_digits=5, decimal_places=2)  # % change
+
+    # Invoice metrics
+    total_invoices = serializers.IntegerField()
+    pending_invoices = serializers.IntegerField()
+    overdue_invoices = serializers.IntegerField()
+    paid_invoices = serializers.IntegerField()
+
+    # Outstanding amounts
+    total_outstanding = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_overdue = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    # Claims metrics
+    pending_claims = serializers.IntegerField()
+    approved_claims_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    # Payment method breakdown
+    payment_methods = serializers.ListField(child=serializers.DictField())
+
+
+class RecentInvoiceSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for recent invoices on dashboard.
+    """
+    patient_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Invoice
+        fields = [
+            'id', 'invoice_number', 'patient_name',
+            'total_amount', 'status', 'invoice_date'
+        ]
+
+    def get_patient_name(self, obj):
+        if obj.patient and obj.patient.user:
+            return obj.patient.user.get_full_name()
+        return None
+
+
+class RecentPaymentSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for recent payments on dashboard.
+    """
+    invoice_number = serializers.CharField(source='invoice.invoice_number', read_only=True)
+
+    class Meta:
+        model = Payment
+        fields = [
+            'id', 'invoice_number', 'amount',
+            'payment_method', 'payment_date'
+        ]

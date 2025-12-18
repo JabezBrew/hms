@@ -401,6 +401,8 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
               <DatePicker
                 date={formData.admission_date}
                 setDate={(date) => handleDateChange('admission_date', date)}
+                placeholder="Select admission date"
+                className="font-mono text-sm"
               />
             </div>
 
@@ -412,6 +414,8 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
               <DatePicker
                 date={formData.expected_discharge_date}
                 setDate={(date) => handleDateChange('expected_discharge_date', date)}
+                placeholder="Select discharge date"
+                className="font-mono text-sm"
               />
             </div>
 

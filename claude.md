@@ -2,6 +2,8 @@
 
 ## Core Philosophy
 
+YOUR TOPMOST PRIORITY IN WRITING CODE SHOULD BE PERFORMANCE AT SCALE, AND SECURITY AT ALL TIMES.
+
 **FROM:** Data-centric CRUD system → **TO:** Workflow-centric clinical tool
 
 **Guiding Question:** "What are you trying to accomplish right now?"

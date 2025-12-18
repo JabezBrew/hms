@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { AuditLogCard } from '@/components/admin/AuditLogCard';
 import {
   useAuditLogs,
@@ -31,6 +32,7 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 /**
  * AuditLogsPage - Admin audit logs with Chronicle styling
@@ -40,6 +42,8 @@ const AuditLogsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedAction, setSelectedAction] = useState('all');
+  const [dateFrom, setDateFrom] = useState(null);
+  const [dateTo, setDateTo] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Debounce search
@@ -50,14 +54,22 @@ const AuditLogsPage = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Handle date range change - only called when both dates are selected or both cleared
+  const handleDateRangeChange = ({ from, to }) => {
+    setDateFrom(from);
+    setDateTo(to);
+  };
+
   // Build filters object
   const filters = useMemo(() => {
     const f = {};
     if (selectedCategory !== 'all') f.category = selectedCategory;
     if (selectedAction !== 'all') f.action = selectedAction;
     if (debouncedSearch) f.search = debouncedSearch;
+    if (dateFrom) f.start_date = format(dateFrom, 'yyyy-MM-dd');
+    if (dateTo) f.end_date = format(dateTo, 'yyyy-MM-dd');
     return f;
-  }, [selectedCategory, selectedAction, debouncedSearch]);
+  }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -98,6 +110,8 @@ const AuditLogsPage = () => {
     setSearchQuery('');
     setSelectedCategory('all');
     setSelectedAction('all');
+    setDateFrom(null);
+    setDateTo(null);
     setCurrentPage(1);
   };
 
@@ -111,7 +125,7 @@ const AuditLogsPage = () => {
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedCategory !== 'all' || selectedAction !== 'all';
+  const hasActiveFilters = searchQuery || selectedCategory !== 'all' || selectedAction !== 'all' || dateFrom || dateTo;
 
   // ============================================
   // Render
@@ -227,6 +241,14 @@ const AuditLogsPage = () => {
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Date Range Filters */}
+              <DateRangePicker
+                from={dateFrom}
+                to={dateTo}
+                onChange={handleDateRangeChange}
+                pickerClassName="w-[130px] font-mono text-xs h-9"
+              />
 
               {/* Spacer */}
               <div className="flex-1" />

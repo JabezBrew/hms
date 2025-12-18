@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/popover"
 import {useState} from "react";
 
-export function DatePicker({ date, setDate }) {
+export function DatePicker({ date, setDate, className, placeholder = "Pick a date", dateFormat = "PP" }) {
     // Use props or fallback to internal state
     const [internalDate, setInternalDate] = useState(null);
     const currentDate = date !== undefined ? date : internalDate;
@@ -26,15 +26,18 @@ export function DatePicker({ date, setDate }) {
                 <Button
                     variant={"outline"}
                     className={cn(
-                        "w-full justify-start text-left font-normal", // Changed from w-[280px] to w-full
-                        !currentDate && "text-muted-foreground"
+                        "w-full justify-start text-left font-normal",
+                        !currentDate && "text-muted-foreground",
+                        className
                     )}
                 >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {currentDate ? format(currentDate, "PPP") : <span>Pick a date</span>}
+                    <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">
+                        {currentDate ? format(currentDate, dateFormat) : placeholder}
+                    </span>
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
+            <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                     mode="single"
                     selected={currentDate}

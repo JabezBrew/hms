@@ -11,7 +11,8 @@ from ..fhir_client.utils import generate_fhir_id, create_reference
 
 from .models import (
     ServiceCategory, Service, InsuranceProvider, InsurancePlan,
-    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt
+    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt,
+    BillingRule, FacilityBillingSettings
 )
 from .serializers import (
     ServiceCategorySerializer, ServiceSerializer, ServiceListSerializer,
@@ -21,9 +22,13 @@ from .serializers import (
     InvoiceItemSerializer,
     PaymentSerializer, PaymentListSerializer,
     ClaimSerializer, ClaimListSerializer,
-    ReceiptSerializer
+    ReceiptSerializer,
+    BillingRuleSerializer, BillingRuleListSerializer,
+    FacilityBillingSettingsSerializer,
+    BillingDashboardMetricsSerializer, RecentInvoiceSerializer, RecentPaymentSerializer
 )
 from ..users.permissions import IsAdminOrOwner
+from apps.core.pagination import StandardResultsSetPagination as CorePagination
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -214,7 +219,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name', 'status']
+    search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'status', 'created_at']
     ordering = ['-invoice_date']
 
@@ -224,6 +229,37 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         elif self.action == 'list':
             return InvoiceListSerializer
         return InvoiceSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related(
+            'patient__user', 'facility'
+        ).prefetch_related('items')
+
+        # Filter by status
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(facility_id=facility_id)
+
+        # Filter by patient
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(invoice_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(invoice_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -455,7 +491,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['invoice__invoice_number', 'reference_number', 'payment_method']
+    search_fields = ['invoice__invoice_number', 'reference_number']
     ordering_fields = ['payment_date', 'amount', 'created_at']
     ordering = ['-payment_date']
 
@@ -463,6 +499,32 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return PaymentListSerializer
         return PaymentSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related(
+            'invoice__patient__user', 'invoice__facility'
+        )
+
+        # Filter by payment method
+        payment_method = self.request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(invoice__facility_id=facility_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(payment_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(payment_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -507,7 +569,7 @@ class ClaimViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['claim_number', 'invoice__invoice_number', 'status', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
+    search_fields = ['claim_number', 'invoice__invoice_number', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
     ordering_fields = ['submission_date', 'status', 'claimed_amount', 'approved_amount', 'created_at']
     ordering = ['-submission_date']
 
@@ -515,6 +577,32 @@ class ClaimViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return ClaimListSerializer
         return ClaimSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related(
+            'invoice__patient__user', 'invoice__facility'
+        )
+
+        # Filter by status
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(invoice__facility_id=facility_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(submission_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(submission_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -607,3 +695,233 @@ class ReceiptViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
+class BillingRuleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for billing rules.
+    """
+    queryset = BillingRule.objects.select_related('facility').all()
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'code', 'rule_type', 'description']
+    ordering_fields = ['priority', 'name', 'rule_type', 'created_at']
+    ordering = ['priority', 'name']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BillingRuleListSerializer
+        return BillingRuleSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(
+                Q(facility_id=facility_id) | Q(facility__isnull=True)
+            )
+
+        # Filter by rule_type
+        rule_type = self.request.query_params.get('rule_type')
+        if rule_type:
+            queryset = queryset.filter(rule_type=rule_type)
+
+        # Filter by is_active
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Toggle the active status of a billing rule."""
+        rule = self.get_object()
+        rule.is_active = not rule.is_active
+        rule.updated_by = request.user
+        rule.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        return Response(BillingRuleSerializer(rule).data)
+
+
+class FacilityBillingSettingsViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for facility billing settings.
+    """
+    queryset = FacilityBillingSettings.objects.select_related('facility').all()
+    serializer_class = FacilityBillingSettingsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(facility_id=facility_id)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+
+class BillingDashboardViewSet(viewsets.ViewSet):
+    """
+    API endpoint for billing dashboard metrics.
+
+    Provides aggregated billing data for dashboard displays.
+    All queries use database aggregation for performance.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def metrics(self, request):
+        """
+        Get billing dashboard metrics.
+
+        Query params:
+        - facility: Filter by facility ID
+        - date_from: Start date (YYYY-MM-DD)
+        - date_to: End date (YYYY-MM-DD)
+        """
+        from datetime import timedelta
+        from decimal import Decimal
+
+        today = timezone.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
+        last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+
+        # Base queryset with facility filter
+        invoices = Invoice.objects.all()
+        payments = Payment.objects.all()
+        claims = Claim.objects.all()
+
+        facility_id = request.query_params.get('facility')
+        if facility_id:
+            invoices = invoices.filter(facility_id=facility_id)
+            payments = payments.filter(invoice__facility_id=facility_id)
+            claims = claims.filter(invoice__facility_id=facility_id)
+
+        # Revenue calculations (using database aggregation)
+        revenue_today = payments.filter(
+            payment_date=today
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        revenue_this_week = payments.filter(
+            payment_date__gte=week_start
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        revenue_this_month = payments.filter(
+            payment_date__gte=month_start
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # Calculate revenue trend (compare to last month)
+        revenue_last_month = payments.filter(
+            payment_date__gte=last_month_start,
+            payment_date__lt=month_start
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        if revenue_last_month > 0:
+            revenue_trend = ((revenue_this_month - revenue_last_month) / revenue_last_month) * 100
+        else:
+            revenue_trend = Decimal('0')
+
+        # Invoice counts
+        total_invoices = invoices.count()
+        pending_invoices = invoices.filter(status='pending').count()
+        overdue_invoices = invoices.filter(status='overdue').count()
+        paid_invoices = invoices.filter(status='paid').count()
+
+        # Outstanding amounts
+        total_outstanding = invoices.filter(
+            status__in=['pending', 'partially_paid']
+        ).aggregate(
+            total=Sum(F('total_amount') - F('insurance_amount'))
+        )['total'] or Decimal('0')
+
+        total_overdue = invoices.filter(
+            status='overdue'
+        ).aggregate(
+            total=Sum(F('total_amount') - F('insurance_amount'))
+        )['total'] or Decimal('0')
+
+        # Claims metrics
+        pending_claims = claims.filter(status='pending').count()
+        approved_claims_amount = claims.filter(
+            status__in=['approved', 'partially_approved']
+        ).aggregate(total=Sum('approved_amount'))['total'] or Decimal('0')
+
+        # Payment method breakdown
+        payment_methods = list(payments.filter(
+            payment_date__gte=month_start
+        ).values('payment_method').annotate(
+            total=Sum('amount'),
+            count=Sum(1)
+        ).order_by('-total'))
+
+        data = {
+            'revenue_today': revenue_today,
+            'revenue_this_week': revenue_this_week,
+            'revenue_this_month': revenue_this_month,
+            'revenue_trend': round(revenue_trend, 2),
+            'total_invoices': total_invoices,
+            'pending_invoices': pending_invoices,
+            'overdue_invoices': overdue_invoices,
+            'paid_invoices': paid_invoices,
+            'total_outstanding': total_outstanding,
+            'total_overdue': total_overdue,
+            'pending_claims': pending_claims,
+            'approved_claims_amount': approved_claims_amount,
+            'payment_methods': payment_methods,
+        }
+
+        serializer = BillingDashboardMetricsSerializer(data)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def recent_invoices(self, request):
+        """Get recent invoices for dashboard."""
+        limit = int(request.query_params.get('limit', 10))
+        facility_id = request.query_params.get('facility')
+
+        invoices = Invoice.objects.select_related(
+            'patient__user'
+        ).order_by('-created_at')
+
+        if facility_id:
+            invoices = invoices.filter(facility_id=facility_id)
+
+        invoices = invoices[:limit]
+        serializer = RecentInvoiceSerializer(invoices, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def recent_payments(self, request):
+        """Get recent payments for dashboard."""
+        limit = int(request.query_params.get('limit', 10))
+        facility_id = request.query_params.get('facility')
+
+        payments = Payment.objects.select_related(
+            'invoice'
+        ).order_by('-created_at')
+
+        if facility_id:
+            payments = payments.filter(invoice__facility_id=facility_id)
+
+        payments = payments[:limit]
+        serializer = RecentPaymentSerializer(payments, many=True)
+        return Response(serializer.data)

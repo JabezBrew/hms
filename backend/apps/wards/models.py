@@ -123,6 +123,17 @@ class Ward(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
 
+    # Department association (for multi-facility support)
+    # Hierarchy: Facility → Department → Ward
+    department = models.ForeignKey(
+        'core.Department',
+        on_delete=models.CASCADE,
+        null=True,  # Nullable for backward compatibility during migration
+        blank=True,
+        related_name='wards',
+        help_text="The department this ward belongs to"
+    )
+
     # Ward type choices
     WARD_TYPE_CHOICES = (
         ('general', 'General Ward'),
@@ -176,6 +187,15 @@ class Ward(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_ward_type_display()})"
+
+    @property
+    def facility(self):
+        """
+        Get the facility this ward belongs to via its department.
+        Convenience property for accessing facility through the hierarchy:
+        Facility → Department → Ward
+        """
+        return self.department.facility if self.department else None
 
     @property
     def available_beds_count(self):

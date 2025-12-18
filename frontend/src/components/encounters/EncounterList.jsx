@@ -257,6 +257,8 @@ export function EncounterList() {
                 <DatePicker
                   date={filters.date}
                   setDate={(date) => handleFilterChange('date', date)}
+                  placeholder="Select date"
+                  className="font-mono text-sm"
                 />
               </div>
 

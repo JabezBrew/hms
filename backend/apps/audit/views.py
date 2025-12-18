@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.rbac import IsAdmin
+from apps.core.pagination import StandardResultsSetPagination
 from .models import AuditLog
 from .serializers import AuditLogSerializer, AuditLogStatsSerializer
 
@@ -19,12 +20,13 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = AuditLogSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Return filtered audit logs based on query parameters.
         """
-        queryset = AuditLog.objects.select_related('user').all()
+        queryset = AuditLog.objects.select_related('user').order_by('-timestamp')
 
         # Filter by user
         user_id = self.request.query_params.get('user_id')

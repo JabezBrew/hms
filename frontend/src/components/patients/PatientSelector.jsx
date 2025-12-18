@@ -145,8 +145,12 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0">
-          <Command>
+        <PopoverContent
+          className="p-0"
+          align="start"
+          style={{ width: 'var(--radix-popover-trigger-width)' }}
+        >
+          <Command shouldFilter={false}>
             <CommandInput
               placeholder="Search patients..."
               value={searchQuery}
@@ -170,8 +174,8 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             ) : (
               <CommandList>
                 <CommandEmpty>
-                  {searchQuery.length < 2 
-                    ? "Type at least 2 characters to search" 
+                  {searchQuery.length < 2
+                    ? "Type at least 2 characters to search"
                     : "No patients found"}
                 </CommandEmpty>
                 <CommandGroup>
@@ -179,16 +183,17 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                     const patientId = getPatientId(patient);
                     const displayName = getDisplayName(patient);
                     const initials = getInitials(patient);
-                    const mrn = patient.local_data?.medical_record_number || 
-                                patient.fhir_resource?.identifier?.[0]?.value || 
+                    const mrn = patient.medical_record_number ||
+                                patient.local_data?.medical_record_number ||
+                                patient.fhir_resource?.identifier?.[0]?.value ||
                                 "No MRN";
 
                     return (
                       <CommandItem
                         key={patientId}
-                        value={patientId}
+                        value={displayName}
                         onSelect={() => handleSelectPatient(patient)}
-                        className="flex items-center"
+                        className="flex items-center cursor-pointer"
                       >
                         <Avatar className="h-6 w-6 mr-2">
                           <AvatarFallback>{initials}</AvatarFallback>
