@@ -9,6 +9,12 @@ import {
   usePatientValidationRules
 } from "@/hooks/usePatientQueries";
 import { useWards, useWardBeds } from "@/hooks/useWardQueries";
+import {
+  useInsuranceProviders,
+  useInsurancePlans,
+  useCreatePatientInsurance,
+} from "@/hooks/useBillingQueries";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -32,7 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon, Shield } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -88,6 +94,25 @@ const PatientForm = ({ patient, onSuccess }) => {
   // Ward queries
   const { data: wards = [] } = useWards();
   const { data: beds = [] } = useWardBeds(selectedWard, { status: 'available' });
+
+  // Insurance queries and state
+  const { data: providersData } = useInsuranceProviders();
+  const providers = providersData?.results || providersData || [];
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const { data: plansData } = useInsurancePlans(
+    selectedProviderId ? { provider: selectedProviderId } : {}
+  );
+  const plans = plansData?.results || plansData || [];
+  const createInsuranceMutation = useCreatePatientInsurance();
+
+  // Insurance form state (separate from main form since it's optional)
+  const [insuranceData, setInsuranceData] = useState({
+    hasInsurance: false,
+    plan: '',
+    policy_number: '',
+    valid_from: null,
+    valid_until: null,
+  });
 
   // Initialize form with default values
   const form = useForm({
@@ -252,12 +277,33 @@ const PatientForm = ({ patient, onSuccess }) => {
       registerPatientMutation.mutate(
         formattedData,
         {
-          onSuccess: (response) => {
-            toast.success("Patient registered successfully");
+          onSuccess: async (response) => {
+            // Check if response.data exists, otherwise use response directly
+            const patientData = response.data !== undefined ? response.data : response;
+            const patientId = patientData.local_data?.id || patientData.id;
+
+            // Create insurance if provided
+            if (insuranceData.hasInsurance && insuranceData.plan && insuranceData.policy_number && patientId) {
+              try {
+                await createInsuranceMutation.mutateAsync({
+                  patient: patientId,
+                  plan: insuranceData.plan,
+                  policy_number: insuranceData.policy_number,
+                  valid_from: insuranceData.valid_from ? format(insuranceData.valid_from, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+                  valid_until: insuranceData.valid_until ? format(insuranceData.valid_until, 'yyyy-MM-dd') : null,
+                  is_active: true,
+                });
+                toast.success("Patient registered with insurance");
+              } catch (insuranceError) {
+                console.error('Failed to create insurance:', insuranceError);
+                toast.success("Patient registered successfully");
+                toast.error("Failed to add insurance - you can add it later from patient profile");
+              }
+            } else {
+              toast.success("Patient registered successfully");
+            }
 
             if (onSuccess) {
-              // Check if response.data exists, otherwise use response directly
-              const patientData = response.data !== undefined ? response.data : response;
               onSuccess(patientData);
             }
 
@@ -277,10 +323,11 @@ const PatientForm = ({ patient, onSuccess }) => {
     <Card className="w-full border-border">
       <CardContent className="pt-6">
         <Tabs defaultValue="personal">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
-            <TabsTrigger value="personal" className="font-mono text-xs">Personal Information</TabsTrigger>
-            <TabsTrigger value="medical" className="font-mono text-xs">Medical Information</TabsTrigger>
-            <TabsTrigger value="contact" className="font-mono text-xs">Contact Information</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 mb-6">
+            <TabsTrigger value="personal" className="font-mono text-xs">Personal</TabsTrigger>
+            <TabsTrigger value="medical" className="font-mono text-xs">Medical</TabsTrigger>
+            <TabsTrigger value="contact" className="font-mono text-xs">Contact</TabsTrigger>
+            <TabsTrigger value="insurance" className="font-mono text-xs">Insurance</TabsTrigger>
             <TabsTrigger value="admission" className="font-mono text-xs">Admission</TabsTrigger>
           </TabsList>
 
@@ -602,6 +649,142 @@ const PatientForm = ({ patient, onSuccess }) => {
                   )}
 
                 />
+              </TabsContent>
+
+              <TabsContent value="insurance" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Shield className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Insurance Coverage</p>
+                        <p className="text-xs text-muted-foreground">
+                          Add insurance details for this patient
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {insuranceData.hasInsurance ? 'Enabled' : 'Skip'}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={insuranceData.hasInsurance}
+                        onChange={(e) => setInsuranceData(prev => ({
+                          ...prev,
+                          hasInsurance: e.target.checked,
+                          // Reset fields when unchecking
+                          ...(e.target.checked ? {} : {
+                            plan: '',
+                            policy_number: '',
+                            valid_from: null,
+                            valid_until: null,
+                          })
+                        }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  {insuranceData.hasInsurance && (
+                    <div className="space-y-4 p-4 border border-border rounded-lg">
+                      {/* Provider Selection */}
+                      <div className="space-y-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Insurance Provider
+                        </FormLabel>
+                        <Select
+                          value={selectedProviderId}
+                          onValueChange={(value) => {
+                            setSelectedProviderId(value);
+                            setInsuranceData(prev => ({ ...prev, plan: '' }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select provider" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {providers.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                {provider.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Plan Selection */}
+                      <div className="space-y-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Insurance Plan
+                        </FormLabel>
+                        <Select
+                          value={insuranceData.plan}
+                          onValueChange={(value) => setInsuranceData(prev => ({ ...prev, plan: value }))}
+                          disabled={!selectedProviderId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={selectedProviderId ? "Select plan" : "Select provider first"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {plans.map((plan) => (
+                              <SelectItem key={plan.id} value={plan.id}>
+                                {plan.name} ({plan.coverage_percentage}% coverage)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Policy Number */}
+                      <div className="space-y-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Policy Number
+                        </FormLabel>
+                        <Input
+                          value={insuranceData.policy_number}
+                          onChange={(e) => setInsuranceData(prev => ({ ...prev, policy_number: e.target.value }))}
+                          placeholder="e.g., POL-12345678"
+                        />
+                      </div>
+
+                      {/* Validity Period */}
+                      <div className="space-y-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Validity Period
+                        </FormLabel>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <DatePicker
+                              date={insuranceData.valid_from}
+                              setDate={(date) => setInsuranceData(prev => ({ ...prev, valid_from: date }))}
+                              placeholder="Start date"
+                              className="w-full"
+                            />
+                          </div>
+                          <span className="text-muted-foreground text-sm">to</span>
+                          <div className="flex-1">
+                            <DatePicker
+                              date={insuranceData.valid_until}
+                              setDate={(date) => setInsuranceData(prev => ({ ...prev, valid_until: date }))}
+                              placeholder="No expiry"
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Leave end date blank for no expiry</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!insuranceData.hasInsurance && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Shield className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">No insurance will be added</p>
+                      <p className="text-xs mt-1">You can add insurance later from the patient's profile</p>
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="admission" className="space-y-4 mt-4">

@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Droplets,
   BarChart3,
+  Shield,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -41,6 +42,8 @@ const PatientIdentityHero = ({
   onViewTreatmentSheet,
   onRecordFluids,
   onAssignChart,
+  onManageInsurance,
+  insurance = [],
   activeAdmission,
   className
 }) => {
@@ -283,6 +286,30 @@ const PatientIdentityHero = ({
                 <MapPin className="h-3.5 w-3.5" />
                 {location}
               </span>
+            )}
+
+            {/* Insurance Badge */}
+            {onManageInsurance && (
+              <button
+                onClick={onManageInsurance}
+                className={cn(
+                  "flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded-md transition-colors",
+                  "hover:bg-muted cursor-pointer border",
+                  insurance.length > 0
+                    ? "text-[oklch(0.70_0.15_230)] border-[oklch(0.70_0.15_230_/_0.3)] bg-[oklch(0.70_0.15_230_/_0.05)]"
+                    : "text-amber-600 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:bg-amber-950"
+                )}
+              >
+                <Shield className="h-3.5 w-3.5" />
+                {insurance.length > 0 ? (
+                  <span>
+                    {insurance[0]?.plan_name || 'Insured'}
+                    {insurance.length > 1 && ` +${insurance.length - 1}`}
+                  </span>
+                ) : (
+                  <span>No Insurance</span>
+                )}
+              </button>
             )}
           </div>
 

@@ -34,6 +34,9 @@ export const billingKeys = {
   facilityBillingSettings: (facilityId) => [...billingKeys.facilitySettings(), facilityId],
   // Insurance
   insurance: () => [...billingKeys.all, 'insurance'],
+  patientInsurances: () => [...billingKeys.insurance(), 'patientInsurances'],
+  patientInsuranceList: (filters) => [...billingKeys.patientInsurances(), 'list', { filters }],
+  patientInsuranceDetail: (id) => [...billingKeys.patientInsurances(), 'detail', id],
   patientInsurance: (patientId, params) => [...billingKeys.insurance(), 'patient', patientId, params],
   insuranceProviders: (params) => [...billingKeys.insurance(), 'providers', params],
   insurancePlans: (params) => [...billingKeys.insurance(), 'plans', params],
@@ -510,11 +513,36 @@ export function useUpdateFacilityBillingSettings() {
 }
 
 // =========================================================================
-// Insurance Queries
+// Insurance Queries & Mutations
 // =========================================================================
 
 /**
- * Get patient insurance records
+ * Get all patient insurance records with pagination
+ * @param {Object} filters - Query parameters for filtering
+ * @returns {Object} Query result
+ */
+export function usePatientInsurances(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.patientInsuranceList(filters),
+    queryFn: () => billingApi.getPatientInsurances(filters),
+  });
+}
+
+/**
+ * Get a single patient insurance by ID
+ * @param {string} id - Patient insurance ID
+ * @returns {Object} Query result
+ */
+export function usePatientInsuranceById(id) {
+  return useQuery({
+    queryKey: billingKeys.patientInsuranceDetail(id),
+    queryFn: () => billingApi.getPatientInsuranceById(id),
+    enabled: !!id,
+  });
+}
+
+/**
+ * Get patient insurance records for a specific patient
  * @param {string} patientId - Patient ID
  * @param {Object} params - Additional query parameters
  * @returns {Object} Query result
@@ -524,6 +552,73 @@ export function usePatientInsurance(patientId, params = {}) {
     queryKey: billingKeys.patientInsurance(patientId, params),
     queryFn: () => billingApi.getPatientInsurance(patientId, params),
     enabled: !!patientId,
+  });
+}
+
+/**
+ * Create a new patient insurance record
+ * @returns {Object} Mutation result
+ */
+export function useCreatePatientInsurance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => billingApi.createPatientInsurance(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.patientInsurances() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.insurance() });
+    },
+  });
+}
+
+/**
+ * Update an existing patient insurance record
+ * @returns {Object} Mutation result
+ */
+export function useUpdatePatientInsurance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => billingApi.updatePatientInsurance(id, data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: billingKeys.patientInsuranceDetail(id) });
+      const previousInsurance = queryClient.getQueryData(billingKeys.patientInsuranceDetail(id));
+      queryClient.setQueryData(billingKeys.patientInsuranceDetail(id), (old) => ({
+        ...old,
+        ...data,
+      }));
+      return { previousInsurance, id };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousInsurance) {
+        queryClient.setQueryData(
+          billingKeys.patientInsuranceDetail(context.id),
+          context.previousInsurance
+        );
+      }
+    },
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.patientInsuranceDetail(variables.id) });
+      queryClient.invalidateQueries({ queryKey: billingKeys.patientInsurances() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.insurance() });
+    },
+  });
+}
+
+/**
+ * Delete a patient insurance record
+ * @returns {Object} Mutation result
+ */
+export function useDeletePatientInsurance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => billingApi.deletePatientInsurance(id),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.patientInsuranceDetail(variables) });
+      queryClient.invalidateQueries({ queryKey: billingKeys.patientInsurances() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.insurance() });
+    },
   });
 }
 

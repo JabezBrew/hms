@@ -5,7 +5,10 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
-from django.db.models import Sum, F, Q
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.db.models import Sum, F, Q, Avg, Count, Case, When, Value
+from decimal import Decimal
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import generate_fhir_id, create_reference
 
@@ -22,13 +25,15 @@ from .serializers import (
     InvoiceItemSerializer,
     PaymentSerializer, PaymentListSerializer,
     ClaimSerializer, ClaimListSerializer,
-    ReceiptSerializer,
+    ReceiptSerializer, ReceiptDetailSerializer,
     BillingRuleSerializer, BillingRuleListSerializer,
     FacilityBillingSettingsSerializer,
     BillingDashboardMetricsSerializer, RecentInvoiceSerializer, RecentPaymentSerializer
 )
 from ..users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination as CorePagination
+from apps.audit.models import AuditAction, AuditCategory
+from apps.audit.services import AuditService
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -231,9 +236,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         return InvoiceSerializer
 
     def get_queryset(self):
+        from django.db.models import Prefetch
+
+        # Prefetch payments with their receipts to avoid N+1 queries
+        payments_prefetch = Prefetch(
+            'payments',
+            queryset=Payment.objects.select_related('receipt', 'created_by')
+        )
+
         queryset = super().get_queryset().select_related(
-            'patient__user', 'facility'
-        ).prefetch_related('items')
+            'patient__user', 'facility', 'patient_insurance__plan__provider'
+        ).prefetch_related('items', payments_prefetch)
 
         # Filter by status
         status_filter = self.request.query_params.get('status')
@@ -406,6 +419,28 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
             return Response(ClaimSerializer(claim).data)
 
+    @action(detail=True, methods=['get'])
+    def print_detail(self, request, pk=None):
+        """
+        Get invoice details for printing.
+        Logs an audit trail for the print action.
+        """
+        invoice = self.get_object()
+
+        # Audit log the invoice print
+        AuditService.log(
+            request,
+            action=AuditAction.INVOICE_PRINT,
+            category=AuditCategory.BILLING,
+            resource_type='Invoice',
+            resource_id=str(invoice.id),
+            description=f"Printed invoice {invoice.invoice_number} for {invoice.patient.user.get_full_name()} - Amount: {invoice.total_amount}",
+            resource_name=invoice.invoice_number,
+        )
+
+        serializer = InvoiceSerializer(invoice)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'])
     def mark_as_paid(self, request, pk=None):
         """
@@ -491,7 +526,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['invoice__invoice_number', 'reference_number']
+    search_fields = [
+        'invoice__invoice_number', 'reference_number',
+        'invoice__patient__user__first_name', 'invoice__patient__user__last_name',
+        'invoice__patient__medical_record_number', 'receipt__receipt_number'
+    ]
     ordering_fields = ['payment_date', 'amount', 'created_at']
     ordering = ['-payment_date']
 
@@ -501,8 +540,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return PaymentSerializer
 
     def get_queryset(self):
+        # Use select_related for all foreign keys to avoid N+1 queries
         queryset = super().get_queryset().select_related(
-            'invoice__patient__user', 'invoice__facility'
+            'invoice__patient__user', 'invoice__facility',
+            'receipt', 'created_by'
         )
 
         # Filter by payment method
@@ -690,11 +731,78 @@ class ReceiptViewSet(viewsets.ModelViewSet):
     ordering_fields = ['receipt_date', 'created_at']
     ordering = ['-receipt_date']
 
+    def get_queryset(self):
+        return super().get_queryset().select_related(
+            'payment__invoice__patient__user',
+            'payment__invoice__facility',
+            'payment__created_by'
+        ).prefetch_related(
+            'payment__invoice__items__service'
+        )
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['get'])
+    def print_detail(self, request, pk=None):
+        """
+        Get detailed receipt data for printing.
+        Includes invoice items to show what was paid for.
+        Logs an audit trail for the print action.
+        """
+        receipt = self.get_object()
+
+        # Audit log the receipt print
+        AuditService.log(
+            request,
+            action=AuditAction.RECEIPT_PRINT,
+            category=AuditCategory.BILLING,
+            resource_type='Receipt',
+            resource_id=str(receipt.id),
+            description=f"Printed receipt {receipt.receipt_number} for payment of {receipt.payment.amount}",
+            resource_name=receipt.receipt_number,
+        )
+
+        serializer = ReceiptDetailSerializer(receipt)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_receipt_number(self, request):
+        """
+        Get receipt by receipt number for printing.
+        Logs an audit trail for the print action.
+        """
+        receipt_number = request.query_params.get('receipt_number')
+        if not receipt_number:
+            return Response(
+                {"error": "receipt_number parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            receipt = self.get_queryset().get(receipt_number=receipt_number)
+
+            # Audit log the receipt print
+            AuditService.log(
+                request,
+                action=AuditAction.RECEIPT_PRINT,
+                category=AuditCategory.BILLING,
+                resource_type='Receipt',
+                resource_id=str(receipt.id),
+                description=f"Printed receipt {receipt.receipt_number} for payment of {receipt.payment.amount}",
+                resource_name=receipt.receipt_number,
+            )
+
+            serializer = ReceiptDetailSerializer(receipt)
+            return Response(serializer.data)
+        except Receipt.DoesNotExist:
+            return Response(
+                {"error": "Receipt not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class BillingRuleViewSet(viewsets.ModelViewSet):
@@ -783,10 +891,15 @@ class BillingDashboardViewSet(viewsets.ViewSet):
     API endpoint for billing dashboard metrics.
 
     Provides aggregated billing data for dashboard displays.
-    All queries use database aggregation for performance.
+
+    Performance optimizations:
+    - View-level caching (30s TTL) for metrics endpoint
+    - Conditional aggregation to consolidate ~15 queries into 4
+    - Database indexes on invoice_date, payment_date, status, facility_id
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @method_decorator(cache_page(30))  # Cache for 30 seconds
     @action(detail=False, methods=['get'])
     def metrics(self, request):
         """
@@ -796,96 +909,138 @@ class BillingDashboardViewSet(viewsets.ViewSet):
         - facility: Filter by facility ID
         - date_from: Start date (YYYY-MM-DD)
         - date_to: End date (YYYY-MM-DD)
+
+        Performance: Uses conditional aggregation to reduce database queries
+        from ~15 to 4. Cached for 30 seconds.
         """
         from datetime import timedelta
-        from decimal import Decimal
 
         today = timezone.now().date()
         week_start = today - timedelta(days=today.weekday())
         month_start = today.replace(day=1)
         last_month_start = (month_start - timedelta(days=1)).replace(day=1)
 
-        # Base queryset with facility filter
-        invoices = Invoice.objects.all()
-        payments = Payment.objects.all()
-        claims = Claim.objects.all()
-
+        # Base querysets with facility filter
         facility_id = request.query_params.get('facility')
-        if facility_id:
-            invoices = invoices.filter(facility_id=facility_id)
-            payments = payments.filter(invoice__facility_id=facility_id)
-            claims = claims.filter(invoice__facility_id=facility_id)
+        invoice_filter = Q(facility_id=facility_id) if facility_id else Q()
+        payment_filter = Q(invoice__facility_id=facility_id) if facility_id else Q()
+        claim_filter = Q(invoice__facility_id=facility_id) if facility_id else Q()
 
-        # Revenue calculations (using database aggregation)
-        revenue_today = payments.filter(
-            payment_date=today
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        # =================================================================
+        # QUERY 1: All invoice metrics in a single query using conditional aggregation
+        # Replaces 8+ separate queries
+        # =================================================================
+        invoice_metrics = Invoice.objects.filter(invoice_filter).aggregate(
+            # Counts by status
+            total_invoices=Count('id'),
+            pending_invoices=Count('id', filter=Q(status='pending')),
+            overdue_invoices=Count('id', filter=Q(status='overdue')),
+            paid_invoices=Count('id', filter=Q(status='paid')),
+            outstanding_invoices=Count('id', filter=Q(status__in=['pending', 'partially_paid'])),
 
-        revenue_this_week = payments.filter(
-            payment_date__gte=week_start
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            # Outstanding amount (pending + partially_paid)
+            outstanding_amount=Sum(
+                F('total_amount') - F('insurance_amount'),
+                filter=Q(status__in=['pending', 'partially_paid'])
+            ),
 
-        revenue_this_month = payments.filter(
-            payment_date__gte=month_start
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            # Total overdue amount
+            total_overdue=Sum(
+                F('total_amount') - F('insurance_amount'),
+                filter=Q(status='overdue')
+            ),
 
-        # Calculate revenue trend (compare to last month)
-        revenue_last_month = payments.filter(
-            payment_date__gte=last_month_start,
-            payment_date__lt=month_start
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            # Today's invoices created
+            invoices_created_today=Count('id', filter=Q(invoice_date=today)),
+
+            # Average invoice amount (excluding drafts)
+            average_invoice_amount=Avg('total_amount', filter=~Q(status='draft')),
+        )
+
+        # Unique patients billed this month (separate query - can't combine with above)
+        unique_patients_billed = Invoice.objects.filter(
+            invoice_filter,
+            invoice_date__gte=month_start
+        ).values('patient').distinct().count()
+
+        # =================================================================
+        # QUERY 2: All payment/revenue metrics in a single query
+        # Replaces 5+ separate queries
+        # =================================================================
+        payment_metrics = Payment.objects.filter(payment_filter).aggregate(
+            # Revenue by time period using conditional sums
+            revenue_today=Sum('amount', filter=Q(payment_date=today)),
+            revenue_this_week=Sum('amount', filter=Q(payment_date__gte=week_start)),
+            revenue_this_month=Sum('amount', filter=Q(payment_date__gte=month_start)),
+            revenue_last_month=Sum(
+                'amount',
+                filter=Q(payment_date__gte=last_month_start, payment_date__lt=month_start)
+            ),
+
+            # Today's payment count
+            payments_received_today=Count('id', filter=Q(payment_date=today)),
+        )
+
+        # Calculate revenue trend
+        revenue_this_month = payment_metrics['revenue_this_month'] or Decimal('0')
+        revenue_last_month = payment_metrics['revenue_last_month'] or Decimal('0')
 
         if revenue_last_month > 0:
             revenue_trend = ((revenue_this_month - revenue_last_month) / revenue_last_month) * 100
         else:
             revenue_trend = Decimal('0')
 
-        # Invoice counts
-        total_invoices = invoices.count()
-        pending_invoices = invoices.filter(status='pending').count()
-        overdue_invoices = invoices.filter(status='overdue').count()
-        paid_invoices = invoices.filter(status='paid').count()
+        # =================================================================
+        # QUERY 3: All claims metrics in a single query
+        # Replaces 3+ separate queries
+        # =================================================================
+        claims_metrics = Claim.objects.filter(claim_filter).aggregate(
+            pending_claims=Count('id', filter=Q(status='pending')),
+            pending_claims_amount=Sum('claimed_amount', filter=Q(status='pending')),
+            approved_claims_amount=Sum(
+                'approved_amount',
+                filter=Q(status__in=['approved', 'partially_approved'])
+            ),
+        )
 
-        # Outstanding amounts
-        total_outstanding = invoices.filter(
-            status__in=['pending', 'partially_paid']
-        ).aggregate(
-            total=Sum(F('total_amount') - F('insurance_amount'))
-        )['total'] or Decimal('0')
-
-        total_overdue = invoices.filter(
-            status='overdue'
-        ).aggregate(
-            total=Sum(F('total_amount') - F('insurance_amount'))
-        )['total'] or Decimal('0')
-
-        # Claims metrics
-        pending_claims = claims.filter(status='pending').count()
-        approved_claims_amount = claims.filter(
-            status__in=['approved', 'partially_approved']
-        ).aggregate(total=Sum('approved_amount'))['total'] or Decimal('0')
-
-        # Payment method breakdown
-        payment_methods = list(payments.filter(
+        # =================================================================
+        # QUERY 4: Payment method breakdown (this month)
+        # =================================================================
+        payment_methods = list(Payment.objects.filter(
+            payment_filter,
             payment_date__gte=month_start
         ).values('payment_method').annotate(
             total=Sum('amount'),
-            count=Sum(1)
+            count=Count('id')
         ).order_by('-total'))
 
+        # Build response data
         data = {
-            'revenue_today': revenue_today,
-            'revenue_this_week': revenue_this_week,
+            # Revenue metrics
+            'revenue_today': payment_metrics['revenue_today'] or Decimal('0'),
+            'revenue_this_week': payment_metrics['revenue_this_week'] or Decimal('0'),
             'revenue_this_month': revenue_this_month,
             'revenue_trend': round(revenue_trend, 2),
-            'total_invoices': total_invoices,
-            'pending_invoices': pending_invoices,
-            'overdue_invoices': overdue_invoices,
-            'paid_invoices': paid_invoices,
-            'total_outstanding': total_outstanding,
-            'total_overdue': total_overdue,
-            'pending_claims': pending_claims,
-            'approved_claims_amount': approved_claims_amount,
+
+            # Invoice metrics
+            'total_invoices': invoice_metrics['total_invoices'] or 0,
+            'pending_invoices': invoice_metrics['pending_invoices'] or 0,
+            'overdue_invoices': invoice_metrics['overdue_invoices'] or 0,
+            'paid_invoices': invoice_metrics['paid_invoices'] or 0,
+            'outstanding_amount': invoice_metrics['outstanding_amount'] or Decimal('0'),
+            'outstanding_invoices': invoice_metrics['outstanding_invoices'] or 0,
+            'total_overdue': invoice_metrics['total_overdue'] or Decimal('0'),
+
+            # Claims metrics
+            'pending_claims': claims_metrics['pending_claims'] or 0,
+            'pending_claims_amount': claims_metrics['pending_claims_amount'] or Decimal('0'),
+            'approved_claims_amount': claims_metrics['approved_claims_amount'] or Decimal('0'),
+
+            # Activity metrics
+            'invoices_created_today': invoice_metrics['invoices_created_today'] or 0,
+            'payments_received_today': payment_metrics['payments_received_today'] or 0,
+            'unique_patients_billed': unique_patients_billed,
+            'average_invoice_amount': invoice_metrics['average_invoice_amount'] or Decimal('0'),
             'payment_methods': payment_methods,
         }
 

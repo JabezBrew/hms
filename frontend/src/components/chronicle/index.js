@@ -15,3 +15,4 @@ export { default as AddPrescriptionSlideOver } from './AddPrescriptionSlideOver'
 export { default as AddFluidBalanceSlideOver } from './AddFluidBalanceSlideOver';
 export { default as EditNoteSlideOver } from './EditNoteSlideOver';
 export { default as NoteHistoryModal } from './NoteHistoryModal';
+export { default as PatientInsuranceSlideOver } from './PatientInsuranceSlideOver';

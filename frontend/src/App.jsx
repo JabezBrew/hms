@@ -100,7 +100,9 @@ const BillingDashboardPage = lazy(() => import('./pages/billing/BillingDashboard
 const InvoicesPage = lazy(() => import('./pages/billing/InvoicesPage'))
 const InvoiceCreatePage = lazy(() => import('./pages/billing/InvoiceCreatePage'))
 const InvoiceDetailPage = lazy(() => import('./pages/billing/InvoiceDetailPage'))
+const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'))
 const ClaimsPage = lazy(() => import('./pages/billing/ClaimsPage'))
+const InsuranceManagementPage = lazy(() => import('./pages/billing/InsuranceManagementPage'))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -568,10 +570,24 @@ function AppContent() {
               </Layout>
             </RoleBasedRoute>
           } />
+          <Route path="/billing/payments" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+              <Layout>
+                <PaymentsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
           <Route path="/billing/claims" element={
             <RoleBasedRoute allowedRoles={['admin', 'billing']}>
               <Layout>
                 <ClaimsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/insurance" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+              <Layout>
+                <InsuranceManagementPage />
               </Layout>
             </RoleBasedRoute>
           } />

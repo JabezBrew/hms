@@ -11,6 +11,11 @@ from ..appointments.models import AppointmentType
 User = get_user_model()
 
 
+def today_date():
+    """Return today's date (not datetime) for DateField defaults."""
+    return timezone.now().date()
+
+
 class ServiceCategory(models.Model):
     """
     Model for categorizing billable services.
@@ -1214,7 +1219,7 @@ class Payment(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='payments')
     
     # Payment details
-    payment_date = models.DateField(default=timezone.now)
+    payment_date = models.DateField(default=today_date)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     
     # Payment method
@@ -1241,7 +1246,13 @@ class Payment(models.Model):
     
     class Meta:
         ordering = ['-payment_date']
-    
+        indexes = [
+            # Performance: Dashboard metrics queries filter by date and facility
+            models.Index(fields=['payment_date'], name='billing_pay_payment_date_idx'),
+            models.Index(fields=['invoice', 'payment_date'], name='billing_pay_inv_date_idx'),
+            models.Index(fields=['payment_method', 'payment_date'], name='billing_pay_method_date_idx'),
+        ]
+
     def __str__(self):
         return f"Payment of {self.amount} for Invoice #{self.invoice.invoice_number}"
     
@@ -1308,7 +1319,12 @@ class Claim(models.Model):
     
     class Meta:
         ordering = ['-submission_date']
-    
+        indexes = [
+            # Performance: Dashboard metrics queries filter by status
+            models.Index(fields=['status'], name='billing_claim_status_idx'),
+            models.Index(fields=['status', 'submission_date'], name='billing_claim_stat_date_idx'),
+        ]
+
     def __str__(self):
         return f"Claim #{self.claim_number} for Invoice #{self.invoice.invoice_number}"
     
@@ -1342,11 +1358,11 @@ class Receipt(models.Model):
     Model for payment receipts.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    receipt_number = models.CharField(max_length=20, unique=True)
+    receipt_number = models.CharField(max_length=30, unique=True)
     payment = models.OneToOneField(Payment, on_delete=models.CASCADE, related_name='receipt')
     
     # Receipt details
-    receipt_date = models.DateField(default=timezone.now)
+    receipt_date = models.DateField(default=today_date)
     
     # Additional information
     notes = models.TextField(blank=True, null=True)

@@ -146,7 +146,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0"
+          className="p-0 z-[200]"
           align="start"
           style={{ width: 'var(--radix-popover-trigger-width)' }}
         >

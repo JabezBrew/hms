@@ -19,8 +19,10 @@ import {
   AddNoteSlideOver,
   AddVitalsSlideOver,
   AddPrescriptionSlideOver,
-  AddFluidBalanceSlideOver
+  AddFluidBalanceSlideOver,
+  PatientInsuranceSlideOver,
 } from "@/components/chronicle";
+import { usePatientInsurance } from "@/hooks/useBillingQueries";
 import {
   AddChartSlideOver,
   ChartEntryForm,
@@ -72,7 +74,7 @@ const PatientChroniclePage = () => {
   const referralIdParam = searchParams.get('referral_id');
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry']);
+  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry', 'insurance']);
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
@@ -105,6 +107,10 @@ const PatientChroniclePage = () => {
 
   // Fetch patient encounters for grouping
   const { data: encounters } = usePatientEncounters(id);
+
+  // Fetch patient insurance
+  const { data: insuranceData } = usePatientInsurance(id);
+  const patientInsurance = insuranceData?.results || insuranceData || [];
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
@@ -621,6 +627,8 @@ const PatientChroniclePage = () => {
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
+        onManageInsurance={() => slideOvers.open('insurance')}
+        insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
 
@@ -1082,6 +1090,13 @@ const PatientChroniclePage = () => {
           assignmentId={activeChartAssignment?.id}
           patient={patient}
           onEntryRecorded={handleChartEntryRecorded}
+        />
+
+        {/* Patient Insurance Slide-Over */}
+        <PatientInsuranceSlideOver
+          open={slideOvers.isOpen('insurance')}
+          onClose={handleSlideOverClose}
+          patient={patient}
         />
       </div>
     </div>

@@ -146,29 +146,49 @@ export default function InvoiceChronicleCard({ patientId, className }) {
         </div>
       )}
 
-      {/* Recent Invoices Preview */}
-      {invoices.length > 0 && (
-        <div className="space-y-2 mb-3">
-          {invoices.slice(0, 2).map((invoice) => (
-            <div
-              key={invoice.id}
-              className="flex items-center justify-between text-sm cursor-pointer hover:bg-muted/30 rounded-lg p-2 -mx-2 transition-colors"
-              onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                <span className="font-mono text-xs text-primary truncate">
-                  {invoice.invoice_number}
+      {/* Recent Invoices Preview - prioritize unpaid, exclude drafts */}
+      {invoices.length > 0 && (() => {
+        // Filter out drafts and cancelled - they shouldn't be shown
+        const visibleInvoices = invoices.filter(
+          inv => inv.status !== 'draft' && inv.status !== 'cancelled'
+        );
+
+        // Separate unpaid vs paid
+        const unpaidStatuses = ['pending', 'partially_paid', 'overdue'];
+        const unpaidInvoices = visibleInvoices.filter(inv => unpaidStatuses.includes(inv.status));
+        const paidInvoices = visibleInvoices.filter(inv => inv.status === 'paid');
+
+        // Show up to 2: prioritize unpaid, fill with paid if needed
+        const previewInvoices = [
+          ...unpaidInvoices.slice(0, 2),
+          ...paidInvoices.slice(0, Math.max(0, 2 - unpaidInvoices.length))
+        ].slice(0, 2);
+
+        if (previewInvoices.length === 0) return null;
+
+        return (
+          <div className="space-y-2 mb-3">
+            {previewInvoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                className="flex items-center justify-between text-sm cursor-pointer hover:bg-muted/30 rounded-lg p-2 -mx-2 transition-colors"
+                onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  <span className="font-mono text-xs text-primary truncate">
+                    {invoice.invoice_number}
+                  </span>
+                  <StatusBadge status={invoice.status} />
+                </div>
+                <span className="font-mono text-xs text-foreground">
+                  {formatCurrency(invoice.status === 'paid' ? invoice.total_amount : invoice.balance_due)}
                 </span>
-                <StatusBadge status={invoice.status} />
               </div>
-              <span className="font-mono text-xs text-foreground">
-                {formatCurrency(invoice.balance_due || invoice.total_amount)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Actions */}
       <div className="flex items-center gap-2">

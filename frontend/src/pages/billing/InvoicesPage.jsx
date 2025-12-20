@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,9 @@ import {
   Filter,
   Calendar,
   User,
+  X,
 } from 'lucide-react';
+import { patientsApi } from '@/lib/api/patients';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
@@ -48,6 +50,26 @@ export default function InvoicesPage() {
   const dateFrom = searchParams.get('date_from') || '';
   const dateTo = searchParams.get('date_to') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
+  const patientId = searchParams.get('patient') || '';
+
+  // Patient info for display when filtering by patient
+  const [patientName, setPatientName] = useState('');
+
+  // Fetch patient name when filtering by patient
+  useEffect(() => {
+    if (patientId) {
+      patientsApi.getPatient(patientId)
+        .then((patient) => {
+          const name = patient?.user_details
+            ? `${patient.user_details.first_name || ''} ${patient.user_details.last_name || ''}`.trim()
+            : patient?.name || 'Patient';
+          setPatientName(name);
+        })
+        .catch(() => setPatientName('Patient'));
+    } else {
+      setPatientName('');
+    }
+  }, [patientId]);
 
   // Debounced search
   const debouncedSearch = useDebounce(search, 300);
@@ -76,6 +98,7 @@ export default function InvoicesPage() {
     ...(status !== 'all' && { status }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
+    ...(patientId && { patient: patientId }),
   };
 
   const {
@@ -113,7 +136,16 @@ export default function InvoicesPage() {
     setSearchParams({});
   };
 
-  const hasActiveFilters = status !== 'all' || dateFrom || dateTo || debouncedSearch;
+  const clearPatientFilter = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('patient');
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  const hasActiveFilters = status !== 'all' || dateFrom || dateTo || debouncedSearch || patientId;
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
@@ -169,9 +201,24 @@ export default function InvoicesPage() {
             <h1 className="font-display text-3xl sm:text-4xl text-foreground tracking-tight">
               Invoices
             </h1>
-            <p className="text-muted-foreground mt-1">
-              {totalCount} invoice{totalCount !== 1 ? 's' : ''} found
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <p className="text-muted-foreground">
+                {totalCount} invoice{totalCount !== 1 ? 's' : ''} found
+              </p>
+              {patientId && patientName && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-mono">
+                  <User className="h-3 w-3" />
+                  {patientName}
+                  <button
+                    onClick={clearPatientFilter}
+                    className="ml-0.5 hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                    title="Clear patient filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
           <Button
             onClick={() => navigate('/billing/invoices/new')}

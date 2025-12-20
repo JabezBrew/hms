@@ -21,6 +21,7 @@ class AuditCategory:
     VITALS = 'VITALS'
     NURSING = 'NURSING'
     PHARMACY = 'PHARMACY'
+    BILLING = 'BILLING'
 
     CHOICES = [
         (AUTHENTICATION, 'Authentication'),
@@ -37,6 +38,7 @@ class AuditCategory:
         (VITALS, 'Vital Signs'),
         (NURSING, 'Nursing'),
         (PHARMACY, 'Pharmacy'),
+        (BILLING, 'Billing'),
     ]
 
 
@@ -117,6 +119,25 @@ class AuditAction:
     FLUID_BALANCE_UPDATE = 'FLUID_BALANCE_UPDATE'
     FLUID_BALANCE_DELETE = 'FLUID_BALANCE_DELETE'
 
+    # Billing specific
+    INVOICE_CREATE = 'INVOICE_CREATE'
+    INVOICE_UPDATE = 'INVOICE_UPDATE'
+    INVOICE_CANCEL = 'INVOICE_CANCEL'
+    INVOICE_VOID = 'INVOICE_VOID'
+    PAYMENT_RECORD = 'PAYMENT_RECORD'
+    PAYMENT_VOID = 'PAYMENT_VOID'
+    CLAIM_SUBMIT = 'CLAIM_SUBMIT'
+    CLAIM_UPDATE = 'CLAIM_UPDATE'
+    INSURANCE_ADD = 'INSURANCE_ADD'
+    INSURANCE_UPDATE = 'INSURANCE_UPDATE'
+
+    # Document/Print actions
+    DOCUMENT_PRINT = 'DOCUMENT_PRINT'
+    RECEIPT_PRINT = 'RECEIPT_PRINT'
+    INVOICE_PRINT = 'INVOICE_PRINT'
+    REPORT_GENERATE = 'REPORT_GENERATE'
+    REPORT_EXPORT = 'REPORT_EXPORT'
+
     CHOICES = [
         (LOGIN, 'Login'),
         (LOGOUT, 'Logout'),
@@ -173,6 +194,23 @@ class AuditAction:
         (FLUID_OUTPUT_RECORD, 'Fluid Output Recorded'),
         (FLUID_BALANCE_UPDATE, 'Fluid Balance Updated'),
         (FLUID_BALANCE_DELETE, 'Fluid Balance Deleted'),
+        # Billing
+        (INVOICE_CREATE, 'Invoice Created'),
+        (INVOICE_UPDATE, 'Invoice Updated'),
+        (INVOICE_CANCEL, 'Invoice Cancelled'),
+        (INVOICE_VOID, 'Invoice Voided'),
+        (PAYMENT_RECORD, 'Payment Recorded'),
+        (PAYMENT_VOID, 'Payment Voided'),
+        (CLAIM_SUBMIT, 'Claim Submitted'),
+        (CLAIM_UPDATE, 'Claim Updated'),
+        (INSURANCE_ADD, 'Insurance Added'),
+        (INSURANCE_UPDATE, 'Insurance Updated'),
+        # Documents/Printing
+        (DOCUMENT_PRINT, 'Document Printed'),
+        (RECEIPT_PRINT, 'Receipt Printed'),
+        (INVOICE_PRINT, 'Invoice Printed'),
+        (REPORT_GENERATE, 'Report Generated'),
+        (REPORT_EXPORT, 'Report Exported'),
     ]
 
 

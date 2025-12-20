@@ -21,6 +21,7 @@ import {
   Calendar,
   Plus,
   FileSpreadsheet,
+  Shield,
 } from 'lucide-react';
 
 export default function BillingDashboardPage() {
@@ -278,9 +279,9 @@ export default function BillingDashboardPage() {
               onClick={() => navigate('/billing/payments')}
             />
             <QuickActionButton
-              icon={Calendar}
-              label="Reports"
-              onClick={() => navigate('/billing/reports')}
+              icon={Shield}
+              label="Insurance"
+              onClick={() => navigate('/billing/insurance')}
             />
           </div>
         </section>

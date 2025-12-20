@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useInvoice, useGenerateClaim } from '@/hooks/useBillingQueries';
+import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -21,6 +22,7 @@ import {
   CheckCircle,
   Clock,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
 import RecordPaymentSlideOver from '@/components/billing/RecordPaymentSlideOver';
 
@@ -38,6 +40,9 @@ export default function InvoiceDetailPage() {
 
   const generateClaimMutation = useGenerateClaim();
 
+  // Receipt and invoice printing hook
+  const { printReceipt, printInvoice, printingId } = useReceiptPrint();
+
   const handleGenerateClaim = async () => {
     try {
       await generateClaimMutation.mutateAsync(id);
@@ -48,7 +53,7 @@ export default function InvoiceDetailPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    printInvoice(id);
   };
 
   // Loading state
@@ -175,9 +180,23 @@ export default function InvoiceDetailPage() {
                   Generate Claim
                 </Button>
               )}
-              <Button variant="outline" onClick={handlePrint} className="font-mono text-xs">
-                <Printer className="h-4 w-4 mr-2" />
-                Print
+              <Button
+                variant="outline"
+                onClick={handlePrint}
+                disabled={printingId === id}
+                className="font-mono text-xs"
+              >
+                {printingId === id ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Invoice
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -347,17 +366,49 @@ export default function InvoiceDetailPage() {
                 </header>
                 <div className="divide-y divide-border">
                   {invoice.payments.map((payment, index) => (
-                    <div key={payment.id || index} className="px-5 sm:px-6 py-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-foreground">{formatDate(payment.payment_date)}</p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {formatPaymentMethod(payment.payment_method)}
-                          {payment.reference_number && ` · Ref: ${payment.reference_number}`}
-                        </p>
+                    <div key={payment.id || index} className="px-5 sm:px-6 py-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-foreground">{formatDate(payment.payment_date)}</p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {formatPaymentMethod(payment.payment_method)}
+                            {payment.reference_number && ` · Ref: ${payment.reference_number}`}
+                          </p>
+                        </div>
+                        <span className="font-mono text-lg text-[oklch(0.70_0.17_155)]">
+                          +{formatCurrency(payment.amount)}
+                        </span>
                       </div>
-                      <span className="font-mono text-lg text-[oklch(0.70_0.17_155)]">
-                        +{formatCurrency(payment.amount)}
-                      </span>
+                      {/* Receipt Info */}
+                      {payment.receipt_number && (
+                        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-mono text-xs text-muted-foreground">
+                              Receipt: {payment.receipt_number}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => printReceipt(payment)}
+                            disabled={printingId === payment.id}
+                            className="font-mono text-xs h-7 px-2"
+                          >
+                            {printingId === payment.id ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <Printer className="h-3 w-3 mr-1" />
+                                Print Receipt
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

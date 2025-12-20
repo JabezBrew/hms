@@ -104,6 +104,19 @@ export const billingApi = {
   },
 
   /**
+   * Get invoice details for printing (logs audit trail)
+   * @param {string} id - Invoice ID
+   * @returns {Promise<Object>} Invoice data for printing
+   */
+  getInvoicePrintDetail: async (id) => {
+    try {
+      return await apiClient.get(`/billing/invoices/${id}/print_detail/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch invoice for printing'));
+    }
+  },
+
+  /**
    * Get invoices for a specific patient
    * @param {string} patientId - Patient ID
    * @param {Object} params - Additional query parameters
@@ -257,6 +270,32 @@ export const billingApi = {
       return await apiClient.post(`/billing/payments/${paymentId}/generate_receipt/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to generate receipt'));
+    }
+  },
+
+  /**
+   * Get receipt details for printing (includes invoice items)
+   * @param {string} receiptId - Receipt ID
+   * @returns {Promise<Object>} Full receipt data with invoice items
+   */
+  getReceiptPrintDetail: async (receiptId) => {
+    try {
+      return await apiClient.get(`/billing/receipts/${receiptId}/print_detail/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch receipt details'));
+    }
+  },
+
+  /**
+   * Get receipt by receipt number for printing
+   * @param {string} receiptNumber - Receipt number
+   * @returns {Promise<Object>} Full receipt data with invoice items
+   */
+  getReceiptByNumber: async (receiptNumber) => {
+    try {
+      return await apiClient.get(`/billing/receipts/by_receipt_number/?receipt_number=${encodeURIComponent(receiptNumber)}`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch receipt'));
     }
   },
 
@@ -416,7 +455,25 @@ export const billingApi = {
   // =========================================================================
 
   /**
-   * Get patient insurance records
+   * Get all patient insurance records with pagination
+   * @param {Object} params - Query parameters
+   * @param {string} params.search - Search query
+   * @param {number} params.page - Page number
+   * @param {number} params.page_size - Page size
+   * @returns {Promise<Object>} Paginated patient insurance records
+   */
+  getPatientInsurances: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/patient-insurances/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch patient insurances'));
+    }
+  },
+
+  /**
+   * Get patient insurance records for a specific patient
    * @param {string} patientId - Patient ID
    * @param {Object} params - Additional query parameters
    * @returns {Promise<Array>} Patient insurance records
@@ -428,6 +485,65 @@ export const billingApi = {
       return await apiClient.get(`/billing/patient-insurances/for_patient/?${queryString}`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch patient insurance'));
+    }
+  },
+
+  /**
+   * Get a single patient insurance by ID
+   * @param {string} id - Patient insurance ID
+   * @returns {Promise<Object>} Patient insurance record
+   */
+  getPatientInsuranceById: async (id) => {
+    try {
+      return await apiClient.get(`/billing/patient-insurances/${id}/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch patient insurance'));
+    }
+  },
+
+  /**
+   * Create a new patient insurance record
+   * @param {Object} data - Patient insurance data
+   * @param {string} data.patient - Patient ID
+   * @param {string} data.plan - Insurance plan ID
+   * @param {string} data.policy_number - Policy number
+   * @param {string} data.valid_from - Start date (YYYY-MM-DD)
+   * @param {string} data.valid_until - End date (YYYY-MM-DD, optional)
+   * @param {boolean} data.is_active - Active status
+   * @returns {Promise<Object>} Created patient insurance
+   */
+  createPatientInsurance: async (data) => {
+    try {
+      return await apiClient.post('/billing/patient-insurances/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create patient insurance'));
+    }
+  },
+
+  /**
+   * Update a patient insurance record
+   * @param {string} id - Patient insurance ID
+   * @param {Object} data - Patient insurance data to update
+   * @returns {Promise<Object>} Updated patient insurance
+   */
+  updatePatientInsurance: async (id, data) => {
+    try {
+      return await apiClient.put(`/billing/patient-insurances/${id}/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to update patient insurance'));
+    }
+  },
+
+  /**
+   * Delete a patient insurance record
+   * @param {string} id - Patient insurance ID
+   * @returns {Promise<void>}
+   */
+  deletePatientInsurance: async (id) => {
+    try {
+      return await apiClient.delete(`/billing/patient-insurances/${id}/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to delete patient insurance'));
     }
   },
 
