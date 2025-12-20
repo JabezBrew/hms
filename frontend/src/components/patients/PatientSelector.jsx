@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
 import { normalizeApiResults } from "@/lib/utils";
-import { Toaster } from "@/components/ui/sonner.jsx";
+import { patientsApi } from "@/lib/api/patients";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Command,
   CommandEmpty,
@@ -19,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -91,20 +89,16 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
 
     setIsLoading(true);
     try {
-      const response = await axios.get(`/api/patients/search/?query=${encodeURIComponent(query)}`);
-      setPatients(normalizeApiResults(response.data));
+      const response = await patientsApi.searchPatients({ query });
+      setPatients(normalizeApiResults(response));
     } catch (error) {
       console.error("Error searching patients:", error);
-      Toaster({
-        title: "Error",
-        description: "Failed to search patients",
-        variant: "destructive",
-      });
+      toast.error("Failed to search patients");
       setPatients([]);
     } finally {
       setIsLoading(false);
     }
-  }, [Toaster]);
+  }, []);
 
   // Effect to search patients when query changes
   useEffect(() => {
