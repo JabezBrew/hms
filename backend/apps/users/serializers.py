@@ -25,7 +25,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
                   'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined']
-        read_only_fields = ['id', 'date_joined']
+        # SECURITY: user_type and is_active are read-only to prevent privilege escalation
+        # Only admins can modify these fields via admin-specific endpoints
+        read_only_fields = ['id', 'date_joined', 'user_type', 'is_active']
 
 
 class UserWithAccessContextSerializer(serializers.ModelSerializer):
@@ -478,9 +480,9 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 position=validated_data['position'],
             )
         except Exception as e:
-            logger.error(f"Failed to send welcome email to {user.email}: {e}")
+            logger.error(f"Failed to send welcome email for user {user.id}: {e}")
 
-        logger.info(f"Staff account created for {user.email} with employee ID: {employee_id}")
+        logger.info(f"Staff account created with ID {user.id} and employee ID: {employee_id}")
 
         # Create PractitionerProfile if user_type is doctor or nurse
         practitioner_profile = None

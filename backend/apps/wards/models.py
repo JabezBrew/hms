@@ -442,10 +442,36 @@ class Admission(models.Model):
         bed_name = self.bed.ward.name if self.bed else "No Bed"
         return f"{self.patient.user.get_full_name()} - {bed_name} - {self.get_status_display()}"
 
+    # SECURITY: Define valid status transitions to prevent manipulation
+    VALID_STATUS_TRANSITIONS = {
+        'waiting': ['admitted', 'cancelled'],
+        'admitted': ['discharged', 'transferred', 'deceased'],
+        'discharged': [],  # Terminal state
+        'transferred': [],  # Terminal state
+        'deceased': [],  # Terminal state
+    }
+
     def save(self, *args, **kwargs):
         """
-        Override save method to handle bed status changes.
+        Override save method to handle bed status changes and validate transitions.
         """
+        # SECURITY: Validate status transitions on updates
+        if self.pk and not self._state.adding:
+            try:
+                old_admission = Admission.objects.get(pk=self.pk)
+                old_status = old_admission.status
+                new_status = self.status
+
+                if old_status != new_status:
+                    valid_transitions = self.VALID_STATUS_TRANSITIONS.get(old_status, [])
+                    if new_status not in valid_transitions:
+                        from django.core.exceptions import ValidationError
+                        raise ValidationError(
+                            f"Invalid status transition from '{old_status}' to '{new_status}'."
+                        )
+            except Admission.DoesNotExist:
+                pass  # New record, no validation needed
+
         # If this is a new admission, set the bed status to occupied
         if self._state.adding and self.status == 'admitted' and self.bed:
             self.bed.status = 'occupied'
@@ -658,6 +684,37 @@ class Encounter(models.Model):
     def __str__(self):
         patient_name = self.patient.user.get_full_name() if self.patient else "Unknown"
         return f"{patient_name} - {self.get_encounter_type_display()} ({self.get_status_display()}) - {self.start_time.strftime('%Y-%m-%d')}"
+
+    # SECURITY: Define valid status transitions to prevent manipulation
+    VALID_STATUS_TRANSITIONS = {
+        'planned': ['in-progress', 'cancelled'],
+        'in-progress': ['finished', 'cancelled'],
+        'finished': [],  # Terminal state
+        'cancelled': [],  # Terminal state
+    }
+
+    def save(self, *args, **kwargs):
+        """
+        Override save method to validate status transitions.
+        """
+        # SECURITY: Validate status transitions on updates
+        if self.pk and not self._state.adding:
+            try:
+                old_encounter = Encounter.objects.get(pk=self.pk)
+                old_status = old_encounter.status
+                new_status = self.status
+
+                if old_status != new_status:
+                    valid_transitions = self.VALID_STATUS_TRANSITIONS.get(old_status, [])
+                    if new_status not in valid_transitions:
+                        from django.core.exceptions import ValidationError
+                        raise ValidationError(
+                            f"Invalid status transition from '{old_status}' to '{new_status}'."
+                        )
+            except Encounter.DoesNotExist:
+                pass  # New record, no validation needed
+
+        super().save(*args, **kwargs)
 
     @property
     def patient_name(self):

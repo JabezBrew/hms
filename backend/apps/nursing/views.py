@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Prefetch, Count, Case, When, Sum
 from django.db import transaction
@@ -24,7 +25,6 @@ from .serializers import (
     NursingAlertSerializer, NursingAlertAcknowledgeSerializer, NursingAlertListSerializer,
     MedicationAdministrationSerializer, MedicationAdministrationCreateSerializer,
     MedicationAdministrationUpdateSerializer, MedicationAdministrationListSerializer,
-    MedicationDispensingListSerializer,
     ShiftHandoffSerializer, ShiftHandoffListSerializer,
     PatientMonitoringSerializer, PatientMonitoringListSerializer,
     TreatmentSheetEntrySerializer, TreatmentSheetEntryListSerializer,
@@ -39,6 +39,7 @@ from ..wards.services import ensure_encounter_for_entry
 from ..users.models import PatientProfile, PractitionerProfile
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
+from ..core.security import check_clinical_access
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,9 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
                 {"error": "patient parameter is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Check if user has permission to access this patient
+        check_clinical_access(request.user, patient_id)
 
         days = int(request.query_params.get('days', 7))
         start_date = timezone.now() - timedelta(days=days)
@@ -332,6 +336,9 @@ class NursingAlertViewSet(viewsets.ModelViewSet):
 class MedicationAdministrationViewSet(viewsets.ModelViewSet):
     """
     API endpoint for medication administration management.
+
+    Note: Dispensing actions (pending_dispensing, dispense, dispense_bulk)
+    have been moved to apps.pharmacy.views.DispensingViewSet
     """
     queryset = MedicationAdministration.objects.select_related(
         'patient', 'patient__user', 'administered_by', 'prescribed_by', 'created_by'
@@ -423,114 +430,20 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
-    def pending_dispensing(self, request):
-        """
-        Get medications awaiting pharmacy dispensing.
-        Pharmacists use this to see what needs to be dispensed.
-        Uses lightweight serializer to reduce payload size.
-        """
-        patient_id = request.query_params.get('patient')
-
-        from .services import get_pending_dispensing
-        medications = get_pending_dispensing(patient_id)
-
-        # Use lightweight serializer for dispensing queue
-        serializer = MedicationDispensingListSerializer(medications, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
     def ready_for_admin(self, request):
         """
         Get medications that are dispensed and ready for nurse administration.
-        Uses lightweight serializer to reduce payload size.
+
+        Note: Pharmacy dispensing endpoints have moved to /api/pharmacy/dispensing/
         """
         patient_id = request.query_params.get('patient')
 
-        from .services import get_dispensed_ready_for_admin
+        from apps.pharmacy.services import get_dispensed_ready_for_admin
         medications = get_dispensed_ready_for_admin(patient_id)
 
-        # Use lightweight serializer
-        serializer = MedicationDispensingListSerializer(medications, many=True)
+        # Use list serializer
+        serializer = MedicationAdministrationListSerializer(medications, many=True)
         return Response(serializer.data)
-
-    @action(detail=True, methods=['post'])
-    def dispense(self, request, pk=None):
-        """
-        Mark a medication as dispensed by pharmacy.
-        Only pharmacists can dispense medications.
-        """
-        if request.user.user_type not in ['pharmacist', 'admin']:
-            return Response(
-                {'error': 'Only pharmacists can dispense medications'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        med_admin = self.get_object()
-
-        if med_admin.is_dispensed:
-            return Response(
-                {'error': 'Medication already dispensed'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        from .services import dispense_medication
-        med_admin = dispense_medication(med_admin, request.user)
-
-        # Audit log
-        AuditService.log(
-            request=request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.PRESCRIPTION,
-            resource_type='MedicationAdministration',
-            resource_id=med_admin.id,
-            resource_name=f"{med_admin.medication_name}",
-            description=f"Dispensed {med_admin.medication_name} for patient "
-                        f"{med_admin.patient.user.get_full_name()}",
-            changes={'is_dispensed': {'old': False, 'new': True}}
-        )
-
-        return Response(MedicationAdministrationSerializer(med_admin).data)
-
-    @action(detail=False, methods=['post'])
-    def dispense_bulk(self, request):
-        """
-        Bulk dispense multiple medications.
-        Only pharmacists can dispense medications.
-        """
-        if request.user.user_type not in ['pharmacist', 'admin']:
-            return Response(
-                {'error': 'Only pharmacists can dispense medications'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        medication_ids = request.data.get('medication_ids', [])
-        if not medication_ids:
-            return Response(
-                {'error': 'medication_ids is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        from .services import dispense_medication
-
-        dispensed = []
-        errors = []
-
-        for med_id in medication_ids:
-            try:
-                med_admin = MedicationAdministration.objects.get(id=med_id)
-                if not med_admin.is_dispensed:
-                    dispense_medication(med_admin, request.user)
-                    dispensed.append(str(med_id))
-                else:
-                    errors.append({'id': str(med_id), 'error': 'Already dispensed'})
-            except MedicationAdministration.DoesNotExist:
-                errors.append({'id': str(med_id), 'error': 'Not found'})
-
-        return Response({
-            'dispensed': dispensed,
-            'dispensed_count': len(dispensed),
-            'errors': errors
-        })
 
     @action(detail=False, methods=['get'])
     def patient_mar(self, request):
@@ -544,6 +457,9 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 {'error': 'patient parameter is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Check if user has permission to access this patient
+        check_clinical_access(request.user, patient_id)
 
         # Get date range (default: today)
         date_str = request.query_params.get('date')
@@ -1735,10 +1651,12 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='pending-queue')
     def pending_queue(self, request):
         """
-        Get all pending supply requests.
-        Used by pharmacy to see what needs to be dispensed.
+        Get all pending supply requests for the current user's requests.
+        Nurses can view status of their supply requests.
+
+        Note: Pharmacy dispensing actions have moved to /api/pharmacy/supply-requests/
         """
-        from .services import get_pending_supply_requests
+        from apps.pharmacy.services import get_pending_supply_requests
 
         patient_id = request.query_params.get('patient_id')
         admission_id = request.query_params.get('admission_id')
@@ -1750,153 +1668,6 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
 
         serializer = SupplyRequestListSerializer(requests, many=True)
         return Response(serializer.data)
-
-    @action(detail=True, methods=['post'])
-    def dispense(self, request, pk=None):
-        """
-        Dispense a supply request (pharmacy action).
-
-        Request body:
-        - quantity_dispensed: Actual quantity dispensed (optional, defaults to quantity_requested)
-        """
-        supply_request = self.get_object()
-
-        if supply_request.status != 'pending':
-            return Response(
-                {'error': 'Can only dispense pending requests'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        quantity_dispensed = request.data.get('quantity_dispensed')
-        if quantity_dispensed is None:
-            quantity_dispensed = supply_request.quantity_requested
-
-        try:
-            quantity_dispensed = int(quantity_dispensed)
-            if quantity_dispensed <= 0:
-                raise ValueError()
-        except (ValueError, TypeError):
-            return Response(
-                {'error': 'Quantity dispensed must be a positive integer'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Dispense using service
-        from .services import dispense_supply_request
-
-        supply_request = dispense_supply_request(
-            supply_request=supply_request,
-            quantity_dispensed=quantity_dispensed,
-            dispensed_by=request.user
-        )
-
-        # Audit log
-        AuditService.log_action(
-            user=request.user,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.PHARMACY,
-            resource_type='SupplyRequest',
-            resource_id=str(supply_request.id),
-            details=f"Dispensed {quantity_dispensed} doses of {supply_request.treatment_entry.medication_name}"
-        )
-
-        serializer = SupplyRequestSerializer(supply_request)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'])
-    def reject(self, request, pk=None):
-        """
-        Reject a supply request (pharmacy action).
-
-        Request body:
-        - reason: Reason for rejection (required)
-        """
-        supply_request = self.get_object()
-
-        if supply_request.status != 'pending':
-            return Response(
-                {'error': 'Can only reject pending requests'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        reason = request.data.get('reason')
-        if not reason:
-            return Response(
-                {'error': 'Reason for rejection is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Reject using service
-        from .services import reject_supply_request
-
-        supply_request = reject_supply_request(
-            supply_request=supply_request,
-            rejection_reason=reason,
-            rejected_by=request.user
-        )
-
-        # Audit log
-        AuditService.log_action(
-            user=request.user,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.PHARMACY,
-            resource_type='SupplyRequest',
-            resource_id=str(supply_request.id),
-            details=f"Rejected supply request for {supply_request.treatment_entry.medication_name}: {reason}"
-        )
-
-        serializer = SupplyRequestSerializer(supply_request)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['post'], url_path='bulk-dispense')
-    def bulk_dispense(self, request):
-        """
-        Dispense multiple supply requests at once.
-
-        Request body:
-        - request_ids: List of supply request IDs
-        """
-        request_ids = request.data.get('request_ids', [])
-        if not request_ids:
-            return Response(
-                {'error': 'request_ids is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        dispensed_count = 0
-        errors = []
-
-        for request_id in request_ids:
-            try:
-                supply_request = SupplyRequest.objects.get(id=request_id, status='pending')
-
-                from .services import dispense_supply_request
-                dispense_supply_request(
-                    supply_request=supply_request,
-                    quantity_dispensed=supply_request.quantity_requested,
-                    dispensed_by=request.user
-                )
-
-                dispensed_count += 1
-            except SupplyRequest.DoesNotExist:
-                errors.append(f"Request {request_id} not found or not pending")
-            except Exception as e:
-                errors.append(f"Error dispensing {request_id}: {str(e)}")
-
-        # Audit log
-        AuditService.log_action(
-            user=request.user,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.PHARMACY,
-            resource_type='SupplyRequest',
-            resource_id='bulk',
-            details=f"Bulk dispensed {dispensed_count} supply requests"
-        )
-
-        return Response({
-            'dispensed_count': dispensed_count,
-            'errors': errors
-        })
 
 
 class FluidBalanceViewSet(viewsets.ModelViewSet):
@@ -2043,6 +1814,9 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # SECURITY: Check if user has permission to access this patient
+        check_clinical_access(request.user, patient_id)
+
         # Get date (default to today)
         date_str = request.query_params.get('date')
         if date_str:
@@ -2112,6 +1886,9 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # SECURITY: Check if user has permission to access this patient
+        check_clinical_access(request.user, patient_id)
+
         today = timezone.now().date()
 
         # Calculate totals using database aggregation (N+1 fix)
@@ -2165,6 +1942,9 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
                 {'error': 'patient parameter is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Check if user has permission to access this patient
+        check_clinical_access(request.user, patient_id)
 
         # Get date (default to today)
         date_str = request.query_params.get('date')

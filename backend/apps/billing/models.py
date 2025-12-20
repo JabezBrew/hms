@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from decimal import Decimal
 
@@ -1150,7 +1151,13 @@ class InvoiceItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    # SECURITY: Prevent discount manipulation (negative or >100%)
+    discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0.00,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))]
+    )
     
     # Description
     description = models.TextField(blank=True, null=True)
@@ -1220,7 +1227,12 @@ class Payment(models.Model):
     
     # Payment details
     payment_date = models.DateField(default=today_date)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    # SECURITY: Prevent negative payment amounts to avoid billing manipulation
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
     
     # Payment method
     PAYMENT_METHOD_CHOICES = (

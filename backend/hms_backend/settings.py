@@ -96,6 +96,7 @@ INSTALLED_APPS = [
     'apps.laboratory.apps.LaboratoryConfig',
     'apps.referrals.apps.ReferralsConfig',
     'apps.charts.apps.ChartsConfig',
+    'apps.pharmacy.apps.PharmacyConfig',
 ]
 
 MIDDLEWARE = [

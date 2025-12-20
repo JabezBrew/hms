@@ -79,12 +79,11 @@ def send_referral_submitted_notification(self, referral_id):
             fail_silently=False,
         )
 
-        logger.info(f"Referral submitted notification sent for referral {referral_id} to {recipient_email}")
+        logger.info(f"Referral submitted notification sent for referral {referral_id}")
 
         return {
             "status": "success",
             "referral_id": str(referral_id),
-            "recipient_email": recipient_email,
         }
 
     except Referral.DoesNotExist:
@@ -185,13 +184,12 @@ def send_referral_status_update(self, referral_id, action):
             fail_silently=False,
         )
 
-        logger.info(f"Referral status update ({action}) sent for referral {referral_id} to {referring_provider.email}")
+        logger.info(f"Referral status update ({action}) sent for referral {referral_id}")
 
         return {
             "status": "success",
             "referral_id": str(referral_id),
             "action": action,
-            "provider_email": referring_provider.email,
         }
 
     except Referral.DoesNotExist:
@@ -267,12 +265,11 @@ def send_referral_reminder(self, referral_id):
             fail_silently=False,
         )
 
-        logger.info(f"Referral reminder sent for referral {referral_id} to {recipient_email}")
+        logger.info(f"Referral reminder sent for referral {referral_id}")
 
         return {
             "status": "success",
             "referral_id": str(referral_id),
-            "recipient_email": recipient_email,
             "days_pending": days_pending,
         }
 

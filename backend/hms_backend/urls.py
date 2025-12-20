@@ -69,6 +69,7 @@ urlpatterns = [
     path('api/billing/', include('apps.billing.urls')),
     path('api/clinical-notes/', include('apps.clinical_notes.urls')),
     path('api/nursing/', include('apps.nursing.urls')),
+    path('api/pharmacy/', include('apps.pharmacy.urls')),
     path('api/drug-safety/', include('apps.drug_safety.urls')),
     path('api/laboratory/', include('apps.laboratory.urls')),
     path('api/referrals/', include('apps.referrals.urls')),

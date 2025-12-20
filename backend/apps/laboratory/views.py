@@ -32,6 +32,7 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
 from ..users.rbac import IsLabTechnician
+from ..core.security import check_lab_access
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 
@@ -392,6 +393,8 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            # SECURITY: Check if user has permission to access this patient's data
+            check_lab_access(self.request.user, patient_id)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by status
@@ -871,6 +874,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            # SECURITY: Check if user has permission to access this patient's data
+            check_lab_access(self.request.user, patient_id)
             queryset = queryset.filter(order_test__order__patient_id=patient_id)
 
         # Filter by verification status

@@ -30,8 +30,9 @@ from .serializers import (
     FacilityBillingSettingsSerializer,
     BillingDashboardMetricsSerializer, RecentInvoiceSerializer, RecentPaymentSerializer
 )
-from ..users.permissions import IsAdminOrOwner
+from ..users.permissions import IsBillingStaff
 from apps.core.pagination import StandardResultsSetPagination as CorePagination
+from apps.core.security import check_billing_access
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 
@@ -49,7 +50,7 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     """
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
@@ -69,7 +70,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     """
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'code', 'category__name']
@@ -112,7 +113,7 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
     """
     queryset = InsuranceProvider.objects.all()
     serializer_class = InsuranceProviderSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'contact_person', 'email', 'phone']
@@ -148,7 +149,7 @@ class InsurancePlanViewSet(viewsets.ModelViewSet):
     """
     queryset = InsurancePlan.objects.all()
     serializer_class = InsurancePlanSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description', 'provider__name']
@@ -168,7 +169,7 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientInsurance.objects.all()
     serializer_class = PatientInsuranceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'policy_number', 'plan__name', 'plan__provider__name']
@@ -221,7 +222,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     API endpoint for invoices.
     """
     queryset = Invoice.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
@@ -291,6 +292,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 {"error": "patient_id parameter is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Check if user has permission to access this patient's data
+        check_billing_access(request.user, patient_id)
 
         invoices = self.get_queryset().filter(patient_id=patient_id)
 
@@ -465,7 +469,26 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if amount is None:
             amount = invoice.balance_due
         else:
-            amount = float(amount)
+            # SECURITY: Validate payment amount to prevent billing manipulation
+            try:
+                amount = Decimal(str(amount))
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "amount must be a valid number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if amount <= 0:
+                return Response(
+                    {"error": "amount must be greater than zero."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if amount > invoice.balance_due:
+                return Response(
+                    {"error": "amount cannot exceed the balance due."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         with transaction.atomic():
             # Create payment
@@ -503,7 +526,7 @@ class InvoiceItemViewSet(viewsets.ModelViewSet):
     """
     queryset = InvoiceItem.objects.all()
     serializer_class = InvoiceItemSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['service__name', 'description', 'invoice__invoice_number']
@@ -523,7 +546,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
@@ -607,7 +630,7 @@ class ClaimViewSet(viewsets.ModelViewSet):
     """
     queryset = Claim.objects.all()
     serializer_class = ClaimSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['claim_number', 'invoice__invoice_number', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
@@ -678,12 +701,34 @@ class ClaimViewSet(viewsets.ModelViewSet):
         approved_amount = request.data.get('approved_amount', None)
         rejection_reason = request.data.get('rejection_reason', None)
 
+        # SECURITY: Validate approved_amount to prevent billing fraud
+        if approved_amount is not None:
+            try:
+                approved_amount = Decimal(str(approved_amount))
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "approved_amount must be a valid number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if approved_amount < 0:
+                return Response(
+                    {"error": "approved_amount cannot be negative."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if approved_amount > claim.claimed_amount:
+                return Response(
+                    {"error": "approved_amount cannot exceed the claimed_amount."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Update claim
         claim.status = new_status
         claim.response_date = timezone.now().date()
 
         if approved_amount is not None:
-            claim.approved_amount = float(approved_amount)
+            claim.approved_amount = approved_amount
 
         if rejection_reason is not None:
             claim.rejection_reason = rejection_reason
@@ -724,7 +769,7 @@ class ReceiptViewSet(viewsets.ModelViewSet):
     """
     queryset = Receipt.objects.all()
     serializer_class = ReceiptSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['receipt_number', 'payment__invoice__invoice_number', 'payment__reference_number']
@@ -810,7 +855,7 @@ class BillingRuleViewSet(viewsets.ModelViewSet):
     API endpoint for billing rules.
     """
     queryset = BillingRule.objects.select_related('facility').all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'rule_type', 'description']
@@ -866,7 +911,7 @@ class FacilityBillingSettingsViewSet(viewsets.ModelViewSet):
     """
     queryset = FacilityBillingSettings.objects.select_related('facility').all()
     serializer_class = FacilityBillingSettingsSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):

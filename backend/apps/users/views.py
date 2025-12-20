@@ -203,8 +203,9 @@ class StaffViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_201_CREATED
                     )
             except Exception as e:
+                logger.error(f"Failed to register staff: {str(e)}")
                 return Response(
-                    {"error": f"Failed to register staff: {str(e)}"},
+                    {"error": "Failed to register staff. Please try again."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
@@ -381,8 +382,9 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
+            logger.error(f"Failed to search practitioners: {str(e)}")
             return Response(
-                {"error": f"Failed to search practitioners: {str(e)}"},
+                {"error": "Failed to search practitioners. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -425,9 +427,9 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
         except Exception as e:
             mapping.is_synced = False
             mapping.save()
-
+            logger.error(f"Failed to sync with FHIR resource: {str(e)}")
             return Response(
-                {"error": f"Failed to sync with FHIR resource: {str(e)}"},
+                {"error": "Failed to sync with FHIR resource. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

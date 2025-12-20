@@ -30,6 +30,7 @@ from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
+from ..core.security import check_clinical_access
 
 logger = logging.getLogger(__name__)
 
@@ -534,8 +535,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             return Response(response_data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            logger.error(f"Failed to create note entry: {str(e)}")
             return Response(
-                {"error": f"Failed to create note entry: {str(e)}"},
+                {"error": "Failed to create note entry. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1785,6 +1787,9 @@ def patient_timeline(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Parse query parameters
     entry_type = request.query_params.get('type', 'all')
     search_query = request.query_params.get('search', '').strip()
@@ -2584,6 +2589,9 @@ def timeline_stats(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Count entries by type
     notes_count = NoteEntry.objects.count()  # TODO: Filter by patient when we have proper linking
     prescriptions_count = Prescription.objects.filter(patient=patient).count()
@@ -2640,6 +2648,9 @@ def chronicle_context(request, patient_id):
             {'error': 'Patient not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
 
     user = patient.user
 
@@ -2889,6 +2900,9 @@ def patient_timeline_v2(request, patient_id):
             {'error': 'Patient not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
 
     # Parse query parameters
     entry_type = request.query_params.get('type', 'all')

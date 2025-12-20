@@ -542,8 +542,9 @@ class ScheduleFHIRMappingViewSet(viewsets.ModelViewSet):
                 "message": "Schedule cancelled successfully"
             })
         except Exception as e:
+            logger.error(f"Failed to cancel schedule: {str(e)}")
             return Response(
-                {"error": f"Failed to cancel schedule: {str(e)}"},
+                {"error": "Failed to cancel schedule. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -668,8 +669,9 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
+            logger.error(f"Failed to generate recurring appointments: {str(e)}")
             return Response(
-                {"error": f"Failed to generate recurring appointments: {str(e)}"},
+                {"error": "Failed to generate recurring appointments. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -765,8 +767,9 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
             return Response({"slots": slots})
 
         except Exception as e:
+            logger.error(f"Failed to preview slots: {str(e)}")
             return Response(
-                {"error": f"Failed to preview slots: {str(e)}"},
+                {"error": "Failed to preview slots. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -822,8 +825,9 @@ class BatchGenerationViewSet(viewsets.ViewSet):
             return Response(result)
 
         except Exception as e:
+            logger.error(f"Failed to batch generate slots: {str(e)}")
             return Response(
-                {"error": f"Failed to batch generate slots: {str(e)}"},
+                {"error": "Failed to batch generate slots. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -923,7 +927,8 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            logger.error(f"Failed to create blocked times: {str(e)}")
             return Response(
-                {"error": f"Failed to create blocked times: {str(e)}"},
+                {"error": "Failed to create blocked times. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

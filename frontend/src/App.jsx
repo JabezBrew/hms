@@ -211,8 +211,9 @@ function AppContent() {
           } />
 
           {/* Patient routes - Chronicle Design System */}
+          {/* Note: Support staff (lab_technician, pharmacist, billing) access patients through their workflow pages */}
           <Route path="/patients" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
               <Layout>
                 <PatientChronicleListPage />
               </Layout>
@@ -228,7 +229,7 @@ function AppContent() {
           } />
 
           <Route path="/patients/my-patients" element={
-            <RoleBasedRoute allowedRoles={['doctor', 'nurse', 'lab_technician', 'pharmacist']}>
+            <RoleBasedRoute allowedRoles={['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
               <Layout>
                 <MyPatientsPage />
               </Layout>
@@ -236,7 +237,7 @@ function AppContent() {
           } />
 
           <Route path="/patients/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
               <Layout>
                 <PatientChroniclePage />
               </Layout>

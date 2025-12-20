@@ -261,8 +261,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 return Response(serializer.data)
 
         except Exception as e:
+            logger.error(f"Failed to discharge patient: {str(e)}")
             return Response(
-                {"error": f"Failed to discharge patient: {str(e)}"},
+                {"error": "Failed to discharge patient. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

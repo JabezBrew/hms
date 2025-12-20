@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, status, filters
+from rest_framework.exceptions import PermissionDenied
 import time
 import logging
 import hashlib
@@ -21,8 +22,11 @@ from .serializers import (
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
+from apps.core.security import check_demographics_access
 from apps.fhir_client.client import fhir_client
 from .tasks import sync_patient_with_fhir, log_patient_search
+
+logger = logging.getLogger(__name__)
 
 
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
@@ -119,6 +123,9 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
         try:
             patient_profile = PatientProfile.objects.get(id=patient_profile_id)
 
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
+
             # Check if already exists
             recent, created = RecentPatient.objects.get_or_create(
                 user=request.user,
@@ -139,9 +146,12 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
                 {"error": "Patient profile not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to add recent patient: {str(e)}")
             return Response(
-                {"error": f"Failed to add recent patient: {str(e)}"},
+                {"error": "Failed to add recent patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -225,8 +235,9 @@ class PatientViewSet(viewsets.ViewSet):
                         status=status.HTTP_201_CREATED
                     )
             except Exception as e:
+                logger.error(f"Failed to register patient: {str(e)}")
                 return Response(
-                    {"error": f"Failed to register patient: {str(e)}"},
+                    {"error": "Failed to register patient. Please try again."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
@@ -354,7 +365,7 @@ class PatientViewSet(viewsets.ViewSet):
         except Exception as e:
             logger.error(f"Search error: {str(e)}")
             return Response(
-                {"error": f"Failed to search patients: {str(e)}"},
+                {"error": "Failed to search patients. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -406,6 +417,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         patient_profile = get_object_or_404(PatientProfile, id=pk)
 
+        # SECURITY: Check if user has permission to access this patient
+        check_demographics_access(request.user, patient_profile)
+
         # Add to recent patients
         RecentPatient.objects.get_or_create(
             user=request.user,
@@ -418,8 +432,8 @@ class PatientViewSet(viewsets.ViewSet):
             try:
                 fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
             except Exception as e:
-                # Just log the error but continue
-                print(f"Failed to get FHIR data: {str(e)}")
+                # Log the error but continue
+                logger.warning(f"Failed to get FHIR data for patient {pk}")
 
         return Response({
             "local_data": PatientProfileSerializer(patient_profile).data,
@@ -433,6 +447,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         try:
             patient_profile = get_object_or_404(PatientProfile, id=pk)
+
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
 
             # Update local patient profile
             profile_serializer = PatientProfileSerializer(
@@ -475,10 +492,11 @@ class PatientViewSet(viewsets.ViewSet):
                         })
                     except Exception as e:
                         # If FHIR update fails, still return the local data
+                        logger.warning(f"FHIR update failed for patient {pk}")
                         return Response({
                             "message": "Patient local data updated, but FHIR update failed",
                             "local_data": profile_serializer.data,
-                            "error": f"FHIR update error: {str(e)}"
+                            "error": "FHIR synchronization error"
                         }, status=status.HTTP_207_MULTI_STATUS)
 
                 # If no FHIR data to update or no FHIR ID
@@ -489,9 +507,12 @@ class PatientViewSet(viewsets.ViewSet):
             else:
                 return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to update patient {pk}: {str(e)}")
             return Response(
-                {"error": f"Failed to update patient: {str(e)}"},
+                {"error": "Failed to update patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -502,6 +523,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         try:
             patient_profile = get_object_or_404(PatientProfile, id=pk)
+
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
 
             # Store FHIR ID before deletion
             fhir_patient_id = patient_profile.fhir_patient_id
@@ -525,18 +549,21 @@ class PatientViewSet(viewsets.ViewSet):
                         fhir_client.delete_resource("Patient", fhir_patient_id)
                     except Exception as e:
                         # If FHIR deletion fails, log the error but continue
-                        print(f"Failed to delete FHIR resource: {str(e)}")
+                        logger.warning(f"Failed to delete FHIR resource for patient {pk}")
                         return Response({
                             "message": "Patient local data deleted, but FHIR deletion failed",
-                            "error": f"FHIR deletion error: {str(e)}"
+                            "error": "FHIR synchronization error"
                         }, status=status.HTTP_207_MULTI_STATUS)
 
                 return Response({
                     "message": "Patient deleted successfully"
                 }, status=status.HTTP_200_OK)
 
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to delete patient {pk}: {str(e)}")
             return Response(
-                {"error": f"Failed to delete patient: {str(e)}"},
+                {"error": "Failed to delete patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

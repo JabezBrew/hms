@@ -22,7 +22,8 @@ from apps.patients.models import (
 from apps.users.models import PatientProfile
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
-    NurseUserFactory, PatientUserFactory, PatientProfileFactory
+    NurseUserFactory, PatientUserFactory, PatientProfileFactory,
+    UserPatientListFactory
 )
 from .factories import (
     PatientFHIRMappingFactory, PatientSearchFactory,

@@ -39,11 +39,11 @@ def send_password_reset_email(self, user_id, token, user_email, user_name):
         email.attach_alternative(html_content, 'text/html')
         email.send(fail_silently=False)
 
-        logger.info(f"Password reset email sent to {user_email}")
-        return {"status": "success", "email": user_email}
+        logger.info(f"Password reset email sent successfully")
+        return {"status": "success"}
 
     except Exception as e:
-        logger.error(f"Failed to send password reset email to {user_email}: {str(e)}")
+        logger.error(f"Failed to send password reset email: {str(e)}")
         raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
@@ -76,11 +76,11 @@ def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_
         email.attach_alternative(html_content, 'text/html')
         email.send(fail_silently=False)
 
-        logger.info(f"Admin force reset email sent to {user_email}")
-        return {"status": "success", "email": user_email}
+        logger.info(f"Admin force reset email sent for user {user_id}")
+        return {"status": "success"}
 
     except Exception as e:
-        logger.error(f"Failed to send admin force reset email to {user_email}: {str(e)}")
+        logger.error(f"Failed to send admin force reset email for user {user_id}: {str(e)}")
         raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
@@ -116,11 +116,11 @@ def send_welcome_credentials_email(self, user_email, user_name, password, employ
         email.attach_alternative(html_content, 'text/html')
         email.send(fail_silently=False)
 
-        logger.info(f"Welcome credentials email sent to {user_email}")
-        return {"status": "success", "email": user_email}
+        logger.info(f"Welcome credentials email sent successfully")
+        return {"status": "success"}
 
     except Exception as e:
-        logger.error(f"Failed to send welcome credentials email to {user_email}: {str(e)}")
+        logger.error(f"Failed to send welcome credentials email: {str(e)}")
         raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
 
 
