@@ -12,7 +12,7 @@ from apps.referrals.models import Referral
 from apps.users.tests.factories import (
     PatientProfileFactory, PractitionerProfileFactory
 )
-from apps.wards.tests.factories import EncounterFactory
+from apps.encounters.tests.factories import EncounterFactory
 
 
 class ReferralFactory(DjangoModelFactory):

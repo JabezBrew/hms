@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
                 ('search_text', models.TextField(blank=True, help_text='Concatenated searchable text')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeline_events', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeline_events', to='encounters.Encounter')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='timeline_events', to='users.patientprofile')),
             ],
             options={

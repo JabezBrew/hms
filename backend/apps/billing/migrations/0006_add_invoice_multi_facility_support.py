@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='invoice',
             name='encounter',
-            field=models.ForeignKey(blank=True, help_text='Associated clinical encounter', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='invoices', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='Associated clinical encounter', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='invoices', to='encounters.Encounter'),
         ),
         migrations.AddField(
             model_name='invoice',

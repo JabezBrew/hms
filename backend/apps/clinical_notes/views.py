@@ -25,7 +25,7 @@ from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     generate_fhir_id, create_reference, create_codeable_concept, create_coding
 )
-from ..wards.services import ensure_encounter_for_entry
+from ..encounters.services import ensure_encounter_for_entry
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
@@ -1159,7 +1159,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         # Get the encounter from local database to extract patient reference
         try:
-            from ..wards.models import Encounter
+            from ..encounters.models import Encounter
             encounter = Encounter.objects.select_related('patient', 'patient__user').get(id=encounter_id)
             patient_fhir_id = getattr(encounter.patient, 'fhir_patient_id', None) or str(encounter.patient.id)
             patient_reference = {
@@ -2638,7 +2638,7 @@ def chronicle_context(request, patient_id):
     This endpoint consolidates multiple API calls into one for efficiency.
     """
     from datetime import date
-    from apps.wards.models import Encounter
+    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:
@@ -2890,7 +2890,7 @@ def patient_timeline_v2(request, patient_id):
     Returns paginated timeline entries with full source model details.
     """
     from .models import TimelineEvent
-    from apps.wards.models import Encounter
+    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:

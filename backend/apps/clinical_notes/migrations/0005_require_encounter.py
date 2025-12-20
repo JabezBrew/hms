@@ -54,7 +54,7 @@ class Migration(migrations.Migration):
                 help_text='The clinical encounter/visit during which this note was created',
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name='note_entries',
-                to='wards.encounter',
+                to='encounters.Encounter',
             ),
         ),
 
@@ -66,7 +66,7 @@ class Migration(migrations.Migration):
                 help_text='The clinical encounter/visit during which this was prescribed',
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name='prescriptions',
-                to='wards.encounter',
+                to='encounters.Encounter',
             ),
         ),
     ]

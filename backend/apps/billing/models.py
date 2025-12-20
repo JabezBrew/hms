@@ -1000,7 +1000,7 @@ class Invoice(models.Model):
 
     # Clinical context
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

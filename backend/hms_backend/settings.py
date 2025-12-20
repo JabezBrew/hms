@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'apps.appointments',
     'apps.patients',
     'apps.wards',
+    'apps.encounters.apps.EncountersConfig',  # Extracted from wards for cleaner architecture
     'apps.inventory',
     'apps.billing',
     'apps.clinical_notes.apps.ClinicalNotesConfig',

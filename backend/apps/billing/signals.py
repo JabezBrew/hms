@@ -221,7 +221,8 @@ def connect_billing_signals():
     Called from apps.billing.apps.BillingConfig.ready()
     """
     try:
-        from apps.wards.models import Encounter, Admission
+        from apps.encounters.models import Encounter
+        from apps.wards.models import Admission
 
         # Connect encounter completion handler
         post_save.connect(

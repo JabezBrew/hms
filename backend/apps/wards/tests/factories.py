@@ -9,7 +9,9 @@ Provides factories for:
 - Admission
 - BedAllocationLog
 - WardTransfer
-- Encounter
+
+Note: EncounterFactory has been moved to apps.encounters.tests.factories
+and is re-exported here for backward compatibility.
 """
 import factory
 from factory.django import DjangoModelFactory
@@ -18,7 +20,7 @@ from decimal import Decimal
 from datetime import timedelta
 
 from apps.wards.models import (
-    Ward, Bed, Admission, BedAllocationLog, Encounter,
+    Ward, Bed, Admission, BedAllocationLog,
     WardTransfer, BedAmenity, WardSection
 )
 from apps.users.tests.factories import UserFactory, PatientProfileFactory, PractitionerProfileFactory
@@ -139,23 +141,8 @@ class BedAllocationLogFactory(DjangoModelFactory):
     created_by = factory.SubFactory(UserFactory, user_type='nurse')
 
 
-class EncounterFactory(DjangoModelFactory):
-    """Factory for creating Encounter instances."""
-
-    class Meta:
-        model = Encounter
-
-    patient = factory.SubFactory(PatientProfileFactory)
-    practitioner = factory.SubFactory(PractitionerProfileFactory)
-    encounter_type = 'outpatient'
-    status = 'in-progress'
-    start_time = factory.LazyFunction(timezone.now)
-    reason = factory.Faker('sentence')
-    service_type = 'General Practice'
-    location = factory.Faker('word')
-    fhir_synced = False
-    created_by = factory.SubFactory(UserFactory, user_type='admin')
-    updated_by = factory.LazyAttribute(lambda obj: obj.created_by)
+# Re-export EncounterFactory from encounters app for backward compatibility
+from apps.encounters.tests.factories import EncounterFactory
 
 
 class WardTransferFactory(DjangoModelFactory):

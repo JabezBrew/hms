@@ -156,7 +156,7 @@ class DrugSafetyAlert(models.Model):
         related_name='safety_alerts'
     )
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.CASCADE,
         null=True,
         blank=True,

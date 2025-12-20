@@ -69,6 +69,9 @@ const PatientChroniclePage = () => {
   // Copy forward state - holds template and data for pre-filling note editor
   const [copyForwardData, setCopyForwardData] = useState(null);
 
+  // Edit note state - holds note ID and data for editing existing notes
+  const [editNoteData, setEditNoteData] = useState(null);
+
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
@@ -461,6 +464,7 @@ const PatientChroniclePage = () => {
   const handleSlideOverClose = useCallback(() => {
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data when closing
+    setEditNoteData(null); // Clear edit note data when closing
   }, [slideOvers]);
 
   // Created handlers - refresh data and close
@@ -468,6 +472,7 @@ const PatientChroniclePage = () => {
     refreshData();
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data after note is created
+    setEditNoteData(null); // Clear edit note data after note is created/updated
   }, [refreshData, slideOvers]);
 
   // Handle copy note from timeline - opens note editor with pre-filled data
@@ -484,10 +489,28 @@ const PatientChroniclePage = () => {
       data: copyData.data,
       sectionsCopied: copyData.sectionsCopied,
     });
+    setEditNoteData(null); // Clear any edit data
     slideOvers.open('note');
     toast.success("Note copied", {
       description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
     });
+  }, [slideOvers]);
+
+  // Handle edit note from timeline - opens note editor in edit mode
+  const handleEditNote = useCallback((editData) => {
+    // editData contains: { noteId, template, templateId, templateTitle, data, title }
+    if (!editData.template) {
+      toast.error("Cannot edit note", { description: "Template information is missing" });
+      return;
+    }
+
+    setEditNoteData({
+      noteId: editData.noteId,
+      template: editData.template,
+      data: editData.data,
+    });
+    setCopyForwardData(null); // Clear any copy data
+    slideOvers.open('note');
   }, [slideOvers]);
 
   const handleVitalsRecorded = useCallback(() => {
@@ -702,6 +725,12 @@ const PatientChroniclePage = () => {
                     {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
                   </span>
                 )}
+                {/* Show encounter count hint when some encounters have no documentation */}
+                {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                  <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                    • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
+                  </span>
+                )}
               </div>
 
               {/* Refresh button */}
@@ -891,6 +920,7 @@ const PatientChroniclePage = () => {
                           entry={entry}
                           index={index}
                           onCopyNote={handleCopyNote}
+                          onEditNote={handleEditNote}
                           onNoteUpdated={refetchTimeline}
                         />
                       ))}
@@ -943,6 +973,7 @@ const PatientChroniclePage = () => {
                         entry={entry}
                         index={index}
                         onCopyNote={handleCopyNote}
+                        onEditNote={handleEditNote}
                         onNoteUpdated={refetchTimeline}
                       />
                     ))}
@@ -1011,8 +1042,9 @@ const PatientChroniclePage = () => {
           patient={patient}
           encounter={activeEncounter}
           onNoteCreated={handleNoteCreated}
-          initialTemplate={copyForwardData?.template}
-          initialData={copyForwardData?.data}
+          initialTemplate={editNoteData?.template || copyForwardData?.template}
+          initialData={editNoteData?.data || copyForwardData?.data}
+          editNoteId={editNoteData?.noteId}
         />
 
         {/* Add Vitals Slide-Over Panel */}

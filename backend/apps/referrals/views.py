@@ -18,7 +18,7 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
-from ..wards.models import Encounter
+from ..encounters.models import Encounter
 
 logger = logging.getLogger(__name__)
 

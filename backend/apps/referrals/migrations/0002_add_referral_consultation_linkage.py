@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='referral',
             name='consultation_encounter',
-            field=models.ForeignKey(blank=True, help_text='Encounter created for specialist consultation (for OPD referrals)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='consultation_referrals', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='Encounter created for specialist consultation (for OPD referrals)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='consultation_referrals', to='encounters.Encounter'),
         ),
         migrations.AddField(
             model_name='referral',

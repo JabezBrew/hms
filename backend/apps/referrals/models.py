@@ -41,7 +41,7 @@ class Referral(models.Model):
         related_name='referrals'
     )
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -139,7 +139,7 @@ class Referral(models.Model):
         help_text="Consultation workflow created for this referral"
     )
     consultation_encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

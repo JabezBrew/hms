@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='noteentry',
             name='encounter',
-            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which this note was created', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='note_entries', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which this note was created', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='note_entries', to='encounters.Encounter'),
         ),
         migrations.AddField(
             model_name='noteentry',
@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='prescription',
             name='encounter',
-            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which this was prescribed', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='prescriptions', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which this was prescribed', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='prescriptions', to='encounters.Encounter'),
         ),
         migrations.AddIndex(
             model_name='noteentry',

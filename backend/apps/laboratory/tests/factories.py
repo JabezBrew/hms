@@ -21,7 +21,7 @@ from apps.laboratory.models import (
 from apps.users.tests.factories import (
     UserFactory, PatientProfileFactory, PractitionerProfileFactory
 )
-from apps.wards.tests.factories import EncounterFactory
+from apps.encounters.tests.factories import EncounterFactory
 
 
 class LabTestCatalogFactory(DjangoModelFactory):

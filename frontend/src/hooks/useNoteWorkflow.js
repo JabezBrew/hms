@@ -37,11 +37,15 @@ function deriveStepsFromTemplate(template) {
  * - Auto-save with debounce
  * - Local state management for form data
  * - API integration
+ * - Edit mode support for updating existing notes
  *
  * @param {string} patientId - The patient ID for the note
+ * @param {Object} options - Optional configuration
+ * @param {string} options.editNoteId - If provided, we're editing an existing note
  * @returns {Object} Workflow state and actions
  */
-export function useNoteWorkflow(patientId) {
+export function useNoteWorkflow(patientId, options = {}) {
+  const { editNoteId = null } = options;
   const queryClient = useQueryClient();
 
   // Workflow state
@@ -130,9 +134,18 @@ export function useNoteWorkflow(patientId) {
     },
   });
 
-  // Complete workflow mutation - creates note entry directly
+  // Complete workflow mutation - creates or updates note entry
   const completeWorkflowMutation = useMutation({
-    mutationFn: async ({ workflowId, template, finalData, patientId }) => {
+    mutationFn: async ({ workflowId, template, finalData, patientId, editNoteId }) => {
+      // If we're editing an existing note, update it
+      if (editNoteId) {
+        const noteEntry = await clinicalNotesApi.updateNoteEntry(editNoteId, {
+          data: finalData,
+          editReason: 'Updated via note editor',
+        });
+        return { success: true, note: noteEntry, isEdit: true };
+      }
+
       // If we have a backend workflow, complete it
       if (workflowId) {
         const data = await apiClient.post(
@@ -311,13 +324,14 @@ export function useNoteWorkflow(patientId) {
         template,
         finalData,
         patientId,
+        editNoteId,  // Pass editNoteId to trigger update instead of create
       });
 
       return result;
     } finally {
       setIsSaving(false);
     }
-  }, [workflowId, template, steps, formData, patientId, completeWorkflowMutation]);
+  }, [workflowId, template, steps, formData, patientId, editNoteId, completeWorkflowMutation]);
 
   // Reset workflow state
   const resetWorkflow = useCallback(() => {
@@ -380,6 +394,8 @@ export function useNoteWorkflow(patientId) {
     lastSaved,
     error,
     isLoading: startWorkflowMutation.isPending || updateStepMutation.isPending || completeWorkflowMutation.isPending,
+    isEditMode: !!editNoteId,  // Boolean flag for edit mode
+    editNoteId,  // The ID of the note being edited (if any)
 
     // Derived from template
     steps,

@@ -40,7 +40,7 @@ class Migration(migrations.Migration):
                 ('fhir_synced', models.BooleanField(default=False)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('encounter', models.ForeignKey(blank=True, help_text='Encounter during which referral was made', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='referrals', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, help_text='Encounter during which referral was made', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='referrals', to='encounters.Encounter')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='referrals', to='users.patientprofile')),
                 ('referred_to_provider', models.ForeignKey(blank=True, help_text='Specific specialist (optional)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='received_referrals', to='users.practitionerprofile')),
                 ('referring_provider', models.ForeignKey(help_text='Provider making the referral', on_delete=django.db.models.deletion.CASCADE, related_name='sent_referrals', to='users.practitionerprofile')),

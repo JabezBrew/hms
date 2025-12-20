@@ -56,6 +56,7 @@ const TimelineEntry = ({
   isRecent = false,
   className,
   onCopyNote,  // Callback when user confirms copy: (copyData) => void
+  onEditNote,  // Callback when user clicks edit: (editData) => void
   onNoteUpdated, // Callback when a note is updated (for edit feature)
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -284,6 +285,41 @@ const TimelineEntry = ({
   };
 
   // ============================================
+  // Check if entry is an editable clinical note
+  // ============================================
+
+  const isEditableNote = () => {
+    // Note types that can be edited (same as copyable)
+    const editableTypes = [
+      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
+      'discharge_note', 'consult_note', 'procedure'
+    ];
+    // Must have an id, template info, and be a note type with data
+    return editableTypes.includes(entry.type) &&
+           entry.id &&
+           entry.template &&
+           entry.data &&
+           typeof entry.data === 'object';
+  };
+
+  // ============================================
+  // Handle edit note click
+  // ============================================
+
+  const handleEditClick = () => {
+    if (!onEditNote) return;
+
+    onEditNote({
+      noteId: entry.id,
+      template: entry.template,
+      templateId: entry.template?.id || entry.template_id,
+      templateTitle: entry.template?.title || entry.template_title || entry.title,
+      data: entry.data,
+      title: entry.title,
+    });
+  };
+
+  // ============================================
   // Render content based on entry type
   // ============================================
 
@@ -366,7 +402,7 @@ const TimelineEntry = ({
         {renderContent()}
 
         {/* Action buttons */}
-        {(hasDetailContent() || isCopyableNote()) && (
+        {(hasDetailContent() || isCopyableNote() || isEditableNote()) && (
           <div className="mt-3 flex items-center gap-3">
             {hasDetailContent() && (
               <Button
@@ -377,6 +413,17 @@ const TimelineEntry = ({
               >
                 <Expand className="h-3 w-3 mr-1" />
                 View full note
+              </Button>
+            )}
+            {isEditableNote() && onEditNote && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
+                onClick={handleEditClick}
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Edit
               </Button>
             )}
             {isCopyableNote() && (
@@ -399,6 +446,7 @@ const TimelineEntry = ({
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         entry={entry}
+        onEditNote={onEditNote}
         onNoteUpdated={onNoteUpdated}
       />
 

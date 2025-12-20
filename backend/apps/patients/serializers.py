@@ -291,7 +291,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
             # Handle Admission if details provided
             if admission_details and admission_details.get('type') == 'inpatient':
                 from ..wards.models import Bed, Ward, Admission
-                from ..wards.proxies import EncounterProxy
+                from ..encounters.proxies import EncounterProxy
 
                 bed_id = admission_details.get('bed_id')
                 ward_id = admission_details.get('ward_id')

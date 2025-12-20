@@ -14,7 +14,6 @@ import {
   UserPlus,
   LogOut,
 } from "lucide-react";
-import EditNoteSlideOver from "./EditNoteSlideOver";
 import NoteHistoryModal from "./NoteHistoryModal";
 
 /**
@@ -22,18 +21,41 @@ import NoteHistoryModal from "./NoteHistoryModal";
  *
  * Renders any note data structure in a scrollable dialog.
  * Works with SOAP notes, progress notes, or any structured clinical data.
+ *
+ * Props:
+ * - open: boolean - controls modal visibility
+ * - onOpenChange: (open: boolean) => void - callback when modal open state changes
+ * - entry: object - the note entry to display
+ * - onEditNote: (editData) => void - callback when user clicks edit button
+ * - onNoteUpdated: () => void - callback when a note is updated (for legacy compatibility)
  */
-const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
-  const [editOpen, setEditOpen] = useState(false);
+const NoteDetailModal = ({ open, onOpenChange, entry, onEditNote, onNoteUpdated }) => {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   if (!entry) return null;
 
-  // Check if this is an editable note type (has an id and data)
-  const isEditableNote = entry.id && entry.data && [
+  // Check if this is an editable note type (has an id, template, and data)
+  const isEditableNote = entry.id && entry.template && entry.data && [
     'progress_note', 'soap_note', 'nursing_note', 'admission_note',
     'discharge_note', 'consult_note', 'consult', 'procedure'
   ].includes(entry.type);
+
+  // Handle edit button click - calls the onEditNote callback
+  const handleEditClick = () => {
+    if (!onEditNote) return;
+
+    onEditNote({
+      noteId: entry.id,
+      template: entry.template,
+      templateId: entry.template?.id || entry.template_id,
+      templateTitle: entry.template?.title || entry.template_title || entry.title,
+      data: entry.data,
+      title: entry.title,
+    });
+
+    // Close this modal when opening the edit slideover
+    onOpenChange(false);
+  };
 
   const entryConfig = {
     progress_note: { icon: FileText, label: 'Progress Note', color: 'text-amber-600' },
@@ -128,7 +150,8 @@ const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2 text-xs"
-                    onClick={() => setEditOpen(true)}
+                    onClick={handleEditClick}
+                    disabled={!onEditNote}
                   >
                     <Pencil className="h-3.5 w-3.5 mr-1" />
                     Edit
@@ -184,19 +207,6 @@ const NoteDetailModal = ({ open, onOpenChange, entry, onNoteUpdated }) => {
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
-
-      {/* Edit Note SlideOver */}
-      {isEditableNote && (
-        <EditNoteSlideOver
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          entry={entry}
-          onSuccess={() => {
-            setEditOpen(false);
-            onNoteUpdated?.();
-          }}
-        />
-      )}
 
       {/* Version History Modal */}
       {isEditableNote && (

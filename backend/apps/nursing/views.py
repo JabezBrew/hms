@@ -35,7 +35,7 @@ from .serializers import (
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
-from ..wards.services import ensure_encounter_for_entry
+from ..encounters.services import ensure_encounter_for_entry
 from ..users.models import PatientProfile, PractitionerProfile
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
@@ -596,7 +596,8 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         - start_date: Start date (default: today)
         - days: Number of days to show (default: 7)
         """
-        from apps.wards.models import Admission, Encounter
+        from apps.wards.models import Admission
+        from apps.encounters.models import Encounter
         from apps.clinical_notes.models import Prescription
         from datetime import datetime, time
         from collections import defaultdict
@@ -1330,7 +1331,8 @@ class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        from apps.wards.models import Admission, Encounter
+        from apps.wards.models import Admission
+        from apps.encounters.models import Encounter
 
         # Try to find admission directly first
         admission = None

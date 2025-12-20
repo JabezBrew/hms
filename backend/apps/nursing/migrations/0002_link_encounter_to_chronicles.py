@@ -15,6 +15,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='vitalsigns',
             name='encounter',
-            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which these vitals were recorded', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vital_signs', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which these vitals were recorded', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vital_signs', to='encounters.Encounter'),
         ),
     ]

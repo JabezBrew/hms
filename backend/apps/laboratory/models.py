@@ -252,7 +252,7 @@ class LabOrder(models.Model):
         related_name='lab_orders'
     )
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.CASCADE,
         null=True,
         blank=True,

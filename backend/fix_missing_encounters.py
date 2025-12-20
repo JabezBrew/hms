@@ -5,7 +5,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
 django.setup()
 
 from apps.wards.models import Admission
-from apps.wards.proxies import EncounterProxy
+from apps.encounters.proxies import EncounterProxy
 
 # Get all active admissions without FHIR encounters
 admissions_without_encounters = Admission.objects.filter(

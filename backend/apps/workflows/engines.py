@@ -52,7 +52,7 @@ from .definitions import WorkflowDefinition, WorkflowStepDefinition
 from .registry import get_workflow_definition, WORKFLOW_DEFINITIONS
 from apps.users.models import PatientProfile
 from apps.wards.models import Admission, Ward, Bed
-from apps.wards.proxies import EncounterProxy
+from apps.encounters.proxies import EncounterProxy
 from apps.clinical_notes.models import NoteEntry
 
 logger = logging.getLogger(__name__)
@@ -353,7 +353,7 @@ class ConsultationEngine(BaseWorkflowEngine):
         """
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.wards.services import get_or_create_active_encounter
+        from apps.encounters.services import get_or_create_active_encounter
 
         context = workflow.context_data
         consultation_data = workflow.consultation_data
@@ -639,7 +639,7 @@ class WardRoundEngine(BaseWorkflowEngine):
         """Complete ward round and create progress note"""
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.wards.services import get_or_create_active_encounter
+        from apps.encounters.services import get_or_create_active_encounter
 
         ward_round_data = workflow.ward_round_data
 
@@ -840,7 +840,7 @@ class AdmissionEngine(BaseWorkflowEngine):
         """Complete admission and create admission record"""
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.wards.models import Encounter
+        from apps.encounters.models import Encounter
 
         admission_data = workflow.admission_data
 
@@ -1083,7 +1083,7 @@ class DischargeEngine(BaseWorkflowEngine):
         """Complete discharge and update admission record"""
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.wards.services import get_or_create_active_encounter
+        from apps.encounters.services import get_or_create_active_encounter
 
         discharge_data = workflow.discharge_data
 
@@ -1415,7 +1415,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         """
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.wards.services import get_or_create_active_encounter
+        from apps.encounters.services import get_or_create_active_encounter
 
         context = workflow.context_data
         clinical_note_data = workflow.clinical_note_data

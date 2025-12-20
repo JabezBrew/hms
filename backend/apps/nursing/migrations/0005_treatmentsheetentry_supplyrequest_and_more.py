@@ -39,7 +39,7 @@ class Migration(migrations.Migration):
                 ('admission', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='treatment_entries', to='wards.admission')),
                 ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_treatment_entries', to=settings.AUTH_USER_MODEL)),
                 ('discontinued_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='discontinued_orders', to='users.practitionerprofile')),
-                ('encounter', models.ForeignKey(help_text='The clinical encounter during which this was ordered', on_delete=django.db.models.deletion.PROTECT, to='wards.encounter')),
+                ('encounter', models.ForeignKey(help_text='The clinical encounter during which this was ordered', on_delete=django.db.models.deletion.PROTECT, to='encounters.Encounter')),
                 ('ordered_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='treatment_orders', to='users.practitionerprofile')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='treatment_sheet_entries', to='users.patientprofile')),
                 ('prescription', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='treatment_entries', to='clinical_notes.prescription')),
