@@ -17,7 +17,7 @@ function deriveStepsFromTemplate(template) {
     : template.structure.sections || [];
 
   return sections.map((section, index) => ({
-    id: section.name?.toLowerCase().replace(/\s+/g, '_') || `step_${index}`,
+    id: section.name || section.section || `step_${index}`,
     title: section.name || section.section || `Step ${index + 1}`,
     type: section.type || 'text',
     required: section.required ?? false,
