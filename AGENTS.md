@@ -1,35 +1,74 @@
-# Repository Guidelines
+# HMS Agent Guidelines (Security, Scale, Performance)
 
-## Project Structure & Module Organization
-Backend code lives in `backend/`, with domain apps under `backend/apps/` and shared settings in `backend/hms_backend/`. 
-Workflows and dashboards keep helpers and tests inside `backend/workflows/` and `backend/dashboards/`. 
-The React client resides in `frontend/src/` (components, pages, hooks, contexts) with compiled assets in `frontend/public/`, 
-and deeper architecture notes remain in `docs/` and the supporting root-level guides.
+Build a highly performant, scalable, and secure hospital management system.
+Treat PHI as toxic waste and p99 latency as a safety issue. When in doubt,
+favor correctness, least privilege, and predictable performance.
+
+## Source of Truth
+- Read `docs/ai-agent-review.md` before making changes. It consolidates current
+  security, systems, and DB reliability findings.
+
+## Project Structure
+- Backend: `backend/` with domain apps under `backend/apps/`.
+- Shared backend settings: `backend/hms_backend/`.
+- Workflows and dashboards: `backend/workflows/`, `backend/dashboards/`.
+- Frontend: `frontend/src/` with built assets in `frontend/public/`.
 
 ## Build, Test, and Development Commands
-- `cd backend && python manage.py runserver` starts the Django API with hot reload.
-- `cd backend && pytest` runs the full backend test suite (pytest is configured via `backend/pytest.ini`); add `-k` or `apps.<app_name>` to scope runs.
-- `cd backend && celery -A hms_backend worker --beat --loglevel=info` runs background tasks and the weekly slot scheduler in one process during development.
-- `cd frontend && npm run dev` serves the Vite-powered React app; `npm run build` produces optimized assets and `npm run lint` enforces ESLint rules.
+- `cd backend && python manage.py runserver` starts the Django API.
+- `cd backend && pytest` runs backend tests (use `-k` or `apps.<app_name>` to scope).
+- `cd backend && celery -A hms_backend worker --beat --loglevel=info` runs background tasks.
+- `cd frontend && npm run dev` serves the React app; `npm run build` and `npm run lint` validate.
 
-## Coding Style & Naming Conventions
-Follow PEP 8 with 4-space indentation for Python and keep business logic inside the owning Django app. Use snake_case 
-for module members, PascalCase for classes, and keep Celery tasks as small, pure functions. React files should keep PascalCase components,
-`use*` hooks, and camelCase utilities; rely on Tailwind utility classes before inline styles.
+## Coding Style
+- Python: PEP 8, 4-space indentation, business logic stays inside the owning app.
+- React: PascalCase components, `use*` hooks, camelCase utilities.
+- Keep Celery tasks small and pure. Prefer Tailwind utilities over inline styles.
 
-## Testing Guidelines
-Backend tests live next to their modules (for example, `backend/apps/users/tests.py`) and run through pytest;
-mirror that layout when adding coverage. Exercise serializers, viewsets, and Celery tasks whenever they change,
-and include migration assertions for data backfills. Frontend tests are sparse—add React Testing Library cases under
-`frontend/src/__tests__/` or alongside the component when you introduce new logic, and explain any temporary gaps in the PR.
+## Security Rules (Non-Negotiable)
+- Every endpoint that accepts a patient identifier MUST enforce access control
+  at the queryset and object level (use `apps/core/security.py`).
+- Never log PHI. Avoid logging request bodies and free-text clinical data.
+- Use least-privilege serializers: list endpoints should not return full objects.
+- Treat FHIR calls as external and unsafe; never block request threads on FHIR.
 
-## Commit & Pull Request Guidelines
-History favors Conventional Commits (`feat:`, `fix(scope):`, `Add ...`); keep messages imperative, scoped when helpful,
-and under ~72 characters. PRs need a crisp summary, linked issue, and checklists for backend/frontend touches;
-attach UI captures for visual work. Highlight migrations, env var deltas, or Celery schedule changes so reviewers can
-apply them before approval.
+## Performance Rules (p99 < 200ms for clinical views)
+- List endpoints must be O(1) queries per page. No N+1s.
+- Avoid `prefetch_related` on large child tables unless explicitly requested.
+- Use `select_related` and `annotate` for counts/exists instead of per-row queries.
+- Defer or exclude large JSON/BLOB fields in list endpoints.
+- Keep external I/O (FHIR, PDFs, emails) async via Celery.
 
-## Security & Configuration Notes
-Never commit secrets—start from `backend/.env.example` and `frontend/.env.example`, keep real values outside version
-control, and ignore `backend/credentials/` contents. Ensure Redis is available before launching Celery and document new
-external dependencies or IAM needs in `docs/` for future agents.
+## Database Reliability Rules
+- Avoid table scans: no `DATE(column)` filters; use range predicates.
+- For `icontains`, add trigram or FTS indexes.
+- Avoid low-cardinality single-column indexes. Prefer composite/partial indexes.
+- Partition time-series tables (`audit_logs`, `vital_signs`, `chart_entries`,
+  `lab_results`) by time to keep indexes small.
+- Beware write amplification: every index is a tax on inserts.
+
+## Query Hygiene (Django ORM)
+- Prefer `.select_related()` for FK joins and `.prefetch_related()` only when bounded.
+- Use `.only()`/`.defer()` to avoid pulling large JSON blobs.
+- Avoid per-row `.count()` or `.exists()` calls; annotate once in the queryset.
+
+## Concurrency and Transactions
+- Never keep a DB transaction open while waiting on network calls.
+- Use optimistic flow: save locally, queue async work, update status later.
+- Avoid read-modify-write patterns that require table scans (use sequences/counters).
+
+## Testing and Migrations
+- Backend tests live alongside modules (e.g., `backend/apps/users/tests.py`).
+- Add tests for serializers, viewsets, Celery tasks, and access control.
+- For migrations, include data backfill checks and index creation where needed.
+
+## Commit and PR Notes
+- Use Conventional Commits (`feat:`, `fix(scope):`, `Add ...`).
+- PRs must note migrations, env var changes, and Celery schedule changes.
+- Provide UI captures for visual changes.
+
+## Security and Configuration Notes
+- Never commit secrets. Use `backend/.env.example` and `frontend/.env.example`.
+- Ignore `backend/credentials/` contents.
+- Ensure Redis is available before launching Celery.
+- Document new dependencies or IAM needs in `docs/`.
