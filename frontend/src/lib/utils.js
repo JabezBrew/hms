@@ -20,12 +20,11 @@ export function cn(...inputs) {
  * // All these return the same array:
  * normalizeApiResults([{id: 1}])                    // Already an array
  * normalizeApiResults({results: [{id: 1}]})         // Paginated response
- * normalizeApiResults({patients: [{id: 1}]}, 'patients') // Custom key
+ * normalizeApiResults({items: [{id: 1}]}, 'items') // Custom key
  */
 export function normalizeApiResults(data, arrayKey = 'results') {
   if (!data) return [];
   if (Array.isArray(data)) return data;
   if (data[arrayKey] && Array.isArray(data[arrayKey])) return data[arrayKey];
-  if (data.patients && Array.isArray(data.patients)) return data.patients;
   return [];
 }

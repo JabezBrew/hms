@@ -747,9 +747,15 @@ class LabOrderListSerializer(serializers.ModelSerializer):
         return None
 
     def get_test_count(self, obj):
+        test_count = getattr(obj, 'test_count', None)
+        if test_count is not None:
+            return test_count
         return obj.order_tests.count()
 
     def get_has_critical_results(self, obj):
+        has_critical_results = getattr(obj, 'has_critical_results', None)
+        if has_critical_results is not None:
+            return has_critical_results
         return obj.order_tests.filter(
             result__flag__in=['critical_low', 'critical_high']
         ).exists()

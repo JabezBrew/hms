@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count, Exists, OuterRef
 import logging
 
 from ..core.pagination import LargeResultsSetPagination, StandardResultsSetPagination
@@ -384,11 +384,29 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             'patient__user',
             'ordering_provider__staff__user',
             'encounter'
-        ).prefetch_related(
-            Prefetch('order_tests', queryset=LabOrderTest.objects.select_related('test')),
-            'panels__tests',
-            Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__user'))
         )
+
+        expand = self.request.query_params.get('expand', '')
+        expand_list = [e.strip() for e in expand.split(',') if e.strip()]
+        expand_tests = 'tests' in expand_list or 'all' in expand_list
+        expand_specimens = 'specimens' in expand_list or 'all' in expand_list
+
+        if self.action != 'list' or expand_tests or expand_specimens:
+            queryset = queryset.prefetch_related(
+                Prefetch('order_tests', queryset=LabOrderTest.objects.select_related('test')),
+                'panels__tests',
+                Prefetch('specimens', queryset=LabSpecimen.objects.select_related('collected_by__user'))
+            )
+
+        if self.action == 'list':
+            critical_tests = LabOrderTest.objects.filter(
+                order_id=OuterRef('pk'),
+                result__flag__in=['critical_low', 'critical_high']
+            )
+            queryset = queryset.annotate(
+                test_count=Count('order_tests', distinct=True),
+                has_critical_results=Exists(critical_tests)
+            )
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')

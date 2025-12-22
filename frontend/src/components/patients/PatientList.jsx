@@ -241,7 +241,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     else if (patient?.local_data?.current_ward) {
       return patient.local_data.current_ward;
     }
-    return "Not Admitted";
+    return null;
   };
 
   // Function to get patient ward ID
@@ -329,7 +329,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     const wardId = patient?.current_ward_id;
     const wardName = getPatientWard(patient);
 
-    if (wardId && wardName && wardName !== "Not Admitted" && wardName !== "Waiting List") {
+    if (wardId && wardName && wardName !== "Waiting List") {
       // Check if this ward is already in the list
       if (!wards.find(w => w.id === wardId)) {
         wards.push({ id: wardId, name: wardName });
@@ -478,6 +478,9 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                     const age = getPatientAge(patient);
                     const gender = getPatientGender(patient);
                     const ward = getPatientWard(patient);
+                    const wardLabel = ward || "Not Admitted";
+                    const isWaitingList = ward === "Waiting List";
+                    const isNotAdmitted = !ward;
                     const admissionDate = getAdmissionDate(patient);
 
                     return (
@@ -509,11 +512,11 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                         <TableCell>
                           <span className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                            ward === "Not Admitted" ? "bg-gray-100 text-gray-800" :
-                              ward === "Waiting List" ? "bg-yellow-100 text-yellow-800" :
+                            isNotAdmitted ? "bg-gray-100 text-gray-800" :
+                              isWaitingList ? "bg-yellow-100 text-yellow-800" :
                                 "bg-green-100 text-green-800"
                           )}>
-                            {ward}
+                            {wardLabel}
                           </span>
                         </TableCell>
                         <TableCell>

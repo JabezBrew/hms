@@ -20,7 +20,9 @@ from .factories import (
     LabTestCatalogFactory, LabPanelFactory, LabOrderFactory,
     LabOrderTestFactory, LabSpecimenFactory, LabResultFactory
 )
-from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.users.tests.factories import (
+    PatientProfileFactory, PractitionerProfileFactory, StaffFactory
+)
 
 
 # Base URL prefix for laboratory app
@@ -212,7 +214,7 @@ class TestLabSpecimenViewSet:
     def test_create_specimen(self, admin_client, db):
         """Test creating a new specimen."""
         order = LabOrderFactory()
-        collector = PractitionerProfileFactory()
+        collector = StaffFactory()
         data = {
             'order': str(order.id),
             'specimen_type': 'Whole Blood',

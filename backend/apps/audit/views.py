@@ -1,7 +1,8 @@
 import csv
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.db.models import Count, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -51,11 +52,23 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         # Filter by date range
         start_date = self.request.query_params.get('start_date')
         if start_date:
-            queryset = queryset.filter(timestamp__date__gte=start_date)
+            parsed_start = parse_date(start_date)
+            if parsed_start:
+                start_dt = timezone.make_aware(
+                    datetime.combine(parsed_start, time.min),
+                    timezone.get_current_timezone()
+                )
+                queryset = queryset.filter(timestamp__gte=start_dt)
 
         end_date = self.request.query_params.get('end_date')
         if end_date:
-            queryset = queryset.filter(timestamp__date__lte=end_date)
+            parsed_end = parse_date(end_date)
+            if parsed_end:
+                end_dt = timezone.make_aware(
+                    datetime.combine(parsed_end, time.min),
+                    timezone.get_current_timezone()
+                ) + timedelta(days=1)
+                queryset = queryset.filter(timestamp__lt=end_dt)
 
         # Search in description and resource_name
         search = self.request.query_params.get('search')

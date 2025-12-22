@@ -403,7 +403,9 @@ class NoteEntryListSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_signed(self, obj):
-        # Check if the note has any versions (indicates it's been finalized)
+        # Use annotation when available to avoid per-row queries.
+        if hasattr(obj, 'is_signed'):
+            return obj.is_signed
         return obj.versions.exists()
 
 

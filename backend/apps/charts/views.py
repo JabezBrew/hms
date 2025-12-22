@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count
+from django.db.models import Q, Count, OuterRef, Subquery
 from django.utils import timezone
 
 from apps.charts.models import ChartTemplate, ChartField, ChartAssignment, ChartEntry
@@ -291,9 +291,28 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        return ChartAssignment.objects.select_related(
+        queryset = ChartAssignment.objects.select_related(
             'template', 'patient__user', 'admission', 'ordered_by__staff__user'
-        ).prefetch_related('entries')
+        )
+
+        if self.action in ['list', 'by_patient']:
+            last_entry_subquery = ChartEntry.objects.filter(
+                assignment=OuterRef('pk'),
+                is_deleted=False
+            ).order_by('-observation_datetime').values('observation_datetime')[:1]
+
+            queryset = queryset.annotate(
+                last_entry_at=Subquery(last_entry_subquery),
+                entry_count=Count(
+                    'entries',
+                    filter=Q(entries__is_deleted=False),
+                    distinct=True
+                ),
+            )
+        else:
+            queryset = queryset.prefetch_related('entries')
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'list':

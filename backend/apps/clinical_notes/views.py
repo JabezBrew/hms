@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
 from rest_framework.pagination import PageNumberPagination
 from django.db import transaction, models
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
@@ -217,7 +217,11 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         queryset = NoteEntry.objects.select_related(
             'template', 'patient', 'patient__user', 'encounter', 'practitioner'
-        ).all()
+        ).annotate(
+            is_signed=Exists(
+                NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
+            )
+        )
 
         # Filter by encounter ID
         encounter_id = self.request.query_params.get('encounter_id') or self.request.query_params.get('encounter')
@@ -238,6 +242,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         practitioner_id = self.request.query_params.get('practitioner_id')
         if practitioner_id:
             queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        if self.action == 'list':
+            queryset = queryset.defer('data')
 
         return queryset
 

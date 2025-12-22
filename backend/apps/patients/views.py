@@ -3,12 +3,15 @@ from rest_framework.exceptions import PermissionDenied
 import time
 import logging
 import hashlib
+from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -16,8 +19,9 @@ from .models import (
 )
 from .serializers import (
     PatientFHIRMappingSerializer, PatientSearchSerializer,
-    RecentPatientSerializer, PatientRegistrationValidationSerializer,
-    PatientNoteSerializer, PatientRegistrationSerializer
+    RecentPatientListSerializer, RecentPatientSerializer,
+    PatientRegistrationValidationSerializer, PatientNoteSerializer,
+    PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
@@ -91,6 +95,8 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
         Filter recent patients to only show the current user's recent patients.
         Limited to 10 most recent for performance.
         """
+        from apps.wards.models import Admission
+
         limit = int(self.request.query_params.get('limit', 10))
         # Cap at 20 to prevent abuse
         limit = min(limit, 20)
@@ -100,10 +106,19 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             'patient_profile',
             'patient_profile__user'
         ).prefetch_related(
-            'patient_profile__admissions',
-            'patient_profile__admissions__bed',
-            'patient_profile__admissions__bed__ward'
+            Prefetch(
+                'patient_profile__admissions',
+                queryset=Admission.objects.filter(
+                    status__in=['admitted', 'waiting']
+                ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+                to_attr='active_admissions_list'
+            )
         )[:limit]
+
+    def get_serializer_class(self):
+        if self.action in ['list', 'add_recent']:
+            return RecentPatientListSerializer
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -121,6 +136,8 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             )
 
         try:
+            from apps.wards.models import Admission
+
             patient_profile = PatientProfile.objects.get(id=patient_profile_id)
 
             # SECURITY: Check if user has permission to access this patient
@@ -136,9 +153,22 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             if not created:
                 recent.save()  # This will update the auto_now field
 
+            recent = RecentPatient.objects.filter(id=recent.id).select_related(
+                'patient_profile',
+                'patient_profile__user'
+            ).prefetch_related(
+                Prefetch(
+                    'patient_profile__admissions',
+                    queryset=Admission.objects.filter(
+                        status__in=['admitted', 'waiting']
+                    ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+                    to_attr='active_admissions_list'
+                )
+            ).first()
+
             return Response({
                 "message": "Patient added to recent list.",
-                "recent_patient": RecentPatientSerializer(recent).data
+                "recent_patient": self.get_serializer(recent).data
             })
 
         except PatientProfile.DoesNotExist:
@@ -252,7 +282,7 @@ class PatientViewSet(viewsets.ViewSet):
         Performance optimizations:
         - Uses lightweight serializer (PatientSearchListSerializer)
         - Caches results for 30 seconds
-        - Logs searches asynchronously via Celery
+        - Logs searches to PatientSearch history
         - FHIR calls are opt-in via include_fhir=true query param
         """
         query = request.query_params.get('query', '').strip()
@@ -284,13 +314,13 @@ class PatientViewSet(viewsets.ViewSet):
         if not include_fhir:
             cached_result = cache.get(cache_key)
             if cached_result is not None:
-                logger.info(f"Search cache hit for: {query[:20]}...")
-                # Log search asynchronously even for cache hits
+                logger.info("Search cache hit for user %s", request.user.id)
+                # Log search for cache hits
                 search_desc = f"Query: {query}" + (f", Ward: {ward_id}" if ward_id else "") + (f", Date: {admission_date}" if admission_date else "")
                 log_patient_search.delay(str(request.user.id), search_desc)
                 return Response(cached_result)
 
-        # Log search asynchronously (non-blocking)
+        # Log search for auditing/history
         search_desc = f"Query: {query}"
         if ward_id:
             search_desc += f", Ward: {ward_id}"
@@ -331,8 +361,21 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Filter by Admission Date
             if admission_date:
+                parsed_admission_date = parse_date(admission_date)
+                if not parsed_admission_date:
+                    return Response(
+                        {"error": "Invalid admission_date format. Use YYYY-MM-DD."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                start_dt = timezone.make_aware(
+                    datetime.combine(parsed_admission_date, datetime.min.time()),
+                    timezone.get_current_timezone()
+                )
+                end_dt = start_dt + timedelta(days=1)
                 local_patients_qs = local_patients_qs.filter(
-                    admissions__admission_date__date=admission_date
+                    admissions__admission_date__gte=start_dt,
+                    admissions__admission_date__lt=end_dt
                 ).distinct()
 
             # Limit to 20 results and serialize with lightweight serializer

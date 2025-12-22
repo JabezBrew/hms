@@ -181,12 +181,12 @@ class PatientProfileSerializer(serializers.ModelSerializer):
     def get_current_ward(self, obj):
         """
         Get the name of the ward where the patient is currently admitted.
-        Returns "Waiting List" if admitted but no bed, "Not Admitted" otherwise.
+        Returns "Waiting List" if admitted but no bed, None otherwise.
         """
         admission = self._get_active_admission(obj)
 
         if not admission:
-            return "Not Admitted"
+            return None
 
         if admission.status == 'waiting':
             return "Waiting List"

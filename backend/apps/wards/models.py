@@ -333,10 +333,15 @@ class Bed(models.Model):
         """
         from decimal import Decimal
         base = self.ward.base_rate_per_night
+        if not isinstance(base, Decimal):
+            base = Decimal(str(base))
 
         # Apply section multiplier if section exists
         if self.section:
-            base = base * self.section.rate_multiplier
+            multiplier = self.section.rate_multiplier
+            if not isinstance(multiplier, Decimal):
+                multiplier = Decimal(str(multiplier))
+            base = base * multiplier
 
         # Add bed-level additional rate (ensure Decimal type)
         additional = self.additional_rate if isinstance(self.additional_rate, Decimal) else Decimal(str(self.additional_rate))
