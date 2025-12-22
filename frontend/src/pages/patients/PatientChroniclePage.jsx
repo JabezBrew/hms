@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
@@ -61,6 +62,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 const PatientChroniclePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -919,6 +921,7 @@ const PatientChroniclePage = () => {
                           key={entry.id}
                           entry={entry}
                           index={index}
+                          currentUserId={user?.id}
                           onCopyNote={handleCopyNote}
                           onEditNote={handleEditNote}
                           onNoteUpdated={refetchTimeline}
@@ -972,6 +975,7 @@ const PatientChroniclePage = () => {
                         key={entry.id}
                         entry={entry}
                         index={index}
+                        currentUserId={user?.id}
                         onCopyNote={handleCopyNote}
                         onEditNote={handleEditNote}
                         onNoteUpdated={refetchTimeline}

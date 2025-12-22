@@ -546,9 +546,28 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         Update a note entry with version tracking.
         Creates a version snapshot before applying changes.
+
+        Authorization: Only the practitioner who created the note (or an admin) can edit it.
         """
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
+
+        # SECURITY: Check if user is authorized to edit this note
+        # Only the original author (practitioner) or an admin can edit
+        is_admin = request.user.user_type == 'admin'
+        is_author = False
+
+        try:
+            user_practitioner = request.user.staff_profile.practitioner_profile
+            is_author = instance.practitioner_id == user_practitioner.id
+        except (AttributeError, PractitionerProfile.DoesNotExist):
+            pass  # User doesn't have a practitioner profile
+
+        if not is_admin and not is_author:
+            return Response(
+                {"error": "You can only edit notes that you created."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Get edit reason from request
         edit_reason = request.data.get('edit_reason', '')

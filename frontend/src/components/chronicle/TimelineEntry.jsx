@@ -55,6 +55,7 @@ const TimelineEntry = ({
   index = 0,
   isRecent = false,
   className,
+  currentUserId,  // Current logged-in user's ID for edit permission check
   onCopyNote,  // Callback when user confirms copy: (copyData) => void
   onEditNote,  // Callback when user clicks edit: (editData) => void
   onNoteUpdated, // Callback when a note is updated (for edit feature)
@@ -295,11 +296,19 @@ const TimelineEntry = ({
       'discharge_note', 'consult_note', 'procedure'
     ];
     // Must have an id, template info, and be a note type with data
-    return editableTypes.includes(entry.type) &&
+    const isEditableType = editableTypes.includes(entry.type) &&
            entry.id &&
            entry.template &&
            entry.data &&
            typeof entry.data === 'object';
+
+    if (!isEditableType) return false;
+
+    // Only the author can edit their own notes
+    // Compare current user ID with the entry's author_id
+    if (!currentUserId || !entry.author_id) return false;
+
+    return String(currentUserId) === String(entry.author_id);
   };
 
   // ============================================
@@ -446,6 +455,7 @@ const TimelineEntry = ({
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         entry={entry}
+        currentUserId={currentUserId}
         onEditNote={onEditNote}
         onNoteUpdated={onNoteUpdated}
       />
