@@ -97,10 +97,13 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
 
         patient_id = validated_data.pop('patient_id')
         practitioner_id = validated_data.pop('practitioner_id', None)
+        practitioner = validated_data.pop('practitioner', None)
 
         validated_data['patient'] = PatientProfile.objects.get(id=patient_id)
         if practitioner_id:
             validated_data['practitioner'] = PractitionerProfile.objects.get(id=practitioner_id)
+        elif practitioner:
+            validated_data['practitioner'] = practitioner
 
         return super().create(validated_data)
 

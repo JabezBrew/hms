@@ -547,11 +547,12 @@ export function usePatientInsuranceById(id) {
  * @param {Object} params - Additional query parameters
  * @returns {Object} Query result
  */
-export function usePatientInsurance(patientId, params = {}) {
+export function usePatientInsurance(patientId, params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.patientInsurance(patientId, params),
     queryFn: () => billingApi.getPatientInsurance(patientId, params),
-    enabled: !!patientId,
+    enabled: !!patientId && enabled,
   });
 }
 
@@ -627,10 +628,12 @@ export function useDeletePatientInsurance() {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useInsuranceProviders(params = {}) {
+export function useInsuranceProviders(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.insuranceProviders(params),
     queryFn: () => billingApi.getInsuranceProviders(params),
+    enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes - providers don't change often
   });
 }
@@ -640,10 +643,12 @@ export function useInsuranceProviders(params = {}) {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useInsurancePlans(params = {}) {
+export function useInsurancePlans(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.insurancePlans(params),
     queryFn: () => billingApi.getInsurancePlans(params),
+    enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 }

@@ -137,9 +137,17 @@ class CanAccessEncounter(permissions.BasePermission):
                 return obj.patient.user == user
             return False
 
-        # Medical staff can access encounters
+        # Medical staff require clinical access (team or break-glass)
         if user.user_type in ['doctor', 'nurse']:
-            return True
+            if hasattr(obj, 'patient'):
+                from apps.core.security import check_clinical_access
+                from rest_framework.exceptions import PermissionDenied
+                try:
+                    check_clinical_access(user, obj.patient)
+                    return True
+                except PermissionDenied:
+                    return False
+            return False
 
         return False
 

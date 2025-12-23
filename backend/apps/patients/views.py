@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
+from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -27,6 +28,10 @@ from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
 from apps.core.security import check_demographics_access
+from apps.core.models import BreakGlassEvent
+from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
+from apps.audit.services import AuditService
+from apps.audit.models import AuditAction, AuditCategory
 from apps.fhir_client.client import fhir_client
 from .tasks import sync_patient_with_fhir, log_patient_search
 
@@ -482,6 +487,72 @@ class PatientViewSet(viewsets.ViewSet):
             "local_data": PatientProfileSerializer(patient_profile).data,
             "fhir_data": fhir_data
         })
+
+    @action(detail=True, methods=['post'], url_path='break-glass')
+    def break_glass(self, request, pk=None):
+        """
+        Create a time-bound break-glass access event for clinical data.
+        """
+        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        serializer = BreakGlassRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            return Response(
+                {"error": "Break-glass access is limited to clinical staff."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        scope = serializer.validated_data.get('scope', 'clinical')
+        if scope != 'clinical':
+            return Response(
+                {"error": "Only clinical break-glass access is supported."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        now = timezone.now()
+        active_event = BreakGlassEvent.objects.filter(
+            user=request.user,
+            patient=patient_profile,
+            scope=scope,
+            expires_at__gt=now
+        ).order_by('-expires_at').first()
+
+        if active_event:
+            return Response({
+                "message": "Break-glass access already active.",
+                "break_glass": BreakGlassEventSerializer(active_event).data
+            })
+
+        expires_at = now + timedelta(minutes=settings.BREAK_GLASS_TTL_MINUTES)
+        event = BreakGlassEvent.objects.create(
+            user=request.user,
+            patient=patient_profile,
+            scope=scope,
+            reason=serializer.validated_data['reason'],
+            expires_at=expires_at
+        )
+
+        AuditService.log(
+            request=request,
+            action=AuditAction.BREAK_GLASS,
+            category=AuditCategory.CLINICAL,
+            resource_type='PatientProfile',
+            resource_id=patient_profile.id,
+            resource_name=patient_profile.user.get_full_name(),
+            description=f"Break-glass access granted for patient {patient_profile.medical_record_number}",
+            changes={
+                'scope': {'old': None, 'new': scope},
+                'expires_at': {'old': None, 'new': expires_at.isoformat()},
+                'reason': {'old': None, 'new': serializer.validated_data['reason']},
+            }
+        )
+
+        return Response({
+            "message": "Break-glass access granted.",
+            "break_glass": BreakGlassEventSerializer(event).data
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['put'])
     def update_patient(self, request, pk=None):

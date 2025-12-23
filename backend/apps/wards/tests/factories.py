@@ -21,7 +21,8 @@ from datetime import timedelta
 
 from apps.wards.models import (
     Ward, Bed, Admission, BedAllocationLog,
-    WardTransfer, BedAmenity, WardSection
+    WardTransfer, BedAmenity, WardSection,
+    StaffRole, WardStaffAssignment
 )
 from apps.users.tests.factories import UserFactory, PatientProfileFactory, PractitionerProfileFactory
 
@@ -126,6 +127,32 @@ class AdmissionFactory(DjangoModelFactory):
         if create and self.status == 'admitted' and self.bed:
             self.bed.status = 'occupied'
             self.bed.save()
+
+
+class StaffRoleFactory(DjangoModelFactory):
+    """Factory for creating StaffRole instances."""
+
+    class Meta:
+        model = StaffRole
+
+    name = factory.Sequence(lambda n: f'Staff Role {n}')
+    code = factory.Sequence(lambda n: f'staff_role_{n}')
+    category = 'medical'
+    is_active = True
+
+
+class WardStaffAssignmentFactory(DjangoModelFactory):
+    """Factory for creating WardStaffAssignment instances."""
+
+    class Meta:
+        model = WardStaffAssignment
+
+    ward = factory.SubFactory(WardFactory)
+    practitioner = factory.SubFactory(PractitionerProfileFactory)
+    role = factory.SubFactory(StaffRoleFactory)
+    is_active = True
+    is_primary = False
+    assigned_by = factory.SubFactory(UserFactory, user_type='admin')
 
 
 class BedAllocationLogFactory(DjangoModelFactory):

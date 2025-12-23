@@ -304,9 +304,10 @@ export function useReorderChartFields() {
 /**
  * Fetch list of chart assignments with optional filters
  */
-export function useChartAssignments(filters = {}) {
+export function useChartAssignments(filters = {}, options = {}) {
   // Extract filter values to use as stable primitives in query key
   const { patient, admission, template, status } = filters;
+  const { enabled = true } = options;
   const params = new URLSearchParams();
 
   if (patient) params.append('patient', patient);
@@ -320,6 +321,7 @@ export function useChartAssignments(filters = {}) {
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },
+    enabled,
     staleTime: 30000, // 30 seconds
     refetchOnWindowFocus: false,
   });
@@ -763,4 +765,3 @@ function evaluateSimpleFormula(formula, data) {
     return null;
   }
 }
-

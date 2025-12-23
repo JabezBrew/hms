@@ -28,6 +28,7 @@ import {
   usePatientInsurance,
   useDeletePatientInsurance,
 } from '@/hooks/useBillingQueries';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { PatientInsuranceFormSlideOver } from '@/components/billing';
@@ -46,18 +47,21 @@ export default function PatientInsuranceSlideOver({
   onClose,
   patient,
 }) {
+  const { user } = useAuth();
   const patientId = patient?.id || patient?.local_data?.id;
   const patientName = patient?.name ||
     (patient?.local_data?.user_details
       ? `${patient.local_data.user_details.first_name} ${patient.local_data.user_details.last_name}`
       : 'Patient');
+  const userRole = user?.role || user?.user_type;
+  const canManageInsurance = ['admin', 'billing'].includes(userRole);
 
   // Fetch patient's insurance records
   const {
     data: insuranceData,
     isLoading,
     error,
-  } = usePatientInsurance(patientId);
+  } = usePatientInsurance(patientId, {}, { enabled: open });
 
   const insurances = insuranceData?.results || insuranceData || [];
 
@@ -168,10 +172,16 @@ export default function PatientInsuranceSlideOver({
               <p className="text-muted-foreground text-sm mb-6">
                 This patient has no insurance on file
               </p>
-              <Button onClick={handleAddInsurance} className="font-mono text-xs">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Insurance
-              </Button>
+              {canManageInsurance ? (
+                <Button onClick={handleAddInsurance} className="font-mono text-xs">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Insurance
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Billing staff can add insurance records.
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -205,24 +215,26 @@ export default function PatientInsuranceSlideOver({
                           {isValid ? 'Active' : 'Inactive'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditInsurance(insurance)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteClick(insurance)}
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                      {canManageInsurance && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditInsurance(insurance)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteClick(insurance)}
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Plan Name */}
@@ -272,7 +284,7 @@ export default function PatientInsuranceSlideOver({
         </div>
 
         {/* Footer */}
-        {insurances.length > 0 && (
+        {insurances.length > 0 && canManageInsurance && (
           <footer className="border-t border-border bg-card px-6 py-4">
             <Button
               onClick={handleAddInsurance}
@@ -287,44 +299,48 @@ export default function PatientInsuranceSlideOver({
       </div>
 
       {/* Form Slide-Over for Add/Edit */}
-      <PatientInsuranceFormSlideOver
-        open={showFormSlideOver}
-        onClose={() => {
-          setShowFormSlideOver(false);
-          setEditingInsurance(null);
-        }}
-        insurance={editingInsurance ? {
-          ...editingInsurance,
-          patient: patientId,
-          patient_details: { id: patientId, name: patientName },
-        } : null}
-        // Pre-fill patient for new insurance
-        defaultPatient={!editingInsurance ? {
-          id: patientId,
-          name: patientName,
-        } : null}
-      />
+      {canManageInsurance && (
+        <>
+          <PatientInsuranceFormSlideOver
+            open={showFormSlideOver}
+            onClose={() => {
+              setShowFormSlideOver(false);
+              setEditingInsurance(null);
+            }}
+            insurance={editingInsurance ? {
+              ...editingInsurance,
+              patient: patientId,
+              patient_details: { id: patientId, name: patientName },
+            } : null}
+            // Pre-fill patient for new insurance
+            defaultPatient={!editingInsurance ? {
+              id: patientId,
+              name: patientName,
+            } : null}
+          />
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Insurance</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this insurance record? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          {/* Delete Confirmation Dialog */}
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Insurance</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this insurance record? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmDelete}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </>
   );
 }

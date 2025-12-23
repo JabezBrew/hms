@@ -32,7 +32,6 @@ from .serializers import (
 )
 from ..users.permissions import IsBillingStaff
 from apps.core.pagination import StandardResultsSetPagination as CorePagination
-from apps.core.security import check_billing_access
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 
@@ -176,6 +175,11 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['valid_from', 'valid_until', 'created_at']
     ordering = ['-valid_from']
 
+    def get_permissions(self):
+        if self.action == 'for_patient':
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
         if self.action == 'list':
             return PatientInsuranceListSerializer
@@ -198,6 +202,11 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
                 {"error": "patient_id parameter is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Allow admin/billing or users with demographics access to view insurance
+        if request.user.user_type not in ['admin', 'billing']:
+            from apps.core.security import check_demographics_access
+            check_demographics_access(request.user, patient_id)
 
         insurances = self.get_queryset().filter(patient_id=patient_id)
 
@@ -228,6 +237,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'status', 'created_at']
     ordering = ['-invoice_date']
+
+    def get_permissions(self):
+        if self.action == 'for_patient':
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -293,8 +307,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: Check if user has permission to access this patient's data
-        check_billing_access(request.user, patient_id)
+        # SECURITY: Allow admin/billing or users with demographics access to view invoices
+        if request.user.user_type not in ['admin', 'billing']:
+            from apps.core.security import check_demographics_access
+            check_demographics_access(request.user, patient_id)
 
         invoices = self.get_queryset().filter(patient_id=patient_id)
 

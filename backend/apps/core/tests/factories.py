@@ -8,8 +8,11 @@ Provides test data factories for:
 import factory
 from factory import fuzzy
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
-from apps.core.models import Facility, Department
+from apps.core.models import Facility, Department, BreakGlassEvent
+from apps.users.tests.factories import DoctorUserFactory, PatientProfileFactory
 
 User = get_user_model()
 
@@ -130,6 +133,19 @@ class DepartmentFactory(factory.django.DjangoModelFactory):
     def updated_by(self):
         """Same as created_by for initial creation."""
         return self.created_by
+
+
+class BreakGlassEventFactory(factory.django.DjangoModelFactory):
+    """Factory for creating BreakGlassEvent instances."""
+
+    class Meta:
+        model = BreakGlassEvent
+
+    user = factory.SubFactory(DoctorUserFactory)
+    patient = factory.SubFactory(PatientProfileFactory)
+    scope = 'clinical'
+    reason = factory.Faker('sentence')
+    expires_at = factory.LazyFunction(lambda: timezone.now() + timedelta(minutes=30))
 
 
 class EmergencyDepartmentFactory(DepartmentFactory):

@@ -441,6 +441,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
     """
     patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
     patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+    patient_dob = serializers.DateField(source='patient.user.date_of_birth', read_only=True)
     ordering_provider_name = serializers.SerializerMethodField()
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -457,7 +458,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabOrder
         fields = [
-            'id', 'order_number', 'patient', 'patient_name', 'patient_mrn',
+            'id', 'order_number', 'patient', 'patient_name', 'patient_mrn', 'patient_dob',
             'encounter', 'ordering_provider', 'ordering_provider_name',
             'order_tests', 'panels', 'specimens',
             'priority', 'priority_display', 'status', 'status_display',
@@ -470,7 +471,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'order_number', 'created_at', 'updated_at',
-            'patient_name', 'patient_mrn', 'ordering_provider_name',
+            'patient_name', 'patient_mrn', 'patient_dob', 'ordering_provider_name',
             'priority_display', 'status_display', 'order_tests',
             'results_ready', 'has_critical_results'
         ]
@@ -715,6 +716,7 @@ class LabOrderListSerializer(serializers.ModelSerializer):
     """
     patient_name = serializers.SerializerMethodField()
     patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+    patient_dob = serializers.DateField(source='patient.user.date_of_birth', read_only=True)
     ordering_provider_name = serializers.SerializerMethodField()
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -729,7 +731,7 @@ class LabOrderListSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabOrder
         fields = [
-            'id', 'order_number', 'patient', 'patient_name', 'patient_mrn',
+            'id', 'order_number', 'patient', 'patient_name', 'patient_mrn', 'patient_dob',
             'ordering_provider_name', 'priority', 'priority_display',
             'status', 'status_display', 'test_count', 'has_critical_results',
             'fasting_required', 'ordered_at', 'created_at',

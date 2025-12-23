@@ -118,5 +118,39 @@ class FacilityFluidBalanceSettingsSerializer(serializers.Serializer):
     enable_output_alerts = serializers.BooleanField()
     enable_balance_alerts = serializers.BooleanField()
 
+
+class BreakGlassRequestSerializer(serializers.Serializer):
+    """
+    Request serializer for break-glass access.
+    """
+    reason = serializers.CharField(max_length=500)
+    scope = serializers.ChoiceField(
+        choices=[
+            ('clinical', 'Clinical'),
+            ('lab', 'Laboratory'),
+            ('pharmacy', 'Pharmacy'),
+            ('billing', 'Billing'),
+            ('demographics', 'Demographics'),
+        ],
+        default='clinical'
+    )
+
+
+class BreakGlassEventSerializer(serializers.Serializer):
+    """
+    Response serializer for break-glass events.
+    """
+    id = serializers.UUIDField(read_only=True)
+    patient = serializers.UUIDField(source='patient.id', read_only=True)
+    scope = serializers.CharField(read_only=True)
+    reason = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    expires_at = serializers.DateTimeField(read_only=True)
+    is_active = serializers.SerializerMethodField()
+
+    def get_is_active(self, obj):
+        from django.utils import timezone
+        return obj.expires_at > timezone.now()
+
     # Read-only metadata
     updated_at = serializers.DateTimeField(read_only=True)

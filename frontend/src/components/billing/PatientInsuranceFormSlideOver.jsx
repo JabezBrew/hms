@@ -45,12 +45,13 @@ export default function PatientInsuranceFormSlideOver({
   const updateMutation = useUpdatePatientInsurance();
 
   // Fetch providers and plans
-  const { data: providersData } = useInsuranceProviders();
+  const { data: providersData } = useInsuranceProviders({}, { enabled: open });
   const providers = providersData?.results || providersData || [];
 
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const { data: plansData } = useInsurancePlans(
-    selectedProviderId ? { provider: selectedProviderId } : {}
+    selectedProviderId ? { provider: selectedProviderId } : {},
+    { enabled: open && !!selectedProviderId }
   );
   const plans = plansData?.results || plansData || [];
 

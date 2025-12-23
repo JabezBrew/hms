@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { usePatientInvoices } from '@/hooks/useBillingQueries';
+import { useAuth } from '@/lib/auth';
 import {
   FileText,
   CreditCard,
@@ -23,9 +24,12 @@ import {
  */
 export default function InvoiceChronicleCard({ patientId, className }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: invoicesData, isLoading, error } = usePatientInvoices(patientId);
 
   const invoices = invoicesData?.results || invoicesData || [];
+  const userRole = user?.role || user?.user_type;
+  const canManageBilling = ['admin', 'billing'].includes(userRole);
 
   // Calculate summary
   const summary = invoices.reduce(
@@ -171,8 +175,15 @@ export default function InvoiceChronicleCard({ patientId, className }) {
             {previewInvoices.map((invoice) => (
               <div
                 key={invoice.id}
-                className="flex items-center justify-between text-sm cursor-pointer hover:bg-muted/30 rounded-lg p-2 -mx-2 transition-colors"
-                onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
+                className={cn(
+                  "flex items-center justify-between text-sm rounded-lg p-2 -mx-2 transition-colors",
+                  canManageBilling ? "cursor-pointer hover:bg-muted/30" : "cursor-default"
+                )}
+                onClick={() => {
+                  if (canManageBilling) {
+                    navigate(`/billing/invoices/${invoice.id}`);
+                  }
+                }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -191,27 +202,29 @@ export default function InvoiceChronicleCard({ patientId, className }) {
       })()}
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/billing/invoices?patient=${patientId}`)}
-          className="flex-1 font-mono text-xs"
-        >
-          View All
-          <ChevronRight className="h-3 w-3 ml-1" />
-        </Button>
-        {hasOutstanding && (
+      {canManageBilling && (
+        <div className="flex items-center gap-2">
           <Button
+            variant="outline"
             size="sm"
-            onClick={() => navigate(`/billing/invoices/${invoices.find(i => i.balance_due > 0)?.id}`)}
-            className="font-mono text-xs"
+            onClick={() => navigate(`/billing/invoices?patient=${patientId}`)}
+            className="flex-1 font-mono text-xs"
           >
-            <DollarSign className="h-3 w-3 mr-1" />
-            Pay
+            View All
+            <ChevronRight className="h-3 w-3 ml-1" />
           </Button>
-        )}
-      </div>
+          {hasOutstanding && (
+            <Button
+              size="sm"
+              onClick={() => navigate(`/billing/invoices/${invoices.find(i => i.balance_due > 0)?.id}`)}
+              className="font-mono text-xs"
+            >
+              <DollarSign className="h-3 w-3 mr-1" />
+              Pay
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

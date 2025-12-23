@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { useMutation } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
@@ -22,8 +23,10 @@ import {
   AddPrescriptionSlideOver,
   AddFluidBalanceSlideOver,
   PatientInsuranceSlideOver,
+  BreakGlassDialog,
 } from "@/components/chronicle";
 import { usePatientInsurance } from "@/hooks/useBillingQueries";
+import { patientsApi } from "@/lib/api/patients";
 import {
   AddChartSlideOver,
   ChartEntryForm,
@@ -62,7 +65,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 const PatientChroniclePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -73,6 +76,10 @@ const PatientChroniclePage = () => {
 
   // Edit note state - holds note ID and data for editing existing notes
   const [editNoteData, setEditNoteData] = useState(null);
+
+  const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
+  const [breakGlassReason, setBreakGlassReason] = useState('');
+  const [breakGlassExpiresAt, setBreakGlassExpiresAt] = useState(null);
 
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
@@ -107,11 +114,16 @@ const PatientChroniclePage = () => {
   const {
     data: chronicleContext,
     isLoading: isContextLoading,
+    error: contextError,
     refetch: refetchContext,
   } = useChronicleContext(id);
 
+  const canFetchClinical = !!id && !isContextLoading && !contextError && !error;
+
   // Fetch patient encounters for grouping
-  const { data: encounters } = usePatientEncounters(id);
+  const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
+    enabled: canFetchClinical,
+  });
 
   // Fetch patient insurance
   const { data: insuranceData } = usePatientInsurance(id);
@@ -205,10 +217,15 @@ const PatientChroniclePage = () => {
   }, [chronicleContext?.latest_vitals]);
 
   // Fetch active chart assignments for this patient
-  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments({
-    patient: patientLocalId,
-    status: 'active',
-  });
+  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(
+    {
+      patient: patientLocalId,
+      status: 'active',
+    },
+    {
+      enabled: canFetchClinical,
+    }
+  );
 
   // Map filter to API type
   const typeMapping = {
@@ -227,12 +244,12 @@ const PatientChroniclePage = () => {
     hasNextPage,
     isFetchingNextPage,
     isLoading: isTimelineLoading,
-    error: timelineError,
     refetch: refetchTimeline,
   } = usePatientTimeline(id, {
     type: typeMapping[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
+    enabled: canFetchClinical,
   });
 
   // Invalidate timeline cache helper
@@ -580,11 +597,134 @@ const PatientChroniclePage = () => {
     }
   }, [navigate, activeEncounter, patient]);
 
+  const userRole = user?.role || user?.user_type;
+  const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
+  const accessDenied = contextError?.status === 403 || error?.status === 403;
+  const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
+  const gateError = contextError && contextError?.status !== 403 ? contextError : error;
+
+  const breakGlassMutation = useMutation({
+    mutationFn: (payload) => patientsApi.requestBreakGlass(id, payload),
+    onSuccess: (data) => {
+      const expiresAt = data?.break_glass?.expires_at || null;
+      setBreakGlassExpiresAt(expiresAt);
+      setBreakGlassReason('');
+      setBreakGlassOpen(false);
+
+      const expiresLabel = expiresAt
+        ? new Date(expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : null;
+      toast.success("Break-glass access granted", {
+        description: expiresLabel ? `Access expires at ${expiresLabel}.` : "Access expires automatically.",
+      });
+
+      refetchContext();
+      refetchTimeline();
+      refetchEncounters();
+    },
+    onError: (err) => {
+      toast.error("Break-glass request failed", {
+        description: err?.message || "Please try again.",
+      });
+    },
+  });
+
+  const handleBreakGlassSubmit = useCallback(() => {
+    if (!breakGlassReason.trim()) {
+      return;
+    }
+    breakGlassMutation.mutate({
+      reason: breakGlassReason.trim(),
+      scope: 'clinical',
+    });
+  }, [breakGlassReason, breakGlassMutation]);
+
   // ============================================
   // Loading state
   // ============================================
 
-  if (isLoading) {
+  if (accessDenied) {
+    const patientDetails = patient?.local_data || patient;
+    const patientName = patientDetails?.user_details
+      ? `${patientDetails.user_details.first_name || ''} ${patientDetails.user_details.last_name || ''}`.trim()
+      : patientDetails?.name;
+    const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-2">
+                <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
+                  Access Restricted
+                </span>
+                {breakGlassExpiresAt && (
+                  <span className="badge-chronicle-amber text-[10px]">
+                    Break-glass active
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl text-foreground">
+                  Team-based access required
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  This patient record is protected by team-based access controls.
+                  Request break-glass only for urgent clinical need. All access is audited.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Patient
+                </p>
+                <p className="text-sm text-foreground">
+                  {patientName || "Unknown Patient"}
+                </p>
+                {patientMrn && (
+                  <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
+                )}
+              </div>
+
+              {canRequestBreakGlass ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    onClick={() => setBreakGlassOpen(true)}
+                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                  >
+                    Request Break-Glass Access
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Provide a reason to unlock this record for a limited time.
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Break-glass access is available to clinical staff only.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <BreakGlassDialog
+          open={isBreakGlassOpen}
+          onOpenChange={setBreakGlassOpen}
+          patientName={patientName}
+          patientMrn={patientMrn}
+          reason={breakGlassReason}
+          onReasonChange={setBreakGlassReason}
+          onSubmit={handleBreakGlassSubmit}
+          isSubmitting={breakGlassMutation.isPending}
+          ttlMinutes={30}
+        />
+      </div>
+    );
+  }
+
+  if (isLoading || isContextLoading || authLoading) {
     return (
       <div className="min-h-screen bg-background">
         {/* Hero skeleton */}
@@ -615,7 +755,7 @@ const PatientChroniclePage = () => {
   // Error state
   // ============================================
 
-  if (error) {
+  if (hasGateError) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -623,9 +763,12 @@ const PatientChroniclePage = () => {
             Unable to load patient record
           </h2>
           <p className="text-muted-foreground">
-            {error.message || 'An error occurred while fetching patient data.'}
+            {gateError?.message || 'An error occurred while fetching patient data.'}
           </p>
-          <Button onClick={() => refetch()}>
+          <Button onClick={() => {
+            refetch();
+            refetchContext();
+          }}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Try Again
           </Button>

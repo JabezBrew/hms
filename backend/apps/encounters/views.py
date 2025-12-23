@@ -9,8 +9,10 @@ import uuid as uuid_module
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, Count
+from django.conf import settings
 
 from .models import Encounter
 from .serializers import (
@@ -20,6 +22,7 @@ from .serializers import (
     EncounterUpdateSerializer,
 )
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +81,18 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff__user',
             'admission',
         ).all()
+
+        user = self.request.user
+        if user.user_type == 'admin':
+            pass
+        elif user.user_type == 'patient':
+            queryset = queryset.filter(patient__user=user)
+        elif user.user_type in ['doctor', 'nurse']:
+            if settings.TEAM_ACCESS_STRICT:
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                queryset = queryset.filter(patient__in=accessible_patients)
+        else:
+            return Encounter.objects.none()
 
         # Filter by patient - supports UUID, MRN, or name search
         patient_id = self.request.query_params.get('patient_id')
@@ -138,7 +153,34 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Set created_by on creation and trigger FHIR sync.
         """
-        encounter = serializer.save(created_by=self.request.user)
+        if self.request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            raise PermissionDenied("You do not have permission to create encounters.")
+
+        if self.request.user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
+            patient_id = serializer.validated_data.get('patient_id')
+            if patient_id:
+                from apps.users.models import PatientProfile, PractitionerProfile
+                patient = PatientProfile.objects.get(id=patient_id)
+                try:
+                    check_clinical_access(self.request.user, patient)
+                except PermissionDenied:
+                    practitioner = PractitionerProfile.objects.filter(
+                        staff__user=self.request.user
+                    ).first()
+                    practitioner_id = serializer.validated_data.get('practitioner_id') or (
+                        practitioner.id if practitioner else None
+                    )
+                    if not practitioner or not practitioner_id or practitioner.id != practitioner_id:
+                        raise
+
+        practitioner = None
+        if not serializer.validated_data.get('practitioner_id'):
+            from apps.users.models import PractitionerProfile
+            practitioner = PractitionerProfile.objects.filter(
+                staff__user=self.request.user
+            ).first()
+
+        encounter = serializer.save(created_by=self.request.user, practitioner=practitioner)
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
 
@@ -146,6 +188,11 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Set updated_by on update and trigger FHIR sync.
         """
+        if self.request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            raise PermissionDenied("You do not have permission to update encounters.")
+
+        encounter = self.get_object()
+        check_clinical_access(self.request.user, encounter.patient)
         encounter = serializer.save(updated_by=self.request.user)
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
@@ -175,6 +222,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
             "destination": "Patient's home"
         }
         """
+        if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            raise PermissionDenied("You do not have permission to finish encounters.")
+
         encounter = self.get_object()
 
         if encounter.status == 'finished':
@@ -200,6 +250,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
 
         POST /api/encounters/{id}/cancel/
         """
+        if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            raise PermissionDenied("You do not have permission to cancel encounters.")
+
         encounter = self.get_object()
 
         if encounter.status in ['finished', 'cancelled']:
@@ -229,6 +282,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
             "destination": "Patient's home"
         }
         """
+        if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            raise PermissionDenied("You do not have permission to discharge encounters.")
+
         encounter = self.get_object()
 
         if encounter.encounter_type != 'inpatient':

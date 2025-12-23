@@ -2439,6 +2439,9 @@ def patient_clinical_summary(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Get active prescriptions
     # Show all prescriptions with status='active' regardless of end_date
     # If a medication course is completed, its status should be changed to 'completed'

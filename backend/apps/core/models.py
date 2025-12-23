@@ -629,3 +629,43 @@ class IdempotencyRecord(models.Model):
 
     def __str__(self):
         return f"{self.operation_type}:{self.key[:16]}..."
+
+
+class BreakGlassEvent(models.Model):
+    """
+    Records time-bound emergency access overrides for patient data.
+    """
+    SCOPE_CHOICES = (
+        ('clinical', 'Clinical'),
+        ('lab', 'Laboratory'),
+        ('pharmacy', 'Pharmacy'),
+        ('billing', 'Billing'),
+        ('demographics', 'Demographics'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='break_glass_events'
+    )
+    patient = models.ForeignKey(
+        'users.PatientProfile',
+        on_delete=models.CASCADE,
+        related_name='break_glass_events'
+    )
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='clinical')
+    reason = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'patient', 'scope']),
+            models.Index(fields=['patient', 'scope']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"Break-glass {self.scope} for {self.patient_id} by {self.user_id}"

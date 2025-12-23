@@ -138,6 +138,9 @@ class AuditAction:
     REPORT_GENERATE = 'REPORT_GENERATE'
     REPORT_EXPORT = 'REPORT_EXPORT'
 
+    # Access override
+    BREAK_GLASS = 'BREAK_GLASS'
+
     CHOICES = [
         (LOGIN, 'Login'),
         (LOGOUT, 'Logout'),
@@ -211,6 +214,7 @@ class AuditAction:
         (INVOICE_PRINT, 'Invoice Printed'),
         (REPORT_GENERATE, 'Report Generated'),
         (REPORT_EXPORT, 'Report Exported'),
+        (BREAK_GLASS, 'Break-Glass Access'),
     ]
 
 
