@@ -3,7 +3,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-export function SlideOver({ open, onClose, title, children, className }) {
+export function SlideOver({ open, onClose, title, header, children, className }) {
     // Handle escape key to close
     React.useEffect(() => {
         const handleEscape = (e) => {
@@ -39,13 +39,17 @@ export function SlideOver({ open, onClose, title, children, className }) {
                 )}
             >
                 <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-4 border-b">
-                        <h2 className="text-lg font-semibold">{title}</h2>
-                        <Button variant="ghost" size="icon" onClick={onClose}>
-                            <X className="h-4 w-4" />
-                            <span className="sr-only">Close</span>
-                        </Button>
-                    </div>
+                    {header ? (
+                        header
+                    ) : (
+                        <div className="flex items-center justify-between p-4 border-b">
+                            <h2 className="text-lg font-semibold">{title}</h2>
+                            <Button variant="ghost" size="icon" onClick={onClose}>
+                                <X className="h-4 w-4" />
+                                <span className="sr-only">Close</span>
+                            </Button>
+                        </div>
+                    )}
                     <div className="flex-1 overflow-y-auto p-4">
                         {children}
                     </div>

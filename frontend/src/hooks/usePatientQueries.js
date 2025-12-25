@@ -31,11 +31,12 @@ export function usePatients(filters = {}) {
  * @param {string} id - Patient ID
  * @returns {Object} Query result
  */
-export function usePatient(id) {
+export function usePatient(id, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: patientKeys.detail(id),
     queryFn: () => patientsApi.getPatient(id),
-    enabled: !!id, // Only run the query if we have an ID
+    enabled: !!id && enabled, // Only run the query if we have an ID
     staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
   });
 }

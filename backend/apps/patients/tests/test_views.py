@@ -393,7 +393,7 @@ class TestPatientViewSet:
         response = client.get('/api/patients/search/', {'query': 'John'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert 'patients' in response.data
+        assert 'results' in response.data
         assert 'total' in response.data
 
     def test_search_creates_search_record(self, db):

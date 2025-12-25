@@ -26,10 +26,12 @@ export const appointmentKeys = {
  * @param {Object} filters - Query parameters for filtering
  * @returns {Object} Query result
  */
-export function useAppointments(filters = {}) {
+export function useAppointments(filters = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.list(filters),
     queryFn: () => appointmentsApi.getAppointments(filters),
+    enabled,
   });
 }
 

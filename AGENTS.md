@@ -25,6 +25,18 @@ favor correctness, least privilege, and predictable performance.
 - React: PascalCase components, `use*` hooks, camelCase utilities.
 - Keep Celery tasks small and pure. Prefer Tailwind utilities over inline styles.
 
+## Workflow-Oriented Product Rules
+- Prioritize workflow-centric UX over data-centric CRUD: guide users step-by-step.
+- Use progressive disclosure and guided flows with clear "what's next" cues.
+- Prefer action-oriented cards and contextual quick actions over passive lists.
+- Minimize navigation; aim to complete common clinical tasks in a single flow.
+- Role-based personalization: doctor, nurse, receptionist views differ.
+
+## Clinical Data Placement (Critical)
+- All patient clinical data (vitals, notes, meds, labs, etc.) must be accessible only
+  from `PatientChroniclePage`. Use slide-overs/panels inside that page.
+- Do not create standalone clinical pages like `/nursing/fluid-balance/:patientId`.
+
 ## Security Rules (Non-Negotiable)
 - Every endpoint that accepts a patient identifier MUST enforce access control
   at the queryset and object level (use `apps/core/security.py`).
@@ -52,6 +64,17 @@ favor correctness, least privilege, and predictable performance.
 - Use `.only()`/`.defer()` to avoid pulling large JSON blobs.
 - Avoid per-row `.count()` or `.exists()` calls; annotate once in the queryset.
 
+## API Payload Optimization (Mandatory)
+- All list endpoints must use lightweight `*ListSerializer` (5-8 fields max).
+- All `ModelViewSet` classes must set `pagination_class = StandardResultsSetPagination`.
+- Import pagination from `apps.core.pagination.StandardResultsSetPagination`.
+- Never nest full related objects in list serializers; flatten required fields instead.
+
+## Caching and Real-Time
+- Cache read-heavy list endpoints with short TTLs and invalidate on writes.
+- Use WebSockets for real-time updates; polling is only a fallback.
+- For heavy lists, debounce search inputs and virtualize client-side lists >100 items.
+
 ## Concurrency and Transactions
 - Never keep a DB transaction open while waiting on network calls.
 - Use optimistic flow: save locally, queue async work, update status later.
@@ -60,15 +83,23 @@ favor correctness, least privilege, and predictable performance.
 ## Testing and Migrations
 - Backend tests live alongside modules (e.g., `backend/apps/users/tests.py`).
 - Add tests for serializers, viewsets, Celery tasks, and access control.
+- Always run tests after code changes; fix failures before moving on.
+- Use scoped tests for bug fixes and full suite for refactors when feasible.
 - For migrations, include data backfill checks and index creation where needed.
 
 ## Commit and PR Notes
 - Use Conventional Commits (`feat:`, `fix(scope):`, `Add ...`).
 - PRs must note migrations, env var changes, and Celery schedule changes.
 - Provide UI captures for visual changes.
+- Do not credit yourself in commit messages.
 
 ## Security and Configuration Notes
 - Never commit secrets. Use `backend/.env.example` and `frontend/.env.example`.
 - Ignore `backend/credentials/` contents.
 - Ensure Redis is available before launching Celery.
 - Document new dependencies or IAM needs in `docs/`.
+
+## Design System (Frontend)
+- Use Chronicle design system patterns and components when building clinical UIs.
+- Fonts: Fraunces (display), DM Sans (headings), IBM Plex Mono (data).
+- Visual language: editorial medical journal aesthetic; avoid generic dashboards.

@@ -343,6 +343,46 @@ def create_supply_request(treatment_entry, quantity, requested_by, notes=''):
 # apps.pharmacy.services
 
 
+def dispense_medication(mar_entry, dispensed_by):
+    """
+    Backwards-compatible wrapper for pharmacy dispense_medication.
+    """
+    from apps.pharmacy import services as pharmacy_services
+    return pharmacy_services.dispense_medication(mar_entry, dispensed_by)
+
+
+def dispense_supply_request(supply_request, quantity_dispensed, dispensed_by):
+    """
+    Backwards-compatible wrapper for pharmacy dispense_supply_request.
+    """
+    from apps.pharmacy import services as pharmacy_services
+    return pharmacy_services.dispense_supply_request(
+        supply_request,
+        quantity_dispensed,
+        dispensed_by
+    )
+
+
+def reject_supply_request(supply_request, rejection_reason, rejected_by):
+    """
+    Backwards-compatible wrapper for pharmacy reject_supply_request.
+    """
+    from apps.pharmacy import services as pharmacy_services
+    return pharmacy_services.reject_supply_request(
+        supply_request,
+        rejection_reason,
+        rejected_by
+    )
+
+
+def get_pending_supply_requests(patient_id=None):
+    """
+    Backwards-compatible wrapper for pharmacy get_pending_supply_requests.
+    """
+    from apps.pharmacy import services as pharmacy_services
+    return pharmacy_services.get_pending_supply_requests(patient_id=patient_id)
+
+
 def get_treatment_sheet_by_admission(admission_id):
     """
     Get all active treatment sheet entries for an admission.

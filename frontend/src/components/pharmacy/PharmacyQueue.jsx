@@ -13,6 +13,7 @@ import {
   RefreshCw, User, Pill, AlertTriangle, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
   usePendingDispensing,
   useDispenseMedication,
@@ -25,6 +26,8 @@ export function PharmacyQueue() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMedication, setConfirmMedication] = useState(null);
   const [viewMode, setViewMode] = useState('by-patient');
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextPatient, setContextPatient] = useState(null);
 
   // Fetch pending dispensing
   const {
@@ -169,6 +172,18 @@ export function PharmacyQueue() {
     setShowConfirmDialog(true);
   };
 
+  const openPatientContext = (medication) => {
+    setContextPatient({
+      name: getPatientName(medication),
+      mrn: getPatientMRN(medication),
+      ward: getPatientWard(medication),
+      allergies: medication.patient_allergies || [],
+      problems: medication.patient_problems || [],
+      medications: medication.patient_medications || [],
+    });
+    setContextOpen(true);
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -297,6 +312,7 @@ export function PharmacyQueue() {
           toggleMedSelection={toggleMedSelection}
           selectAllForPatient={selectAllForPatient}
           openConfirmDialog={openConfirmDialog}
+          openPatientContext={openPatientContext}
           dispenseMutation={dispenseMutation}
           getPatientName={getPatientName}
           getPatientMRN={getPatientMRN}
@@ -311,6 +327,7 @@ export function PharmacyQueue() {
           setSelectedMeds={setSelectedMeds}
           toggleMedSelection={toggleMedSelection}
           openConfirmDialog={openConfirmDialog}
+          openPatientContext={openPatientContext}
           dispenseMutation={dispenseMutation}
           getPatientName={getPatientName}
           getPatientMRN={getPatientMRN}
@@ -365,6 +382,15 @@ export function PharmacyQueue() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PatientContextPanel
+        open={contextOpen}
+        onClose={() => setContextOpen(false)}
+        mode="pharmacy"
+        patientContext={contextPatient}
+        patientName={contextPatient?.name}
+        patientMrn={contextPatient?.mrn}
+      />
     </div>
   );
 }
@@ -420,6 +446,7 @@ const ByPatientView = ({
   toggleMedSelection,
   selectAllForPatient,
   openConfirmDialog,
+  openPatientContext,
   dispenseMutation,
   getPatientName,
   getPatientMRN,
@@ -467,9 +494,19 @@ const ByPatientView = ({
                     </p>
                   </div>
                 </div>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {getPatientWard(data.firstMed)}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {getPatientWard(data.firstMed)}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openPatientContext(data.firstMed)}
+                    className="font-mono text-xs"
+                  >
+                    Patient
+                  </Button>
+                </div>
               </header>
 
               {/* Medications List */}
@@ -541,6 +578,7 @@ const AllMedicationsView = ({
   setSelectedMeds,
   toggleMedSelection,
   openConfirmDialog,
+  openPatientContext,
   dispenseMutation,
   getPatientName,
   getPatientMRN,
@@ -631,6 +669,14 @@ const AllMedicationsView = ({
                 className="font-mono text-xs shrink-0"
               >
                 Dispense
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openPatientContext(med)}
+                className="font-mono text-xs"
+              >
+                Patient
               </Button>
             </div>
           ))}

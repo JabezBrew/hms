@@ -29,6 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import { patientsApi } from '@/lib/api/patients';
+import PatientContextPanel from '@/components/patients/PatientContextPanel';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
@@ -54,6 +55,8 @@ export default function InvoicesPage() {
 
   // Patient info for display when filtering by patient
   const [patientName, setPatientName] = useState('');
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextInvoice, setContextInvoice] = useState(null);
 
   // Fetch patient name when filtering by patient
   useEffect(() => {
@@ -153,6 +156,11 @@ export default function InvoicesPage() {
       params.set('page', newPage.toString());
       return params;
     });
+  };
+
+  const handlePatientContext = (invoice) => {
+    setContextInvoice(invoice);
+    setContextOpen(true);
   };
 
   // Loading state
@@ -294,6 +302,7 @@ export default function InvoicesPage() {
                 invoice={invoice}
                 index={index}
                 onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
+                onPatientContext={handlePatientContext}
               />
             ))}
           </div>
@@ -348,11 +357,20 @@ export default function InvoicesPage() {
           </div>
         )}
       </main>
+
+      <PatientContextPanel
+        open={contextOpen}
+        onClose={() => setContextOpen(false)}
+        mode="billing"
+        patientId={contextInvoice?.patient}
+        patientName={contextInvoice?.patient_name}
+        patientMrn={contextInvoice?.patient_mrn}
+      />
     </div>
   );
 }
 
-function InvoiceCard({ invoice, index, onClick }) {
+function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
   const getStatusBadge = (status) => {
     const statusMap = {
       draft: { class: 'bg-muted text-muted-foreground', label: 'Draft' },
@@ -410,6 +428,17 @@ function InvoiceCard({ invoice, index, onClick }) {
             <span className="font-mono text-xs">
               {invoice.items_count || 0} item{invoice.items_count !== 1 ? 's' : ''}
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="font-mono text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPatientContext?.(invoice);
+              }}
+            >
+              Patient
+            </Button>
           </div>
         </div>
 

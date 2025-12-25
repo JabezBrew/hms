@@ -20,6 +20,51 @@ class AppointmentProxy:
     Proxy for FHIR Appointment resource.
     """
     @staticmethod
+    def _build_patient_context(patient_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Build local patient context from a FHIR patient ID, if mapped.
+        """
+        if not patient_id:
+            return None
+
+        mapping = PatientFHIRMapping.objects.select_related(
+            'patient_profile', 'patient_profile__user'
+        ).filter(fhir_patient_id=patient_id).first()
+
+        if not mapping or not mapping.patient_profile or not mapping.patient_profile.user:
+            return None
+
+        profile = mapping.patient_profile
+        user = profile.user
+
+        return {
+            "id": str(profile.id),
+            "mrn": profile.medical_record_number,
+            "dob": user.date_of_birth.isoformat() if user.date_of_birth else None,
+            "gender": user.gender,
+            "gender_display": user.get_gender_display() if user.gender else None,
+            "name": user.get_full_name(),
+        }
+
+    @staticmethod
+    def _attach_patient_context(appointment: Dict[str, Any]) -> None:
+        """
+        Attach local patient context to a FHIR Appointment resource when possible.
+        """
+        if not appointment or "participant" not in appointment:
+            return
+
+        patient_id = None
+        for participant in appointment.get("participant", []):
+            reference = participant.get("actor", {}).get("reference", "")
+            if reference.startswith("Patient/"):
+                patient_id = reference.split("/")[1]
+                break
+
+        context = AppointmentProxy._build_patient_context(patient_id)
+        if context:
+            appointment["hms_patient_context"] = context
+    @staticmethod
     def create(
         start_time: datetime,
         end_time: datetime,
@@ -191,10 +236,11 @@ class AppointmentProxy:
                         try:
                             practitioner_mapping = PractitionerProfile.objects.filter(fhir_practitioner_id=practitioner_id).first()
                             if practitioner_mapping and practitioner_mapping.staff and practitioner_mapping.staff.user:
-                                participant["actor"]["display"] = f"Dr. {practitioner_mapping.staff.user.first_name} {practitioner_mapping.staff.user.last_name}"
+                                    participant["actor"]["display"] = f"Dr. {practitioner_mapping.staff.user.first_name} {practitioner_mapping.staff.user.last_name}"
                         except Exception as e:
                             logger.warning(f"Failed to get practitioner name: {str(e)}")
 
+        AppointmentProxy._attach_patient_context(appointment)
         return appointment
 
     @staticmethod
@@ -365,6 +411,8 @@ class AppointmentProxy:
                                             participant["actor"]["display"] = f"Dr. {practitioner_mapping.staff.user.first_name} {practitioner_mapping.staff.user.last_name}"
                                     except Exception as e:
                                         logger.warning(f"Failed to get practitioner name: {str(e)}")
+
+                    AppointmentProxy._attach_patient_context(appointment)
 
         return results
 

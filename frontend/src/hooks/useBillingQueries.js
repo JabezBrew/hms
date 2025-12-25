@@ -120,11 +120,12 @@ export function useInvoice(id) {
  * @param {Object} params - Additional query parameters
  * @returns {Object} Query result
  */
-export function usePatientInvoices(patientId, params = {}) {
+export function usePatientInvoices(patientId, params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.patientInvoices(patientId, params),
     queryFn: () => billingApi.getPatientInvoices(patientId, params),
-    enabled: !!patientId,
+    enabled: !!patientId && enabled,
   });
 }
 
