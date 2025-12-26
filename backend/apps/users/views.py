@@ -11,6 +11,7 @@ from .serializers import (
     UserSerializer, UserListSerializer, UserCreateSerializer,
     UserWithAccessContextSerializer,
     StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
+    StaffInviteSerializer,
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
     PractitionerFHIRMappingSerializer,
@@ -203,12 +204,57 @@ class StaffViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_201_CREATED
                     )
             except Exception as e:
+                logger.error(f"Failed to register staff: {str(e)}")
                 return Response(
-                    {"error": f"Failed to register staff: {str(e)}"},
+                    {"error": "Failed to register staff. Please try again."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='invite')
+    def invite(self, request):
+        """
+        Invite a staff user without setting a known password.
+
+        Creates/updates the user + staff profile and sends a password reset link email.
+        This avoids emailing plaintext passwords.
+        """
+        from .models import PasswordResetToken
+        from .tasks import send_password_reset_email, send_account_setup_email
+        from django.conf import settings
+
+        serializer = StaffInviteSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            staff = serializer.save()
+
+            # Generate reset token and email link (admin-initiated)
+            plain_token, _ = PasswordResetToken.create_for_user(
+                user=staff.user,
+                reset_type='admin_force',
+                initiated_by=request.user,
+                expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
+            )
+
+            # First-time creation gets a clearer "set up your password" message.
+            if getattr(staff, '_user_created', False):
+                send_account_setup_email.delay(
+                    user_id=str(staff.user.id),
+                    token=plain_token,
+                    user_email=staff.user.email,
+                    user_name=staff.user.get_full_name() or staff.user.email,
+                )
+            else:
+                send_password_reset_email.delay(
+                    user_id=str(staff.user.id),
+                    token=plain_token,
+                    user_email=staff.user.email,
+                    user_name=staff.user.get_full_name() or staff.user.email,
+                )
+
+        return Response(StaffSerializer(staff, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 class PractitionerProfileViewSet(viewsets.ModelViewSet):
@@ -381,8 +427,9 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
+            logger.error(f"Failed to search practitioners: {str(e)}")
             return Response(
-                {"error": f"Failed to search practitioners: {str(e)}"},
+                {"error": "Failed to search practitioners. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -425,9 +472,9 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
         except Exception as e:
             mapping.is_synced = False
             mapping.save()
-
+            logger.error(f"Failed to sync with FHIR resource: {str(e)}")
             return Response(
-                {"error": f"Failed to sync with FHIR resource: {str(e)}"},
+                {"error": "Failed to sync with FHIR resource. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

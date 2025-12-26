@@ -1,0 +1,18 @@
+{{ hospital_name }}
+===================
+
+WELCOME — SET UP YOUR PASSWORD
+
+Hello {{ user_name }},
+
+Your account has been created.
+
+To set up your password, visit this link:
+{{ setup_url }}
+
+IMPORTANT: This link will expire in {{ expiry_minutes }} minutes.
+
+If you weren’t expecting this email, you can ignore it.
+
+---
+This is an automated message. Please do not reply.

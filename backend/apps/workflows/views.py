@@ -208,7 +208,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error completing consultation: {str(e)}")
             return Response(
-                {'error': f'Failed to complete consultation: {str(e)}'},
+                {'error': 'Failed to complete consultation. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -457,7 +457,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error completing clinical note: {str(e)}")
             return Response(
-                {'error': f'Failed to complete clinical note: {str(e)}'},
+                {'error': 'Failed to complete clinical note. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -504,7 +504,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error starting ward round: {str(e)}")
             return Response(
-                {'error': f'Failed to start ward round: {str(e)}'},
+                {'error': 'Failed to start ward round. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -546,7 +546,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error updating ward round step: {str(e)}")
             return Response(
-                {'error': f'Failed to update step: {str(e)}'},
+                {'error': 'Failed to update step. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -579,7 +579,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error completing ward round: {str(e)}")
             return Response(
-                {'error': f'Failed to complete ward round: {str(e)}'},
+                {'error': 'Failed to complete ward round. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -624,7 +624,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error starting admission: {str(e)}")
             return Response(
-                {'error': f'Failed to start admission: {str(e)}'},
+                {'error': 'Failed to start admission. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -666,7 +666,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error updating admission step: {str(e)}")
             return Response(
-                {'error': f'Failed to update step: {str(e)}'},
+                {'error': 'Failed to update step. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -699,7 +699,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error completing admission: {str(e)}")
             return Response(
-                {'error': f'Failed to complete admission: {str(e)}'},
+                {'error': 'Failed to complete admission. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -746,7 +746,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error starting discharge: {str(e)}")
             return Response(
-                {'error': f'Failed to start discharge: {str(e)}'},
+                {'error': 'Failed to start discharge. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -788,7 +788,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error updating discharge step: {str(e)}")
             return Response(
-                {'error': f'Failed to update step: {str(e)}'},
+                {'error': 'Failed to update step. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -821,7 +821,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error completing discharge: {str(e)}")
             return Response(
-                {'error': f'Failed to complete discharge: {str(e)}'},
+                {'error': 'Failed to complete discharge. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

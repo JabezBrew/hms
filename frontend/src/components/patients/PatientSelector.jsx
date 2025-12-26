@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
 import { normalizeApiResults } from "@/lib/utils";
-import { Toaster } from "@/components/ui/sonner.jsx";
+import { patientsApi } from "@/lib/api/patients";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Command,
   CommandEmpty,
@@ -19,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -91,20 +89,16 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
 
     setIsLoading(true);
     try {
-      const response = await axios.get(`/api/patients/search/?query=${encodeURIComponent(query)}`);
-      setPatients(normalizeApiResults(response.data));
+      const response = await patientsApi.searchPatients({ query });
+      setPatients(normalizeApiResults(response));
     } catch (error) {
       console.error("Error searching patients:", error);
-      Toaster({
-        title: "Error",
-        description: "Failed to search patients",
-        variant: "destructive",
-      });
+      toast.error("Failed to search patients");
       setPatients([]);
     } finally {
       setIsLoading(false);
     }
-  }, [Toaster]);
+  }, []);
 
   // Effect to search patients when query changes
   useEffect(() => {
@@ -145,8 +139,12 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0">
-          <Command>
+        <PopoverContent
+          className="p-0 z-[200]"
+          align="start"
+          style={{ width: 'var(--radix-popover-trigger-width)' }}
+        >
+          <Command shouldFilter={false}>
             <CommandInput
               placeholder="Search patients..."
               value={searchQuery}
@@ -170,8 +168,8 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             ) : (
               <CommandList>
                 <CommandEmpty>
-                  {searchQuery.length < 2 
-                    ? "Type at least 2 characters to search" 
+                  {searchQuery.length < 2
+                    ? "Type at least 2 characters to search"
                     : "No patients found"}
                 </CommandEmpty>
                 <CommandGroup>
@@ -179,16 +177,17 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                     const patientId = getPatientId(patient);
                     const displayName = getDisplayName(patient);
                     const initials = getInitials(patient);
-                    const mrn = patient.local_data?.medical_record_number || 
-                                patient.fhir_resource?.identifier?.[0]?.value || 
+                    const mrn = patient.medical_record_number ||
+                                patient.local_data?.medical_record_number ||
+                                patient.fhir_resource?.identifier?.[0]?.value ||
                                 "No MRN";
 
                     return (
                       <CommandItem
                         key={patientId}
-                        value={patientId}
+                        value={displayName}
                         onSelect={() => handleSelectPatient(patient)}
-                        className="flex items-center"
+                        className="flex items-center cursor-pointer"
                       >
                         <Avatar className="h-6 w-6 mr-2">
                           <AvatarFallback>{initials}</AvatarFallback>

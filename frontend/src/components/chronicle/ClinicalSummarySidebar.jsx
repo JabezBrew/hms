@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
-import { AlertTriangle, ChevronRight, Pill, Activity, FileWarning, Droplet, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { AlertTriangle, ChevronRight, Pill, Activity, FileWarning, Droplet, ArrowDownCircle, ArrowUpCircle, CreditCard } from "lucide-react";
 import { useTodayFluidBalance } from "@/hooks/useNursingQueries";
+import { InvoiceChronicleCard } from "@/components/billing";
 
 /**
  * ClinicalSummarySidebar - Always-visible patient context panel
@@ -64,6 +65,14 @@ const ClinicalSummarySidebar = ({
         <>
           <div className="divider-gradient" />
           <FluidBalanceSection patientId={patientId} />
+        </>
+      )}
+
+      {/* Section: Billing Summary */}
+      {patientId && (
+        <>
+          <div className="divider-gradient" />
+          <InvoiceChronicleCard patientId={patientId} />
         </>
       )}
     </aside>

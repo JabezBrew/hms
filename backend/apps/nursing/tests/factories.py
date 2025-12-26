@@ -76,7 +76,7 @@ class EncounterFactory(factory.django.DjangoModelFactory):
     """Factory for creating Encounter instances."""
 
     class Meta:
-        model = 'wards.Encounter'
+        model = 'encounters.Encounter'
 
     patient = factory.SubFactory(PatientProfileFactory)
     practitioner = factory.SubFactory(PractitionerProfileFactory)

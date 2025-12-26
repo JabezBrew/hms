@@ -192,6 +192,7 @@ class AuditService:
             AuditAction.USER_CREATE: 'created user',
             AuditAction.USER_UPDATE: 'updated user',
             AuditAction.ROLE_CHANGE: 'changed role for',
+            AuditAction.BREAK_GLASS: 'initiated break-glass access for',
         }
 
         verb = action_verbs.get(action, action.lower())

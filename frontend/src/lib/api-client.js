@@ -29,6 +29,10 @@ let refreshPromise = null;
 // Track consecutive refresh attempts to prevent infinite loops
 let consecutiveRefreshAttempts = 0;
 const MAX_CONSECUTIVE_REFRESHES = 3;
+// Track when the last successful refresh happened to handle race conditions
+let lastRefreshTime = 0;
+// Grace period (ms) - if refresh completed within this time, reuse token instead of refreshing again
+const REFRESH_GRACE_PERIOD = 5000;
 
 // Function to set the token provider from the auth context
 export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHandler) {
@@ -46,6 +50,16 @@ export async function performTokenRefresh() {
   // If a refresh is already in progress, wait for it
   if (isRefreshing && refreshPromise) {
     return refreshPromise;
+  }
+
+  // If a refresh completed very recently, use the current token
+  // This handles race conditions where requests sent with old tokens get 401
+  // after a refresh has already completed
+  if (Date.now() - lastRefreshTime < REFRESH_GRACE_PERIOD) {
+    const currentToken = getAccessToken();
+    if (currentToken) {
+      return currentToken;
+    }
   }
 
   // Check consecutive attempts to prevent infinite loops
@@ -76,8 +90,9 @@ export async function performTokenRefresh() {
       // Update the access token in memory
       setAccessTokenFn(data.access);
 
-      // Reset consecutive attempts on success
+      // Reset consecutive attempts on success and record refresh time
       consecutiveRefreshAttempts = 0;
+      lastRefreshTime = Date.now();
 
       return data.access;
     } catch (_error) {

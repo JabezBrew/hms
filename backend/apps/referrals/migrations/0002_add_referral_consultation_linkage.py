@@ -9,6 +9,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('workflows', '0004_wardroundworkflow_dischargeworkflow_and_more'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('referrals', '0001_initial'),
     ]
 
@@ -16,7 +17,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='referral',
             name='consultation_encounter',
-            field=models.ForeignKey(blank=True, help_text='Encounter created for specialist consultation (for OPD referrals)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='consultation_referrals', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='Encounter created for specialist consultation (for OPD referrals)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='consultation_referrals', to='encounters.Encounter'),
         ),
         migrations.AddField(
             model_name='referral',

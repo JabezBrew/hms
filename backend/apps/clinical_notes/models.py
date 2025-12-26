@@ -140,7 +140,7 @@ class NoteEntry(models.Model):
     # Encounter - required link to group notes by clinical visit
     # The auto-encounter logic in views ensures this is always set
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.PROTECT,  # Prevent deletion of encounters with linked notes
         null=False,
         blank=False,
@@ -338,7 +338,7 @@ class Prescription(models.Model):
     # Link to encounter - required, groups prescriptions by clinical visit
     # The auto-encounter logic in views ensures this is always set
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.PROTECT,  # Prevent deletion of encounters with linked prescriptions
         null=False,
         blank=False,
@@ -420,7 +420,7 @@ class TimelineEvent(models.Model):
         db_index=True
     )
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

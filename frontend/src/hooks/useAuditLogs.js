@@ -4,9 +4,10 @@ import { apiClient } from '@/lib/api-client';
 /**
  * Fetch audit logs with pagination and filters
  */
-const fetchAuditLogs = async (filters = {}, page = 1) => {
+const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 20) => {
   const params = new URLSearchParams();
   params.append('page', page);
+  params.append('page_size', pageSize);
 
   // Add filters
   if (filters.category) params.append('category', filters.category);
@@ -38,10 +39,10 @@ const fetchFilterOptions = async () => {
 /**
  * Hook for fetching audit logs with pagination
  */
-export function useAuditLogs(filters = {}, page = 1) {
+export function useAuditLogs(filters = {}, page = 1, pageSize = 20) {
   return useQuery({
-    queryKey: ['audit-logs', filters, page],
-    queryFn: () => fetchAuditLogs(filters, page),
+    queryKey: ['audit-logs', filters, page, pageSize],
+    queryFn: () => fetchAuditLogs(filters, page, pageSize),
     staleTime: 30000, // 30 seconds
   });
 }

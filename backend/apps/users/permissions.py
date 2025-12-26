@@ -137,8 +137,47 @@ class CanAccessEncounter(permissions.BasePermission):
                 return obj.patient.user == user
             return False
 
-        # Medical staff can access encounters
+        # Medical staff require clinical access (team or break-glass)
         if user.user_type in ['doctor', 'nurse']:
+            if hasattr(obj, 'patient'):
+                from apps.core.security import check_clinical_access
+                from rest_framework.exceptions import PermissionDenied
+                try:
+                    check_clinical_access(user, obj.patient)
+                    return True
+                except PermissionDenied:
+                    return False
+            return False
+
+        return False
+
+
+class IsBillingStaff(permissions.BasePermission):
+    """
+    Permission to restrict billing endpoints to billing staff and admins.
+
+    This enforces data-type access control: clinical staff (doctors/nurses)
+    should NOT have access to billing data.
+    """
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return request.user.user_type in ['admin', 'billing']
+
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+
+        user = request.user
+
+        # Admin and billing staff have full access
+        if user.user_type in ['admin', 'billing']:
             return True
+
+        # Patients can access their own billing data
+        if user.user_type == 'patient':
+            if hasattr(obj, 'patient') and hasattr(obj.patient, 'user'):
+                return obj.patient.user == user
+            return False
 
         return False

@@ -46,6 +46,7 @@ export function AppSidebar() {
   const userRole = user?.role || ''
 
   // Get role-specific dashboard URL
+  // Support staff are redirected to their workflow pages instead of a generic dashboard
   const getDashboardUrl = (role) => {
     if (['nurse', 'head_nurse', 'nurse_practitioner'].includes(role)) {
       return '/dashboards/nurse';
@@ -59,17 +60,29 @@ export function AppSidebar() {
     if (role === 'admin') {
       return '/dashboards/admin';
     }
+    // Support staff go directly to their workflow pages
+    if (['pharmacist', 'pharmacy_tech'].includes(role)) {
+      return '/pharmacy/dispensing';
+    }
+    if (role === 'lab_technician') {
+      return '/laboratory/dashboard';
+    }
+    if (role === 'billing') {
+      return '/billing';
+    }
     return '/dashboard/provider'; // Fallback to legacy dashboard
   };
 
   // Define menu items with their access roles
+  // Note: Patient Registry is only for clinical staff who can access patient records directly.
+  // Support staff (lab_technician, pharmacist, billing) access patients through their workflow pages.
   const menuItems = {
     primary: {
-      dashboard: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'front_desk'],
+      dashboard: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'front_desk', 'pharmacist', 'lab_technician', 'billing'],
       schedule: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician'],
       availability: ['admin', 'doctor', 'practitioner', 'physician'],
       inbox: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
-      patients: ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'practitioner', 'physician'],
+      patients: ['admin', 'doctor', 'nurse', 'receptionist', 'practitioner', 'physician', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor'],
     },
     management: {
       wards: ['admin', 'doctor', 'nurse'],

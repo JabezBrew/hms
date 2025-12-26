@@ -18,7 +18,7 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
-from ..wards.models import Encounter
+from ..encounters.models import Encounter
 
 logger = logging.getLogger(__name__)
 
@@ -365,7 +365,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 logger.error(f"Failed to create encounter for referral {referral.referral_number}: {str(e)}")
                 return Response(
-                    {'error': f'Failed to create encounter: {str(e)}'},
+                    {'error': 'Failed to create encounter. Please try again.'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
@@ -413,7 +413,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Failed to start consultation for referral {referral.referral_number}: {str(e)}")
             return Response(
-                {'error': f'Failed to start consultation: {str(e)}'},
+                {'error': 'Failed to start consultation. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

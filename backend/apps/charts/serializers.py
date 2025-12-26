@@ -4,6 +4,7 @@ Chart Builder Serializers
 Follows the List/Detail serializer pattern for API payload optimization.
 """
 
+from datetime import timedelta
 from rest_framework import serializers
 from django.utils import timezone
 
@@ -265,15 +266,39 @@ class ChartAssignmentListSerializer(serializers.ModelSerializer):
         return None
 
     def get_last_entry_at(self, obj):
+        last_entry_at = getattr(obj, 'last_entry_at', None)
+        if last_entry_at:
+            return last_entry_at
         last = obj.get_last_entry()
         return last.observation_datetime if last else None
 
     def get_next_due_at(self, obj):
         if obj.status != 'active':
             return None
-        return obj.get_next_due()
+        last_entry_at = getattr(obj, 'last_entry_at', None)
+        base_time = last_entry_at or obj.start_datetime
+
+        interval_minutes = {
+            '15min': 15,
+            '30min': 30,
+            'hourly': 60,
+            '2hourly': 120,
+            '4hourly': 240,
+            '6hourly': 360,
+            '8hourly': 480,
+            'shift': 480,
+            'daily': 1440,
+        }
+        minutes = interval_minutes.get(obj.effective_interval)
+        if not minutes or not base_time:
+            return None
+
+        return base_time + timedelta(minutes=minutes)
 
     def get_entry_count(self, obj):
+        entry_count = getattr(obj, 'entry_count', None)
+        if entry_count is not None:
+            return entry_count
         return obj.entries.filter(is_deleted=False).count()
 
 

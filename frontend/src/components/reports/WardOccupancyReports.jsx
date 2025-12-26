@@ -248,6 +248,8 @@ export function WardOccupancyReports() {
               <DatePicker
                 date={dateRange.start}
                 setDate={(date) => handleDateChange('start', date)}
+                placeholder="Start date"
+                className="font-mono text-sm"
               />
             </div>
             
@@ -256,6 +258,8 @@ export function WardOccupancyReports() {
               <DatePicker
                 date={dateRange.end}
                 setDate={(date) => handleDateChange('end', date)}
+                placeholder="End date"
+                className="font-mono text-sm"
               />
             </div>
           </div>

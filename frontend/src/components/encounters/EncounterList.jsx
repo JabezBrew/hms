@@ -21,16 +21,22 @@ import {
   Activity,
   FileText,
   ChevronRight,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   AlertTriangle,
   RefreshCw,
   X,
   Stethoscope
 } from 'lucide-react';
 
+const PAGE_SIZE = 20;
+
 export function EncounterList() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -42,7 +48,10 @@ export function EncounterList() {
   });
 
   // Build query parameters based on active tab and filters
-  const queryParams = {};
+  const queryParams = {
+    page: currentPage,
+    page_size: PAGE_SIZE,
+  };
 
   if (activeTab === 'inpatient') {
     queryParams.encounter_type = 'inpatient';
@@ -81,9 +90,16 @@ export function EncounterList() {
     refetch
   } = useEncounters(queryParams);
 
-  // Handle filter changes
+  // Handle filter changes - reset to page 1 when filters change
   const handleFilterChange = (name, value) => {
     setFilters(prev => ({ ...prev, [name]: value }));
+    setCurrentPage(1);
+  };
+
+  // Handle tab change - reset to page 1
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
   };
 
   // Reset filters
@@ -95,6 +111,7 @@ export function EncounterList() {
       status: 'all',
       type: 'all'
     });
+    setCurrentPage(1);
   };
 
   // Check if any filters are active
@@ -107,13 +124,24 @@ export function EncounterList() {
     try {
       const date = parseISO(dateString);
       return isValid(date) ? format(date, 'MMM d, yyyy h:mm a') : 'Invalid date';
-    } catch (error) {
+    } catch {
       return 'Invalid date';
     }
   };
 
-  // Prepare encounters data
-  const encounters = encountersData?.results || encountersData || [];
+  // Prepare encounters data from paginated response
+  const encounters = encountersData?.results || [];
+  const totalCount = encountersData?.count || 0;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const hasNextPage = !!encountersData?.next;
+  const hasPrevPage = !!encountersData?.previous;
+
+  // Pagination helpers
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
 
   // Handle error state
   if (isError) {
@@ -147,7 +175,12 @@ export function EncounterList() {
               Encounters
             </h1>
             <p className="text-muted-foreground mt-2">
-              {encounters.length} encounter{encounters.length !== 1 ? 's' : ''} found
+              {totalCount} encounter{totalCount !== 1 ? 's' : ''} found
+              {totalPages > 1 && (
+                <span className="font-mono text-xs ml-2">
+                  (Page {currentPage} of {totalPages})
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-2">
@@ -198,7 +231,7 @@ export function EncounterList() {
                   Patient
                 </Label>
                 <Input
-                  placeholder="Patient ID"
+                  placeholder="Name or MRN..."
                   value={filters.patient}
                   onChange={(e) => handleFilterChange('patient', e.target.value)}
                   className="font-mono text-sm"
@@ -210,7 +243,7 @@ export function EncounterList() {
                   Practitioner
                 </Label>
                 <Input
-                  placeholder="Practitioner ID"
+                  placeholder="Name or employee ID..."
                   value={filters.practitioner}
                   onChange={(e) => handleFilterChange('practitioner', e.target.value)}
                   className="font-mono text-sm"
@@ -224,6 +257,8 @@ export function EncounterList() {
                 <DatePicker
                   date={filters.date}
                   setDate={(date) => handleFilterChange('date', date)}
+                  placeholder="Select date"
+                  className="font-mono text-sm"
                 />
               </div>
 
@@ -274,7 +309,7 @@ export function EncounterList() {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
+        <Tabs defaultValue="all" value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="bg-card border border-border rounded-xl p-1 h-auto">
             <TabsTrigger
               value="all"
@@ -314,6 +349,84 @@ export function EncounterList() {
             </TabsContent>
           ))}
         </Tabs>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && !isLoading && (
+          <div className="flex items-center justify-between border-t border-border pt-6 mt-6">
+            <div className="text-sm text-muted-foreground font-mono">
+              Showing {((currentPage - 1) * PAGE_SIZE) + 1} to {Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount} encounters
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToPage(1)}
+                disabled={!hasPrevPage}
+                className="font-mono text-xs"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={!hasPrevPage}
+                className="font-mono text-xs"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <div className="flex items-center gap-1 mx-2">
+                {/* Show page numbers */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => goToPage(pageNum)}
+                      className={cn(
+                        "font-mono text-xs w-8 h-8 p-0",
+                        currentPage === pageNum && "pointer-events-none"
+                      )}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={!hasNextPage}
+                className="font-mono text-xs"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => goToPage(totalPages)}
+                disabled={!hasNextPage}
+                className="font-mono text-xs"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

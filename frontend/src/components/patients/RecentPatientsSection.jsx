@@ -72,8 +72,10 @@ const RecentPatientCard = ({ patient, onClick }) => {
   const name = getDisplayName(patient);
   const mrn = getPatientMRN(patient);
   const ward = getPatientWard(patient);
+  const admissionStatus = getAdmissionStatus(patient, ward);
   const age = getPatientAge(patient);
   const gender = getPatientGender(patient);
+  const showWard = admissionStatus === "Inpatient" && ward && ward !== "Admitted (No Bed)";
 
   return (
     <button
@@ -105,8 +107,18 @@ const RecentPatientCard = ({ patient, onClick }) => {
             {age}y {gender}
           </span>
         )}
-        {ward && ward !== "Not Admitted" && (
-          <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+        <span
+          className={cn(
+            "text-xs px-1.5 py-0.5 rounded",
+            admissionStatus === "Inpatient" && "bg-green-100 text-green-800",
+            admissionStatus === "Waiting List" && "bg-yellow-100 text-yellow-800",
+            admissionStatus === "Not Admitted" && "bg-gray-100 text-gray-800"
+          )}
+        >
+          {admissionStatus}
+        </span>
+        {showWard && (
+          <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded truncate max-w-[90px]">
             {ward}
           </span>
         )}
@@ -146,6 +158,18 @@ const getPatientWard = (patient) => {
   return patient?.current_ward ||
     patient?.local_data?.current_ward ||
     null;
+};
+
+const getAdmissionStatus = (patient, wardOverride) => {
+  const status = patient?.admission_status;
+  if (status === "waiting") return "Waiting List";
+  if (status === "admitted") return "Inpatient";
+  if (status) return status;
+
+  const ward = wardOverride || getPatientWard(patient);
+  if (ward === "Waiting List" || ward === "Admitted (No Bed)") return "Waiting List";
+  if (ward) return "Inpatient";
+  return "Not Admitted";
 };
 
 const getPatientAge = (patient) => {

@@ -10,7 +10,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count
+from django.db.models import Q, Count, OuterRef, Subquery
+from django.conf import settings
 from django.utils import timezone
 
 from apps.charts.models import ChartTemplate, ChartField, ChartAssignment, ChartEntry
@@ -25,6 +26,7 @@ from apps.charts.permissions import (
     ChartTemplatePermission, ChartAssignmentPermission, ChartEntryPermission
 )
 from apps.charts.services import ChartEntryService
+from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -291,9 +293,40 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        return ChartAssignment.objects.select_related(
+        queryset = ChartAssignment.objects.select_related(
             'template', 'patient__user', 'admission', 'ordered_by__staff__user'
-        ).prefetch_related('entries')
+        )
+
+        user = self.request.user
+        if user.user_type == 'admin':
+            pass
+        elif user.user_type == 'patient':
+            queryset = queryset.filter(patient__user=user)
+        elif user.user_type in ['doctor', 'nurse']:
+            if settings.TEAM_ACCESS_STRICT:
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                queryset = queryset.filter(patient__in=accessible_patients)
+        else:
+            return ChartAssignment.objects.none()
+
+        if self.action in ['list', 'by_patient']:
+            last_entry_subquery = ChartEntry.objects.filter(
+                assignment=OuterRef('pk'),
+                is_deleted=False
+            ).order_by('-observation_datetime').values('observation_datetime')[:1]
+
+            queryset = queryset.annotate(
+                last_entry_at=Subquery(last_entry_subquery),
+                entry_count=Count(
+                    'entries',
+                    filter=Q(entries__is_deleted=False),
+                    distinct=True
+                ),
+            )
+        else:
+            queryset = queryset.prefetch_related('entries')
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -307,6 +340,10 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
         ordered_by = None
         if hasattr(self.request.user, 'practitioner_profile'):
             ordered_by = self.request.user.practitioner_profile
+
+        patient = serializer.validated_data.get('patient')
+        if patient:
+            check_clinical_access(self.request.user, patient)
 
         serializer.save(
             created_by=self.request.user,
@@ -427,6 +464,18 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             'created_by',
         )
 
+        user = self.request.user
+        if user.user_type == 'admin':
+            pass
+        elif user.user_type == 'patient':
+            queryset = queryset.filter(assignment__patient__user=user)
+        elif user.user_type in ['doctor', 'nurse']:
+            if settings.TEAM_ACCESS_STRICT:
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                queryset = queryset.filter(assignment__patient__in=accessible_patients)
+        else:
+            return ChartEntry.objects.none()
+
         # Date range filtering
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
@@ -450,6 +499,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data['data']
         notes = serializer.validated_data.get('notes', '')
         observation_datetime = serializer.validated_data.get('observation_datetime')
+
+        check_clinical_access(self.request.user, assignment.patient)
 
         # Get practitioner profile
         recorded_by = None
@@ -495,6 +546,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        check_clinical_access(request.user, assignment.patient)
+
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
@@ -526,6 +579,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        check_clinical_access(request.user, assignment.patient)
+
         trend_data = ChartEntryService.get_trend_data(
             assignment, field_key=field_key, limit=limit
         )
@@ -542,6 +597,16 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
                 {"error": "patient_id is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        from apps.users.models import PatientProfile
+        try:
+            patient = PatientProfile.objects.get(id=patient_id)
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        check_clinical_access(request.user, patient)
 
         queryset = self.get_queryset().filter(assignment__patient_id=patient_id)
 

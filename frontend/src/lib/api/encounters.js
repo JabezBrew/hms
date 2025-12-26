@@ -5,15 +5,22 @@ import { apiClient, handleApiError } from '../api-client';
 
 export const encountersApi = {
   /**
-   * Get all encounters with optional filtering
-   * @param {Object} params - Query parameters for filtering
-   * @returns {Promise<Array>} List of encounters
+   * Get encounters with pagination and filtering
+   * @param {Object} params - Query parameters for filtering and pagination
+   * @param {number} params.page - Page number (default: 1)
+   * @param {number} params.page_size - Items per page (default: 100, max: 1000)
+   * @param {string} params.status - Filter by status
+   * @param {string} params.encounter_type - Filter by type
+   * @param {string} params.patient_id - Filter by patient ID
+   * @param {string} params.practitioner_id - Filter by practitioner ID
+   * @param {string} params.date - Filter by date (YYYY-MM-DD)
+   * @returns {Promise<Object>} Paginated response with results, count, next, previous
    */
   getEncounters: async (params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/wards/encounters/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const endpoint = `/encounters/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch encounters'));
     }
@@ -26,7 +33,7 @@ export const encountersApi = {
    */
   getEncounter: async (id) => {
     try {
-      return await apiClient.get(`/wards/encounters/${id}/`);
+      return await apiClient.get(`/encounters/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch encounter'));
     }
@@ -39,7 +46,7 @@ export const encountersApi = {
    */
   createEncounter: async (data) => {
     try {
-      return await apiClient.post('/wards/encounters/', data);
+      return await apiClient.post('/encounters/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create encounter'));
     }
@@ -53,7 +60,7 @@ export const encountersApi = {
    */
   updateEncounter: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/encounters/${id}/`, data);
+      return await apiClient.put(`/encounters/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update encounter'));
     }
@@ -66,7 +73,7 @@ export const encountersApi = {
    */
   deleteEncounter: async (id) => {
     try {
-      return await apiClient.delete(`/wards/encounters/${id}/`);
+      return await apiClient.delete(`/encounters/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to delete encounter'));
     }
@@ -80,7 +87,7 @@ export const encountersApi = {
    */
   dischargePatient: async (id, data) => {
     try {
-      return await apiClient.post(`/wards/encounters/${id}/discharge/`, data);
+      return await apiClient.post(`/encounters/${id}/discharge/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to discharge patient'));
     }
@@ -93,7 +100,7 @@ export const encountersApi = {
    */
   cancelEncounter: async (id) => {
     try {
-      return await apiClient.post(`/wards/encounters/${id}/cancel/`);
+      return await apiClient.post(`/encounters/${id}/cancel/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to cancel encounter'));
     }
@@ -163,7 +170,7 @@ export const encountersApi = {
    */
   getEncountersForPatient: async (patientId) => {
     try {
-      return await apiClient.getAll(`/wards/encounters/for_patient/?patient_id=${patientId}`);
+      return await apiClient.getAll(`/encounters/for_patient/?patient_id=${patientId}`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch patient encounters'));
     }

@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'apps.appointments',
     'apps.patients',
     'apps.wards',
+    'apps.encounters.apps.EncountersConfig',  # Extracted from wards for cleaner architecture
     'apps.inventory',
     'apps.billing',
     'apps.clinical_notes.apps.ClinicalNotesConfig',
@@ -96,6 +97,7 @@ INSTALLED_APPS = [
     'apps.laboratory.apps.LaboratoryConfig',
     'apps.referrals.apps.ReferralsConfig',
     'apps.charts.apps.ChartsConfig',
+    'apps.pharmacy.apps.PharmacyConfig',
 ]
 
 MIDDLEWARE = [
@@ -384,6 +386,10 @@ SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
 
+# Access control settings
+TEAM_ACCESS_STRICT = env.bool('TEAM_ACCESS_STRICT', default=True)
+BREAK_GLASS_TTL_MINUTES = env.int('BREAK_GLASS_TTL_MINUTES', default=30)
+
 # Email settings - SendGrid Web API
 EMAIL_BACKEND = 'hms_backend.email_backends.SendGridEmailBackend'
 SENDGRID_API_KEY = env_required('SENDGRID_API_KEY')
@@ -544,6 +550,9 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+if "pytest" in sys.modules:
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
 
 
 # Celery Beat Schedule

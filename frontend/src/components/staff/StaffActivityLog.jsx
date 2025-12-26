@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/hooks/useAuditLogs';
 import {
   History,
@@ -46,17 +47,32 @@ import {
 const StaffActivityLog = ({ userId, userName }) => {
   const [page, setPage] = useState(1);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [actionFilter, setActionFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState(null);
+  const [dateTo, setDateTo] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Handle date range change - only called when both dates are selected or both cleared
+  const handleDateRangeChange = ({ from, to }) => {
+    setDateFrom(from);
+    setDateTo(to);
+    setPage(1);
+  };
 
   const filters = {
     user_id: userId,
     ...(categoryFilter !== 'all' && { category: categoryFilter }),
+    ...(actionFilter !== 'all' && { action: actionFilter }),
+    ...(dateFrom && { start_date: format(dateFrom, 'yyyy-MM-dd') }),
+    ...(dateTo && { end_date: format(dateTo, 'yyyy-MM-dd') }),
   };
 
-  const { data, isLoading, error } = useAuditLogs(filters, page);
-  const { data: filterOptions } = useAuditFilters();
+  const hasActiveFilters = categoryFilter !== 'all' || actionFilter !== 'all' || dateFrom || dateTo;
 
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 10;
+
+  const { data, isLoading, error } = useAuditLogs(filters, page, PAGE_SIZE);
+  const { data: filterOptions } = useAuditFilters();
   const logs = data?.results || [];
   const totalCount = data?.count || 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
@@ -118,13 +134,22 @@ const StaffActivityLog = ({ userId, userName }) => {
     );
   }
 
+  // Clear all filters
+  const handleClearFilters = () => {
+    setCategoryFilter('all');
+    setActionFilter('all');
+    setDateFrom(null);
+    setDateTo(null);
+    setPage(1);
+  };
+
   return (
     <div className="space-y-4">
       {/* Header with filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[180px]">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-[150px] font-mono text-xs h-9">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
             <SelectContent>
@@ -136,22 +161,57 @@ const StaffActivityLog = ({ userId, userName }) => {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-[150px] font-mono text-xs h-9">
+              <SelectValue placeholder="All actions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All actions</SelectItem>
+              {filterOptions?.actions?.map((action) => (
+                <SelectItem key={action.value} value={action.value}>
+                  {action.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={handleDateRangeChange}
+            pickerClassName="w-[120px] font-mono text-xs h-9"
+          />
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+              className="font-mono text-xs h-9"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between">
           {totalCount > 0 && (
             <span className="text-xs text-muted-foreground">
               {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
             </span>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={isExporting || totalCount === 0}
+            className="font-mono text-xs"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting ? 'Exporting...' : 'Export'}
+          </Button>
         </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExport}
-          disabled={isExporting || totalCount === 0}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          {isExporting ? 'Exporting...' : 'Export'}
-        </Button>
       </div>
 
       {/* Activity List */}

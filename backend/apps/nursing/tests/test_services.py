@@ -4,11 +4,12 @@ Nursing services tests.
 Tests for:
 - generate_mar_entries_for_prescription()
 - generate_daily_mar_entries()
-- dispense_medication()
 - create_treatment_entry_with_mar()
 - calculate_supply_needed()
 - create_supply_request()
-- dispense_supply_request()
+
+Note: Pharmacy-related tests (dispense_medication, dispense_supply_request, etc.)
+have been moved to apps.pharmacy.tests
 """
 import pytest
 from datetime import date, time, timedelta
@@ -23,19 +24,22 @@ from apps.nursing.services import (
     get_scheduled_times_for_frequency,
     generate_mar_entries_for_prescription,
     generate_daily_mar_entries,
-    dispense_medication,
-    get_pending_dispensing,
-    get_dispensed_ready_for_admin,
     calculate_daily_doses,
     create_treatment_entry_with_mar,
     calculate_supply_needed,
     create_supply_request,
-    dispense_supply_request,
-    reject_supply_request,
-    get_pending_supply_requests,
     get_treatment_sheet_by_admission,
     update_administered_count,
     FREQUENCY_SCHEDULES
+)
+# Import pharmacy services for tests that need them
+from apps.pharmacy.services import (
+    dispense_medication,
+    get_pending_dispensing,
+    get_dispensed_ready_for_admin,
+    dispense_supply_request,
+    reject_supply_request,
+    get_pending_supply_requests,
 )
 from apps.users.tests.factories import (
     AdminUserFactory, PatientProfileFactory, PractitionerProfileFactory

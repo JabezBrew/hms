@@ -26,7 +26,7 @@ const CATEGORY_COLORS = {
 };
 
 /**
- * AddNoteSlideOver - Split-screen panel for creating clinical notes
+ * AddNoteSlideOver - Split-screen panel for creating/editing clinical notes
  *
  * Features:
  * - Slides in from right without backdrop (timeline remains visible)
@@ -36,17 +36,22 @@ const CATEGORY_COLORS = {
  * - Step progress visualization
  * - Backend API integration via useNoteWorkflow hook
  * - Copy forward support via initialTemplate and initialData props
+ * - Edit mode support via editNoteId prop
  */
 const AddNoteSlideOver = ({
   open,
   onClose,
   patient,
   onNoteCreated,
-  initialTemplate = null,  // Pre-selected template (for copy forward)
-  initialData = null,      // Pre-filled data (for copy forward)
+  initialTemplate = null,  // Pre-selected template (for copy forward or edit)
+  initialData = null,      // Pre-filled data (for copy forward or edit)
+  editNoteId = null,       // If provided, we're editing an existing note
 }) => {
   // Get patient ID for the workflow hook
   const patientId = patient?.local_data?.id || patient?.id;
+
+  // Determine if we're in edit mode
+  const isEditMode = !!editNoteId;
 
   // Use the template-driven workflow hook
   const {
@@ -68,7 +73,7 @@ const AddNoteSlideOver = ({
     goToStep,
     completeWorkflow,
     resetWorkflow,
-  } = useNoteWorkflow(patientId);
+  } = useNoteWorkflow(patientId, { editNoteId });
 
   // Computed values
   const isLastStep = currentStep === totalSteps;
@@ -179,7 +184,7 @@ const AddNoteSlideOver = ({
                 </span>
               )}
               <h2 className="font-display text-xl text-foreground">
-                {template ? 'New Note' : 'Add Note'}
+                {template ? (isEditMode ? 'Edit Note' : 'New Note') : 'Add Note'}
               </h2>
             </div>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
@@ -331,7 +336,7 @@ const AddNoteSlideOver = ({
                   className="font-mono text-xs"
                 >
                   <Check className="h-3.5 w-3.5 mr-1.5" />
-                  Complete Note
+                  {isEditMode ? 'Save Changes' : 'Complete Note'}
                 </Button>
               ) : (
                 <Button

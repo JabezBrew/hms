@@ -19,9 +19,9 @@ from apps.laboratory.models import (
     LabTestCatalog, LabPanel, LabOrder, LabOrderTest, LabSpecimen, LabResult
 )
 from apps.users.tests.factories import (
-    UserFactory, PatientProfileFactory, PractitionerProfileFactory
+    UserFactory, PatientProfileFactory, PractitionerProfileFactory, StaffFactory
 )
-from apps.wards.tests.factories import EncounterFactory
+from apps.encounters.tests.factories import EncounterFactory
 
 
 class LabTestCatalogFactory(DjangoModelFactory):
@@ -117,7 +117,7 @@ class LabSpecimenFactory(DjangoModelFactory):
     specimen_type = 'Serum'
     container_type = 'Red Top'
     volume_collected = '5 mL'
-    collected_by = factory.SubFactory(PractitionerProfileFactory)
+    collected_by = factory.SubFactory(StaffFactory)
     collection_site = 'Left arm'
     collected_at = factory.LazyFunction(timezone.now)
     status = 'collected'
@@ -138,9 +138,9 @@ class LabResultFactory(DjangoModelFactory):
     reference_high = Decimal('50.0')
     flag = 'normal'
     interpretation = ''
-    performed_by = factory.SubFactory(PractitionerProfileFactory)
+    performed_by = factory.SubFactory(StaffFactory)
     performed_at = factory.LazyFunction(timezone.now)
-    verified_by = factory.SubFactory(PractitionerProfileFactory)
+    verified_by = factory.SubFactory(StaffFactory)
     verified_at = factory.LazyFunction(timezone.now)
     is_verified = False
     fhir_synced = False

@@ -81,6 +81,15 @@ const LabOrderDetailSlideOver = ({
     }
   };
 
+  const formatDob = (dateString) => {
+    if (!dateString) return "-";
+    try {
+      return format(new Date(dateString), "MMM d, yyyy");
+    } catch {
+      return "-";
+    }
+  };
+
   // Can cancel check
   const canCancel = order && !["completed", "cancelled"].includes(order.status);
 
@@ -207,6 +216,18 @@ const LabOrderDetailSlideOver = ({
                   </div>
                   <div className="font-mono text-xs text-muted-foreground">
                     MRN: {order.patient_mrn || "-"}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                    <div>
+                      <span className="font-mono uppercase tracking-[0.2em] text-[10px]">DOB</span>
+                      <p className="mt-1 text-foreground">{formatDob(order.patient_dob)}</p>
+                    </div>
+                    <div>
+                      <span className="font-mono uppercase tracking-[0.2em] text-[10px]">Gender</span>
+                      <p className="mt-1 text-foreground">
+                        {order.patient_gender_display || order.patient_gender || "-"}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

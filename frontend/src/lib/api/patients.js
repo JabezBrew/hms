@@ -119,6 +119,16 @@ export const patientsApi = {
   },
 
   /**
+   * Request break-glass access for a patient
+   * @param {string} id - Patient ID
+   * @param {Object} data - Break-glass payload (reason, scope)
+   * @returns {Promise<Object>} Break-glass response
+   */
+  requestBreakGlass: async (id, data) => {
+    return apiClient.post(`/patients/${id}/break-glass/`, data);
+  },
+
+  /**
    * Get context-specific patients based on user role
    * Returns ward patients for nurses, appointments for doctors, etc.
    * @param {Object} params - Query parameters (e.g., ward for nurses)

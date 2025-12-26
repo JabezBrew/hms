@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('users', '0005_passwordresettoken'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
     ]
 
     operations = [
@@ -34,7 +35,7 @@ class Migration(migrations.Migration):
                 ('fhir_synced', models.BooleanField(default=False)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='lab_orders', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='lab_orders', to='encounters.Encounter')),
                 ('ordering_provider', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ordered_labs', to='users.practitionerprofile')),
             ],
             options={

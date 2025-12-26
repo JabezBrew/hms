@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('nursing', '0001_initial'),
     ]
 
@@ -15,6 +16,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='vitalsigns',
             name='encounter',
-            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which these vitals were recorded', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vital_signs', to='wards.encounter'),
+            field=models.ForeignKey(blank=True, help_text='The clinical encounter/visit during which these vitals were recorded', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vital_signs', to='encounters.Encounter'),
         ),
     ]

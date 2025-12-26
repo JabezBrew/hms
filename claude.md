@@ -2,331 +2,206 @@
 
 ## Core Philosophy
 
-**FROM:** Data-centric CRUD system → **TO:** Workflow-centric clinical tool
+**PRIORITY: Performance at scale + Security at all times.**
 
+**FROM:** Data-centric CRUD → **TO:** Workflow-centric clinical tool
 **Guiding Question:** "What are you trying to accomplish right now?"
 
-### Data-Oriented (Bad)
-- Navigation mimics database structure
-- Users mentally map workflows to tables
-- Information scattered across pages
-- No guidance on next steps
-
-### Workflow-Oriented (Good)
-- Navigation mirrors clinical processes
-- System guides step-by-step
-- All relevant info/actions in one flow
-- Clear progress indication
+| Data-Oriented (Bad) | Workflow-Oriented (Good) |
+|---------------------|--------------------------|
+| Navigation mimics DB structure | Navigation mirrors clinical processes |
+| Users map workflows to tables | System guides step-by-step |
+| Info scattered across pages | All info/actions in one flow |
+| No next-step guidance | Clear progress indication |
 
 ---
 
 ## Design Principles
 
-### 1. Progressive Disclosure
-Show what's needed for the current task, not everything at once.
-
-### 2. Guided Flows
-Multi-step processes with: step indicators, progress visualization, validation, save/resume, "what's next" guidance.
-
-### 3. Smart Defaults
-System anticipates needs: suggest follow-up dates, common lab bundles, usual doses, templates by encounter type.
-
-### 4. Action-Oriented Cards
-Every card answers "What can I DO with this?" Include action buttons, not just information display.
-
-### 5. Contextual Quick Actions
-Actions change based on context (inpatient vs outpatient, lab result vs encounter).
-
-### 6. Minimize Navigation
-Target: 50-70% reduction in clicks/page loads. Consultation completable in single flow.
-
-### 7. Role-Based Personalization
-- Doctor → "Today's Clinic" with scheduled consultations
-- Nurse → "My Shift Dashboard" with ward patients
-- Receptionist → "Front Desk" with check-ins
+1. **Progressive Disclosure** - Show only what's needed for current task
+2. **Guided Flows** - Step indicators, progress viz, validation, save/resume, "what's next"
+3. **Smart Defaults** - Anticipate needs: follow-up dates, lab bundles, usual doses, templates
+4. **Action-Oriented Cards** - Every card answers "What can I DO?" Include action buttons
+5. **Contextual Quick Actions** - Actions change by context (inpatient vs outpatient)
+6. **Minimize Navigation** - Target: 50-70% click reduction. Complete consultation in single flow
+7. **Role-Based Personalization** - Doctor→"Today's Clinic", Nurse→"My Shift Dashboard", Receptionist→"Front Desk"
 
 ---
 
 ## Workflow Patterns
 
-### Pattern 1: Wizard
-Multi-step linear flow with validation. Use for: registration, admission, discharge, complex data entry.
-
-### Pattern 2: Dashboard
-Role-specific landing with sections: Urgent (top), Current Work, Upcoming, Completed, Quick Actions.
-
-### Pattern 3: Guided Flow
-Step-by-step with context panel showing patient summary, allergies, active problems, current meds.
-
-### Pattern 4: Checklist
-Task list with completion tracking, required/optional items, dependencies, auto-population.
-
-### Pattern 5: Timeline
-Chronological patient journey view with expandable details and filters.
+| Pattern | Description | Use For |
+|---------|-------------|---------|
+| **Wizard** | Multi-step linear flow with validation | Registration, admission, discharge |
+| **Dashboard** | Role-specific: Urgent→Current→Upcoming→Completed→Quick Actions | Role landing pages |
+| **Guided Flow** | Step-by-step + context panel (patient summary, allergies, meds) | Clinical workflows |
+| **Checklist** | Task list with completion tracking, dependencies, auto-population | Ward rounds, handoffs |
+| **Timeline** | Chronological patient journey with expandable details/filters | Patient history |
 
 ---
 
 ## Role Workflows
 
 ### Nurse Dashboard
-- **URGENT**: Critical vitals, overdue meds, alerts
-- **WARD ROUNDS**: Patient-by-patient checklist
-- **MEDS**: Time-based administration schedule
-- **RESULTS**: Labs needing review
+**URGENT**: Critical vitals, overdue meds, alerts | **WARD ROUNDS**: Patient checklist | **MEDS**: Time-based schedule | **RESULTS**: Labs to review
 
 ### Doctor (Outpatient)
-- **CURRENT**: Who's in the room
-- **UPCOMING**: Next patients with prep info
-- **COMPLETED**: Today's finished
-- **MESSAGES/RESULTS**: Items to review
+**CURRENT**: In room | **UPCOMING**: Next patients + prep | **COMPLETED**: Done today | **MESSAGES/RESULTS**: To review
 
-**Consultation Flow:**
-1. Pre-Consult Prep (auto-loaded)
-2. History & Exam (smart templates)
-3. Assessment & Plan (inline orders/prescriptions)
-4. Complete (auto-generates note, orders, follow-up)
+**Consultation Flow:** Pre-Consult Prep (auto) → History & Exam (templates) → Assessment & Plan (inline orders) → Complete (auto-generates note/orders/follow-up)
 
 ### Doctor (Inpatient)
-- **NEW ADMISSIONS**: Overnight admits
-- **ACTIVE PATIENTS**: Current list
-- **DISCHARGES TODAY**: Planned discharges
-- **PENDING**: Orders to sign, results to review
+**NEW ADMISSIONS**: Overnight | **ACTIVE**: Current list | **DISCHARGES TODAY** | **PENDING**: Orders to sign, results to review
 
 ### Receptionist
-- **CHECK-IN QUEUE**: Arrived patients
-- **REGISTRATION**: New patients
-- **SCHEDULING**: Appointment requests
-- **PAYMENTS**: Co-pays
+**CHECK-IN QUEUE** | **REGISTRATION** | **SCHEDULING** | **PAYMENTS**
 
 ---
 
 ## Technical Architecture
 
-### Frontend Structure
+### Structure
 ```
-frontend/src/
-├── workflows/           # Consultation, ward-rounds, admission, discharge
-├── dashboards/          # Nurse, Doctor, Receptionist dashboards
-├── components/
-│   ├── workflow/        # WorkflowWizard, Progress, StepIndicator
-│   ├── clinical/        # PatientContextPanel, AlertsPanel, QuickActions
-│   └── shared/          # SmartForm, TemplateSelector, ActionCard
-├── contexts/            # WorkflowContext, RoleContext, ViewModeContext
-└── hooks/               # useWorkflow, useSmartSuggestions, useRoleBasedAccess
-```
-
-### Backend Structure
-```
-backend/apps/
-├── workflows/           # models, views, engines, validators
-├── dashboards/          # Role-based dashboard APIs
-├── suggestions/         # Smart suggestion engine
-└── templates/           # Clinical templates
+frontend/src/                          backend/apps/
+├── workflows/      # Consult, rounds  ├── workflows/    # models, views, engines
+├── dashboards/     # Role dashboards  ├── dashboards/   # Role-based APIs
+├── components/                        ├── suggestions/  # Smart suggestions
+│   ├── workflow/   # Wizard, Progress └── templates/    # Clinical templates
+│   ├── clinical/   # Context, Alerts
+│   └── shared/     # SmartForm, ActionCard
+├── contexts/       # Workflow, Role, ViewMode
+└── hooks/          # useWorkflow, useSmartSuggestions
 ```
 
 ### Key APIs
 ```
-POST /api/workflows/{type}/start/     # Start workflow
-GET  /api/workflows/{type}/{id}/      # Get state
-PATCH /api/workflows/{type}/{id}/step/ # Update step
-POST /api/workflows/{type}/{id}/complete/ # Complete
-POST /api/workflows/{type}/{id}/save-draft/ # Auto-save
-
-GET /api/dashboards/my-work/          # Role-based dashboard
-GET /api/dashboards/ward-rounds/      # Ward-specific data
-GET /api/dashboards/clinic/           # Clinic schedule
+POST /api/workflows/{type}/start/          GET  /api/dashboards/my-work/
+GET  /api/workflows/{type}/{id}/           GET  /api/dashboards/ward-rounds/
+PATCH /api/workflows/{type}/{id}/step/     GET  /api/dashboards/clinic/
+POST /api/workflows/{type}/{id}/complete/
+POST /api/workflows/{type}/{id}/save-draft/
 ```
 
-### API Payload Optimization
+### API Payload Optimization (MANDATORY)
 
-**Critical:** Keep API response payloads minimal. Only return fields the frontend actually needs.
+1. **List Serializers**: ALL list endpoints use lightweight `*ListSerializer` (5-8 fields max, flattened)
+2. **Pagination**: ALL `ModelViewSet` MUST set `pagination_class = StandardResultsSetPagination`
+3. **Imports**: Use `apps.core.pagination.StandardResultsSetPagination`
 
-**Mandatory Standards:**
-1. **List Serializers**: ALL list endpoints MUST use lightweight `*ListSerializer` with flattened fields (no nested objects)
-2. **Pagination**: ALL `ModelViewSet` classes MUST set `pagination_class = StandardResultsSetPagination`
-3. **Imports**: Use shared pagination from `apps.core.pagination.StandardResultsSetPagination`
-
-**Patterns:**
-- Use **List Serializers** for list endpoints (5-8 fields max)
-- Use **Detail Serializers** for single-item retrieval (full data)
-- Flatten nested relationships with `SerializerMethodField` (e.g., `patient_name` instead of nested `patient` object)
-- Return counts instead of full arrays when listing (e.g., `items_count` instead of `items[]`)
-
-**Example:**
 ```python
 from apps.core.pagination import StandardResultsSetPagination
 
 class MyViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination  # MANDATORY
-    
     def get_serializer_class(self):
-        if self.action == 'list':
-            return MyListSerializer  # Lightweight
-        return MySerializer          # Full details
+        return MyListSerializer if self.action == 'list' else MySerializer
 
-# List serializer: return name, not full nested object
-patient_name = serializers.SerializerMethodField()  # Good
-patient = PatientSerializer()                        # Bad for lists
+# GOOD: patient_name = serializers.SerializerMethodField()
+# BAD:  patient = PatientSerializer()  # Never nest in lists
 ```
 
-**Reference:** See `apps/core/serializers.py` for minimal serializers and `apps/core/mixins.py` for `ListDetailSerializerMixin`.
+**Reference:** `apps/core/serializers.py`, `apps/core/mixins.py` for `ListDetailSerializerMixin`
 
 ---
 
 ## Tech Stack
 
-**Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod
-
+**Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod, date-fns, lucide-react, sonner
 **Backend:** Django 4+, DRF, PostgreSQL, Celery, Redis, JWT
-
-**Libraries:** date-fns, lucide-react, sonner
 
 ---
 
 ## Chronicle Design System
 
-**See:** [`frontend/CHRONICLE_DESIGN_SYSTEM.md`](frontend/CHRONICLE_DESIGN_SYSTEM.md) for full documentation.
+**See:** [`frontend/CHRONICLE_DESIGN_SYSTEM.md`](frontend/CHRONICLE_DESIGN_SYSTEM.md)
 
-### Philosophy
-"Patient data as story, not spreadsheet." Editorial medical journal aesthetic with narrative-focused presentation.
+**Philosophy:** "Patient data as story, not spreadsheet." Editorial medical journal aesthetic.
 
-### Typography
-- **Display** (`font-display`): Fraunces - patient names, page titles
-- **Heading** (`font-heading`): DM Sans - section headers
-- **Data** (`font-mono`): IBM Plex Mono - MRNs, vitals, timestamps
+### Typography & Colors
+| Type | Font | Use |
+|------|------|-----|
+| Display (`font-display`) | Fraunces | Patient names, titles |
+| Heading (`font-heading`) | DM Sans | Section headers |
+| Data (`font-mono`) | IBM Plex Mono | MRNs, vitals, timestamps |
 
-### Colors (Warm Stone + Accents)
-- **Base**: Warm charcoal background, cream text
-- **Amber**: Primary actions, timeline nodes
-- **Emerald**: Positive/stable status
-- **Rose**: Critical alerts, allergies
-- **Sky**: Informational, medications
+**Colors:** Warm charcoal base, cream text | **Amber**: actions/timeline | **Emerald**: stable | **Rose**: critical | **Sky**: info/meds
 
-### Key Components
+### Components & Patterns
 ```jsx
-import {
-  PatientChronicleCard,    // Magazine-style patient list card
-  TimelineEntry,           // Chronological clinical events
-  ClinicalSummarySidebar,  // Always-visible patient context
-  PatientIdentityHero      // Editorial patient header
-} from '@/components/chronicle';
+import { PatientChronicleCard, TimelineEntry, ClinicalSummarySidebar, PatientIdentityHero } from '@/components/chronicle';
 ```
-
-### Page Patterns
-- **Patient List**: Grid of chronicle cards with search/filter
-- **Patient Detail**: Hero header + sidebar + filterable timeline
-
-### CSS Utilities
-```css
-.animate-chronicle-enter   /* Staggered entry animation */
-.timeline-node-amber       /* Colored timeline nodes */
-.status-ribbon-critical    /* Priority indication */
-.badge-chronicle-rose      /* Accent badges */
-```
+- **Patient List**: Grid of chronicle cards + search/filter
+- **Patient Detail**: Hero + sidebar + filterable timeline
+- **CSS**: `.animate-chronicle-enter`, `.timeline-node-amber`, `.status-ribbon-critical`, `.badge-chronicle-rose`
 
 ---
 
 ## Success Metrics
 
-### Efficiency (Target: 50-70% improvement)
-- Consultation time: 15min → 7-8min
-- Clicks per ward round patient: 45 → 15
-- Page navigations per task: 8-12 → 0-2
-
-### Quality
-- Documentation completeness: >95%
-- Error rate: <2%
-- Task completion: >90%
-
-### Adoption
-- Workflow feature usage: >80% within 3 months
+| Metric | Target |
+|--------|--------|
+| Consultation time | 15min → 7-8min |
+| Clicks per ward round patient | 45 → 15 |
+| Page navigations per task | 8-12 → 0-2 |
+| Documentation completeness | >95% |
+| Error rate | <2% |
+| Workflow adoption | >80% in 3 months |
 
 ---
 
 ## Common Pitfalls
 
 1. **Over-engineering early** - Build one workflow, validate, then expand
-2. **Ignoring performance** - Use progressive loading, caching, optimistic updates
+2. **Ignoring performance** - Progressive loading, caching, optimistic updates
 3. **Forgetting edge cases** - Handle interruptions, errors, validation failures
 4. **Not validating with users** - Test each workflow before building next
 5. **Losing data features** - Keep search/browse accessible, just deprioritize
-6. **Inconsistent patterns** - Establish consistent UI patterns across workflows
-7. **Forgetting mobile** - Design responsive from the start
-8. **Git commit**- Don't credit yourself in the git commit message!
+6. **Inconsistent patterns** - Establish consistent UI across workflows
+7. **Forgetting mobile** - Design responsive from start
+8. **Git commit** - Don't credit yourself in commit messages!
 
 ---
 
 ## Testing Requirements
 
-**Always run tests after making code changes** to ensure no breaking changes.
+**Always run tests after code changes.**
 
-### Core Rules
-1. **Write tests for every new feature** - No feature is complete without tests
-2. **Run tests at the end of implementation** - Verify the feature works as expected
-3. **Fix failing tests before moving on** - Never leave broken tests behind
+### Rules
+1. Write tests for every new feature
+2. Run tests at end of implementation
+3. Fix failing tests before moving on
 
-### When to Run Tests
-- **Bug fixes**: Run the specific test + related tests in the same module
-- **New features**: Write new tests, then run them + existing tests for the module
-- **Refactoring**: Run full test suite for affected areas
-- **Before committing**: Run at minimum the tests for changed files
+### When to Run
+- **Bug fixes**: Specific test + related module tests
+- **New features**: New tests + existing module tests
+- **Refactoring**: Full suite for affected areas
+- **Before commit**: Minimum tests for changed files
 
-### Database Migrations
-
-When adding new models, **run Django migration commands** instead of manually creating migration files:
-
+### Commands
 ```bash
-# From backend/ directory with venv activated
-python manage.py makemigrations  # Creates migration files
-python manage.py migrate         # Applies migrations
+# Backend (from backend/, venv activated)
+python -m pytest path/to/test.py -v --tb=short           # Specific file
+python -m pytest path/to/test.py::TestClass -v --tb=short # Specific class
+python -m pytest apps/app_name/tests/ -v --tb=short       # App tests
+python -m pytest -v --tb=short                            # Full suite
+
+# Migrations
+python manage.py makemigrations && python manage.py migrate
+
+# Frontend (from frontend/)
+npm run test                              # Unit tests
+npm run test -- path/to/test.test.jsx     # Specific file
+npm run test:e2e                          # E2E (requires dev server)
 ```
 
-### Test Commands
-
-```bash
-# Backend (from backend/ directory)
-source .venv/bin/activate
-
-# Run specific test file
-python -m pytest path/to/test_file.py -v --tb=short
-
-# Run specific test class
-python -m pytest path/to/test_file.py::TestClassName -v --tb=short
-
-# Run specific test method
-python -m pytest path/to/test_file.py::TestClassName::test_method -v --tb=short
-
-# Run tests for an app
-python -m pytest apps/app_name/tests/ -v --tb=short
-
-# Run full backend suite
-python -m pytest -v --tb=short
-```
-
-```bash
-# Frontend (from frontend/ directory)
-# Run unit tests
-npm run test
-
-# Run specific test file
-npm run test -- path/to/test.test.jsx
-
-# Run E2E tests (requires dev server)
-npm run test:e2e
-```
-
-### Test Markers (Backend)
-- `@pytest.mark.tier1` - Critical tests, run frequently
-- `@pytest.mark.integration` - Integration tests
-- `@pytest.mark.rbac` - Role-based access control tests
+**Markers:** `@pytest.mark.tier1` (critical), `@pytest.mark.integration`, `@pytest.mark.rbac`
 
 ---
 
 ## Workflow Design Checklist
 
-Before implementing a new workflow:
-1. What is the user trying to accomplish? (single sentence)
-2. What are the natural steps? (3-7 steps)
+1. What is user trying to accomplish? (single sentence)
+2. What are the natural steps? (3-7)
 3. What info needed at each step?
 4. What actions at each step?
 5. What validations required?
@@ -338,277 +213,123 @@ Before implementing a new workflow:
 
 ## Future: Role Dashboards
 
-### Admin Dashboard
-- System stats (patients, staff, encounters, occupancy)
-- All appointments across practitioners
-- Staff activity monitor
-- Quick actions: create accounts, manage wards, audit logs
-
-### Other Dashboards
-- **Lab**: Pending tests, critical results, turnaround times
-- **Pharmacy**: Pending prescriptions, stock alerts, dispensing queue
+**Admin**: System stats, all appointments, staff activity, quick actions (accounts, wards, audit)
+**Lab**: Pending tests, critical results, turnaround times
+**Pharmacy**: Pending prescriptions, stock alerts, dispensing queue
 
 ---
 
 ## Architectural Rules
 
-### Patient Clinical Data Location
-**CRITICAL:** All patient clinical information (vitals, fluid balance, clinical notes, medications, labs, etc.) MUST be accessible ONLY from the `PatientChroniclePage`. Never scatter patient clinical data across different pages or dashboards.
+### Patient Clinical Data Location (CRITICAL)
+All patient clinical info (vitals, fluid balance, notes, meds, labs) MUST be accessible ONLY from `PatientChroniclePage`. Never scatter across pages.
 
-- **Correct**: Add clinical features as slide-overs/panels within PatientChroniclePage
-- **Incorrect**: Creating standalone pages for patient-specific clinical data (e.g., `/nursing/fluid-balance/:patientId`)
+- **Correct**: Clinical features as slide-overs/panels within PatientChroniclePage
+- **Incorrect**: Standalone pages like `/nursing/fluid-balance/:patientId`
 
-This ensures:
-1. Single source of truth for patient clinical data
-2. Consistent user experience - clinicians always know where to find patient info
-3. Proper context - patient identity hero and clinical sidebar are always visible
-4. Audit trail - all clinical actions happen within patient context
+**Ensures:** Single source of truth, consistent UX, proper context (hero/sidebar visible), audit trail
 
 ---
 
 ## Scalability & Performance Guidelines
 
-**Target:** 10,000+ concurrent users with sub-second response times.
+**Target:** 10,000+ concurrent users, sub-second response times.
 
-Every feature must be built with scale in mind. The system serves large hospitals with thousands of staff and patients.
-
-### Database Query Optimization
-
-**CRITICAL: Avoid N+1 queries.** Every list endpoint must be analyzed for query efficiency.
-
-#### Always Use `select_related` and `prefetch_related`
+### Database Query Optimization (CRITICAL: Avoid N+1)
 
 ```python
-# BAD - N+1 queries (1 + N queries for N patients)
-patients = Patient.objects.all()
-for p in patients:
+# BAD - N+1 queries
+for p in Patient.objects.all():
     print(p.user.name)  # Extra query per patient
-    print(p.admissions.first())  # Extra query per patient
 
 # GOOD - 2 queries total
 patients = Patient.objects.select_related('user').prefetch_related(
-    Prefetch(
-        'admissions',
-        queryset=Admission.objects.filter(status='admitted').select_related('bed__ward'),
-        to_attr='active_admissions_list'  # Use to_attr for filtered prefetch
-    )
-)
+    Prefetch('admissions', queryset=Admission.objects.filter(status='admitted')
+             .select_related('bed__ward'), to_attr='active_admissions_list'))
 ```
 
-#### Use Database Aggregation Over Python Loops
-
+**Use DB aggregation over Python loops:**
 ```python
-# BAD - Fetches all records, processes in Python
-total = sum(order.amount for order in Order.objects.filter(date=today))
-
-# GOOD - Single query with database aggregation
-from django.db.models import Sum, Count, Avg
-total = Order.objects.filter(date=today).aggregate(total=Sum('amount'))['total']
-
-# GOOD - Group by with annotation
-stats = Order.objects.values('status').annotate(
-    count=Count('id'),
-    total=Sum('amount')
-)
+# BAD:  total = sum(o.amount for o in Order.objects.filter(date=today))
+# GOOD: total = Order.objects.filter(date=today).aggregate(total=Sum('amount'))['total']
 ```
 
-#### Verify Query Count
-
+**Verify query count in tests:**
 ```python
-# In tests, assert query count
-from django.test.utils import CaptureQueriesContext
-from django.db import connection
-
-with CaptureQueriesContext(connection) as context:
+with CaptureQueriesContext(connection) as ctx:
     response = client.get('/api/endpoint/')
-
-assert len(context) < 10, f"Too many queries: {len(context)}"
+assert len(ctx) < 10, f"Too many queries: {len(ctx)}"
 ```
 
 ### Caching Strategy
 
-#### View-Level Caching for Read-Heavy Endpoints
-
 ```python
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+@method_decorator(cache_page(60 * 5), name='list')  # 5 min for list views
+class WardViewSet(viewsets.ModelViewSet): pass
 
-# Cache list views (adjust timeout based on data volatility)
-@method_decorator(cache_page(60 * 5), name='list')  # 5 minutes
-class WardViewSet(viewsets.ModelViewSet):
-    pass
-
-# Cache expensive analytics
-@method_decorator(cache_page(60 * 15))  # 15 minutes
-@action(detail=False)
-def analytics(self, request):
-    pass
-```
-
-#### Cache Timeout Guidelines
-- **Static lookups** (wards, departments): 5-15 minutes
-- **Analytics/reports**: 10-15 minutes
-- **Dashboard summaries**: 30-60 seconds
-- **Real-time data** (alerts, vitals): No caching or 5-10 seconds
-
-#### Invalidate Cache on Writes
-
-```python
-from django.core.cache import cache
-
+# Invalidate on writes
 def perform_create(self, serializer):
-    instance = serializer.save()
-    cache.delete_pattern('ward_list_*')  # Invalidate related caches
+    serializer.save()
+    cache.delete_pattern('ward_list_*')
 ```
+
+**Timeouts:** Static lookups: 5-15min | Analytics: 10-15min | Dashboards: 30-60s | Real-time: none/5-10s
 
 ### API Design for Scale
 
-#### Pagination is Mandatory
+- **Pagination mandatory** - Never unbounded querysets
+- **Search over dropdowns** - For >50 items, use search endpoints with `[:20]` limit
+- **Lightweight list serializers** - 5-8 fields, flatten relationships
+
+### Real-Time Features (WebSockets over Polling)
 
 ```python
-# Never return unbounded querysets
-class MyViewSet(viewsets.ModelViewSet):
-    pagination_class = PageNumberPagination  # Always set
+# Backend broadcast
+channel_layer = get_channel_layer()
+async_to_sync(channel_layer.group_send)(f'ward_{alert.ward_id}', {'type': 'alert.new', 'data': data})
 ```
-
-#### Use Search Instead of Dropdowns
-
-For any selection with potentially >50 items, use search endpoints:
-
-```python
-# BAD - Loading all staff into dropdown
-staff = Staff.objects.all()  # Could be thousands
-
-# GOOD - Search endpoint with limit
-@action(detail=False, methods=['get'])
-def search(self, request):
-    query = request.query_params.get('q', '')
-    return Staff.objects.filter(
-        Q(user__first_name__icontains=query) |
-        Q(user__last_name__icontains=query)
-    )[:20]  # Always limit results
-```
-
-#### Lightweight List Serializers
-
-```python
-# Use different serializers for list vs detail
-def get_serializer_class(self):
-    if self.action == 'list':
-        return PatientListSerializer  # 5-8 fields only
-    return PatientDetailSerializer    # Full data
-
-# List serializer - flatten relationships
-class PatientListSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source='user.get_full_name')
-    ward_name = serializers.CharField(source='current_ward.name', default=None)
-
-    class Meta:
-        model = Patient
-        fields = ['id', 'mrn', 'name', 'ward_name', 'status']  # Minimal
-```
-
-### Real-Time Features
-
-#### Use WebSockets for Live Data
-
-Polling is inefficient. Use WebSocket broadcasts for:
-- Alerts and notifications
-- Live vital signs monitoring
-- Real-time status updates
-
-```python
-# Broadcast via Django Channels signal
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-
-def broadcast_alert(alert):
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        f'ward_{alert.ward_id}',
-        {'type': 'alert.new', 'data': serialize_alert(alert)}
-    )
-```
-
-#### Frontend WebSocket Pattern
-
 ```javascript
-// Use WebSocket hook instead of polling
-const { alerts, isConnected } = useAlertWebSocket({
-    wardId: currentWard.id,
-    onAlert: (alert) => toast.warning(alert.message)
-});
-
-// Only poll as fallback when WebSocket disconnects
+// Frontend - poll only as WebSocket fallback
+const { alerts } = useAlertWebSocket({ wardId, onAlert: (a) => toast.warning(a.message) });
 ```
 
 ### Frontend Performance
 
-#### React Query Caching
-
 ```javascript
-// Configure appropriate stale times
-const { data } = useQuery({
-    queryKey: ['patients', filters],
-    queryFn: fetchPatients,
-    staleTime: 30 * 1000,      // 30 seconds before refetch
-    cacheTime: 5 * 60 * 1000,  // 5 minutes in cache
-});
-```
+// React Query caching
+useQuery({ queryKey: ['patients', filters], queryFn: fetchPatients, staleTime: 30000, cacheTime: 300000 });
 
-#### Virtualize Long Lists
-
-```javascript
-// For lists > 100 items, use virtualization
+// Virtualize lists >100 items
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-// Don't render 1000 DOM nodes - virtualize
+// Debounce search inputs (300ms)
+const debouncedSearch = useDebouncedCallback((v) => searchPatients(v), 300);
 ```
 
-#### Debounce Search Inputs
-
-```javascript
-// Debounce user input to reduce API calls
-const debouncedSearch = useDebouncedCallback((value) => {
-    searchPatients(value);
-}, 300);
-```
-
-### Checklist for New Features
-
-Before implementing any feature, verify:
-
-- [ ] **Queries optimized?** - Used `select_related`/`prefetch_related` for related data
-- [ ] **Query count acceptable?** - List endpoints under 10 queries regardless of result size
-- [ ] **Pagination implemented?** - No unbounded querysets
-- [ ] **Caching considered?** - Added `cache_page` for read-heavy endpoints
-- [ ] **Search over dropdown?** - Used search for selections with >50 potential items
-- [ ] **List serializer lightweight?** - Only essential fields, no nested objects
-- [ ] **Real-time via WebSocket?** - Used broadcast instead of polling for live updates
-- [ ] **Frontend optimized?** - Proper React Query config, virtualization if needed
+### Feature Checklist
+- [ ] Queries optimized? (`select_related`/`prefetch_related`)
+- [ ] Query count <10 regardless of result size?
+- [ ] Pagination implemented?
+- [ ] Caching for read-heavy endpoints?
+- [ ] Search over dropdown for >50 items?
+- [ ] List serializer lightweight (5-8 fields, no nesting)?
+- [ ] WebSocket for real-time (not polling)?
+- [ ] Frontend optimized (React Query, virtualization)?
 
 ### Performance Testing
-
-Run load tests before deploying significant features:
-
 ```bash
-# Quick smoke test (50 users, 2 minutes)
-locust -f tests/load/locustfile.py --host=http://localhost:8000 \
-    --headless -u 50 -r 5 -t 2m
-
-# Full load test
+locust -f tests/load/locustfile.py --host=http://localhost:8000 --headless -u 50 -r 5 -t 2m
 k6 run tests/load/k6-test.js
 ```
-
-**Target Metrics:**
-- P95 response time < 500ms
-- Error rate < 1%
-- No query count increase with result size
+**Targets:** P95 <500ms | Error rate <1% | Query count constant with result size
 
 ---
 
+## Summary
+
 **Success = Clinical staff focus on patient care, not navigating software.**
+
 - Test-driven development: write tests first
-- Configurable over hardcoded: facilities have different approaches
-- Search over dropdowns: large hospitals have thousands of staff/patients
-- Scale-first mindset: every feature must handle 10,000+ concurrent users
+- Configurable over hardcoded: facilities differ
+- Search over dropdowns: thousands of staff/patients
+- Scale-first: every feature handles 10,000+ concurrent users

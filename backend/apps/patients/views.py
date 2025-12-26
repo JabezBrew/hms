@@ -1,13 +1,18 @@
 from rest_framework import viewsets, permissions, status, filters
+from rest_framework.exceptions import PermissionDenied
 import time
 import logging
 import hashlib
+from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
+from django.conf import settings
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -15,14 +20,22 @@ from .models import (
 )
 from .serializers import (
     PatientFHIRMappingSerializer, PatientSearchSerializer,
-    RecentPatientSerializer, PatientRegistrationValidationSerializer,
-    PatientNoteSerializer, PatientRegistrationSerializer
+    RecentPatientListSerializer, RecentPatientSerializer,
+    PatientRegistrationValidationSerializer, PatientNoteSerializer,
+    PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
+from apps.core.security import check_demographics_access
+from apps.core.models import BreakGlassEvent
+from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
+from apps.audit.services import AuditService
+from apps.audit.models import AuditAction, AuditCategory
 from apps.fhir_client.client import fhir_client
 from .tasks import sync_patient_with_fhir, log_patient_search
+
+logger = logging.getLogger(__name__)
 
 
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
@@ -87,6 +100,8 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
         Filter recent patients to only show the current user's recent patients.
         Limited to 10 most recent for performance.
         """
+        from apps.wards.models import Admission
+
         limit = int(self.request.query_params.get('limit', 10))
         # Cap at 20 to prevent abuse
         limit = min(limit, 20)
@@ -96,10 +111,19 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             'patient_profile',
             'patient_profile__user'
         ).prefetch_related(
-            'patient_profile__admissions',
-            'patient_profile__admissions__bed',
-            'patient_profile__admissions__bed__ward'
+            Prefetch(
+                'patient_profile__admissions',
+                queryset=Admission.objects.filter(
+                    status__in=['admitted', 'waiting']
+                ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+                to_attr='active_admissions_list'
+            )
         )[:limit]
+
+    def get_serializer_class(self):
+        if self.action in ['list', 'add_recent']:
+            return RecentPatientListSerializer
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -117,7 +141,12 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             )
 
         try:
+            from apps.wards.models import Admission
+
             patient_profile = PatientProfile.objects.get(id=patient_profile_id)
+
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
 
             # Check if already exists
             recent, created = RecentPatient.objects.get_or_create(
@@ -129,9 +158,22 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             if not created:
                 recent.save()  # This will update the auto_now field
 
+            recent = RecentPatient.objects.filter(id=recent.id).select_related(
+                'patient_profile',
+                'patient_profile__user'
+            ).prefetch_related(
+                Prefetch(
+                    'patient_profile__admissions',
+                    queryset=Admission.objects.filter(
+                        status__in=['admitted', 'waiting']
+                    ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+                    to_attr='active_admissions_list'
+                )
+            ).first()
+
             return Response({
                 "message": "Patient added to recent list.",
-                "recent_patient": RecentPatientSerializer(recent).data
+                "recent_patient": self.get_serializer(recent).data
             })
 
         except PatientProfile.DoesNotExist:
@@ -139,9 +181,12 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
                 {"error": "Patient profile not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to add recent patient: {str(e)}")
             return Response(
-                {"error": f"Failed to add recent patient: {str(e)}"},
+                {"error": "Failed to add recent patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -225,8 +270,9 @@ class PatientViewSet(viewsets.ViewSet):
                         status=status.HTTP_201_CREATED
                     )
             except Exception as e:
+                logger.error(f"Failed to register patient: {str(e)}")
                 return Response(
-                    {"error": f"Failed to register patient: {str(e)}"},
+                    {"error": "Failed to register patient. Please try again."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
@@ -241,7 +287,7 @@ class PatientViewSet(viewsets.ViewSet):
         Performance optimizations:
         - Uses lightweight serializer (PatientSearchListSerializer)
         - Caches results for 30 seconds
-        - Logs searches asynchronously via Celery
+        - Logs searches to PatientSearch history
         - FHIR calls are opt-in via include_fhir=true query param
         """
         query = request.query_params.get('query', '').strip()
@@ -273,13 +319,13 @@ class PatientViewSet(viewsets.ViewSet):
         if not include_fhir:
             cached_result = cache.get(cache_key)
             if cached_result is not None:
-                logger.info(f"Search cache hit for: {query[:20]}...")
-                # Log search asynchronously even for cache hits
+                logger.info("Search cache hit for user %s", request.user.id)
+                # Log search for cache hits
                 search_desc = f"Query: {query}" + (f", Ward: {ward_id}" if ward_id else "") + (f", Date: {admission_date}" if admission_date else "")
                 log_patient_search.delay(str(request.user.id), search_desc)
                 return Response(cached_result)
 
-        # Log search asynchronously (non-blocking)
+        # Log search for auditing/history
         search_desc = f"Query: {query}"
         if ward_id:
             search_desc += f", Ward: {ward_id}"
@@ -320,8 +366,21 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Filter by Admission Date
             if admission_date:
+                parsed_admission_date = parse_date(admission_date)
+                if not parsed_admission_date:
+                    return Response(
+                        {"error": "Invalid admission_date format. Use YYYY-MM-DD."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                start_dt = timezone.make_aware(
+                    datetime.combine(parsed_admission_date, datetime.min.time()),
+                    timezone.get_current_timezone()
+                )
+                end_dt = start_dt + timedelta(days=1)
                 local_patients_qs = local_patients_qs.filter(
-                    admissions__admission_date__date=admission_date
+                    admissions__admission_date__gte=start_dt,
+                    admissions__admission_date__lt=end_dt
                 ).distinct()
 
             # Limit to 20 results and serialize with lightweight serializer
@@ -354,7 +413,7 @@ class PatientViewSet(viewsets.ViewSet):
         except Exception as e:
             logger.error(f"Search error: {str(e)}")
             return Response(
-                {"error": f"Failed to search patients: {str(e)}"},
+                {"error": "Failed to search patients. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -406,6 +465,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         patient_profile = get_object_or_404(PatientProfile, id=pk)
 
+        # SECURITY: Check if user has permission to access this patient
+        check_demographics_access(request.user, patient_profile)
+
         # Add to recent patients
         RecentPatient.objects.get_or_create(
             user=request.user,
@@ -418,13 +480,79 @@ class PatientViewSet(viewsets.ViewSet):
             try:
                 fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
             except Exception as e:
-                # Just log the error but continue
-                print(f"Failed to get FHIR data: {str(e)}")
+                # Log the error but continue
+                logger.warning(f"Failed to get FHIR data for patient {pk}")
 
         return Response({
             "local_data": PatientProfileSerializer(patient_profile).data,
             "fhir_data": fhir_data
         })
+
+    @action(detail=True, methods=['post'], url_path='break-glass')
+    def break_glass(self, request, pk=None):
+        """
+        Create a time-bound break-glass access event for clinical data.
+        """
+        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        serializer = BreakGlassRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            return Response(
+                {"error": "Break-glass access is limited to clinical staff."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        scope = serializer.validated_data.get('scope', 'clinical')
+        if scope != 'clinical':
+            return Response(
+                {"error": "Only clinical break-glass access is supported."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        now = timezone.now()
+        active_event = BreakGlassEvent.objects.filter(
+            user=request.user,
+            patient=patient_profile,
+            scope=scope,
+            expires_at__gt=now
+        ).order_by('-expires_at').first()
+
+        if active_event:
+            return Response({
+                "message": "Break-glass access already active.",
+                "break_glass": BreakGlassEventSerializer(active_event).data
+            })
+
+        expires_at = now + timedelta(minutes=settings.BREAK_GLASS_TTL_MINUTES)
+        event = BreakGlassEvent.objects.create(
+            user=request.user,
+            patient=patient_profile,
+            scope=scope,
+            reason=serializer.validated_data['reason'],
+            expires_at=expires_at
+        )
+
+        AuditService.log(
+            request=request,
+            action=AuditAction.BREAK_GLASS,
+            category=AuditCategory.CLINICAL,
+            resource_type='PatientProfile',
+            resource_id=patient_profile.id,
+            resource_name=patient_profile.user.get_full_name(),
+            description=f"Break-glass access granted for patient {patient_profile.medical_record_number}",
+            changes={
+                'scope': {'old': None, 'new': scope},
+                'expires_at': {'old': None, 'new': expires_at.isoformat()},
+                'reason': {'old': None, 'new': serializer.validated_data['reason']},
+            }
+        )
+
+        return Response({
+            "message": "Break-glass access granted.",
+            "break_glass": BreakGlassEventSerializer(event).data
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['put'])
     def update_patient(self, request, pk=None):
@@ -433,6 +561,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         try:
             patient_profile = get_object_or_404(PatientProfile, id=pk)
+
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
 
             # Update local patient profile
             profile_serializer = PatientProfileSerializer(
@@ -475,10 +606,11 @@ class PatientViewSet(viewsets.ViewSet):
                         })
                     except Exception as e:
                         # If FHIR update fails, still return the local data
+                        logger.warning(f"FHIR update failed for patient {pk}")
                         return Response({
                             "message": "Patient local data updated, but FHIR update failed",
                             "local_data": profile_serializer.data,
-                            "error": f"FHIR update error: {str(e)}"
+                            "error": "FHIR synchronization error"
                         }, status=status.HTTP_207_MULTI_STATUS)
 
                 # If no FHIR data to update or no FHIR ID
@@ -489,9 +621,12 @@ class PatientViewSet(viewsets.ViewSet):
             else:
                 return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to update patient {pk}: {str(e)}")
             return Response(
-                {"error": f"Failed to update patient: {str(e)}"},
+                {"error": "Failed to update patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -502,6 +637,9 @@ class PatientViewSet(viewsets.ViewSet):
         """
         try:
             patient_profile = get_object_or_404(PatientProfile, id=pk)
+
+            # SECURITY: Check if user has permission to access this patient
+            check_demographics_access(request.user, patient_profile)
 
             # Store FHIR ID before deletion
             fhir_patient_id = patient_profile.fhir_patient_id
@@ -525,18 +663,21 @@ class PatientViewSet(viewsets.ViewSet):
                         fhir_client.delete_resource("Patient", fhir_patient_id)
                     except Exception as e:
                         # If FHIR deletion fails, log the error but continue
-                        print(f"Failed to delete FHIR resource: {str(e)}")
+                        logger.warning(f"Failed to delete FHIR resource for patient {pk}")
                         return Response({
                             "message": "Patient local data deleted, but FHIR deletion failed",
-                            "error": f"FHIR deletion error: {str(e)}"
+                            "error": "FHIR synchronization error"
                         }, status=status.HTTP_207_MULTI_STATUS)
 
                 return Response({
                     "message": "Patient deleted successfully"
                 }, status=status.HTTP_200_OK)
 
+        except PermissionDenied:
+            raise
         except Exception as e:
+            logger.error(f"Failed to delete patient {pk}: {str(e)}")
             return Response(
-                {"error": f"Failed to delete patient: {str(e)}"},
+                {"error": "Failed to delete patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

@@ -120,6 +120,7 @@ class StaffFactory(factory.django.DjangoModelFactory):
         'Resident', 'Consultant', 'Intern'
     ])
     hire_date = factory.LazyFunction(lambda: date.today() - timedelta(days=365))
+    primary_facility = None  # Nullable for backward compatibility
     created_by = factory.LazyAttribute(lambda o: o.user)
     updated_by = factory.LazyAttribute(lambda o: o.user)
 

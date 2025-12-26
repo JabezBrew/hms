@@ -1,7 +1,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { useMutation } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
@@ -19,8 +21,12 @@ import {
   AddNoteSlideOver,
   AddVitalsSlideOver,
   AddPrescriptionSlideOver,
-  AddFluidBalanceSlideOver
+  AddFluidBalanceSlideOver,
+  PatientInsuranceSlideOver,
+  BreakGlassDialog,
 } from "@/components/chronicle";
+import { usePatientInsurance } from "@/hooks/useBillingQueries";
+import { patientsApi } from "@/lib/api/patients";
 import {
   AddChartSlideOver,
   ChartEntryForm,
@@ -59,6 +65,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 const PatientChroniclePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -67,12 +74,19 @@ const PatientChroniclePage = () => {
   // Copy forward state - holds template and data for pre-filling note editor
   const [copyForwardData, setCopyForwardData] = useState(null);
 
+  // Edit note state - holds note ID and data for editing existing notes
+  const [editNoteData, setEditNoteData] = useState(null);
+
+  const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
+  const [breakGlassReason, setBreakGlassReason] = useState('');
+  const [breakGlassExpiresAt, setBreakGlassExpiresAt] = useState(null);
+
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry']);
+  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry', 'insurance']);
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
@@ -100,11 +114,20 @@ const PatientChroniclePage = () => {
   const {
     data: chronicleContext,
     isLoading: isContextLoading,
+    error: contextError,
     refetch: refetchContext,
   } = useChronicleContext(id);
 
+  const canFetchClinical = !!id && !isContextLoading && !contextError && !error;
+
   // Fetch patient encounters for grouping
-  const { data: encounters } = usePatientEncounters(id);
+  const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
+    enabled: canFetchClinical,
+  });
+
+  // Fetch patient insurance
+  const { data: insuranceData } = usePatientInsurance(id);
+  const patientInsurance = insuranceData?.results || insuranceData || [];
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
@@ -194,10 +217,15 @@ const PatientChroniclePage = () => {
   }, [chronicleContext?.latest_vitals]);
 
   // Fetch active chart assignments for this patient
-  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments({
-    patient: patientLocalId,
-    status: 'active',
-  });
+  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(
+    {
+      patient: patientLocalId,
+      status: 'active',
+    },
+    {
+      enabled: canFetchClinical,
+    }
+  );
 
   // Map filter to API type
   const typeMapping = {
@@ -216,12 +244,12 @@ const PatientChroniclePage = () => {
     hasNextPage,
     isFetchingNextPage,
     isLoading: isTimelineLoading,
-    error: timelineError,
     refetch: refetchTimeline,
   } = usePatientTimeline(id, {
     type: typeMapping[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
+    enabled: canFetchClinical,
   });
 
   // Invalidate timeline cache helper
@@ -455,6 +483,7 @@ const PatientChroniclePage = () => {
   const handleSlideOverClose = useCallback(() => {
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data when closing
+    setEditNoteData(null); // Clear edit note data when closing
   }, [slideOvers]);
 
   // Created handlers - refresh data and close
@@ -462,6 +491,7 @@ const PatientChroniclePage = () => {
     refreshData();
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data after note is created
+    setEditNoteData(null); // Clear edit note data after note is created/updated
   }, [refreshData, slideOvers]);
 
   // Handle copy note from timeline - opens note editor with pre-filled data
@@ -478,10 +508,28 @@ const PatientChroniclePage = () => {
       data: copyData.data,
       sectionsCopied: copyData.sectionsCopied,
     });
+    setEditNoteData(null); // Clear any edit data
     slideOvers.open('note');
     toast.success("Note copied", {
       description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
     });
+  }, [slideOvers]);
+
+  // Handle edit note from timeline - opens note editor in edit mode
+  const handleEditNote = useCallback((editData) => {
+    // editData contains: { noteId, template, templateId, templateTitle, data, title }
+    if (!editData.template) {
+      toast.error("Cannot edit note", { description: "Template information is missing" });
+      return;
+    }
+
+    setEditNoteData({
+      noteId: editData.noteId,
+      template: editData.template,
+      data: editData.data,
+    });
+    setCopyForwardData(null); // Clear any copy data
+    slideOvers.open('note');
   }, [slideOvers]);
 
   const handleVitalsRecorded = useCallback(() => {
@@ -549,11 +597,134 @@ const PatientChroniclePage = () => {
     }
   }, [navigate, activeEncounter, patient]);
 
+  const userRole = user?.role || user?.user_type;
+  const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
+  const accessDenied = contextError?.status === 403 || error?.status === 403;
+  const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
+  const gateError = contextError && contextError?.status !== 403 ? contextError : error;
+
+  const breakGlassMutation = useMutation({
+    mutationFn: (payload) => patientsApi.requestBreakGlass(id, payload),
+    onSuccess: (data) => {
+      const expiresAt = data?.break_glass?.expires_at || null;
+      setBreakGlassExpiresAt(expiresAt);
+      setBreakGlassReason('');
+      setBreakGlassOpen(false);
+
+      const expiresLabel = expiresAt
+        ? new Date(expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : null;
+      toast.success("Break-glass access granted", {
+        description: expiresLabel ? `Access expires at ${expiresLabel}.` : "Access expires automatically.",
+      });
+
+      refetchContext();
+      refetchTimeline();
+      refetchEncounters();
+    },
+    onError: (err) => {
+      toast.error("Break-glass request failed", {
+        description: err?.message || "Please try again.",
+      });
+    },
+  });
+
+  const handleBreakGlassSubmit = useCallback(() => {
+    if (!breakGlassReason.trim()) {
+      return;
+    }
+    breakGlassMutation.mutate({
+      reason: breakGlassReason.trim(),
+      scope: 'clinical',
+    });
+  }, [breakGlassReason, breakGlassMutation]);
+
   // ============================================
   // Loading state
   // ============================================
 
-  if (isLoading) {
+  if (accessDenied) {
+    const patientDetails = patient?.local_data || patient;
+    const patientName = patientDetails?.user_details
+      ? `${patientDetails.user_details.first_name || ''} ${patientDetails.user_details.last_name || ''}`.trim()
+      : patientDetails?.name;
+    const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-2">
+                <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
+                  Access Restricted
+                </span>
+                {breakGlassExpiresAt && (
+                  <span className="badge-chronicle-amber text-[10px]">
+                    Break-glass active
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl text-foreground">
+                  Team-based access required
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  This patient record is protected by team-based access controls.
+                  Request break-glass only for urgent clinical need. All access is audited.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Patient
+                </p>
+                <p className="text-sm text-foreground">
+                  {patientName || "Unknown Patient"}
+                </p>
+                {patientMrn && (
+                  <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
+                )}
+              </div>
+
+              {canRequestBreakGlass ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    onClick={() => setBreakGlassOpen(true)}
+                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                  >
+                    Request Break-Glass Access
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Provide a reason to unlock this record for a limited time.
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Break-glass access is available to clinical staff only.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <BreakGlassDialog
+          open={isBreakGlassOpen}
+          onOpenChange={setBreakGlassOpen}
+          patientName={patientName}
+          patientMrn={patientMrn}
+          reason={breakGlassReason}
+          onReasonChange={setBreakGlassReason}
+          onSubmit={handleBreakGlassSubmit}
+          isSubmitting={breakGlassMutation.isPending}
+          ttlMinutes={30}
+        />
+      </div>
+    );
+  }
+
+  if (isLoading || isContextLoading || authLoading) {
     return (
       <div className="min-h-screen bg-background">
         {/* Hero skeleton */}
@@ -584,7 +755,7 @@ const PatientChroniclePage = () => {
   // Error state
   // ============================================
 
-  if (error) {
+  if (hasGateError) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -592,9 +763,12 @@ const PatientChroniclePage = () => {
             Unable to load patient record
           </h2>
           <p className="text-muted-foreground">
-            {error.message || 'An error occurred while fetching patient data.'}
+            {gateError?.message || 'An error occurred while fetching patient data.'}
           </p>
-          <Button onClick={() => refetch()}>
+          <Button onClick={() => {
+            refetch();
+            refetchContext();
+          }}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Try Again
           </Button>
@@ -621,6 +795,8 @@ const PatientChroniclePage = () => {
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
+        onManageInsurance={() => slideOvers.open('insurance')}
+        insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
 
@@ -692,6 +868,12 @@ const PatientChroniclePage = () => {
                 {totalCount > 0 && (
                   <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                     {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                  </span>
+                )}
+                {/* Show encounter count hint when some encounters have no documentation */}
+                {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                  <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                    • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
                   </span>
                 )}
               </div>
@@ -882,7 +1064,9 @@ const PatientChroniclePage = () => {
                           key={entry.id}
                           entry={entry}
                           index={index}
+                          currentUserId={user?.id}
                           onCopyNote={handleCopyNote}
+                          onEditNote={handleEditNote}
                           onNoteUpdated={refetchTimeline}
                         />
                       ))}
@@ -934,7 +1118,9 @@ const PatientChroniclePage = () => {
                         key={entry.id}
                         entry={entry}
                         index={index}
+                        currentUserId={user?.id}
                         onCopyNote={handleCopyNote}
+                        onEditNote={handleEditNote}
                         onNoteUpdated={refetchTimeline}
                       />
                     ))}
@@ -1003,8 +1189,9 @@ const PatientChroniclePage = () => {
           patient={patient}
           encounter={activeEncounter}
           onNoteCreated={handleNoteCreated}
-          initialTemplate={copyForwardData?.template}
-          initialData={copyForwardData?.data}
+          initialTemplate={editNoteData?.template || copyForwardData?.template}
+          initialData={editNoteData?.data || copyForwardData?.data}
+          editNoteId={editNoteData?.noteId}
         />
 
         {/* Add Vitals Slide-Over Panel */}
@@ -1082,6 +1269,13 @@ const PatientChroniclePage = () => {
           assignmentId={activeChartAssignment?.id}
           patient={patient}
           onEntryRecorded={handleChartEntryRecorded}
+        />
+
+        {/* Patient Insurance Slide-Over */}
+        <PatientInsuranceSlideOver
+          open={slideOvers.isOpen('insurance')}
+          onClose={handleSlideOverClose}
+          patient={patient}
         />
       </div>
     </div>

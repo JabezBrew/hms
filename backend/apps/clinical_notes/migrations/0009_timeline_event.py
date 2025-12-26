@@ -9,6 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0010_add_admission_status_index'),
+        ('encounters', '0001_initial'),
         ('users', '0008_remove_user_user_first_name_gin_idx_and_more'),
         ('clinical_notes', '0008_add_note_entry_version'),
     ]
@@ -36,7 +37,7 @@ class Migration(migrations.Migration):
                 ('search_text', models.TextField(blank=True, help_text='Concatenated searchable text')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeline_events', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeline_events', to='encounters.Encounter')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='timeline_events', to='users.patientprofile')),
             ],
             options={

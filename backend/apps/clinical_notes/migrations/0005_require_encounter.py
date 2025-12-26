@@ -39,6 +39,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('clinical_notes', '0004_link_encounter_to_chronicles'),
     ]
 
@@ -54,7 +55,7 @@ class Migration(migrations.Migration):
                 help_text='The clinical encounter/visit during which this note was created',
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name='note_entries',
-                to='wards.encounter',
+                to='encounters.Encounter',
             ),
         ),
 
@@ -66,7 +67,7 @@ class Migration(migrations.Migration):
                 help_text='The clinical encounter/visit during which this was prescribed',
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name='prescriptions',
-                to='wards.encounter',
+                to='encounters.Encounter',
             ),
         ),
     ]

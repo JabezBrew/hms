@@ -5,13 +5,17 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
-from django.db.models import Sum, F, Q
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.db.models import Sum, F, Q, Avg, Count, Case, When, Value
+from decimal import Decimal
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import generate_fhir_id, create_reference
 
 from .models import (
     ServiceCategory, Service, InsuranceProvider, InsurancePlan,
-    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt
+    PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt,
+    BillingRule, FacilityBillingSettings
 )
 from .serializers import (
     ServiceCategorySerializer, ServiceSerializer, ServiceListSerializer,
@@ -21,9 +25,15 @@ from .serializers import (
     InvoiceItemSerializer,
     PaymentSerializer, PaymentListSerializer,
     ClaimSerializer, ClaimListSerializer,
-    ReceiptSerializer
+    ReceiptSerializer, ReceiptDetailSerializer,
+    BillingRuleSerializer, BillingRuleListSerializer,
+    FacilityBillingSettingsSerializer,
+    BillingDashboardMetricsSerializer, RecentInvoiceSerializer, RecentPaymentSerializer
 )
-from ..users.permissions import IsAdminOrOwner
+from ..users.permissions import IsBillingStaff
+from apps.core.pagination import StandardResultsSetPagination as CorePagination
+from apps.audit.models import AuditAction, AuditCategory
+from apps.audit.services import AuditService
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -39,7 +49,7 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     """
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
@@ -59,7 +69,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     """
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'code', 'category__name']
@@ -102,7 +112,7 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
     """
     queryset = InsuranceProvider.objects.all()
     serializer_class = InsuranceProviderSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'contact_person', 'email', 'phone']
@@ -138,7 +148,7 @@ class InsurancePlanViewSet(viewsets.ModelViewSet):
     """
     queryset = InsurancePlan.objects.all()
     serializer_class = InsurancePlanSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description', 'provider__name']
@@ -158,12 +168,17 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientInsurance.objects.all()
     serializer_class = PatientInsuranceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'policy_number', 'plan__name', 'plan__provider__name']
     ordering_fields = ['valid_from', 'valid_until', 'created_at']
     ordering = ['-valid_from']
+
+    def get_permissions(self):
+        if self.action == 'for_patient':
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -188,6 +203,11 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # SECURITY: Allow admin/billing or users with demographics access to view insurance
+        if request.user.user_type not in ['admin', 'billing']:
+            from apps.core.security import check_demographics_access
+            check_demographics_access(request.user, patient_id)
+
         insurances = self.get_queryset().filter(patient_id=patient_id)
 
         # Filter by active status if requested
@@ -211,12 +231,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     API endpoint for invoices.
     """
     queryset = Invoice.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name', 'status']
+    search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'status', 'created_at']
     ordering = ['-invoice_date']
+
+    def get_permissions(self):
+        if self.action == 'for_patient':
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -224,6 +249,45 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         elif self.action == 'list':
             return InvoiceListSerializer
         return InvoiceSerializer
+
+    def get_queryset(self):
+        from django.db.models import Prefetch
+
+        # Prefetch payments with their receipts to avoid N+1 queries
+        payments_prefetch = Prefetch(
+            'payments',
+            queryset=Payment.objects.select_related('receipt', 'created_by')
+        )
+
+        queryset = super().get_queryset().select_related(
+            'patient__user', 'facility', 'patient_insurance__plan__provider'
+        ).prefetch_related('items', payments_prefetch)
+
+        # Filter by status
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(facility_id=facility_id)
+
+        # Filter by patient
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(invoice_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(invoice_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -242,6 +306,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 {"error": "patient_id parameter is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # SECURITY: Allow admin/billing or users with demographics access to view invoices
+        if request.user.user_type not in ['admin', 'billing']:
+            from apps.core.security import check_demographics_access
+            check_demographics_access(request.user, patient_id)
 
         invoices = self.get_queryset().filter(patient_id=patient_id)
 
@@ -370,6 +439,28 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
             return Response(ClaimSerializer(claim).data)
 
+    @action(detail=True, methods=['get'])
+    def print_detail(self, request, pk=None):
+        """
+        Get invoice details for printing.
+        Logs an audit trail for the print action.
+        """
+        invoice = self.get_object()
+
+        # Audit log the invoice print
+        AuditService.log(
+            request,
+            action=AuditAction.INVOICE_PRINT,
+            category=AuditCategory.BILLING,
+            resource_type='Invoice',
+            resource_id=str(invoice.id),
+            description=f"Printed invoice {invoice.invoice_number} for {invoice.patient.user.get_full_name()} - Amount: {invoice.total_amount}",
+            resource_name=invoice.invoice_number,
+        )
+
+        serializer = InvoiceSerializer(invoice)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'])
     def mark_as_paid(self, request, pk=None):
         """
@@ -394,7 +485,26 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if amount is None:
             amount = invoice.balance_due
         else:
-            amount = float(amount)
+            # SECURITY: Validate payment amount to prevent billing manipulation
+            try:
+                amount = Decimal(str(amount))
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "amount must be a valid number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if amount <= 0:
+                return Response(
+                    {"error": "amount must be greater than zero."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if amount > invoice.balance_due:
+                return Response(
+                    {"error": "amount cannot exceed the balance due."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         with transaction.atomic():
             # Create payment
@@ -432,7 +542,7 @@ class InvoiceItemViewSet(viewsets.ModelViewSet):
     """
     queryset = InvoiceItem.objects.all()
     serializer_class = InvoiceItemSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['service__name', 'description', 'invoice__invoice_number']
@@ -452,10 +562,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['invoice__invoice_number', 'reference_number', 'payment_method']
+    search_fields = [
+        'invoice__invoice_number', 'reference_number',
+        'invoice__patient__user__first_name', 'invoice__patient__user__last_name',
+        'invoice__patient__medical_record_number', 'receipt__receipt_number'
+    ]
     ordering_fields = ['payment_date', 'amount', 'created_at']
     ordering = ['-payment_date']
 
@@ -463,6 +577,34 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return PaymentListSerializer
         return PaymentSerializer
+
+    def get_queryset(self):
+        # Use select_related for all foreign keys to avoid N+1 queries
+        queryset = super().get_queryset().select_related(
+            'invoice__patient__user', 'invoice__facility',
+            'receipt', 'created_by'
+        )
+
+        # Filter by payment method
+        payment_method = self.request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(invoice__facility_id=facility_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(payment_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(payment_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -504,10 +646,10 @@ class ClaimViewSet(viewsets.ModelViewSet):
     """
     queryset = Claim.objects.all()
     serializer_class = ClaimSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['claim_number', 'invoice__invoice_number', 'status', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
+    search_fields = ['claim_number', 'invoice__invoice_number', 'invoice__patient__user__first_name', 'invoice__patient__user__last_name']
     ordering_fields = ['submission_date', 'status', 'claimed_amount', 'approved_amount', 'created_at']
     ordering = ['-submission_date']
 
@@ -515,6 +657,32 @@ class ClaimViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return ClaimListSerializer
         return ClaimSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related(
+            'invoice__patient__user', 'invoice__facility'
+        )
+
+        # Filter by status
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(invoice__facility_id=facility_id)
+
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(submission_date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(submission_date__lte=date_to)
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -549,12 +717,34 @@ class ClaimViewSet(viewsets.ModelViewSet):
         approved_amount = request.data.get('approved_amount', None)
         rejection_reason = request.data.get('rejection_reason', None)
 
+        # SECURITY: Validate approved_amount to prevent billing fraud
+        if approved_amount is not None:
+            try:
+                approved_amount = Decimal(str(approved_amount))
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "approved_amount must be a valid number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if approved_amount < 0:
+                return Response(
+                    {"error": "approved_amount cannot be negative."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if approved_amount > claim.claimed_amount:
+                return Response(
+                    {"error": "approved_amount cannot exceed the claimed_amount."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Update claim
         claim.status = new_status
         claim.response_date = timezone.now().date()
 
         if approved_amount is not None:
-            claim.approved_amount = float(approved_amount)
+            claim.approved_amount = approved_amount
 
         if rejection_reason is not None:
             claim.rejection_reason = rejection_reason
@@ -595,15 +785,359 @@ class ReceiptViewSet(viewsets.ModelViewSet):
     """
     queryset = Receipt.objects.all()
     serializer_class = ReceiptSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['receipt_number', 'payment__invoice__invoice_number', 'payment__reference_number']
     ordering_fields = ['receipt_date', 'created_at']
     ordering = ['-receipt_date']
 
+    def get_queryset(self):
+        return super().get_queryset().select_related(
+            'payment__invoice__patient__user',
+            'payment__invoice__facility',
+            'payment__created_by'
+        ).prefetch_related(
+            'payment__invoice__items__service'
+        )
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['get'])
+    def print_detail(self, request, pk=None):
+        """
+        Get detailed receipt data for printing.
+        Includes invoice items to show what was paid for.
+        Logs an audit trail for the print action.
+        """
+        receipt = self.get_object()
+
+        # Audit log the receipt print
+        AuditService.log(
+            request,
+            action=AuditAction.RECEIPT_PRINT,
+            category=AuditCategory.BILLING,
+            resource_type='Receipt',
+            resource_id=str(receipt.id),
+            description=f"Printed receipt {receipt.receipt_number} for payment of {receipt.payment.amount}",
+            resource_name=receipt.receipt_number,
+        )
+
+        serializer = ReceiptDetailSerializer(receipt)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_receipt_number(self, request):
+        """
+        Get receipt by receipt number for printing.
+        Logs an audit trail for the print action.
+        """
+        receipt_number = request.query_params.get('receipt_number')
+        if not receipt_number:
+            return Response(
+                {"error": "receipt_number parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            receipt = self.get_queryset().get(receipt_number=receipt_number)
+
+            # Audit log the receipt print
+            AuditService.log(
+                request,
+                action=AuditAction.RECEIPT_PRINT,
+                category=AuditCategory.BILLING,
+                resource_type='Receipt',
+                resource_id=str(receipt.id),
+                description=f"Printed receipt {receipt.receipt_number} for payment of {receipt.payment.amount}",
+                resource_name=receipt.receipt_number,
+            )
+
+            serializer = ReceiptDetailSerializer(receipt)
+            return Response(serializer.data)
+        except Receipt.DoesNotExist:
+            return Response(
+                {"error": "Receipt not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class BillingRuleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for billing rules.
+    """
+    queryset = BillingRule.objects.select_related('facility').all()
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'code', 'rule_type', 'description']
+    ordering_fields = ['priority', 'name', 'rule_type', 'created_at']
+    ordering = ['priority', 'name']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BillingRuleListSerializer
+        return BillingRuleSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(
+                Q(facility_id=facility_id) | Q(facility__isnull=True)
+            )
+
+        # Filter by rule_type
+        rule_type = self.request.query_params.get('rule_type')
+        if rule_type:
+            queryset = queryset.filter(rule_type=rule_type)
+
+        # Filter by is_active
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Toggle the active status of a billing rule."""
+        rule = self.get_object()
+        rule.is_active = not rule.is_active
+        rule.updated_by = request.user
+        rule.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        return Response(BillingRuleSerializer(rule).data)
+
+
+class FacilityBillingSettingsViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for facility billing settings.
+    """
+    queryset = FacilityBillingSettings.objects.select_related('facility').all()
+    serializer_class = FacilityBillingSettingsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Filter by facility
+        facility_id = self.request.query_params.get('facility')
+        if facility_id:
+            queryset = queryset.filter(facility_id=facility_id)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+
+class BillingDashboardViewSet(viewsets.ViewSet):
+    """
+    API endpoint for billing dashboard metrics.
+
+    Provides aggregated billing data for dashboard displays.
+
+    Performance optimizations:
+    - View-level caching (30s TTL) for metrics endpoint
+    - Conditional aggregation to consolidate ~15 queries into 4
+    - Database indexes on invoice_date, payment_date, status, facility_id
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @method_decorator(cache_page(30))  # Cache for 30 seconds
+    @action(detail=False, methods=['get'])
+    def metrics(self, request):
+        """
+        Get billing dashboard metrics.
+
+        Query params:
+        - facility: Filter by facility ID
+        - date_from: Start date (YYYY-MM-DD)
+        - date_to: End date (YYYY-MM-DD)
+
+        Performance: Uses conditional aggregation to reduce database queries
+        from ~15 to 4. Cached for 30 seconds.
+        """
+        from datetime import timedelta
+
+        today = timezone.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
+        last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+
+        # Base querysets with facility filter
+        facility_id = request.query_params.get('facility')
+        invoice_filter = Q(facility_id=facility_id) if facility_id else Q()
+        payment_filter = Q(invoice__facility_id=facility_id) if facility_id else Q()
+        claim_filter = Q(invoice__facility_id=facility_id) if facility_id else Q()
+
+        # =================================================================
+        # QUERY 1: All invoice metrics in a single query using conditional aggregation
+        # Replaces 8+ separate queries
+        # =================================================================
+        invoice_metrics = Invoice.objects.filter(invoice_filter).aggregate(
+            # Counts by status
+            total_invoices=Count('id'),
+            pending_invoices=Count('id', filter=Q(status='pending')),
+            overdue_invoices=Count('id', filter=Q(status='overdue')),
+            paid_invoices=Count('id', filter=Q(status='paid')),
+            outstanding_invoices=Count('id', filter=Q(status__in=['pending', 'partially_paid'])),
+
+            # Outstanding amount (pending + partially_paid)
+            outstanding_amount=Sum(
+                F('total_amount') - F('insurance_amount'),
+                filter=Q(status__in=['pending', 'partially_paid'])
+            ),
+
+            # Total overdue amount
+            total_overdue=Sum(
+                F('total_amount') - F('insurance_amount'),
+                filter=Q(status='overdue')
+            ),
+
+            # Today's invoices created
+            invoices_created_today=Count('id', filter=Q(invoice_date=today)),
+
+            # Average invoice amount (excluding drafts)
+            average_invoice_amount=Avg('total_amount', filter=~Q(status='draft')),
+        )
+
+        # Unique patients billed this month (separate query - can't combine with above)
+        unique_patients_billed = Invoice.objects.filter(
+            invoice_filter,
+            invoice_date__gte=month_start
+        ).values('patient').distinct().count()
+
+        # =================================================================
+        # QUERY 2: All payment/revenue metrics in a single query
+        # Replaces 5+ separate queries
+        # =================================================================
+        payment_metrics = Payment.objects.filter(payment_filter).aggregate(
+            # Revenue by time period using conditional sums
+            revenue_today=Sum('amount', filter=Q(payment_date=today)),
+            revenue_this_week=Sum('amount', filter=Q(payment_date__gte=week_start)),
+            revenue_this_month=Sum('amount', filter=Q(payment_date__gte=month_start)),
+            revenue_last_month=Sum(
+                'amount',
+                filter=Q(payment_date__gte=last_month_start, payment_date__lt=month_start)
+            ),
+
+            # Today's payment count
+            payments_received_today=Count('id', filter=Q(payment_date=today)),
+        )
+
+        # Calculate revenue trend
+        revenue_this_month = payment_metrics['revenue_this_month'] or Decimal('0')
+        revenue_last_month = payment_metrics['revenue_last_month'] or Decimal('0')
+
+        if revenue_last_month > 0:
+            revenue_trend = ((revenue_this_month - revenue_last_month) / revenue_last_month) * 100
+        else:
+            revenue_trend = Decimal('0')
+
+        # =================================================================
+        # QUERY 3: All claims metrics in a single query
+        # Replaces 3+ separate queries
+        # =================================================================
+        claims_metrics = Claim.objects.filter(claim_filter).aggregate(
+            pending_claims=Count('id', filter=Q(status='pending')),
+            pending_claims_amount=Sum('claimed_amount', filter=Q(status='pending')),
+            approved_claims_amount=Sum(
+                'approved_amount',
+                filter=Q(status__in=['approved', 'partially_approved'])
+            ),
+        )
+
+        # =================================================================
+        # QUERY 4: Payment method breakdown (this month)
+        # =================================================================
+        payment_methods = list(Payment.objects.filter(
+            payment_filter,
+            payment_date__gte=month_start
+        ).values('payment_method').annotate(
+            total=Sum('amount'),
+            count=Count('id')
+        ).order_by('-total'))
+
+        # Build response data
+        data = {
+            # Revenue metrics
+            'revenue_today': payment_metrics['revenue_today'] or Decimal('0'),
+            'revenue_this_week': payment_metrics['revenue_this_week'] or Decimal('0'),
+            'revenue_this_month': revenue_this_month,
+            'revenue_trend': round(revenue_trend, 2),
+
+            # Invoice metrics
+            'total_invoices': invoice_metrics['total_invoices'] or 0,
+            'pending_invoices': invoice_metrics['pending_invoices'] or 0,
+            'overdue_invoices': invoice_metrics['overdue_invoices'] or 0,
+            'paid_invoices': invoice_metrics['paid_invoices'] or 0,
+            'outstanding_amount': invoice_metrics['outstanding_amount'] or Decimal('0'),
+            'outstanding_invoices': invoice_metrics['outstanding_invoices'] or 0,
+            'total_overdue': invoice_metrics['total_overdue'] or Decimal('0'),
+
+            # Claims metrics
+            'pending_claims': claims_metrics['pending_claims'] or 0,
+            'pending_claims_amount': claims_metrics['pending_claims_amount'] or Decimal('0'),
+            'approved_claims_amount': claims_metrics['approved_claims_amount'] or Decimal('0'),
+
+            # Activity metrics
+            'invoices_created_today': invoice_metrics['invoices_created_today'] or 0,
+            'payments_received_today': payment_metrics['payments_received_today'] or 0,
+            'unique_patients_billed': unique_patients_billed,
+            'average_invoice_amount': invoice_metrics['average_invoice_amount'] or Decimal('0'),
+            'payment_methods': payment_methods,
+        }
+
+        serializer = BillingDashboardMetricsSerializer(data)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def recent_invoices(self, request):
+        """Get recent invoices for dashboard."""
+        limit = int(request.query_params.get('limit', 10))
+        facility_id = request.query_params.get('facility')
+
+        invoices = Invoice.objects.select_related(
+            'patient__user'
+        ).order_by('-created_at')
+
+        if facility_id:
+            invoices = invoices.filter(facility_id=facility_id)
+
+        invoices = invoices[:limit]
+        serializer = RecentInvoiceSerializer(invoices, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def recent_payments(self, request):
+        """Get recent payments for dashboard."""
+        limit = int(request.query_params.get('limit', 10))
+        facility_id = request.query_params.get('facility')
+
+        payments = Payment.objects.select_related(
+            'invoice'
+        ).order_by('-created_at')
+
+        if facility_id:
+            payments = payments.filter(invoice__facility_id=facility_id)
+
+        payments = payments[:limit]
+        serializer = RecentPaymentSerializer(payments, many=True)
+        return Response(serializer.data)

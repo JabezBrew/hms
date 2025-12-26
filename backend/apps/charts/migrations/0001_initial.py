@@ -14,6 +14,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0009_add_ward_staff_assignment'),
+        ('encounters', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('users', '0006_add_user_patient_list'),
     ]
@@ -36,7 +37,7 @@ class Migration(migrations.Migration):
                 ('admission', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='chart_assignments', to='wards.admission')),
                 ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_chart_assignments', to=settings.AUTH_USER_MODEL)),
                 ('discontinued_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='discontinued_chart_assignments', to=settings.AUTH_USER_MODEL)),
-                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='chart_assignments', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='chart_assignments', to='encounters.Encounter')),
                 ('ordered_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='chart_orders', to='users.practitionerprofile')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='chart_assignments', to='users.patientprofile')),
             ],

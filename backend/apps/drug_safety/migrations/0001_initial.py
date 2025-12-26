@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('users', '0005_passwordresettoken'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
     ]
 
     operations = [
@@ -59,7 +60,7 @@ class Migration(migrations.Migration):
                 ('override_reason', models.TextField(blank=True, help_text='Required reason for overriding critical/high alerts')),
                 ('overridden_at', models.DateTimeField(blank=True, null=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='drug_safety_alerts', to='wards.encounter')),
+                ('encounter', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='drug_safety_alerts', to='encounters.Encounter')),
                 ('overridden_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='overridden_alerts', to='users.practitionerprofile')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='drug_safety_alerts', to='users.patientprofile')),
                 ('prescription', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='safety_alerts', to='clinical_notes.prescription')),

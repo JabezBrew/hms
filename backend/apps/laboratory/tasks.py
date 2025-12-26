@@ -65,12 +65,11 @@ def send_critical_value_alert(self, result_id):
             fail_silently=False,
         )
 
-        logger.info(f"Critical value alert sent for result {result_id} to {ordering_provider.email}")
+        logger.info(f"Critical value alert sent for result {result_id}")
 
         return {
             "status": "success",
             "result_id": str(result_id),
-            "provider_email": ordering_provider.email,
             "test_name": result.order_test.test.name,
         }
 
@@ -147,12 +146,11 @@ def send_result_available_notification(self, order_id):
             fail_silently=False,
         )
 
-        logger.info(f"Results available notification sent for order {order_id} to {ordering_provider.email}")
+        logger.info(f"Results available notification sent for order {order_id}")
 
         return {
             "status": "success",
             "order_id": str(order_id),
-            "provider_email": ordering_provider.email,
             "total_results": total_results,
             "critical_results": critical_results,
         }
@@ -228,15 +226,14 @@ def send_daily_lab_summary(provider_id):
             fail_silently=False,
         )
 
-        logger.info(f"Daily lab summary sent to {provider.email}")
+        logger.info(f"Daily lab summary sent for provider {provider_id}")
 
         return {
             "status": "success",
-            "provider_email": provider.email,
             "orders_count": pending_orders.count(),
             "critical_count": critical_count,
         }
 
     except Exception as e:
-        logger.error(f"Error sending daily lab summary: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error sending daily lab summary for provider {provider_id}: {str(e)}")
+        return {"status": "error"}

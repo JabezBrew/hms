@@ -424,13 +424,14 @@ export const useGenerateMAR = () => {
 };
 
 // ========== Pharmacy Dispensing ==========
+// These endpoints use the pharmacy module at /api/pharmacy/dispensing/
 
 export const usePendingDispensing = (patientId = null) => {
   return useQuery({
     queryKey: ['pending-dispensing', patientId],
     queryFn: async () => {
       const params = patientId ? `?patient=${patientId}` : '';
-      const response = await apiClient.get(`/nursing/medications/pending_dispensing/${params}`);
+      const response = await apiClient.get(`/pharmacy/dispensing/pending/${params}`);
       return response;
     },
     refetchInterval: 30000,
@@ -443,7 +444,7 @@ export const useReadyForAdmin = (patientId = null) => {
     queryKey: ['ready-for-admin', patientId],
     queryFn: async () => {
       const params = patientId ? `?patient=${patientId}` : '';
-      const response = await apiClient.get(`/nursing/medications/ready_for_admin/${params}`);
+      const response = await apiClient.get(`/pharmacy/dispensing/ready-for-admin/${params}`);
       return response;
     },
     refetchInterval: 30000,
@@ -456,7 +457,7 @@ export const useDispenseMedication = () => {
 
   return useMutation({
     mutationFn: async (medicationId) => {
-      const response = await apiClient.post(`/nursing/medications/${medicationId}/dispense/`, {});
+      const response = await apiClient.post(`/pharmacy/dispensing/${medicationId}/dispense/`, {});
       return response;
     },
     onSuccess: () => {
@@ -473,7 +474,7 @@ export const useBulkDispense = () => {
 
   return useMutation({
     mutationFn: async (medicationIds) => {
-      const response = await apiClient.post('/nursing/medications/dispense_bulk/', {
+      const response = await apiClient.post('/pharmacy/dispensing/bulk-dispense/', {
         medication_ids: medicationIds,
       });
       return response;

@@ -60,6 +60,16 @@ class Staff(models.Model):
     position = models.CharField(max_length=100)
     hire_date = models.DateField()
 
+    # Facility association (for multi-facility support)
+    primary_facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.SET_NULL,
+        null=True,  # Nullable for backward compatibility during migration
+        blank=True,
+        related_name='staff_members',
+        help_text="Primary facility where this staff member works"
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -24,7 +24,8 @@ from datetime import datetime, time
 
 from apps.clinical_notes.models import NoteEntry, Prescription
 from apps.nursing.models import VitalSigns
-from apps.wards.models import Encounter, Admission
+from apps.encounters.models import Encounter
+from apps.wards.models import Admission
 
 
 class Command(BaseCommand):

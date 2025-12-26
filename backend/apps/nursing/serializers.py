@@ -149,47 +149,6 @@ class MedicationAdministrationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'is_dispensed', 'dispensed_at', 'dispensed_by']
 
 
-class MedicationDispensingListSerializer(serializers.ModelSerializer):
-    """
-    Lightweight serializer for pharmacy dispensing queue.
-    Only includes essential fields to reduce network payload.
-    """
-    patient_name = serializers.SerializerMethodField()
-    patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
-    patient_ward = serializers.CharField(source='patient.current_ward', read_only=True)
-    prescriber_name = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    is_overdue = serializers.SerializerMethodField()
-
-    class Meta:
-        model = MedicationAdministration
-        fields = [
-            'id', 'patient', 'patient_name', 'patient_mrn', 'patient_ward',
-            'medication_name', 'dosage', 'route', 'frequency',
-            'scheduled_time', 'status', 'status_display',
-            'prescriber_name', 'prescription', 'is_dispensed', 'is_overdue'
-        ]
-
-    def get_patient_name(self, obj):
-        """Get patient full name."""
-        if obj.patient and obj.patient.user:
-            return obj.patient.user.get_full_name()
-        return 'Unknown Patient'
-
-    def get_prescriber_name(self, obj):
-        """Get prescriber full name."""
-        if obj.prescribed_by and obj.prescribed_by.staff and obj.prescribed_by.staff.user:
-            return f"Dr. {obj.prescribed_by.staff.user.get_full_name()}"
-        return None
-
-    def get_is_overdue(self, obj):
-        """Check if medication is past its scheduled time."""
-        from django.utils import timezone
-        if obj.scheduled_time:
-            return obj.scheduled_time < timezone.now()
-        return False
-
-
 class MedicationAdministrationCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating medication administrations.

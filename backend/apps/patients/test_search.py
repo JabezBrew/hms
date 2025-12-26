@@ -80,18 +80,18 @@ class PatientSearchTests(APITestCase):
         response = self.client.get(url, {'query': 'John'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 1)
-        self.assertEqual(response.data['patients'][0]['local_data']['id'], str(self.patient1.id))
+        self.assertEqual(response.data['results'][0]['id'], str(self.patient1.id))
         # Verify current_ward is returned
-        self.assertEqual(response.data['patients'][0]['local_data']['current_ward'], "General Ward")
+        self.assertEqual(response.data['results'][0]['current_ward'], "General Ward")
 
     def test_search_by_mrn(self):
         url = reverse('patient-search')
         response = self.client.get(url, {'query': 'MRN002'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 1)
-        self.assertEqual(response.data['patients'][0]['local_data']['id'], str(self.patient2.id))
+        self.assertEqual(response.data['results'][0]['id'], str(self.patient2.id))
         # Verify current_ward for non-admitted patient
-        self.assertEqual(response.data['patients'][0]['local_data']['current_ward'], "Not Admitted")
+        self.assertIsNone(response.data['results'][0]['current_ward'])
 
     def test_search_by_ward(self):
         url = reverse('patient-search')
@@ -99,7 +99,7 @@ class PatientSearchTests(APITestCase):
         response = self.client.get(url, {'ward': str(self.ward.id)})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 1)
-        self.assertEqual(response.data['patients'][0]['local_data']['id'], str(self.patient1.id))
+        self.assertEqual(response.data['results'][0]['id'], str(self.patient1.id))
 
         # Search for patients in a non-existent ward (or just different ID)
         response = self.client.get(url, {'ward': '00000000-0000-0000-0000-000000000000'}) # Assuming UUID
@@ -111,7 +111,7 @@ class PatientSearchTests(APITestCase):
         response = self.client.get(url, {'admission_date': self.admission_date.strftime('%Y-%m-%d')})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 1)
-        self.assertEqual(response.data['patients'][0]['local_data']['id'], str(self.patient1.id))
+        self.assertEqual(response.data['results'][0]['id'], str(self.patient1.id))
 
         # Search for patients admitted yesterday
         yesterday = self.admission_date - timedelta(days=1)

@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
 from rest_framework.pagination import PageNumberPagination
 from django.db import transaction, models
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
@@ -25,11 +25,12 @@ from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     generate_fhir_id, create_reference, create_codeable_concept, create_coding
 )
-from ..wards.services import ensure_encounter_for_entry
+from ..encounters.services import ensure_encounter_for_entry
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
+from ..core.security import check_clinical_access
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +217,11 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         queryset = NoteEntry.objects.select_related(
             'template', 'patient', 'patient__user', 'encounter', 'practitioner'
-        ).all()
+        ).annotate(
+            is_signed=Exists(
+                NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
+            )
+        )
 
         # Filter by encounter ID
         encounter_id = self.request.query_params.get('encounter_id') or self.request.query_params.get('encounter')
@@ -237,6 +242,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         practitioner_id = self.request.query_params.get('practitioner_id')
         if practitioner_id:
             queryset = queryset.filter(practitioner_id=practitioner_id)
+
+        if self.action == 'list':
+            queryset = queryset.defer('data')
 
         return queryset
 
@@ -534,8 +542,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             return Response(response_data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            logger.error(f"Failed to create note entry: {str(e)}")
             return Response(
-                {"error": f"Failed to create note entry: {str(e)}"},
+                {"error": "Failed to create note entry. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -544,9 +553,28 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         Update a note entry with version tracking.
         Creates a version snapshot before applying changes.
+
+        Authorization: Only the practitioner who created the note (or an admin) can edit it.
         """
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
+
+        # SECURITY: Check if user is authorized to edit this note
+        # Only the original author (practitioner) or an admin can edit
+        is_admin = request.user.user_type == 'admin'
+        is_author = False
+
+        try:
+            user_practitioner = request.user.staff_profile.practitioner_profile
+            is_author = instance.practitioner_id == user_practitioner.id
+        except (AttributeError, PractitionerProfile.DoesNotExist):
+            pass  # User doesn't have a practitioner profile
+
+        if not is_admin and not is_author:
+            return Response(
+                {"error": "You can only edit notes that you created."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Get edit reason from request
         edit_reason = request.data.get('edit_reason', '')
@@ -1157,7 +1185,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         # Get the encounter from local database to extract patient reference
         try:
-            from ..wards.models import Encounter
+            from ..encounters.models import Encounter
             encounter = Encounter.objects.select_related('patient', 'patient__user').get(id=encounter_id)
             patient_fhir_id = getattr(encounter.patient, 'fhir_patient_id', None) or str(encounter.patient.id)
             patient_reference = {
@@ -1785,6 +1813,9 @@ def patient_timeline(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Parse query parameters
     entry_type = request.query_params.get('type', 'all')
     search_query = request.query_params.get('search', '').strip()
@@ -2408,6 +2439,9 @@ def patient_clinical_summary(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Get active prescriptions
     # Show all prescriptions with status='active' regardless of end_date
     # If a medication course is completed, its status should be changed to 'completed'
@@ -2584,6 +2618,9 @@ def timeline_stats(request, patient_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
+
     # Count entries by type
     notes_count = NoteEntry.objects.count()  # TODO: Filter by patient when we have proper linking
     prescriptions_count = Prescription.objects.filter(patient=patient).count()
@@ -2630,7 +2667,7 @@ def chronicle_context(request, patient_id):
     This endpoint consolidates multiple API calls into one for efficiency.
     """
     from datetime import date
-    from apps.wards.models import Encounter
+    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:
@@ -2640,6 +2677,9 @@ def chronicle_context(request, patient_id):
             {'error': 'Patient not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
 
     user = patient.user
 
@@ -2879,7 +2919,7 @@ def patient_timeline_v2(request, patient_id):
     Returns paginated timeline entries with full source model details.
     """
     from .models import TimelineEvent
-    from apps.wards.models import Encounter
+    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:
@@ -2889,6 +2929,9 @@ def patient_timeline_v2(request, patient_id):
             {'error': 'Patient not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # SECURITY: Check clinical data access
+    check_clinical_access(request.user, patient)
 
     # Parse query parameters
     entry_type = request.query_params.get('type', 'all')

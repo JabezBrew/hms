@@ -22,7 +22,9 @@ from .factories import (
     LabTestCatalogFactory, LabPanelFactory, LabOrderFactory,
     LabOrderTestFactory, LabSpecimenFactory, LabResultFactory
 )
-from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.users.tests.factories import (
+    PatientProfileFactory, PractitionerProfileFactory, StaffFactory
+)
 
 
 @pytest.mark.tier1
@@ -229,7 +231,7 @@ class TestLabSpecimenModel:
     def test_create_specimen(self, db):
         """Test basic specimen creation."""
         order = LabOrderFactory()
-        collector = PractitionerProfileFactory()
+        collector = StaffFactory()
         specimen = LabSpecimenFactory(
             order=order,
             specimen_type='Whole Blood',
@@ -277,7 +279,7 @@ class TestLabSpecimenModel:
 
     def test_specimen_lab_receipt(self, db):
         """Test specimen receipt in lab."""
-        receiver = PractitionerProfileFactory()
+        receiver = StaffFactory()
         specimen = LabSpecimenFactory(
             status='received',
             received_by=receiver,
@@ -297,7 +299,7 @@ class TestLabResultModel:
         """Test basic result creation."""
         order_test = LabOrderTestFactory()
         specimen = LabSpecimenFactory(order=order_test.order)
-        performer = PractitionerProfileFactory()
+        performer = StaffFactory()
 
         result = LabResultFactory(
             order_test=order_test,
@@ -330,7 +332,7 @@ class TestLabResultModel:
 
     def test_result_verification(self, db):
         """Test result verification."""
-        verifier = PractitionerProfileFactory()
+        verifier = StaffFactory()
         result = LabResultFactory(
             verified_by=verifier,
             verified_at=timezone.now(),

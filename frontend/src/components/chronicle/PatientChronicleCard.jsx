@@ -96,10 +96,12 @@ const PatientChronicleCard = ({
   };
 
   const getPatientWard = (patient) => {
-    return patient?.current_ward ||
+    const ward = patient?.current_ward ||
       patient?.patient_profile_details?.current_ward ||
       patient?.local_data?.current_ward ||
       null;
+
+    return ward;
   };
 
   const getPatientBed = (patient) => {
@@ -306,8 +308,12 @@ const PatientChronicleCard = ({
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
             {admissionDays ? (
               `Day ${admissionDays}`
+            ) : ward === "Waiting List" ? (
+              "Waiting List"
+            ) : ward ? (
+              "Inpatient"
             ) : (
-              <span className="text-muted-foreground">Outpatient</span>
+              <span className="text-muted-foreground">Not Admitted</span>
             )}
           </dd>
         </div>

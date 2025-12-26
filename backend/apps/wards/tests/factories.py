@@ -9,7 +9,9 @@ Provides factories for:
 - Admission
 - BedAllocationLog
 - WardTransfer
-- Encounter
+
+Note: EncounterFactory has been moved to apps.encounters.tests.factories
+and is re-exported here for backward compatibility.
 """
 import factory
 from factory.django import DjangoModelFactory
@@ -18,8 +20,9 @@ from decimal import Decimal
 from datetime import timedelta
 
 from apps.wards.models import (
-    Ward, Bed, Admission, BedAllocationLog, Encounter,
-    WardTransfer, BedAmenity, WardSection
+    Ward, Bed, Admission, BedAllocationLog,
+    WardTransfer, BedAmenity, WardSection,
+    StaffRole, WardStaffAssignment
 )
 from apps.users.tests.factories import UserFactory, PatientProfileFactory, PractitionerProfileFactory
 
@@ -36,6 +39,7 @@ class WardFactory(DjangoModelFactory):
     is_active = True
     total_beds = 10
     base_rate_per_night = Decimal('100.00')
+    department = None  # Nullable for backward compatibility (hierarchy: Facility → Department → Ward)
     created_by = factory.SubFactory(UserFactory, user_type='admin')
     updated_by = factory.LazyAttribute(lambda obj: obj.created_by)
 
@@ -125,6 +129,32 @@ class AdmissionFactory(DjangoModelFactory):
             self.bed.save()
 
 
+class StaffRoleFactory(DjangoModelFactory):
+    """Factory for creating StaffRole instances."""
+
+    class Meta:
+        model = StaffRole
+
+    name = factory.Sequence(lambda n: f'Staff Role {n}')
+    code = factory.Sequence(lambda n: f'staff_role_{n}')
+    category = 'medical'
+    is_active = True
+
+
+class WardStaffAssignmentFactory(DjangoModelFactory):
+    """Factory for creating WardStaffAssignment instances."""
+
+    class Meta:
+        model = WardStaffAssignment
+
+    ward = factory.SubFactory(WardFactory)
+    practitioner = factory.SubFactory(PractitionerProfileFactory)
+    role = factory.SubFactory(StaffRoleFactory)
+    is_active = True
+    is_primary = False
+    assigned_by = factory.SubFactory(UserFactory, user_type='admin')
+
+
 class BedAllocationLogFactory(DjangoModelFactory):
     """Factory for creating BedAllocationLog instances."""
 
@@ -138,23 +168,8 @@ class BedAllocationLogFactory(DjangoModelFactory):
     created_by = factory.SubFactory(UserFactory, user_type='nurse')
 
 
-class EncounterFactory(DjangoModelFactory):
-    """Factory for creating Encounter instances."""
-
-    class Meta:
-        model = Encounter
-
-    patient = factory.SubFactory(PatientProfileFactory)
-    practitioner = factory.SubFactory(PractitionerProfileFactory)
-    encounter_type = 'outpatient'
-    status = 'in-progress'
-    start_time = factory.LazyFunction(timezone.now)
-    reason = factory.Faker('sentence')
-    service_type = 'General Practice'
-    location = factory.Faker('word')
-    fhir_synced = False
-    created_by = factory.SubFactory(UserFactory, user_type='admin')
-    updated_by = factory.LazyAttribute(lambda obj: obj.created_by)
+# Re-export EncounterFactory from encounters app for backward compatibility
+from apps.encounters.tests.factories import EncounterFactory
 
 
 class WardTransferFactory(DjangoModelFactory):

@@ -64,6 +64,75 @@ class PatientSearchSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'search_date']
 
 
+class PatientRecentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for patient data shown in recent cards.
+    """
+    name = serializers.SerializerMethodField()
+    date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    current_ward = serializers.SerializerMethodField()
+    admission_status = serializers.SerializerMethodField()
+    admission_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id', 'medical_record_number', 'name', 'date_of_birth', 'gender',
+            'current_ward', 'admission_status', 'admission_date'
+        ]
+
+    def _get_active_admission(self, obj):
+        if hasattr(obj, 'active_admissions_list'):
+            active_list = obj.active_admissions_list
+            return active_list[0] if active_list else None
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            return next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+
+    def get_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name()
+        return None
+
+    def get_current_ward(self, obj):
+        admission = self._get_active_admission(obj)
+        if not admission:
+            return None
+        if admission.status == 'waiting':
+            return "Waiting List"
+        if admission.bed:
+            return admission.bed.ward.name
+        return "Admitted (No Bed)"
+
+    def get_admission_status(self, obj):
+        admission = self._get_active_admission(obj)
+        if admission:
+            return admission.status
+        return None
+
+    def get_admission_date(self, obj):
+        admission = self._get_active_admission(obj)
+        if admission and admission.admission_date:
+            return admission.admission_date.isoformat()
+        return None
+
+
+class RecentPatientListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for recent patient list responses.
+    """
+    patient_profile_details = PatientRecentListSerializer(source='patient_profile', read_only=True)
+
+    class Meta:
+        model = RecentPatient
+        fields = ['id', 'patient_profile', 'patient_profile_details', 'access_date']
+        read_only_fields = ['id', 'access_date']
+
+
 class RecentPatientSerializer(serializers.ModelSerializer):
     """
     Serializer for the RecentPatient model.

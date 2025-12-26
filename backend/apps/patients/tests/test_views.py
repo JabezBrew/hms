@@ -14,15 +14,21 @@ from unittest.mock import patch, MagicMock
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
+from django.conf import settings
+from datetime import timedelta
 
 from apps.patients.models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
     PatientRegistrationValidation, PatientNote
 )
 from apps.users.models import PatientProfile
+from apps.core.models import BreakGlassEvent
+from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
-    NurseUserFactory, PatientUserFactory, PatientProfileFactory
+    NurseUserFactory, PatientUserFactory, PatientProfileFactory,
+    UserPatientListFactory
 )
 from .factories import (
     PatientFHIRMappingFactory, PatientSearchFactory,
@@ -387,7 +393,7 @@ class TestPatientViewSet:
         response = client.get('/api/patients/search/', {'query': 'John'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert 'patients' in response.data
+        assert 'results' in response.data
         assert 'total' in response.data
 
     def test_search_creates_search_record(self, db):
@@ -505,6 +511,50 @@ class TestPatientEndpointsAuthentication:
         response = client.get('/api/patients/search/')
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# =============================================================================
+# Break-Glass Access Tests
+# =============================================================================
+
+@pytest.mark.tier1
+class TestBreakGlassAccess:
+    def test_break_glass_creates_event_and_audit(self, db):
+        doctor = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        client = get_authenticated_client(doctor)
+        now = timezone.now()
+        response = client.post(
+            f'/api/patients/{patient.id}/break-glass/',
+            {'reason': 'Emergency coverage'},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        event = BreakGlassEvent.objects.get(user=doctor, patient=patient)
+        assert event.scope == 'clinical'
+        assert event.expires_at > now
+        assert event.expires_at <= now + timedelta(minutes=settings.BREAK_GLASS_TTL_MINUTES + 1)
+
+        assert AuditLog.objects.filter(
+            action=AuditAction.BREAK_GLASS,
+            category=AuditCategory.CLINICAL,
+            resource_id=str(patient.id),
+        ).exists()
+
+    def test_break_glass_denies_non_clinical(self, db):
+        receptionist = UserFactory(user_type='receptionist')
+        patient = PatientProfileFactory()
+
+        client = get_authenticated_client(receptionist)
+        response = client.post(
+            f'/api/patients/{patient.id}/break-glass/',
+            {'reason': 'Need access'},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 # =============================================================================

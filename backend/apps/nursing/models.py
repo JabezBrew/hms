@@ -21,7 +21,7 @@ class VitalSigns(models.Model):
     # Link to encounter - required, groups vitals by clinical visit
     # The auto-encounter logic in views ensures this is always set
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.PROTECT,  # Prevent deletion of encounters with linked vitals
         null=False,
         blank=False,
@@ -530,7 +530,7 @@ class TreatmentSheetEntry(models.Model):
         related_name='treatment_entries'
     )
     encounter = models.ForeignKey(
-        'wards.Encounter',
+        'encounters.Encounter',
         on_delete=models.PROTECT,
         help_text="The clinical encounter during which this was ordered"
     )

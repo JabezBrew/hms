@@ -1,20 +1,19 @@
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import {
-  Search, Package, CheckCircle, Clock, AlertCircle,
-  RefreshCw, User, Pill, CheckSquare, AlertTriangle
+  Search, Package, CheckCircle, AlertCircle,
+  RefreshCw, User, Pill, AlertTriangle, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
   usePendingDispensing,
   useDispenseMedication,
@@ -26,6 +25,9 @@ export function PharmacyQueue() {
   const [selectedMeds, setSelectedMeds] = useState([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMedication, setConfirmMedication] = useState(null);
+  const [viewMode, setViewMode] = useState('by-patient');
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextPatient, setContextPatient] = useState(null);
 
   // Fetch pending dispensing
   const {
@@ -52,25 +54,20 @@ export function PharmacyQueue() {
   const formatDateTime = (timestamp) => {
     if (!timestamp) return '-';
     try {
-      return format(new Date(timestamp), 'MMM d, yyyy h:mm a');
+      return format(new Date(timestamp), 'MMM d, h:mm a');
     } catch {
       return timestamp;
     }
   };
 
-  // Helper to get patient name - supports both lightweight and full serializer
+  // Helper to get patient name
   const getPatientName = (med) => {
-    // Lightweight serializer: direct patient_name field
     if (med.patient_name) return med.patient_name;
-    // Full serializer: nested patient_details
     if (med.patient_details?.user_details) {
       const { first_name, last_name } = med.patient_details.user_details;
       if (first_name || last_name) {
         return `${first_name || ''} ${last_name || ''}`.trim();
       }
-    }
-    if (med.patient_details?.user?.full_name) {
-      return med.patient_details.user.full_name;
     }
     return 'Unknown Patient';
   };
@@ -85,19 +82,14 @@ export function PharmacyQueue() {
     return med.patient_ward || med.patient_details?.current_ward || 'Unknown';
   };
 
-  // Helper to get prescriber name - supports both lightweight and full serializer
+  // Helper to get prescriber name
   const getPrescriberName = (med) => {
-    // Lightweight serializer: direct prescriber_name field
     if (med.prescriber_name) return med.prescriber_name;
-    // Full serializer: nested prescribed_by_details
     if (med.prescribed_by_details?.staff_details?.user_details) {
       const { first_name, last_name } = med.prescribed_by_details.staff_details.user_details;
       if (first_name || last_name) {
         return `Dr. ${first_name || ''} ${last_name || ''}`.trim();
       }
-    }
-    if (med.prescribed_by_details?.user?.full_name) {
-      return `Dr. ${med.prescribed_by_details.user.full_name}`;
     }
     return '-';
   };
@@ -112,12 +104,12 @@ export function PharmacyQueue() {
     );
   });
 
-  // Group by patient - store first medication to get patient info from
+  // Group by patient
   const groupedByPatient = filteredMeds.reduce((acc, med) => {
     const patientId = med.patient;
     if (!acc[patientId]) {
       acc[patientId] = {
-        firstMed: med, // Store first med to extract patient info
+        firstMed: med,
         medications: []
       };
     }
@@ -180,363 +172,175 @@ export function PharmacyQueue() {
     setShowConfirmDialog(true);
   };
 
+  const openPatientContext = (medication) => {
+    setContextPatient({
+      name: getPatientName(medication),
+      mrn: getPatientMRN(medication),
+      ward: getPatientWard(medication),
+      allergies: medication.patient_allergies || [],
+      problems: medication.patient_problems || [],
+      medications: medication.patient_medications || [],
+    });
+    setContextOpen(true);
+  };
+
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-12 rounded-xl" />
+        <Skeleton className="h-96 rounded-xl" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-red-500 flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            Error Loading Queue
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground mb-4">
-            {error.message || 'Failed to load dispensing queue'}
-          </p>
-          <Button variant="outline" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="bg-card/50 backdrop-blur border border-destructive/30 rounded-xl p-8 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+        <h3 className="font-display text-xl text-foreground mb-2">Error Loading Queue</h3>
+        <p className="text-muted-foreground mb-4">
+          {error.message || 'Failed to load dispensing queue'}
+        </p>
+        <Button variant="outline" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try Again
+        </Button>
+      </div>
     );
   }
 
   const totalPending = filteredMeds.length;
   const totalPatients = Object.keys(groupedByPatient).length;
-  const totalOverdue = filteredMeds.filter(med => med.is_overdue).length;
+  const totalSelected = selectedMeds.length;
 
   return (
     <div className="space-y-6">
-      {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                <Package className="h-6 w-6 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{totalPending}</p>
-                <p className="text-sm text-muted-foreground">Pending Dispensing</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {totalOverdue > 0 && (
-          <Card className="border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="h-6 w-6 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-600">{totalOverdue}</p>
-                  <p className="text-sm text-red-600/80">Overdue</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <User className="h-6 w-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{totalPatients}</p>
-                <p className="text-sm text-muted-foreground">Patients Waiting</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-                <CheckSquare className="h-6 w-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{selectedMeds.length}</p>
-                <p className="text-sm text-muted-foreground">Selected</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          icon={Package}
+          value={totalPending}
+          label="Pending Dispensing"
+          color="amber"
+        />
+        <StatCard
+          icon={User}
+          value={totalPatients}
+          label="Patients Waiting"
+          color="sky"
+        />
+        <StatCard
+          icon={CheckCircle}
+          value={totalSelected}
+          label="Selected"
+          color="emerald"
+        />
       </div>
 
       {/* Search and Actions */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by patient name or medication..."
-            className="pl-10"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 font-mono text-sm bg-background"
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={() => refetch()}>
+          {/* View Toggle */}
+          <div className="flex bg-muted rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('by-patient')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
+                viewMode === 'by-patient'
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <User className="h-3.5 w-3.5" />
+              By Patient
+            </button>
+            <button
+              onClick={() => setViewMode('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
+                viewMode === 'all'
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Pill className="h-3.5 w-3.5" />
+              All Medications
+            </button>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => refetch()} className="shrink-0">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          {selectedMeds.length > 0 && (
-            <Button
-              onClick={handleBulkDispense}
-              disabled={bulkDispenseMutation.isPending}
-            >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Dispense Selected ({selectedMeds.length})
-            </Button>
-          )}
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      {selectedMeds.length > 0 && (
+        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+          <span className="font-mono text-sm text-primary">
+            {selectedMeds.length} medication{selectedMeds.length !== 1 ? 's' : ''} selected
+          </span>
+          <Button
+            onClick={handleBulkDispense}
+            disabled={bulkDispenseMutation.isPending}
+            size="sm"
+          >
+            <Package className="h-4 w-4 mr-2" />
+            Dispense Selected
+          </Button>
+        </div>
+      )}
+
       {/* Main Content */}
-      <Tabs defaultValue="by-patient">
-        <TabsList>
-          <TabsTrigger value="by-patient" className="flex items-center gap-1">
-            <User className="h-4 w-4" />
-            By Patient
-          </TabsTrigger>
-          <TabsTrigger value="all" className="flex items-center gap-1">
-            <Pill className="h-4 w-4" />
-            All Medications
-          </TabsTrigger>
-        </TabsList>
-
-        {/* By Patient View */}
-        <TabsContent value="by-patient" className="mt-4">
-          {totalPatients === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <div className="text-center">
-                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
-                  <h3 className="text-lg font-medium">Queue Empty</h3>
-                  <p className="text-muted-foreground">
-                    No medications pending dispensing at this time.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <ScrollArea className="h-[600px]">
-              <div className="space-y-4">
-                {Object.entries(groupedByPatient).map(([patientId, data]) => {
-                  const patientMedIds = data.medications.map(m => m.id);
-                  const allSelected = patientMedIds.every(id => selectedMeds.includes(id));
-                  const someSelected = patientMedIds.some(id => selectedMeds.includes(id));
-
-                  return (
-                    <Card key={patientId}>
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Checkbox
-                              checked={allSelected}
-                              onCheckedChange={() => selectAllForPatient(patientId)}
-                              className={someSelected && !allSelected ? 'opacity-50' : ''}
-                            />
-                            <div>
-                              <CardTitle className="text-base">
-                                {getPatientName(data.firstMed)}
-                              </CardTitle>
-                              <CardDescription>
-                                MRN: {getPatientMRN(data.firstMed)} |
-                                {data.medications.length} medication{data.medications.length !== 1 ? 's' : ''} pending
-                              </CardDescription>
-                            </div>
-                          </div>
-                          <Badge variant="outline">
-                            Ward: {getPatientWard(data.firstMed)}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-10"></TableHead>
-                              <TableHead>Medication</TableHead>
-                              <TableHead>Dose</TableHead>
-                              <TableHead>Route</TableHead>
-                              <TableHead>Scheduled</TableHead>
-                              <TableHead>Prescriber</TableHead>
-                              <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {data.medications.map(med => (
-                              <TableRow key={med.id} className={med.is_overdue ? 'bg-red-50 dark:bg-red-900/10' : ''}>
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedMeds.includes(med.id)}
-                                    onCheckedChange={() => toggleMedSelection(med.id)}
-                                  />
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  <div className="flex items-center gap-2">
-                                    {med.medication_name}
-                                    {med.is_overdue && (
-                                      <Badge variant="destructive" className="text-xs">
-                                        <AlertTriangle className="h-3 w-3 mr-1" />
-                                        Overdue
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell>{med.dosage}</TableCell>
-                                <TableCell>{med.route}</TableCell>
-                                <TableCell className="font-mono text-sm">
-                                  <div className={med.is_overdue ? 'text-red-600 dark:text-red-400' : ''}>
-                                    {formatTime(med.scheduled_time)}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {getPrescriberName(med)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    size="sm"
-                                    variant={med.is_overdue ? 'destructive' : 'outline'}
-                                    onClick={() => openConfirmDialog(med)}
-                                    disabled={dispenseMutation.isPending}
-                                  >
-                                    <Package className="h-4 w-4 mr-1" />
-                                    Dispense
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          )}
-        </TabsContent>
-
-        {/* All Medications View */}
-        <TabsContent value="all" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>All Pending Medications</CardTitle>
-              <CardDescription>
-                Complete list of medications awaiting dispensing
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {filteredMeds.length === 0 ? (
-                <div className="text-center py-8">
-                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
-                  <p className="text-lg font-medium">No pending medications</p>
-                </div>
-              ) : (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10">
-                          <Checkbox
-                            checked={selectedMeds.length === filteredMeds.length && filteredMeds.length > 0}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedMeds(filteredMeds.map(m => m.id));
-                              } else {
-                                setSelectedMeds([]);
-                              }
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Medication</TableHead>
-                        <TableHead>Dose</TableHead>
-                        <TableHead>Route</TableHead>
-                        <TableHead>Scheduled</TableHead>
-                        <TableHead>Prescriber</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredMeds.map(med => (
-                        <TableRow key={med.id} className={med.is_overdue ? 'bg-red-50 dark:bg-red-900/10' : ''}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedMeds.includes(med.id)}
-                              onCheckedChange={() => toggleMedSelection(med.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">
-                                {getPatientName(med)}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {getPatientMRN(med)}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              {med.medication_name}
-                              {med.is_overdue && (
-                                <Badge variant="destructive" className="text-xs">
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Overdue
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{med.dosage}</TableCell>
-                          <TableCell>{med.route}</TableCell>
-                          <TableCell className={`font-mono text-sm ${med.is_overdue ? 'text-red-600 dark:text-red-400' : ''}`}>
-                            {formatDateTime(med.scheduled_time)}
-                          </TableCell>
-                          <TableCell>
-                            {getPrescriberName(med)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant={med.is_overdue ? 'destructive' : 'outline'}
-                              onClick={() => openConfirmDialog(med)}
-                              disabled={dispenseMutation.isPending}
-                            >
-                              Dispense
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {viewMode === 'by-patient' ? (
+        <ByPatientView
+          groupedByPatient={groupedByPatient}
+          selectedMeds={selectedMeds}
+          toggleMedSelection={toggleMedSelection}
+          selectAllForPatient={selectAllForPatient}
+          openConfirmDialog={openConfirmDialog}
+          openPatientContext={openPatientContext}
+          dispenseMutation={dispenseMutation}
+          getPatientName={getPatientName}
+          getPatientMRN={getPatientMRN}
+          getPatientWard={getPatientWard}
+          getPrescriberName={getPrescriberName}
+          formatTime={formatTime}
+        />
+      ) : (
+        <AllMedicationsView
+          filteredMeds={filteredMeds}
+          selectedMeds={selectedMeds}
+          setSelectedMeds={setSelectedMeds}
+          toggleMedSelection={toggleMedSelection}
+          openConfirmDialog={openConfirmDialog}
+          openPatientContext={openPatientContext}
+          dispenseMutation={dispenseMutation}
+          getPatientName={getPatientName}
+          getPatientMRN={getPatientMRN}
+          getPrescriberName={getPrescriberName}
+          formatDateTime={formatDateTime}
+        />
+      )}
 
       {/* Confirm Dispense Dialog */}
       <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirm Dispensing</DialogTitle>
+            <DialogTitle className="font-display">Confirm Dispensing</DialogTitle>
             <DialogDescription>
               Please verify the medication details before dispensing.
             </DialogDescription>
@@ -545,52 +349,22 @@ export function PharmacyQueue() {
           {confirmMedication && (
             <div className="space-y-4 py-4">
               {confirmMedication.is_overdue && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400">
-                  <AlertTriangle className="h-5 w-5" />
-                  <span className="font-medium">This medication is overdue for dispensing</span>
+                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive">
+                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  <span className="font-medium text-sm">This medication is overdue</span>
                 </div>
               )}
-              <div className="bg-muted p-4 rounded-lg space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Patient:</span>
-                  <span className="font-medium">
-                    {getPatientName(confirmMedication)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">MRN:</span>
-                  <span className="font-mono">
-                    {getPatientMRN(confirmMedication)}
-                  </span>
-                </div>
+              <div className="bg-muted/50 rounded-xl p-4 space-y-3">
+                <DetailRow label="Patient" value={getPatientName(confirmMedication)} highlight />
+                <DetailRow label="MRN" value={getPatientMRN(confirmMedication)} mono />
                 <hr className="border-border" />
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Medication:</span>
-                  <span className="font-medium">{confirmMedication.medication_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dosage:</span>
-                  <span>{confirmMedication.dosage}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Route:</span>
-                  <span>{confirmMedication.route}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Frequency:</span>
-                  <span>{confirmMedication.frequency}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Scheduled:</span>
-                  <span>{formatDateTime(confirmMedication.scheduled_time)}</span>
-                </div>
+                <DetailRow label="Medication" value={confirmMedication.medication_name} highlight />
+                <DetailRow label="Dosage" value={confirmMedication.dosage} />
+                <DetailRow label="Route" value={confirmMedication.route} />
+                <DetailRow label="Frequency" value={confirmMedication.frequency} />
+                <DetailRow label="Scheduled" value={formatDateTime(confirmMedication.scheduled_time)} mono />
                 <hr className="border-border" />
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Prescribed by:</span>
-                  <span>
-                    {getPrescriberName(confirmMedication)}
-                  </span>
-                </div>
+                <DetailRow label="Prescribed by" value={getPrescriberName(confirmMedication)} />
               </div>
             </div>
           )}
@@ -608,6 +382,325 @@ export function PharmacyQueue() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PatientContextPanel
+        open={contextOpen}
+        onClose={() => setContextOpen(false)}
+        mode="pharmacy"
+        patientContext={contextPatient}
+        patientName={contextPatient?.name}
+        patientMrn={contextPatient?.mrn}
+      />
     </div>
   );
 }
+
+/**
+ * StatCard - Chronicle-styled stat card
+ */
+const StatCard = ({ icon: Icon, value, label, color = 'amber' }) => {
+  const colorStyles = {
+    amber: 'bg-primary/10 text-primary',
+    sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  };
+
+  return (
+    <div className="bg-card/50 backdrop-blur border border-border rounded-xl p-4">
+      <div className="flex items-center gap-4">
+        <div className={cn("p-3 rounded-lg", colorStyles[color])}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="font-display text-2xl text-foreground">{value}</p>
+          <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * DetailRow - Row for confirm dialog details
+ */
+const DetailRow = ({ label, value, mono, highlight }) => (
+  <div className="flex justify-between items-center">
+    <span className="text-muted-foreground text-sm">{label}</span>
+    <span className={cn(
+      "text-sm",
+      mono && "font-mono",
+      highlight && "font-medium text-foreground"
+    )}>
+      {value}
+    </span>
+  </div>
+);
+
+/**
+ * ByPatientView - Medications grouped by patient
+ */
+const ByPatientView = ({
+  groupedByPatient,
+  selectedMeds,
+  toggleMedSelection,
+  selectAllForPatient,
+  openConfirmDialog,
+  openPatientContext,
+  dispenseMutation,
+  getPatientName,
+  getPatientMRN,
+  getPatientWard,
+  getPrescriberName,
+  formatTime,
+}) => {
+  const totalPatients = Object.keys(groupedByPatient).length;
+
+  if (totalPatients === 0) {
+    return <EmptyState />;
+  }
+
+  return (
+    <ScrollArea className="h-[600px]">
+      <div className="space-y-4">
+        {Object.entries(groupedByPatient).map(([patientId, data]) => {
+          const patientMedIds = data.medications.map(m => m.id);
+          const allSelected = patientMedIds.every(id => selectedMeds.includes(id));
+          const someSelected = patientMedIds.some(id => selectedMeds.includes(id));
+          const hasOverdue = data.medications.some(m => m.is_overdue);
+
+          return (
+            <article
+              key={patientId}
+              className={cn(
+                "bg-card/50 backdrop-blur border rounded-xl overflow-hidden",
+                hasOverdue ? "border-destructive/30" : "border-border"
+              )}
+            >
+              {/* Patient Header */}
+              <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={() => selectAllForPatient(patientId)}
+                    className={someSelected && !allSelected ? 'opacity-50' : ''}
+                  />
+                  <div>
+                    <h3 className="font-display text-base text-foreground">
+                      {getPatientName(data.firstMed)}
+                    </h3>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {getPatientMRN(data.firstMed)} · {data.medications.length} medication{data.medications.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {getPatientWard(data.firstMed)}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openPatientContext(data.firstMed)}
+                    className="font-mono text-xs"
+                  >
+                    Patient
+                  </Button>
+                </div>
+              </header>
+
+              {/* Medications List */}
+              <div className="divide-y divide-border">
+                {data.medications.map(med => (
+                  <div
+                    key={med.id}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors",
+                      med.is_overdue && "bg-destructive/5"
+                    )}
+                  >
+                    <Checkbox
+                      checked={selectedMeds.includes(med.id)}
+                      onCheckedChange={() => toggleMedSelection(med.id)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground truncate">
+                          {med.medication_name}
+                        </span>
+                        {med.is_overdue && (
+                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                            <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                            Overdue
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {med.dosage} · {med.route}
+                        </span>
+                        <span className={cn(
+                          "font-mono text-xs flex items-center gap-1",
+                          med.is_overdue ? "text-destructive" : "text-muted-foreground"
+                        )}>
+                          <Clock className="h-3 w-3" />
+                          {formatTime(med.scheduled_time)}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={med.is_overdue ? 'destructive' : 'outline'}
+                      onClick={() => openConfirmDialog(med)}
+                      disabled={dispenseMutation.isPending}
+                      className="font-mono text-xs shrink-0"
+                    >
+                      <Package className="h-3.5 w-3.5 mr-1.5" />
+                      Dispense
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </ScrollArea>
+  );
+};
+
+/**
+ * AllMedicationsView - Flat list of all medications
+ */
+const AllMedicationsView = ({
+  filteredMeds,
+  selectedMeds,
+  setSelectedMeds,
+  toggleMedSelection,
+  openConfirmDialog,
+  openPatientContext,
+  dispenseMutation,
+  getPatientName,
+  getPatientMRN,
+  getPrescriberName,
+  formatDateTime,
+}) => {
+  if (filteredMeds.length === 0) {
+    return <EmptyState />;
+  }
+
+  const allSelected = selectedMeds.length === filteredMeds.length && filteredMeds.length > 0;
+
+  return (
+    <div className="bg-card/50 backdrop-blur border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/30">
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={(checked) => {
+            if (checked) {
+              setSelectedMeds(filteredMeds.map(m => m.id));
+            } else {
+              setSelectedMeds([]);
+            }
+          }}
+        />
+        <h3 className="font-heading text-sm font-medium text-foreground">
+          All Pending Medications ({filteredMeds.length})
+        </h3>
+      </header>
+
+      {/* Medications List */}
+      <ScrollArea className="h-[550px]">
+        <div className="divide-y divide-border">
+          {filteredMeds.map(med => (
+            <div
+              key={med.id}
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors",
+                med.is_overdue && "bg-destructive/5"
+              )}
+            >
+              <Checkbox
+                checked={selectedMeds.includes(med.id)}
+                onCheckedChange={() => toggleMedSelection(med.id)}
+              />
+              <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
+                <div>
+                  <p className="font-display text-sm text-foreground truncate">
+                    {getPatientName(med)}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {getPatientMRN(med)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-foreground truncate">
+                      {med.medication_name}
+                    </span>
+                    {med.is_overdue && (
+                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                        Overdue
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {med.dosage} · {med.route}
+                  </p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className={cn(
+                    "font-mono text-xs",
+                    med.is_overdue ? "text-destructive" : "text-muted-foreground"
+                  )}>
+                    {formatDateTime(med.scheduled_time)}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {getPrescriberName(med)}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant={med.is_overdue ? 'destructive' : 'outline'}
+                onClick={() => openConfirmDialog(med)}
+                disabled={dispenseMutation.isPending}
+                className="font-mono text-xs shrink-0"
+              >
+                Dispense
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openPatientContext(med)}
+                className="font-mono text-xs"
+              >
+                Patient
+              </Button>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+};
+
+/**
+ * EmptyState - Chronicle-styled empty state
+ */
+const EmptyState = () => (
+  <div className="bg-card/50 backdrop-blur border border-border rounded-xl p-12">
+    <div className="flex flex-col items-center justify-center text-center">
+      <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
+        <CheckCircle className="h-8 w-8 text-emerald-500" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        Queue Empty
+      </h3>
+      <p className="text-muted-foreground text-sm max-w-md">
+        No medications pending dispensing at this time.
+      </p>
+    </div>
+  </div>
+);

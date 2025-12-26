@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/lib/auth';
+import PatientContextPanel, { getAppointmentPatientId } from '@/components/patients/PatientContextPanel';
 import {
   Select,
   SelectContent,
@@ -37,12 +39,17 @@ import { toast } from 'sonner';
 import { useAppointments } from '@/hooks/useAppointmentQueries';
 
 const AppointmentList = () => {
+  const { user } = useAuth();
+  const userRole = user?.role || user?.user_type;
+  const canOpenContext = ['receptionist', 'admin'].includes(userRole);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
   const [showFilters, setShowFilters] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextAppointment, setContextAppointment] = useState(null);
 
   const navigate = useNavigate();
 
@@ -151,6 +158,16 @@ const AppointmentList = () => {
   // Navigate to appointment detail
   const viewAppointmentDetail = (appointmentId) => {
     navigate(`/appointments/${appointmentId}`);
+  };
+
+  const handlePatientContext = (appointment) => {
+    setContextAppointment(appointment);
+    setContextOpen(true);
+  };
+
+  const handleCloseContext = () => {
+    setContextOpen(false);
+    setContextAppointment(null);
   };
 
   // Navigate to create appointment
@@ -341,6 +358,7 @@ const AppointmentList = () => {
               getPatientName={getPatientName}
               getPractitionerName={getPractitionerName}
               onClick={() => viewAppointmentDetail(appointment.id)}
+              onPatientContext={canOpenContext ? handlePatientContext : null}
             />
           ))}
         </div>
@@ -376,6 +394,17 @@ const AppointmentList = () => {
           </div>
         </div>
       )}
+
+      {contextOpen && contextAppointment && (
+        <PatientContextPanel
+          open
+          onClose={handleCloseContext}
+          mode="reception"
+          fhirPatientId={getAppointmentPatientId(contextAppointment)}
+          patientContext={contextAppointment.hms_patient_context}
+          patientName={getPatientName(contextAppointment)}
+        />
+      )}
     </div>
   );
 };
@@ -383,7 +412,15 @@ const AppointmentList = () => {
 /**
  * AppointmentCard - Individual appointment card in Chronicle style
  */
-function AppointmentCard({ appointment, index, formatDateTime, getPatientName, getPractitionerName, onClick }) {
+function AppointmentCard({
+  appointment,
+  index,
+  formatDateTime,
+  getPatientName,
+  getPractitionerName,
+  onClick,
+  onPatientContext,
+}) {
   const getStatusConfig = (status) => {
     switch (status) {
       case 'proposed':
@@ -455,14 +492,29 @@ function AppointmentCard({ appointment, index, formatDateTime, getPatientName, g
         </div>
 
         {/* Hover Action */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          View
-          <ChevronRight className="h-3 w-3 ml-1" />
-        </Button>
+        <div className="flex items-center gap-2">
+          {onPatientContext && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPatientContext(appointment);
+              }}
+            >
+              Patient
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            View
+            <ChevronRight className="h-3 w-3 ml-1" />
+          </Button>
+        </div>
       </div>
     </article>
   );

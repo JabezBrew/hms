@@ -95,6 +95,15 @@ const LabCollectionWorklistPage = lazy(() => import('./pages/laboratory/LabColle
 const ChartBuilderPage = lazy(() => import('./pages/charts/ChartBuilderPage'))
 const ChartTemplateListPage = lazy(() => import('./pages/charts/ChartTemplateListPage'))
 
+// Billing Pages
+const BillingDashboardPage = lazy(() => import('./pages/billing/BillingDashboardPage'))
+const InvoicesPage = lazy(() => import('./pages/billing/InvoicesPage'))
+const InvoiceCreatePage = lazy(() => import('./pages/billing/InvoiceCreatePage'))
+const InvoiceDetailPage = lazy(() => import('./pages/billing/InvoiceDetailPage'))
+const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'))
+const ClaimsPage = lazy(() => import('./pages/billing/ClaimsPage'))
+const InsuranceManagementPage = lazy(() => import('./pages/billing/InsuranceManagementPage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -202,8 +211,9 @@ function AppContent() {
           } />
 
           {/* Patient routes - Chronicle Design System */}
+          {/* Note: Support staff (lab_technician, pharmacist, billing) access patients through their workflow pages */}
           <Route path="/patients" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']}>
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
               <Layout>
                 <PatientChronicleListPage />
               </Layout>
@@ -219,7 +229,7 @@ function AppContent() {
           } />
 
           <Route path="/patients/my-patients" element={
-            <RoleBasedRoute allowedRoles={['doctor', 'nurse', 'lab_technician', 'pharmacist']}>
+            <RoleBasedRoute allowedRoles={['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
               <Layout>
                 <MyPatientsPage />
               </Layout>
@@ -227,7 +237,7 @@ function AppContent() {
           } />
 
           <Route path="/patients/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient']}>
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
               <Layout>
                 <PatientChroniclePage />
               </Layout>
@@ -528,6 +538,57 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner']}>
               <Layout>
                 <LabCollectionWorklistPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Billing routes */}
+          <Route path="/billing" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+              <Layout>
+                <BillingDashboardPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/invoices" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+              <Layout>
+                <InvoicesPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/invoices/new" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+              <Layout>
+                <InvoiceCreatePage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/invoices/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+              <Layout>
+                <InvoiceDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/payments" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+              <Layout>
+                <PaymentsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/claims" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing']}>
+              <Layout>
+                <ClaimsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/billing/insurance" element={
+            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+              <Layout>
+                <InsuranceManagementPage />
               </Layout>
             </RoleBasedRoute>
           } />
