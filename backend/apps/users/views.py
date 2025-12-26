@@ -11,6 +11,7 @@ from .serializers import (
     UserSerializer, UserListSerializer, UserCreateSerializer,
     UserWithAccessContextSerializer,
     StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
+    StaffInviteSerializer,
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
     PractitionerFHIRMappingSerializer,
@@ -210,6 +211,50 @@ class StaffViewSet(viewsets.ModelViewSet):
                 )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='invite')
+    def invite(self, request):
+        """
+        Invite a staff user without setting a known password.
+
+        Creates/updates the user + staff profile and sends a password reset link email.
+        This avoids emailing plaintext passwords.
+        """
+        from .models import PasswordResetToken
+        from .tasks import send_password_reset_email, send_account_setup_email
+        from django.conf import settings
+
+        serializer = StaffInviteSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            staff = serializer.save()
+
+            # Generate reset token and email link (admin-initiated)
+            plain_token, _ = PasswordResetToken.create_for_user(
+                user=staff.user,
+                reset_type='admin_force',
+                initiated_by=request.user,
+                expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
+            )
+
+            # First-time creation gets a clearer "set up your password" message.
+            if getattr(staff, '_user_created', False):
+                send_account_setup_email.delay(
+                    user_id=str(staff.user.id),
+                    token=plain_token,
+                    user_email=staff.user.email,
+                    user_name=staff.user.get_full_name() or staff.user.email,
+                )
+            else:
+                send_password_reset_email.delay(
+                    user_id=str(staff.user.id),
+                    token=plain_token,
+                    user_email=staff.user.email,
+                    user_name=staff.user.get_full_name() or staff.user.email,
+                )
+
+        return Response(StaffSerializer(staff, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 class PractitionerProfileViewSet(viewsets.ModelViewSet):

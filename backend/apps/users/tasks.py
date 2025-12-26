@@ -48,6 +48,42 @@ def send_password_reset_email(self, user_id, token, user_email, user_name):
 
 
 @shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
+def send_account_setup_email(self, user_id, token, user_email, user_name):
+    """
+    Send initial account setup email with a secure set-password link.
+    Uses exponential backoff for retries.
+    """
+    try:
+        setup_url = f"{settings.FRONTEND_URL}/reset-password/confirm?token={token}"
+
+        context = {
+            'user_name': user_name,
+            'setup_url': setup_url,
+            'expiry_minutes': settings.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES,
+            'hospital_name': 'HMS Hospital',
+        }
+
+        html_content = render_to_string('emails/account_setup.html', context)
+        text_content = render_to_string('emails/account_setup.txt', context)
+
+        email = EmailMultiAlternatives(
+            subject='Welcome to HMS - Set Up Your Password',
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email],
+        )
+        email.attach_alternative(html_content, 'text/html')
+        email.send(fail_silently=False)
+
+        logger.info("Account setup email sent successfully")
+        return {"status": "success"}
+
+    except Exception as e:
+        logger.error(f"Failed to send account setup email: {str(e)}")
+        raise self.retry(exc=e, countdown=EMAIL_CONFIG.get_countdown(self.request.retries))
+
+
+@shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_name, admin_name):
     """
     Send email with temporary password after admin force reset.

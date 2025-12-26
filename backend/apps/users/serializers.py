@@ -348,10 +348,126 @@ def generate_secure_password(length=12):
     return ''.join(password)
 
 
+class StaffInviteSerializer(serializers.Serializer):
+    """
+    Admin-only serializer to create staff users without setting a known password.
+
+    Intended for "invite" flows where the user receives a password reset link.
+    Never sends plaintext passwords and does not perform external FHIR calls.
+    """
+    email = serializers.EmailField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    user_type = serializers.ChoiceField(choices=[
+        'admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing'
+    ])
+
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+
+    department = serializers.CharField()
+    position = serializers.CharField()
+    hire_date = serializers.DateField()
+
+    # Required for doctors/nurses
+    license_number = serializers.CharField(required=False, allow_blank=True)
+    specialization = serializers.CharField(required=False, allow_blank=True)
+    qualification = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+        user_type = data.get('user_type')
+        if user_type in ['doctor', 'nurse']:
+            missing = [k for k in ['license_number', 'specialization', 'qualification'] if not data.get(k)]
+            if missing:
+                raise serializers.ValidationError({
+                    k: "This field is required for doctors and nurses." for k in missing
+                })
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+
+        email = validated_data['email'].lower()
+        user_type = validated_data['user_type']
+
+        existing_user = User.objects.filter(email=email).first()
+        had_usable_password = existing_user.has_usable_password() if existing_user else False
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                'username': email,
+                'first_name': validated_data['first_name'],
+                'last_name': validated_data['last_name'],
+                'phone_number': validated_data.get('phone_number', ''),
+                'date_of_birth': validated_data.get('date_of_birth'),
+                'user_type': user_type,
+                'is_active': True,
+            }
+        )
+
+        if not created:
+            # Update basic details but avoid altering existing credentials unexpectedly.
+            user.first_name = validated_data['first_name']
+            user.last_name = validated_data['last_name']
+            user.phone_number = validated_data.get('phone_number', user.phone_number)
+            user.date_of_birth = validated_data.get('date_of_birth', user.date_of_birth)
+            user.user_type = user_type
+            user.is_active = True
+            user.save(update_fields=[
+                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active'
+            ])
+        else:
+            # Ensure no known password exists for invited accounts.
+            user.set_unusable_password()
+            user.save(update_fields=['password'])
+
+        # Ensure staff profile exists
+        staff, staff_created = Staff.objects.get_or_create(
+            user=user,
+            defaults={
+                'employee_id': generate_unique_employee_id(),
+                'department': validated_data['department'],
+                'position': validated_data['position'],
+                'hire_date': validated_data['hire_date'],
+                'created_by': actor if getattr(actor, 'is_authenticated', False) else None,
+                'updated_by': actor if getattr(actor, 'is_authenticated', False) else None,
+            }
+        )
+
+        if not staff_created:
+            staff.department = validated_data['department']
+            staff.position = validated_data['position']
+            staff.hire_date = validated_data['hire_date']
+            if getattr(actor, 'is_authenticated', False):
+                staff.updated_by = actor
+            staff.save(update_fields=['department', 'position', 'hire_date', 'updated_by'])
+
+        # Practitioner profile (doctor/nurse only)
+        if user_type in ['doctor', 'nurse']:
+            PractitionerProfile.objects.update_or_create(
+                staff=staff,
+                defaults={
+                    'license_number': validated_data['license_number'],
+                    'specialization': validated_data['specialization'],
+                    'qualification': validated_data['qualification'],
+                    'created_by': actor if getattr(actor, 'is_authenticated', False) else None,
+                    'updated_by': actor if getattr(actor, 'is_authenticated', False) else None,
+                }
+            )
+
+        # Expose creation context to the view without changing API response.
+        staff._user_created = created
+        staff._user_had_usable_password = had_usable_password
+
+        return staff
+
+
 class StaffRegistrationSerializer(serializers.Serializer):
     """
     Serializer for staff registration that creates both local and FHIR resources.
-    A unique password will be generated for the staff and logged (to be sent to the staff).
+    Sends a password reset link for the staff to set their password.
     """
     # User fields
     email = serializers.EmailField()
@@ -409,6 +525,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         # Check if we're reusing an existing user
         existing_user = validated_data.pop('_existing_user', None)
+        user_created = existing_user is None
 
         # Extract address fields
         address_fields = {
@@ -427,9 +544,6 @@ class StaffRegistrationSerializer(serializers.Serializer):
             'qualification': validated_data.pop('qualification', None)
         }
 
-        # Generate a secure password for the staff
-        generated_password = generate_secure_password()
-
         if existing_user:
             # Reuse and update the existing orphaned user
             user = existing_user
@@ -439,14 +553,13 @@ class StaffRegistrationSerializer(serializers.Serializer):
             user.date_of_birth = validated_data['date_of_birth']
             user.user_type = validated_data['user_type']
             user.is_active = True
-            user.set_password(generated_password)
             user.save()
         else:
             # Create new User
             user = User.objects.create_user(
                 email=validated_data['email'],
                 username=validated_data['email'],  # Use email as username
-                password=generated_password,
+                password=None,  # Force password set via reset link
                 first_name=validated_data['first_name'],
                 last_name=validated_data['last_name'],
                 phone_number=validated_data.get('phone_number', ''),
@@ -468,19 +581,26 @@ class StaffRegistrationSerializer(serializers.Serializer):
             updated_by=self.context['request'].user
         )
 
-        # Send credentials via email (runs sync in DEBUG mode via CELERY_TASK_ALWAYS_EAGER)
-        from .tasks import send_welcome_credentials_email
+        # Send set-password/reset link email (runs sync in DEBUG mode via CELERY_TASK_ALWAYS_EAGER)
+        from .models import PasswordResetToken
+        from .tasks import send_password_reset_email, send_account_setup_email
+        from django.conf import settings
         try:
-            send_welcome_credentials_email.delay(
+            plain_token, _ = PasswordResetToken.create_for_user(
+                user=user,
+                reset_type='admin_force',
+                initiated_by=self.context['request'].user,
+                expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
+            )
+            task = send_account_setup_email if (user_created or not user.has_usable_password()) else send_password_reset_email
+            task.delay(
+                user_id=str(user.id),
+                token=plain_token,
                 user_email=user.email,
-                user_name=f"{user.first_name} {user.last_name}",
-                password=generated_password,
-                employee_id=employee_id,
-                department=validated_data['department'],
-                position=validated_data['position'],
+                user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
             )
         except Exception as e:
-            logger.error(f"Failed to send welcome email for user {user.id}: {e}")
+            logger.error(f"Failed to send account setup/reset email for user {user.id}: {e}")
 
         logger.info(f"Staff account created with ID {user.id} and employee ID: {employee_id}")
 

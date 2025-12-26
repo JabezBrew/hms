@@ -186,6 +186,42 @@ class TestStaffViewSet:
         if 'practitioner_profile' in response.data:
             assert response.data['practitioner_profile']['specialization'] == 'Cardiology'
 
+    def test_invite_staff_sends_reset_link(self, db, monkeypatch):
+        """Admin can invite staff without setting a known password."""
+        admin = AdminUserFactory()
+        client = get_authenticated_client(admin)
+
+        # Avoid sending real email
+        called = {}
+
+        def fake_delay(**kwargs):
+            called.update(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_delay)
+
+        payload = {
+            'email': 'v2tui.doctor@inbox.testmail.app',
+            'first_name': 'Test',
+            'last_name': 'Doctor',
+            'user_type': 'doctor',
+            'department': 'Internal Medicine',
+            'position': 'Attending Physician',
+            'hire_date': '2020-01-15',
+            'license_number': 'MD-INV-001',
+            'specialization': 'Internal Medicine',
+            'qualification': 'MD, MBBS',
+        }
+
+        response = client.post('/api/users/staff/invite/', payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        user = User.objects.get(email='v2tui.doctor@inbox.testmail.app')
+        assert not user.has_usable_password()
+        assert Staff.objects.filter(user=user).exists()
+        assert PractitionerProfile.objects.filter(staff__user=user).exists()
+        assert called.get('user_email') == 'v2tui.doctor@inbox.testmail.app'
+
 
 # =============================================================================
 # Practitioner Profile ViewSet Tests
