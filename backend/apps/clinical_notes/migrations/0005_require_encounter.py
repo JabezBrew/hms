@@ -39,6 +39,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('clinical_notes', '0004_link_encounter_to_chronicles'),
     ]
 

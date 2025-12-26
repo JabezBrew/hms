@@ -86,6 +86,8 @@ favor correctness, least privilege, and predictable performance.
 - Always run tests after code changes; fix failures before moving on.
 - Use scoped tests for bug fixes and full suite for refactors when feasible.
 - For migrations, include data backfill checks and index creation where needed.
+- When adding FKs to models moved across apps, add explicit migration dependencies
+  (e.g., `('encounters', '0001_initial')`) to avoid fresh-DB ordering failures.
 
 ## Commit and PR Notes
 - Use Conventional Commits (`feat:`, `fix(scope):`, `Add ...`).

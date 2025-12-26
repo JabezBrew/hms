@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('users', '0005_passwordresettoken'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
     ]
 
     operations = [

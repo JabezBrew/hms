@@ -14,6 +14,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0009_add_ward_staff_assignment'),
+        ('encounters', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('users', '0006_add_user_patient_list'),
     ]

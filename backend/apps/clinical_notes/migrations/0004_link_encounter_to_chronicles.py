@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('users', '0004_user_gender'),
         ('clinical_notes', '0003_add_prescription_model'),
     ]

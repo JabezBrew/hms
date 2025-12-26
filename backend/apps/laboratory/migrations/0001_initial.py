@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('users', '0005_passwordresettoken'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
     ]
 
     operations = [

@@ -9,6 +9,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('workflows', '0004_wardroundworkflow_dischargeworkflow_and_more'),
         ('wards', '0005_add_local_encounter_model'),
+        ('encounters', '0001_initial'),
         ('referrals', '0001_initial'),
     ]
 

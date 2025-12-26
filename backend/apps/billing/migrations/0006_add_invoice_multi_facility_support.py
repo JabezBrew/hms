@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0012_fix_ward_department_hierarchy'),
+        ('encounters', '0001_initial'),
         ('core', '0005_multi_facility_foundation'),
         ('billing', '0005_fix_json_fields_blank'),
     ]

@@ -9,6 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0010_add_admission_status_index'),
+        ('encounters', '0001_initial'),
         ('users', '0008_remove_user_user_first_name_gin_idx_and_more'),
         ('clinical_notes', '0008_add_note_entry_version'),
     ]

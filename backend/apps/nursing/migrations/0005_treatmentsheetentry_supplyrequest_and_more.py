@@ -10,6 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('wards', '0007_create_default_sections'),
+        ('encounters', '0001_initial'),
         ('users', '0006_add_user_patient_list'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('clinical_notes', '0008_add_note_entry_version'),
