@@ -14,7 +14,6 @@ import { Toaster } from './components/ui/sonner'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { LoginForm } from './components/auth/login-form'
-import { RegisterForm } from './components/auth/register-form'
 import { ResetPasswordForm } from './components/auth/reset-password-form'
 import { ResetPasswordConfirmForm } from './components/auth/reset-password-confirm-form'
 import { RoleBasedRoute } from './components/auth/RoleBasedRoute'
@@ -165,11 +164,6 @@ function AppContent() {
         <Route path="/login" element={
           <div className="flex min-h-screen items-center justify-center">
             <LoginForm />
-          </div>
-        } />
-        <Route path="/register" element={
-          <div className="flex min-h-screen items-center justify-center">
-            <RegisterForm />
           </div>
         } />
         <Route path="/reset-password" element={

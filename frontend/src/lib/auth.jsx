@@ -209,42 +209,6 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Register function
-  const register = async (name, email, password) => {
-    setLoading(true)
-    setError(null)
-    try {
-      // Call the register API
-      const response = await authApi.register(name, email, password)
-
-      // Store access token in memory
-      setAccessToken(response.access)
-
-      // Store session timing data
-      const now = Date.now().toString()
-      localStorage.setItem("sessionStartTime", now)
-      localStorage.setItem("refreshTokenIssuedAt", now)
-
-      // Store user data (without token) in localStorage
-      const userData = {
-        email: response.user.email,
-        id: response.user.id,
-        name: response.user.name,
-        role: response.user.user_type, // Store the user's role
-      }
-      localStorage.setItem("user", JSON.stringify(userData))
-      setUser(userData)
-      return userData
-    } catch (error) {
-      const errorMessage = error.message || "Failed to register"
-      setError(errorMessage)
-      notifications.error(errorMessage)
-      throw error
-    } finally {
-      setLoading(false)
-    }
-  }
-
   // Reset password function
   const resetPassword = async (email) => {
     setLoading(true)
@@ -269,7 +233,6 @@ export function AuthProvider({ children }) {
       loading,
       error,
       login,
-      register,
       logout,
       resetPassword,
       getAccessToken,

@@ -19,21 +19,6 @@ export const authApi = {
   },
 
   /**
-   * Register a new user
-   * @param {string} name - User's full name
-   * @param {string} email - User email
-   * @param {string} password - User password
-   * @returns {Promise<Object>} User data with token
-   */
-  register: async (name, email, password) => {
-    try {
-      return await apiClient.post('/auth/register/', { name, email, password });
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Registration failed'));
-    }
-  },
-
-  /**
    * Request password reset
    * @param {string} email - User email
    * @returns {Promise<Object>} Success message

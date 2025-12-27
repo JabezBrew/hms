@@ -21,7 +21,6 @@ vi.mock('../api/auth', () => ({
     login: vi.fn(),
     logout: vi.fn(),
     refreshToken: vi.fn(),
-    register: vi.fn(),
     requestPasswordReset: vi.fn(),
   },
 }))
@@ -647,61 +646,6 @@ describe('AuthProvider', () => {
       await waitFor(() => {
         expect(screen.getByTestId('error').textContent).toBe('null')
         expect(screen.getByTestId('isAuthenticated').textContent).toBe('true')
-      })
-    })
-  })
-
-  // =============================================================================
-  // Register Tests
-  // =============================================================================
-
-  describe('Register', () => {
-    it('registers new user successfully', async () => {
-      authApi.register.mockResolvedValue({
-        access: 'access-token-123',
-        user: {
-          id: 'user-123',
-          email: 'newuser@test.com',
-          name: 'New User',
-          user_type: 'patient',
-        },
-      })
-
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: AuthProvider,
-      })
-
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false)
-      })
-
-      await act(async () => {
-        await result.current.register('New User', 'newuser@test.com', 'password123')
-      })
-
-      expect(authApi.register).toHaveBeenCalledWith('New User', 'newuser@test.com', 'password123')
-      expect(result.current.isAuthenticated).toBe(true)
-    })
-
-    it('handles registration failure', async () => {
-      authApi.register.mockRejectedValue(new Error('Email already exists'))
-
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: AuthProvider,
-      })
-
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false)
-      })
-
-      await expect(
-        act(async () => {
-          await result.current.register('New User', 'existing@test.com', 'password123')
-        })
-      ).rejects.toThrow()
-
-      await waitFor(() => {
-        expect(notifications.error).toHaveBeenCalledWith('Email already exists')
       })
     })
   })

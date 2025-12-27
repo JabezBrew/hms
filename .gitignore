@@ -98,3 +98,7 @@ local_settings.py
 # Virtual Environment
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Java Backend (experimental)
+backend-java/
+.m2/

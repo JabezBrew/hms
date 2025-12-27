@@ -100,15 +100,6 @@ export function LoginForm() {
             </Button>
           </div>
         </form>
-        <div className="mt-4 text-center text-sm">
-          Don't have an account?{" "}
-          <a
-            href="/register"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Register
-          </a>
-        </div>
       </div>
     </div>
   )
