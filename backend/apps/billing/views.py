@@ -109,6 +109,9 @@ class ServiceViewSet(viewsets.ModelViewSet):
 class InsuranceProviderViewSet(viewsets.ModelViewSet):
     """
     API endpoint for insurance providers.
+
+    Read access (list, retrieve, plans): Admin, billing, receptionist
+    Write access (create, update, delete): Admin, billing only
     """
     queryset = InsuranceProvider.objects.all()
     serializer_class = InsuranceProviderSerializer
@@ -118,6 +121,13 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code', 'contact_person', 'email', 'phone']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
+
+    def get_permissions(self):
+        # Allow read-only access for receptionists (needed for patient registration)
+        if self.action in ['list', 'retrieve', 'plans']:
+            if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
+                return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -145,6 +155,9 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
 class InsurancePlanViewSet(viewsets.ModelViewSet):
     """
     API endpoint for insurance plans.
+
+    Read access (list, retrieve): Admin, billing, receptionist
+    Write access (create, update, delete): Admin, billing only
     """
     queryset = InsurancePlan.objects.all()
     serializer_class = InsurancePlanSerializer
@@ -154,6 +167,13 @@ class InsurancePlanViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code', 'description', 'provider__name']
     ordering_fields = ['name', 'provider__name', 'coverage_percentage', 'created_at']
     ordering = ['provider__name', 'name']
+
+    def get_permissions(self):
+        # Allow read-only access for receptionists (needed for patient registration)
+        if self.action in ['list', 'retrieve']:
+            if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
+                return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)

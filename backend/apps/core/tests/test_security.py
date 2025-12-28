@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.security import check_clinical_access
+from apps.core.security import check_clinical_access, get_access_flags
 from apps.core.models import BreakGlassEvent
 from apps.users.tests.factories import (
     AdminUserFactory,
@@ -77,3 +77,69 @@ class TestTeamBasedClinicalAccess:
         )
 
         assert check_clinical_access(doctor_user, patient) is True
+
+
+@pytest.mark.tier1
+class TestGetAccessFlags:
+    """Tests for get_access_flags() - optimization hint for frontend."""
+
+    def test_admin_gets_all_access_flags(self, settings):
+        settings.TEAM_ACCESS_STRICT = True
+        admin = AdminUserFactory()
+        patient = PatientProfileFactory()
+
+        flags = get_access_flags(admin, patient)
+
+        assert flags['clinical'] is True
+        assert flags['lab'] is True
+        assert flags['prescription'] is True
+        assert flags['billing'] is True
+        assert flags['demographics'] is True
+
+    def test_doctor_without_team_access_gets_demographics_only(self, settings):
+        settings.TEAM_ACCESS_STRICT = True
+        doctor_user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        flags = get_access_flags(doctor_user, patient)
+
+        assert flags['clinical'] is False
+        assert flags['lab'] is False
+        assert flags['prescription'] is False
+        assert flags['demographics'] is True  # Doctors always get demographics
+
+    def test_doctor_with_team_access_gets_clinical_flags(self, settings):
+        settings.TEAM_ACCESS_STRICT = True
+        doctor_user = DoctorUserFactory()
+        practitioner = PractitionerProfileFactory(staff__user=doctor_user)
+        patient = PatientProfileFactory()
+
+        # Create encounter to grant team access
+        EncounterFactory(patient=patient, practitioner=practitioner, status='in-progress')
+
+        flags = get_access_flags(doctor_user, patient)
+
+        assert flags['clinical'] is True
+        assert flags['lab'] is True
+        assert flags['prescription'] is True
+        assert flags['demographics'] is True
+
+    def test_break_glass_grants_clinical_flag(self, settings):
+        settings.TEAM_ACCESS_STRICT = True
+        doctor_user = DoctorUserFactory()
+        patient = PatientProfileFactory()
+
+        # No team access, but create break-glass event
+        BreakGlassEvent.objects.create(
+            user=doctor_user,
+            patient=patient,
+            scope='clinical',
+            reason='Emergency coverage',
+            expires_at=timezone.now() + timedelta(minutes=30),
+        )
+
+        flags = get_access_flags(doctor_user, patient)
+
+        assert flags['clinical'] is True
+        assert flags['lab'] is True
+        assert flags['prescription'] is True

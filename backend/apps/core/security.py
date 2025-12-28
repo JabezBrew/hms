@@ -281,6 +281,94 @@ def check_demographics_access(user, patient_or_id):
     raise PermissionDenied("You do not have access to this patient's data.")
 
 
+def get_access_flags(user, patient_or_id):
+    """
+    Return a dict of access flags for a patient without raising exceptions.
+    Used by frontend to conditionally fetch data (optimization hint only -
+    backend still enforces access on every endpoint).
+
+    Returns:
+        dict: {
+            'clinical': bool,  # Can access vitals, notes, encounters
+            'lab': bool,       # Can access lab orders/results
+            'prescription': bool,  # Can access prescriptions
+            'billing': bool,   # Can access billing data
+            'demographics': bool,  # Can access basic info
+        }
+    """
+    patient_profile = _get_patient_profile(patient_or_id)
+    flags = {
+        'clinical': False,
+        'lab': False,
+        'prescription': False,
+        'billing': False,
+        'demographics': False,
+    }
+
+    # Admin has full access
+    if user.user_type == 'admin':
+        return {k: True for k in flags}
+
+    # Patient can access own data
+    if user.user_type == 'patient':
+        if hasattr(patient_profile, 'user') and patient_profile.user == user:
+            return {k: True for k in flags}
+        return flags
+
+    # Clinical staff (doctor, nurse)
+    if user.user_type in ['doctor', 'nurse']:
+        flags['demographics'] = True
+
+        # Check team access or break-glass for clinical data
+        has_clinical = False
+        if not settings.TEAM_ACCESS_STRICT:
+            has_clinical = True
+        elif _has_team_access(user, patient_profile):
+            has_clinical = True
+        elif _has_active_break_glass(user, patient_profile, scope='clinical'):
+            has_clinical = True
+
+        flags['clinical'] = has_clinical
+        flags['lab'] = has_clinical
+        flags['prescription'] = has_clinical
+        return flags
+
+    # Receptionist - demographics only
+    if user.user_type == 'receptionist':
+        flags['demographics'] = True
+        return flags
+
+    # Lab technician - check for lab orders
+    if user.user_type == 'lab_technician':
+        from apps.laboratory.models import LabOrder
+        has_orders = LabOrder.objects.filter(
+            patient=patient_profile,
+            status__in=['pending', 'in_progress', 'collected', 'completed']
+        ).exists()
+        flags['lab'] = has_orders
+        flags['demographics'] = LabOrder.objects.filter(patient=patient_profile).exists()
+        return flags
+
+    # Pharmacist - check for prescriptions
+    if user.user_type == 'pharmacist':
+        from apps.prescriptions.models import Prescription
+        flags['prescription'] = Prescription.objects.filter(
+            patient=patient_profile,
+            status='active'
+        ).exists()
+        flags['demographics'] = Prescription.objects.filter(patient=patient_profile).exists()
+        return flags
+
+    # Billing staff
+    if user.user_type == 'billing':
+        from apps.billing.models import Invoice
+        flags['billing'] = True
+        flags['demographics'] = Invoice.objects.filter(patient=patient_profile).exists()
+        return flags
+
+    return flags
+
+
 def check_referral_access(user, referral):
     """
     SECURITY: Check if user has permission to modify a referral.

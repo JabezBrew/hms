@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useStaffMember, usePractitioners } from '@/hooks/useStaffQueries';
 import StaffDetail from '@/components/staff/StaffDetail';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -14,17 +14,17 @@ const StaffDetailPage = () => {
   const navigate = useNavigate();
 
   // Use React Query hooks for data fetching
-  const { 
-    data: staff, 
-    isLoading: isStaffLoading, 
-    isError: isStaffError, 
-    error: staffError 
+  const {
+    data: staff,
+    isLoading: isStaffLoading,
+    isError: isStaffError,
+    error: staffError
   } = useStaffMember(id);
 
   // Get practitioners list to find the practitioner profile for this staff member
-  const { 
-    data: practitioners, 
-    isLoading: isPractitionersLoading 
+  const {
+    data: practitioners,
+    isLoading: isPractitionersLoading
   } = usePractitioners();
 
   // Find the practitioner profile for this staff member
@@ -43,12 +43,6 @@ const StaffDetailPage = () => {
 
   const handleBack = () => {
     navigate('/staff');
-  };
-
-  const handleEdit = () => {
-    // For future implementation
-    // navigate(`/staff/${id}/edit`);
-    toast.info('Edit functionality will be implemented in a future update');
   };
 
   const handleDeleted = () => {
@@ -140,7 +134,6 @@ const StaffDetailPage = () => {
       staff={staff}
       practitioner={practitioner}
       onBack={handleBack}
-      onEdit={handleEdit}
       onDeleted={handleDeleted}
     />
   );

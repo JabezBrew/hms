@@ -21,15 +21,28 @@ export const patientsApi = {
   },
 
   /**
-   * Get a single patient by ID
+   * Get a single patient by ID (includes FHIR data)
    * @param {string} id - Patient ID
-   * @returns {Promise<Object>} Patient data
+   * @returns {Promise<Object>} Patient data with local_data and fhir_data
    */
   getPatient: async (id) => {
     try {
       return await apiClient.get(`/patients/${id}/get_patient/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch patient'));
+    }
+  },
+
+  /**
+   * Get patient demographics only (lightweight, no FHIR)
+   * @param {string} id - Patient ID
+   * @returns {Promise<Object>} Patient demographics data
+   */
+  getPatientDemographics: async (id) => {
+    try {
+      return await apiClient.get(`/patients/${id}/demographics/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch patient demographics'));
     }
   },
 
@@ -47,14 +60,14 @@ export const patientsApi = {
   },
 
   /**
-   * Update a patient
+   * Update a patient's demographics
    * @param {string} id - Patient ID
-   * @param {Object} data - Patient data to update
+   * @param {Object} data - Patient data to update (wrap in local_data for backend)
    * @returns {Promise<Object>} Updated patient data
    */
   updatePatient: async (id, data) => {
     try {
-      return await apiClient.put(`/patients/${id}/`, data);
+      return await apiClient.put(`/patients/${id}/update_patient/`, { local_data: data });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update patient'));
     }

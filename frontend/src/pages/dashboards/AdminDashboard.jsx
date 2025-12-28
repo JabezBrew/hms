@@ -199,7 +199,7 @@ export default function AdminDashboard() {
             <Button
               variant="outline"
               className="h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/patients/register')}
+              onClick={() => navigate('/patients/create')}
             >
               <UserPlus className="h-6 w-6" />
               <span>Register Patient</span>

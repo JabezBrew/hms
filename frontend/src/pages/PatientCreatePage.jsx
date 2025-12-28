@@ -31,13 +31,13 @@ const PatientCreatePage = () => {
   };
 
   const handleSuccess = (newPatient) => {
-    toast.success('Patient created successfully');
-    // Navigate to the new patient's detail page
+    toast.success('Patient registered successfully');
     const patientId = getPatientId(newPatient);
+
     if (patientId) {
+      // Single URL - PatientPage component handles role-based view
       navigate(`/patients/${patientId}`);
     } else {
-      // If we don't have an ID, go back to the patient list
       console.error('No patient ID found in the response:', newPatient);
       navigate('/patients');
     }

@@ -27,7 +27,7 @@ export function usePatients(filters = {}) {
 }
 
 /**
- * Get a single patient by ID
+ * Get a single patient by ID (includes FHIR data)
  * @param {string} id - Patient ID
  * @returns {Object} Query result
  */
@@ -38,6 +38,21 @@ export function usePatient(id, options = {}) {
     queryFn: () => patientsApi.getPatient(id),
     enabled: !!id && enabled, // Only run the query if we have an ID
     staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
+  });
+}
+
+/**
+ * Get patient demographics only (lightweight, no FHIR)
+ * @param {string} id - Patient ID
+ * @returns {Object} Query result
+ */
+export function usePatientDemographics(id, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: [...patientKeys.detail(id), 'demographics'],
+    queryFn: () => patientsApi.getPatientDemographics(id),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

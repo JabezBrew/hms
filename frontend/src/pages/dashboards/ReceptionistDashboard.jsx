@@ -81,7 +81,7 @@ export default function ReceptionistDashboard() {
             <Button
               variant="default"
               size="sm"
-              onClick={() => navigate('/patients/register')}
+              onClick={() => navigate('/patients/create')}
             >
               <UserPlus className="h-4 w-4 mr-2" />
               Register Patient

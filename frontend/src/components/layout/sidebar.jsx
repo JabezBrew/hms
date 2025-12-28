@@ -96,7 +96,7 @@ export function AppSidebar() {
       labCollection: ['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner'],
       labOrders: ['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner'],
       labResults: ['admin', 'lab_technician', 'doctor', 'physician', 'practitioner'],
-      pharmacy: ['admin', 'pharmacist', 'pharmacy_tech', 'doctor'],
+      pharmacy: ['admin', 'pharmacist', 'pharmacy_tech'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
       auditLogs: ['admin'],

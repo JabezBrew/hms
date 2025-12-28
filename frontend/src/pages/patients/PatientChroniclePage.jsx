@@ -106,27 +106,34 @@ const PatientChroniclePage = () => {
   // Check if any slide-over is open (for timeline compression)
   const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
 
-  // Fetch patient data
+  // Fetch patient data (includes access flags for conditional fetching)
   const { data: patient, isLoading, error, refetch } = usePatient(id);
 
+  // Check if user has clinical access (from patient endpoint response)
+  const hasClinicalAccess = patient?.access?.clinical === true;
+
   // ====== TIER 1: Chronicle Context (optimized single-call) ======
-  // Fetches patient info, allergies, problems, medications, admission in one request
+  // Only fetch if user has clinical access - prevents wasted 403 requests
   const {
     data: chronicleContext,
     isLoading: isContextLoading,
     error: contextError,
     refetch: refetchContext,
-  } = useChronicleContext(id);
+  } = useChronicleContext(id, {
+    enabled: hasClinicalAccess,
+  });
 
-  const canFetchClinical = !!id && !isContextLoading && !contextError && !error;
+  const canFetchClinical = hasClinicalAccess && !isContextLoading && !contextError;
 
   // Fetch patient encounters for grouping
   const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
     enabled: canFetchClinical,
   });
 
-  // Fetch patient insurance
-  const { data: insuranceData } = usePatientInsurance(id);
+  // Fetch patient insurance (only if user has clinical access)
+  const { data: insuranceData } = usePatientInsurance(id, {}, {
+    enabled: hasClinicalAccess,
+  });
   const patientInsurance = insuranceData?.results || insuranceData || [];
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
@@ -599,7 +606,8 @@ const PatientChroniclePage = () => {
 
   const userRole = user?.role || user?.user_type;
   const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
-  const accessDenied = contextError?.status === 403 || error?.status === 403;
+  // Access denied if patient loaded but user lacks clinical access
+  const accessDenied = patient && !isLoading && patient?.access?.clinical === false;
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
   const gateError = contextError && contextError?.status !== 403 ? contextError : error;
 
@@ -618,6 +626,8 @@ const PatientChroniclePage = () => {
         description: expiresLabel ? `Access expires at ${expiresLabel}.` : "Access expires automatically.",
       });
 
+      // Refetch patient to update access flags, then clinical data will load
+      refetch();
       refetchContext();
       refetchTimeline();
       refetchEncounters();

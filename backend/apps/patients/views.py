@@ -27,7 +27,7 @@ from .serializers import (
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
-from apps.core.security import check_demographics_access
+from apps.core.security import check_demographics_access, get_access_flags
 from apps.core.models import BreakGlassEvent
 from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
 from apps.audit.services import AuditService
@@ -245,7 +245,12 @@ class PatientViewSet(viewsets.ViewSet):
     def register(self, request):
         """
         Register a new patient.
+        Only admin and receptionist roles can register patients.
         """
+        # Restrict patient registration to admin and receptionist only
+        if request.user.user_type not in ['admin', 'receptionist']:
+            raise PermissionDenied("Only admin and receptionist staff can register patients.")
+
         serializer = PatientRegistrationSerializer(data=request.data, context={'request': request})
 
         if serializer.is_valid():
@@ -462,6 +467,63 @@ class PatientViewSet(viewsets.ViewSet):
     def get_patient(self, request, pk=None):
         """
         Get a patient by ID.
+        Returns full data for clinical access, demographics-only for non-clinical access.
+        """
+        patient_profile = get_object_or_404(PatientProfile, id=pk)
+
+        # SECURITY: Check if user has permission to access this patient
+        check_demographics_access(request.user, patient_profile)
+
+        # Get access flags for frontend optimization
+        access = get_access_flags(request.user, patient_profile)
+
+        # Add to recent patients
+        RecentPatient.objects.get_or_create(
+            user=request.user,
+            patient_profile=patient_profile
+        )
+
+        # SECURITY: If user only has demographics access (not clinical),
+        # return limited data - no clinical info like allergies, blood group, FHIR
+        if not access['clinical']:
+            user = patient_profile.user
+            return Response({
+                "local_data": {
+                    "id": str(patient_profile.id),
+                    "user": str(user.id) if user else None,
+                    "user_details": {
+                        "id": str(user.id) if user else None,
+                        "first_name": user.first_name if user else None,
+                        "last_name": user.last_name if user else None,
+                        "date_of_birth": user.date_of_birth.isoformat() if user and user.date_of_birth else None,
+                        "gender": user.gender if user else None,
+                    } if user else None,
+                    "medical_record_number": patient_profile.medical_record_number,
+                    # Exclude: blood_group, allergies, nhis_id, fhir_patient_id
+                },
+                "fhir_data": None,  # No FHIR data for demographics-only access
+                "access": access
+            })
+
+        # Full access - return everything
+        fhir_data = None
+        if patient_profile.fhir_patient_id:
+            try:
+                fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
+            except Exception:
+                logger.warning(f"Failed to get FHIR data for patient {pk}")
+
+        return Response({
+            "local_data": PatientProfileSerializer(patient_profile).data,
+            "fhir_data": fhir_data,
+            "access": access
+        })
+
+    @action(detail=True, methods=['get'], url_path='demographics')
+    def get_demographics(self, request, pk=None):
+        """
+        Get patient demographics only (no FHIR, no clinical data).
+        Lightweight endpoint for administrative views.
         """
         patient_profile = get_object_or_404(PatientProfile, id=pk)
 
@@ -474,19 +536,7 @@ class PatientViewSet(viewsets.ViewSet):
             patient_profile=patient_profile
         )
 
-        # Get FHIR data if available
-        fhir_data = None
-        if patient_profile.fhir_patient_id:
-            try:
-                fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
-            except Exception as e:
-                # Log the error but continue
-                logger.warning(f"Failed to get FHIR data for patient {pk}")
-
-        return Response({
-            "local_data": PatientProfileSerializer(patient_profile).data,
-            "fhir_data": fhir_data
-        })
+        return Response(PatientProfileSerializer(patient_profile).data)
 
     @action(detail=True, methods=['post'], url_path='break-glass')
     def break_glass(self, request, pk=None):

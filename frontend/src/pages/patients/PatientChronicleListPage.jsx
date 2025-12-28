@@ -153,10 +153,13 @@ const PatientChronicleListPage = () => {
             </p>
           </div>
 
-          <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Register Patient
-          </Button>
+          {/* Only admin and receptionist can register patients */}
+          {['admin', 'receptionist'].includes(user?.role) && (
+            <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
+              <Plus className="h-4 w-4 mr-2" />
+              Register Patient
+            </Button>
+          )}
         </div>
 
         {/* Tab Navigation - Using NavLinks for routes */}

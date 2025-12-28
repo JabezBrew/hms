@@ -379,6 +379,67 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @patch('apps.fhir_client.client.fhir_client.create_resource')
+    def test_register_patient_as_receptionist(self, mock_create_resource, db):
+        """Test that receptionists can register patients."""
+        from apps.users.tests.factories import ReceptionistUserFactory
+
+        mock_create_resource.return_value = {
+            "resourceType": "Patient",
+            "id": "fhir-new-patient",
+            "meta": {"versionId": "1"}
+        }
+
+        receptionist = ReceptionistUserFactory()
+        client = get_authenticated_client(receptionist)
+
+        response = client.post('/api/patients/register/', {
+            'email': 'receptionist-patient@test.com',
+            'first_name': 'New',
+            'last_name': 'Patient',
+            'date_of_birth': '1990-01-15',
+            'phone_number': '1234567890',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert PatientProfile.objects.filter(
+            user__email='receptionist-patient@test.com'
+        ).exists()
+
+    def test_register_patient_forbidden_for_doctor(self, db):
+        """Test that doctors cannot register patients."""
+        doctor = DoctorUserFactory()
+        client = get_authenticated_client(doctor)
+
+        response = client.post('/api/patients/register/', {
+            'email': 'doctor-patient@test.com',
+            'first_name': 'New',
+            'last_name': 'Patient',
+            'date_of_birth': '1990-01-15',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not PatientProfile.objects.filter(
+            user__email='doctor-patient@test.com'
+        ).exists()
+
+    def test_register_patient_forbidden_for_nurse(self, db):
+        """Test that nurses cannot register patients."""
+        nurse = NurseUserFactory()
+        client = get_authenticated_client(nurse)
+
+        response = client.post('/api/patients/register/', {
+            'email': 'nurse-patient@test.com',
+            'first_name': 'New',
+            'last_name': 'Patient',
+            'date_of_birth': '1990-01-15',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not PatientProfile.objects.filter(
+            user__email='nurse-patient@test.com'
+        ).exists()
+
     @patch('apps.fhir_client.client.fhir_client.search_resources')
     def test_search_patients(self, mock_search_resources, db):
         """Test patient search."""

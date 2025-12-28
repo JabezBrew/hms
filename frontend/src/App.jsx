@@ -70,7 +70,7 @@ const DischargeWorkflowPage = lazy(() => import('./pages/workflows/discharge/Dis
 
 // Chronicle Design System Pages
 const PatientChronicleListPage = lazy(() => import('./pages/patients/PatientChronicleListPage'))
-const PatientChroniclePage = lazy(() => import('./pages/patients/PatientChroniclePage'))
+const PatientPage = lazy(() => import('./pages/patients/PatientPage'))
 const MyPatientsPage = lazy(() => import('./pages/patients/MyPatientsPage'))
 
 // Admin Pages
@@ -215,7 +215,7 @@ function AppContent() {
           } />
 
           <Route path="/patients/create" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
+            <RoleBasedRoute allowedRoles={['admin', 'receptionist']}>
               <Layout>
                 <PatientCreatePage />
               </Layout>
@@ -230,10 +230,11 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
+          {/* Patient detail page - serves different views based on user role */}
           <Route path="/patients/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
               <Layout>
-                <PatientChroniclePage />
+                <PatientPage />
               </Layout>
             </RoleBasedRoute>
           } />
