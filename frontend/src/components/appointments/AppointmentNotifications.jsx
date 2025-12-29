@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,31 +13,17 @@ import { Separator } from '@/components/ui/separator';
 import { fetchUpcomingAppointments } from '@/lib/api';
 
 const AppointmentNotifications = () => {
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Load upcoming appointments
-  useEffect(() => {
-    const loadAppointments = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchUpcomingAppointments();
-        setAppointments(data);
-      } catch (error) {
-        console.error('Error loading upcoming appointments:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAppointments();
-
-    // Refresh appointments every 5 minutes
-    const interval = setInterval(loadAppointments, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // Use React Query for caching and deduplication
+  const { data: appointments = [], isLoading: loading } = useQuery({
+    queryKey: ['upcomingAppointments'],
+    queryFn: fetchUpcomingAppointments,
+    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
+    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+  });
 
   // Navigate to appointment detail
   const handleAppointmentClick = (id) => {
@@ -53,8 +40,8 @@ const AppointmentNotifications = () => {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {notificationCount > 0 && (
-            <Badge 
-              variant="destructive" 
+            <Badge
+              variant="destructive"
               className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
             >
               {notificationCount}
@@ -79,7 +66,7 @@ const AppointmentNotifications = () => {
           ) : (
             <div>
               {appointments.map((appointment) => (
-                <div 
+                <div
                   key={appointment.id}
                   className="p-4 hover:bg-muted cursor-pointer"
                   onClick={() => handleAppointmentClick(appointment.id)}
@@ -95,8 +82,8 @@ const AppointmentNotifications = () => {
         </div>
         <Separator />
         <div className="p-2">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             className="w-full justify-center"
             onClick={() => {
               setOpen(false);

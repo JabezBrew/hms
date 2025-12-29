@@ -78,18 +78,23 @@ class AppointmentViewSet(viewsets.ViewSet):
 
         # If user is a doctor or nurse and no practitioner_id is provided,
         # automatically filter by the user's practitioner profile
+        # SECURITY: Doctors/nurses MUST only see their own appointments
         if not practitioner_id and request.user.user_type in ['doctor', 'nurse']:
             try:
                 # Get the user's practitioner profile
                 practitioner_profile = request.user.staff_profile.practitioner_profile
                 if practitioner_profile and practitioner_profile.fhir_practitioner_id:
                     practitioner_id = practitioner_profile.fhir_practitioner_id
+                else:
+                    # No FHIR practitioner ID - return empty results for security
+                    return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
             except (AttributeError, Exception) as e:
-                # If there's an error getting the practitioner profile, log it but continue
-                # This allows admins and other users to still see all appointments
+                # SECURITY: If we can't determine the practitioner, return empty results
+                # Never expose other practitioners' appointments
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Error getting practitioner profile for user {request.user.id}: {str(e)}")
+                return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
 
         appointments = AppointmentProxy.search(
             patient_id=patient_id,
@@ -360,17 +365,22 @@ class ScheduleViewSet(viewsets.ViewSet):
 
         # If user is a doctor or nurse and no practitioner_id is provided,
         # automatically filter by the user's practitioner profile
+        # SECURITY: Doctors/nurses MUST only see their own schedules
         if not practitioner_id and request.user.user_type in ['doctor', 'nurse']:
             try:
                 # Get the user's practitioner profile
                 practitioner_profile = request.user.staff_profile.practitioner_profile
                 if practitioner_profile and practitioner_profile.fhir_practitioner_id:
                     practitioner_id = practitioner_profile.fhir_practitioner_id
+                else:
+                    # No FHIR practitioner ID - return empty results for security
+                    return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
             except (AttributeError, Exception) as e:
-                # If there's an error getting the practitioner profile, log it but continue
+                # SECURITY: If we can't determine the practitioner, return empty results
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Error getting practitioner profile for user {request.user.id}: {str(e)}")
+                return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
 
         schedules = ScheduleProxy.search(
             practitioner_id=practitioner_id,
@@ -687,18 +697,28 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter schedules by practitioner and active status.
+        Doctors/nurses automatically see only their own schedules.
         """
         queryset = RecurringSchedule.objects.all()
         practitioner_id = self.request.query_params.get('practitioner')
         is_active = self.request.query_params.get('is_active')
 
+        # Auto-filter for doctors/nurses to only see their own schedules
+        if not practitioner_id and self.request.user.user_type in ['doctor', 'nurse']:
+            try:
+                practitioner_profile = self.request.user.staff_profile.practitioner_profile
+                if practitioner_profile:
+                    practitioner_id = str(practitioner_profile.id)
+            except (AttributeError, Exception):
+                pass
+
         if practitioner_id:
             queryset = queryset.filter(practitioner_id=practitioner_id)
-        
+
         if is_active is not None:
             active_bool = is_active.lower() == 'true'
             queryset = queryset.filter(is_active=active_bool)
-            
+
         return queryset
 
     def perform_create(self, serializer):
@@ -844,12 +864,22 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filter blocked times by practitioner and date range.
+        Doctors/nurses automatically see only their own blocked times.
         """
         queryset = BlockedTime.objects.all()
 
         practitioner_id = self.request.query_params.get('practitioner_id')
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
+
+        # Auto-filter for doctors/nurses to only see their own blocked times
+        if not practitioner_id and self.request.user.user_type in ['doctor', 'nurse']:
+            try:
+                practitioner_profile = self.request.user.staff_profile.practitioner_profile
+                if practitioner_profile:
+                    practitioner_id = str(practitioner_profile.id)
+            except (AttributeError, Exception):
+                pass
 
         if practitioner_id:
             queryset = queryset.filter(practitioner_id=practitioner_id)

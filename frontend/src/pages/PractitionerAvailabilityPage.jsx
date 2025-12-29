@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
 import {
   Plus,
   Calendar,
@@ -71,8 +72,19 @@ import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
  */
 const PractitionerAvailabilityPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const userRole = user?.role;
+  const isDoctor = userRole === 'doctor';
+
   const [activeTab, setActiveTab] = useState('schedules'); // 'schedules' | 'blocked'
-  const [selectedPractitioner, setSelectedPractitioner] = useState(null);
+
+  // Initialize selectedPractitioner - doctors start with their own ID to avoid double fetch
+  const [selectedPractitioner, setSelectedPractitioner] = useState(() => {
+    if (isDoctor && user?.practitionerId) {
+      return user.practitionerId;
+    }
+    return null;
+  });
 
   // Dialog states
   const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
@@ -87,14 +99,24 @@ const PractitionerAvailabilityPage = () => {
   const [selectedBlockedTime, setSelectedBlockedTime] = useState(null);
   const [blockedTimeToDelete, setBlockedTimeToDelete] = useState(null);
 
-  // Fetch data
+  // Build filter params - for doctors, filter by their practitioner ID
+  // This ensures the page and calendar use the same cached query
+  const scheduleFilters = useMemo(() => {
+    if (selectedPractitioner) {
+      return { practitioner: selectedPractitioner };
+    }
+    return {};
+  }, [selectedPractitioner]);
+
+  // Fetch data - pass filters so doctors only see their own schedules
+  // and the query key matches what DoctorAvailabilityCalendar uses
   const {
     data: recurringSchedules = [],
     isLoading: recurringLoading,
     isError: isRecurringError,
     error: recurringError,
     refetch: refetchRecurring
-  } = useRecurringSchedules();
+  } = useRecurringSchedules(scheduleFilters);
 
   const {
     data: blockedTimes = [],
@@ -102,7 +124,7 @@ const PractitionerAvailabilityPage = () => {
     isError: isBlockedTimesError,
     error: blockedTimesError,
     refetch: refetchBlocked
-  } = useBlockedTimes();
+  } = useBlockedTimes(scheduleFilters);
 
   // Practitioner search
   const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
@@ -253,10 +275,12 @@ const PractitionerAvailabilityPage = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div>
               <h1 className="text-3xl font-display font-bold text-foreground">
-                Practitioner Availability
+                {isDoctor ? 'My Availability' : 'Practitioner Availability'}
               </h1>
               <p className="text-muted-foreground mt-1">
-                Manage schedules, view calendars, and block time off
+                {isDoctor
+                  ? 'View your schedule, calendar, and blocked time'
+                  : 'Manage schedules, view calendars, and block time off'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -313,20 +337,23 @@ const PractitionerAvailabilityPage = () => {
             <div className="bg-card rounded-xl border border-border/50 p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-foreground">
-                  Availability Calendar
+                  {isDoctor ? 'My Availability' : 'Availability Calendar'}
                 </h2>
-                <div className="w-72">
-                  <SearchBar
-                    options={practitionerOptions}
-                    value={selectedPractitioner}
-                    onChange={setSelectedPractitioner}
-                    onInputChange={handleSearchChange}
-                    placeholder="Select practitioner..."
-                    emptyMessage={practitionersLoading ? "Searching..." : "No practitioners found"}
-                    maxHeight="20rem"
-                    isLoading={practitionersLoading}
-                  />
-                </div>
+                {/* Only show practitioner search for admin/receptionist - doctors see their own */}
+                {!isDoctor && (
+                  <div className="w-72">
+                    <SearchBar
+                      options={practitionerOptions}
+                      value={selectedPractitioner}
+                      onChange={setSelectedPractitioner}
+                      onInputChange={handleSearchChange}
+                      placeholder="Select practitioner..."
+                      emptyMessage={practitionersLoading ? "Searching..." : "No practitioners found"}
+                      maxHeight="20rem"
+                      isLoading={practitionersLoading}
+                    />
+                  </div>
+                )}
               </div>
 
               {!selectedPractitioner ? (
@@ -335,10 +362,12 @@ const PractitionerAvailabilityPage = () => {
                     <CalendarDays className="h-8 w-8 text-primary" />
                   </div>
                   <h3 className="text-lg font-medium text-foreground mb-2">
-                    Select a Practitioner
+                    {isDoctor ? 'No Practitioner Profile' : 'Select a Practitioner'}
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-sm">
-                    Choose a practitioner from the dropdown above to view their availability calendar
+                    {isDoctor
+                      ? 'Your account is not linked to a practitioner profile. Contact your administrator.'
+                      : 'Choose a practitioner from the dropdown above to view their availability calendar'}
                   </p>
                 </div>
               ) : (

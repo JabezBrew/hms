@@ -54,6 +54,7 @@ const AppointmentList = () => {
   const navigate = useNavigate();
 
   // Build query parameters
+  // Note: Backend automatically filters by practitioner for doctors/nurses
   const queryParams = {};
 
   if (statusFilter && statusFilter !== 'all') {

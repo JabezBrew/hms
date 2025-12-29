@@ -1,31 +1,24 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { 
-  Calendar, 
-  Clock, 
-  User, 
-  UserRound, 
-  FileText, 
+import {
+  Calendar,
+  Clock,
+  User,
+  UserRound,
+  FileText,
   MessageSquare,
   Edit,
   Trash2,
   ArrowLeft,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Stethoscope
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle 
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -47,23 +40,51 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Separator } from '@/components/ui/separator';
 import {toast} from 'sonner';
-import { 
-  useAppointment, 
-  useUpdateAppointmentStatus, 
-  useDeleteAppointment 
+import {
+  useAppointment,
+  useUpdateAppointmentStatus,
+  useDeleteAppointment
 } from '@/hooks/useAppointmentQueries';
 
-// Status badge colors
-const statusColors = {
-  proposed: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  booked: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-  arrived: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-  fulfilled: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
-  cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-  noshow: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300",
+// Chronicle Design System status colors
+// Using amber for pending/proposed, emerald for confirmed, rose for cancelled, sky for info
+const statusConfig = {
+  proposed: {
+    badge: "bg-[oklch(0.70_0.15_230_/_0.15)] text-[oklch(0.70_0.15_230)] border-[oklch(0.70_0.15_230_/_0.3)]",
+    dot: "bg-[oklch(0.70_0.15_230)]",
+    label: "Proposed"
+  },
+  pending: {
+    badge: "bg-[oklch(0.75_0.18_55_/_0.15)] text-[oklch(0.65_0.18_55)] border-[oklch(0.75_0.18_55_/_0.3)]",
+    dot: "bg-[oklch(0.75_0.18_55)]",
+    label: "Pending"
+  },
+  booked: {
+    badge: "bg-[oklch(0.70_0.17_155_/_0.15)] text-[oklch(0.55_0.17_155)] border-[oklch(0.70_0.17_155_/_0.3)]",
+    dot: "bg-[oklch(0.70_0.17_155)]",
+    label: "Booked"
+  },
+  arrived: {
+    badge: "bg-[oklch(0.75_0.18_55_/_0.15)] text-[oklch(0.65_0.18_55)] border-[oklch(0.75_0.18_55_/_0.3)]",
+    dot: "bg-[oklch(0.75_0.18_55)]",
+    label: "Arrived"
+  },
+  fulfilled: {
+    badge: "bg-[oklch(0.70_0.17_155_/_0.15)] text-[oklch(0.55_0.17_155)] border-[oklch(0.70_0.17_155_/_0.3)]",
+    dot: "bg-[oklch(0.70_0.17_155)]",
+    label: "Fulfilled"
+  },
+  cancelled: {
+    badge: "bg-[oklch(0.65_0.22_15_/_0.15)] text-[oklch(0.55_0.22_15)] border-[oklch(0.65_0.22_15_/_0.3)]",
+    dot: "bg-[oklch(0.65_0.22_15)]",
+    label: "Cancelled"
+  },
+  noshow: {
+    badge: "bg-muted text-muted-foreground border-border",
+    dot: "bg-muted-foreground",
+    label: "No Show"
+  },
 };
 
 const AppointmentDetail = ({ appointmentId, onBack }) => {
@@ -207,325 +228,372 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
     }
   };
 
-  // Render loading skeleton
+  // Chronicle-styled loading skeleton
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center">
-          <Skeleton className="h-10 w-10 rounded-full" />
-          <div className="ml-4 space-y-2">
-            <Skeleton className="h-4 w-[250px]" />
-            <Skeleton className="h-4 w-[200px]" />
+      <div className="space-y-6 animate-pulse">
+        {/* Hero skeleton */}
+        <div className="bg-card border-b border-border px-6 py-8 rounded-xl">
+          <Skeleton className="h-10 w-[350px] mb-4" />
+          <div className="flex gap-4">
+            <Skeleton className="h-5 w-[150px]" />
+            <Skeleton className="h-5 w-[120px]" />
           </div>
         </div>
-        <Skeleton className="h-[200px] w-full rounded-md" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Skeleton className="h-[100px] w-full rounded-md" />
-          <Skeleton className="h-[100px] w-full rounded-md" />
-        </div>
-        <div className="flex justify-between">
-          <Skeleton className="h-10 w-[100px]" />
-          <div className="space-x-2">
-            <Skeleton className="h-10 w-[100px] inline-block" />
-            <Skeleton className="h-10 w-[100px] inline-block" />
+        {/* Content skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Skeleton className="h-[200px] w-full rounded-xl" />
           </div>
+          <Skeleton className="h-[300px] w-full rounded-xl" />
         </div>
       </div>
     );
   }
 
-  // If appointment not found
+  // Chronicle-styled not found state
   if (!appointment) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Appointment Not Found</CardTitle>
-          <CardDescription>
-            The appointment you're looking for doesn't exist or has been deleted.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter>
-          <Button onClick={handleBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Appointments
-          </Button>
-        </CardFooter>
-      </Card>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-6">
+          <AlertCircle className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h2 className="font-display text-2xl text-foreground mb-2">
+          Appointment Not Found
+        </h2>
+        <p className="text-muted-foreground font-mono text-sm mb-6">
+          The appointment you're looking for doesn't exist or has been deleted.
+        </p>
+        <Button onClick={handleBack} variant="outline" className="font-mono text-xs">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Appointments
+        </Button>
+      </div>
     );
   }
 
   const patient = getPatientDetails();
   const practitioner = getPractitionerDetails();
+  const status = statusConfig[appointment.status] || statusConfig.pending;
 
   return (
-    <div className="space-y-6">
-      {/* Back button */}
-      <Button variant="ghost" onClick={handleBack} className="mb-4 pl-0">
+    <div className="space-y-6 animate-chronicle-enter">
+      {/* Back navigation */}
+      <Button
+        variant="ghost"
+        onClick={handleBack}
+        className="font-mono text-xs text-muted-foreground hover:text-foreground -ml-2"
+      >
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Appointments
       </Button>
 
-      {/* Appointment header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Appointment Details
-          </h1>
-          <p className="text-muted-foreground">
-            {formatDateTime(appointment.start)}
-          </p>
-        </div>
+      {/* Chronicle Hero Header */}
+      <header className="relative bg-card border border-border rounded-xl overflow-hidden">
+        {/* Background gradient - amber accent */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[oklch(0.75_0.18_55_/_0.08)] via-transparent to-transparent" />
 
-        <div className="mt-4 md:mt-0 flex items-center space-x-2">
-          <Badge 
-            variant="outline" 
-            className={statusColors[appointment.status] || ""}
-          >
-            {appointment.status?.charAt(0).toUpperCase() + appointment.status?.slice(1) || 'Unknown'}
-          </Badge>
-
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" disabled={updateStatusMutation.isPending}>
-                Change Status
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Update Appointment Status</DialogTitle>
-                <DialogDescription>
-                  Select a new status for this appointment.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-4 py-4">
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('proposed')}
-                  disabled={appointment.status === 'proposed' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
-                    Proposed
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('pending')}
-                  disabled={appointment.status === 'pending' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2"></div>
-                    Pending
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('booked')}
-                  disabled={appointment.status === 'booked' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
-                    Booked
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('arrived')}
-                  disabled={appointment.status === 'arrived' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-purple-500 mr-2"></div>
-                    Arrived
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('fulfilled')}
-                  disabled={appointment.status === 'fulfilled' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2"></div>
-                    Fulfilled
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('cancelled')}
-                  disabled={appointment.status === 'cancelled' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-red-500 mr-2"></div>
-                    Cancelled
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleStatusUpdate('noshow')}
-                  disabled={appointment.status === 'noshow' || updateStatusMutation.isPending}
-                >
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-gray-500 mr-2"></div>
-                    No Show
-                  </div>
-                </Button>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" disabled={updateStatusMutation.isPending}>
-                  Cancel
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left column - Appointment details */}
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Appointment Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">Type</div>
-                <div className="flex items-center">
-                  <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
+        <div className="relative px-6 py-8">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+            {/* Left: Appointment Identity */}
+            <div className="space-y-4 flex-1">
+              {/* Status + Type */}
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={cn(
+                  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono uppercase tracking-wider border",
+                  status.badge
+                )}>
+                  <span className={cn("w-1.5 h-1.5 rounded-full", status.dot)} />
+                  {status.label}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                   {getAppointmentType()}
-                </div>
+                </span>
               </div>
 
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">Duration</div>
-                <div className="flex items-center">
-                  <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-                  {getAppointmentDuration()}
-                </div>
+              {/* Patient Name - Display typography */}
+              <h1 className="font-display text-3xl sm:text-4xl text-foreground tracking-tight">
+                {patient.name}
+              </h1>
+
+              {/* Appointment metadata line */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
+                <span className="flex items-center gap-1.5 font-mono text-sm">
+                  <Calendar className="h-3.5 w-3.5" />
+                  {format(parseISO(appointment.start), 'EEEE, MMMM d, yyyy')}
+                </span>
+                <span className="flex items-center gap-1.5 font-mono text-sm">
+                  <Clock className="h-3.5 w-3.5" />
+                  {format(parseISO(appointment.start), 'h:mm a')} - {format(parseISO(appointment.end), 'h:mm a')}
+                </span>
+                <span className="font-mono text-sm">
+                  <span className="text-foreground">{getAppointmentDuration()}</span>
+                </span>
+              </div>
+
+              {/* Practitioner */}
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Stethoscope className="h-4 w-4" />
+                <span className="font-mono text-sm">
+                  with <span className="text-foreground">{practitioner.name}</span>
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">Start Time</div>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+            {/* Right: Quick Actions */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="font-mono text-xs"
+                    disabled={updateStatusMutation.isPending}
+                  >
+                    Change Status
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="font-display text-xl">Update Appointment Status</DialogTitle>
+                    <DialogDescription className="font-mono text-xs">
+                      Select a new status for this appointment.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-3 py-4">
+                    {Object.entries(statusConfig).map(([key, config]) => (
+                      <Button
+                        key={key}
+                        variant="outline"
+                        className={cn(
+                          "justify-start font-mono text-xs",
+                          appointment.status === key && "ring-2 ring-primary"
+                        )}
+                        onClick={() => handleStatusUpdate(key)}
+                        disabled={appointment.status === key || updateStatusMutation.isPending}
+                      >
+                        <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
+                        {config.label}
+                      </Button>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs"
+                onClick={handleEdit}
+              >
+                <Edit className="h-3.5 w-3.5 mr-1.5" />
+                Edit
+              </Button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
+                    <AlertDialogDescription className="font-mono text-sm">
+                      This action cannot be undone. This will permanently delete the appointment
+                      for {patient.name} on {format(parseISO(appointment.start), 'MMMM d, yyyy')}.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="font-mono text-xs bg-destructive hover:bg-destructive/90"
+                    >
+                      {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Appointment Details */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Schedule Card */}
+          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-1">
+            <h2 className="font-heading text-lg font-semibold text-foreground mb-6 flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-[oklch(0.75_0.18_55)]" />
+              Schedule Details
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {/* Start Time */}
+              <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Start Time
+                </label>
+                <div className="font-mono text-sm text-foreground">
                   {formatDateTime(appointment.start)}
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">End Time</div>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+              {/* End Time */}
+              <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  End Time
+                </label>
+                <div className="font-mono text-sm text-foreground">
                   {formatDateTime(appointment.end)}
                 </div>
               </div>
+
+              {/* Duration */}
+              <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Duration
+                </label>
+                <div className="font-mono text-sm text-foreground flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  {getAppointmentDuration()}
+                </div>
+              </div>
+
+              {/* Type */}
+              <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Appointment Type
+                </label>
+                <div className="font-mono text-sm text-foreground flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  {getAppointmentType()}
+                </div>
+              </div>
             </div>
 
-            <Separator />
+            {/* Description & Comments */}
+            {(appointment.description || appointment.comment) && (
+              <>
+                <div className="my-6 h-px bg-gradient-to-r from-border via-border to-transparent" />
 
-            {appointment.description && (
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">Description</div>
-                <p>{appointment.description}</p>
-              </div>
+                {appointment.description && (
+                  <div className="space-y-2 mb-4">
+                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Description
+                    </label>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {appointment.description}
+                    </p>
+                  </div>
+                )}
+
+                {appointment.comment && (
+                  <div className="space-y-2">
+                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <MessageSquare className="h-3 w-3" />
+                      Comments
+                    </label>
+                    <p className="text-sm text-muted-foreground italic leading-relaxed">
+                      "{appointment.comment}"
+                    </p>
+                  </div>
+                )}
+              </>
             )}
-
-            {appointment.comment && (
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground">Comments</div>
-                <div className="flex items-start">
-                  <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground mt-0.5" />
-                  <p>{appointment.comment}</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Right column - Patient and Practitioner */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Participants</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Patient</div>
-              <div className="flex items-center">
-                <User className="h-5 w-5 mr-2 text-muted-foreground" />
-                <div>
-                  <div className="font-medium">{patient.name}</div>
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-sm text-muted-foreground"
-                    onClick={() => navigate(`/patients/${patient.id}`)}
-                  >
-                    View Patient Profile
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Practitioner</div>
-              <div className="flex items-center">
-                <UserRound className="h-5 w-5 mr-2 text-muted-foreground" />
-                <div>
-                  <div className="font-medium">{practitioner.name}</div>
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-sm text-muted-foreground"
-                    onClick={() => navigate(`/practitioners/${practitioner.id}`)}
-                  >
-                    View Practitioner Profile
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Actions */}
-      <div className="flex justify-between">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" disabled={deleteMutation.isPending}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the appointment.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <div className="space-x-2">
-          <Button variant="outline" onClick={handleBack}>
-            Cancel
-          </Button>
-          <Button onClick={handleEdit}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Appointment
-          </Button>
+          </article>
         </div>
+
+        {/* Right Column - Participants */}
+        <aside className="space-y-6">
+          {/* Patient Card */}
+          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-2">
+            <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+              <User className="h-4 w-4 text-[oklch(0.70_0.15_230)]" />
+              Patient
+            </h3>
+
+            <div className="space-y-3">
+              <div
+                className="group cursor-pointer"
+                onClick={() => navigate(`/patients/${patient.id}`)}
+              >
+                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
+                  {patient.name}
+                </div>
+                <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
+                  View Chronicle →
+                </span>
+              </div>
+            </div>
+          </article>
+
+          {/* Practitioner Card */}
+          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-3">
+            <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Stethoscope className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
+              Practitioner
+            </h3>
+
+            <div className="space-y-3">
+              <div
+                className="group cursor-pointer"
+                onClick={() => navigate(`/practitioners/${practitioner.id}`)}
+              >
+                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
+                  {practitioner.name}
+                </div>
+                <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
+                  View Profile →
+                </span>
+              </div>
+            </div>
+          </article>
+
+          {/* Status Timeline Mini */}
+          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-4">
+            <h3 className="font-heading text-sm font-semibold text-foreground mb-4">
+              Status
+            </h3>
+
+            <div className="space-y-3">
+              {['proposed', 'pending', 'booked', 'arrived', 'fulfilled'].map((statusKey, index) => {
+                const config = statusConfig[statusKey];
+                const isActive = appointment.status === statusKey;
+                const isPast = ['proposed', 'pending', 'booked', 'arrived', 'fulfilled'].indexOf(appointment.status) > index;
+
+                return (
+                  <div key={statusKey} className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-2.5 h-2.5 rounded-full transition-all",
+                      isActive ? config.dot : isPast ? "bg-muted-foreground/50" : "bg-muted"
+                    )} />
+                    <span className={cn(
+                      "font-mono text-xs",
+                      isActive ? "text-foreground font-medium" : "text-muted-foreground"
+                    )}>
+                      {config.label}
+                    </span>
+                    {isActive && (
+                      <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </article>
+        </aside>
       </div>
     </div>
   );

@@ -186,6 +186,10 @@ export function AuthProvider({ children }) {
         email: response.user.email,
         id: response.user.id,
         role: response.user.user_type, // Store the user's role
+        firstName: response.user.first_name,
+        lastName: response.user.last_name,
+        staffId: response.user.staff_id || null,
+        practitionerId: response.user.practitioner_id || null,
         // Include access context for off-site read-only mode
         accessContext: response.access_context || null,
       }

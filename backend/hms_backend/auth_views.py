@@ -195,6 +195,22 @@ class LoginView(APIView):
                 except Exception:
                     pass  # Don't let audit logging break login
 
+            # Get staff and practitioner IDs if applicable
+            staff_id = None
+            practitioner_id = None
+            if user.user_type in ['doctor', 'nurse', 'lab_technician', 'pharmacist', 'receptionist']:
+                from apps.users.models import Staff, PractitionerProfile
+                try:
+                    staff = Staff.objects.get(user=user)
+                    staff_id = str(staff.id)
+                    # Get practitioner ID for clinical staff
+                    if user.user_type in ['doctor', 'nurse', 'lab_technician', 'pharmacist']:
+                        practitioner = PractitionerProfile.objects.filter(staff=staff).first()
+                        if practitioner:
+                            practitioner_id = str(practitioner.id)
+                except Staff.DoesNotExist:
+                    pass
+
             response = Response({
                 'access': tokens['access'],
                 'user': {
@@ -203,6 +219,8 @@ class LoginView(APIView):
                     'user_type': user.user_type,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
+                    'staff_id': staff_id,
+                    'practitioner_id': practitioner_id,
                 },
                 'access_context': access_context,
             })
