@@ -53,6 +53,13 @@ def _has_active_break_glass(user, patient, scope='clinical'):
 def _has_team_access(user, patient):
     """
     Check team-based access for clinicians using admissions and encounters.
+
+    Access is granted if the user:
+    1. Is the admitting doctor for an active admission
+    2. Is assigned to the ward of an active admission
+    3. Is assigned to a ClinicalUnit that is the primary_team of an active admission
+    4. Is assigned to a ClinicalUnit that is a consulting team for an active admission
+    5. Has an active encounter with the patient
     """
     from apps.wards.models import Admission
     from apps.encounters.models import Encounter
@@ -61,6 +68,7 @@ def _has_team_access(user, patient):
     if not practitioner:
         return False
 
+    # 1. Check if user is the admitting doctor
     if Admission.objects.filter(
         patient=patient,
         status__in=ACTIVE_ADMISSION_STATUSES,
@@ -68,6 +76,7 @@ def _has_team_access(user, patient):
     ).exists():
         return True
 
+    # 2. Check if user is assigned to the ward (legacy ward-based access)
     if Admission.objects.filter(
         patient=patient,
         status__in=ACTIVE_ADMISSION_STATUSES,
@@ -77,6 +86,30 @@ def _has_team_access(user, patient):
     ).exists():
         return True
 
+    # 3. Check ClinicalUnit-based access (new organizational hierarchy)
+    # Get all units the user is assigned to
+    from apps.organization.services import UnitAccessService
+    user_unit_ids = UnitAccessService.get_accessible_unit_ids(user)
+
+    if user_unit_ids:
+        # Check if user's units include the primary_team of an active admission
+        if Admission.objects.filter(
+            patient=patient,
+            status__in=ACTIVE_ADMISSION_STATUSES,
+            primary_team_id__in=user_unit_ids
+        ).exists():
+            return True
+
+        # 4. Check if user's units include a consulting team for an active admission
+        if Admission.objects.filter(
+            patient=patient,
+            status__in=ACTIVE_ADMISSION_STATUSES,
+            care_team_assignments__team_id__in=user_unit_ids,
+            care_team_assignments__is_active=True
+        ).exists():
+            return True
+
+    # 5. Check active encounters
     if Encounter.objects.filter(
         patient=patient,
         practitioner=practitioner,
@@ -90,6 +123,14 @@ def _has_team_access(user, patient):
 def get_accessible_patients_for_clinician(user, scope='clinical'):
     """
     Return a queryset of patients a clinician can access under team rules.
+
+    Access is granted via:
+    1. Admitting doctor relationship
+    2. Ward staff assignment (legacy)
+    3. ClinicalUnit assignment (primary team)
+    4. ClinicalUnit assignment (consulting team)
+    5. Active encounters
+    6. Break-glass events
     """
     from apps.users.models import PatientProfile
 
@@ -97,6 +138,7 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     if not practitioner:
         return PatientProfile.objects.none()
 
+    # Legacy admission access (admitting doctor or ward assignment)
     admission_access = Q(
         admissions__status__in=ACTIVE_ADMISSION_STATUSES
     ) & (
@@ -106,6 +148,25 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
             admissions__bed__ward__staff_assignments__is_active=True
         )
     )
+
+    # ClinicalUnit-based access
+    from apps.organization.services import UnitAccessService
+    user_unit_ids = UnitAccessService.get_accessible_unit_ids(user)
+
+    unit_access = Q(pk__in=[])  # Empty Q that matches nothing
+    if user_unit_ids:
+        # Access via primary team
+        primary_team_access = Q(
+            admissions__status__in=ACTIVE_ADMISSION_STATUSES,
+            admissions__primary_team_id__in=user_unit_ids
+        )
+        # Access via consulting team
+        consulting_team_access = Q(
+            admissions__status__in=ACTIVE_ADMISSION_STATUSES,
+            admissions__care_team_assignments__team_id__in=user_unit_ids,
+            admissions__care_team_assignments__is_active=True
+        )
+        unit_access = primary_team_access | consulting_team_access
 
     encounter_access = Q(
         encounters__practitioner=practitioner,
@@ -119,7 +180,7 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     )
 
     return PatientProfile.objects.filter(
-        admission_access | encounter_access | break_glass_access
+        admission_access | unit_access | encounter_access | break_glass_access
     ).distinct()
 
 

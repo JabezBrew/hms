@@ -768,6 +768,36 @@ class StaffListSerializer(serializers.ModelSerializer):
         return None
 
 
+class StaffSearchSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for staff search results.
+    Returns minimal fields for picker UIs.
+    """
+    name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source='user.email', read_only=True)
+    user_type = serializers.CharField(source='user.user_type', read_only=True)
+    user_id = serializers.UUIDField(source='user.id', read_only=True)
+    practitioner_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Staff
+        fields = [
+            'id', 'user_id', 'name', 'email', 'user_type',
+            'employee_id', 'practitioner_id'
+        ]
+
+    def get_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name()
+        return None
+
+    def get_practitioner_id(self, obj):
+        try:
+            return obj.practitioner_profile.id
+        except Exception:
+            return None
+
+
 class PractitionerProfileListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for practitioner lists.

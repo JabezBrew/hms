@@ -75,6 +75,7 @@ urlpatterns = [
     path('api/laboratory/', include('apps.laboratory.urls')),
     path('api/referrals/', include('apps.referrals.urls')),
     path('api/charts/', include('apps.charts.urls')),
+    path('api/organization/', include('apps.organization.urls')),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),
     path('api/admin/', include('apps.audit.urls')),

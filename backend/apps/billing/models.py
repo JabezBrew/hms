@@ -127,6 +127,14 @@ class ServicePrice(models.Model):
         related_name='service_prices',
         help_text="Specific department for this price (null = all departments)"
     )
+    clinical_unit = models.ForeignKey(
+        'organization.ClinicalUnit',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='service_prices',
+        help_text="Specific clinical unit for this price (null = all units)"
+    )
 
     # Time context
     price_context = models.CharField(
@@ -185,12 +193,13 @@ class ServicePrice(models.Model):
         # Ensure unique combination of scope and context for a given effective date
         constraints = [
             models.UniqueConstraint(
-                fields=['service', 'facility', 'department', 'price_context', 'effective_from'],
-                name='unique_service_price_override'
+                fields=['service', 'facility', 'department', 'clinical_unit', 'price_context', 'effective_from'],
+                name='unique_service_price_override_v2'
             )
         ]
         indexes = [
             models.Index(fields=['service', 'facility', 'department', 'price_context']),
+            models.Index(fields=['service', 'clinical_unit', 'price_context']),
             models.Index(fields=['service', 'is_active']),
             models.Index(fields=['effective_from', 'effective_until']),
         ]
@@ -996,6 +1005,14 @@ class Invoice(models.Model):
         blank=True,
         related_name='invoices',
         help_text="Department for department-specific pricing"
+    )
+    rendering_unit = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rendered_invoices',
+        help_text="Clinical unit that rendered the services"
     )
 
     # Clinical context

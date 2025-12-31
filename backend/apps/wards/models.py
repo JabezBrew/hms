@@ -420,10 +420,27 @@ class Admission(models.Model):
 
     # Staff
     admitting_doctor = models.ForeignKey(
-        PractitionerProfile, 
-        on_delete=models.SET_NULL, 
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
         null=True,
         related_name='admissions_handled'
+    )
+
+    # Clinical Unit (Team) - for flexible organizational hierarchy
+    primary_team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='primary_admissions',
+        help_text='Primary clinical team responsible for this admission'
+    )
+    consulting_teams = models.ManyToManyField(
+        'organization.ClinicalUnit',
+        through='CareTeamAssignment',
+        related_name='consulting_admissions',
+        blank=True,
+        help_text='Consulting teams involved in care'
     )
 
     # Audit fields
@@ -441,6 +458,7 @@ class Admission(models.Model):
             models.Index(fields=['patient', 'status']),
             models.Index(fields=['admission_date']),
             models.Index(fields=['fhir_encounter_id']),
+            models.Index(fields=['primary_team', 'status']),  # For team-based filtering
         ]
 
     def __str__(self):
@@ -529,6 +547,80 @@ class Admission(models.Model):
         # Update bed status to available
         self.bed.status = 'available'
         self.bed.save()
+
+
+class CareTeamAssignment(models.Model):
+    """
+    Consulting/co-managing teams for an admission.
+    Primary team is stored on Admission.primary_team (not here).
+
+    Note: 'primary' role is NOT included - that's on Admission.primary_team only.
+    This avoids sync issues and enables fast primary-team filters.
+    """
+    ROLE_CHOICES = [
+        ('consulting', 'Consulting'),
+        ('co_managing', 'Co-Managing'),
+        ('procedure', 'Procedure Team'),
+    ]
+
+    STATUS_CHOICES = [
+        ('requested', 'Requested'),
+        ('accepted', 'Accepted'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('declined', 'Declined'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    admission = models.ForeignKey(
+        Admission,
+        on_delete=models.CASCADE,
+        related_name='care_team_assignments'
+    )
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        related_name='care_team_assignments'
+    )
+
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='consulting')
+
+    # Consult workflow
+    consult_reason = models.TextField(blank=True)
+    consult_requested_at = models.DateTimeField(null=True, blank=True)
+    consult_accepted_at = models.DateTimeField(null=True, blank=True)
+    consult_completed_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_care_team_assignments'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['admission', 'team'],
+                name='unique_admission_team'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['admission', 'status', 'is_active']),
+            models.Index(fields=['team', 'status', 'is_active']),
+        ]
+        verbose_name = 'Care Team Assignment'
+        verbose_name_plural = 'Care Team Assignments'
+
+    def __str__(self):
+        return f'{self.team.name} ({self.get_role_display()}) for {self.admission}'
 
 
 class BedAllocationLog(models.Model):

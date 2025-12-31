@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { wardsApi } from '@/lib/api/wards';
+import { useSearchQuery } from './useSearchQuery';
 
 // Query keys
 export const wardKeys = {
   all: ['wards'],
   lists: () => [...wardKeys.all, 'list'],
   list: (filters) => [...wardKeys.lists(), { filters }],
+  search: () => [...wardKeys.all, 'search'],
   details: () => [...wardKeys.all, 'detail'],
   detail: (id) => [...wardKeys.details(), id],
   beds: () => [...wardKeys.all, 'beds'],
@@ -59,6 +61,23 @@ export function useWards(filters = {}) {
     queryKey: wardKeys.list(filters),
     queryFn: () => wardsApi.getWards(filters),
   });
+}
+
+/**
+ * Search wards by name for picker UIs
+ * @param {Object} filters - Optional filters
+ * @param {Object} options - Search options
+ * @returns {Object} Search query result
+ */
+export function useWardSearch(filters = {}, options = {}) {
+  return useSearchQuery(
+    [...wardKeys.search(), { filters }],
+    (query) => wardsApi.searchWards(query, filters),
+    {
+      staleTime: 60 * 1000,
+      ...options,
+    }
+  );
 }
 
 /**

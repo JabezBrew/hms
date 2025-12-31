@@ -1,3 +1,4 @@
+import re
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -11,6 +12,7 @@ from .serializers import (
     UserSerializer, UserListSerializer, UserCreateSerializer,
     UserWithAccessContextSerializer,
     StaffSerializer, StaffListSerializer, StaffRegistrationSerializer,
+    StaffSearchSerializer,
     StaffInviteSerializer,
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
@@ -146,7 +148,7 @@ class StaffViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'register']:
             # Only admins can create staff
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
-        elif self.action == 'list':
+        elif self.action in ['list', 'search']:
             # Admins, doctors, nurses, and receptionists can view staff list
             permission_classes = [
                 permissions.IsAuthenticated,
@@ -184,6 +186,85 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Search staff by name or employee ID (prefix).
+        Supports optional filters:
+        - practitioners_only=true
+        - staff_kind=clinical|ops
+        - user_type=doctor,nurse
+        - include_inactive=true
+        """
+        query = (request.query_params.get('q') or '').strip()
+        if not query or len(query) < 2:
+            return Response(
+                {"detail": "Search query must be at least 2 characters long."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        include_inactive = request.query_params.get('include_inactive') == 'true'
+        practitioners_only = request.query_params.get('practitioners_only') == 'true'
+        staff_kind = (request.query_params.get('staff_kind') or '').lower()
+        non_practitioners_only = False
+        user_type_param = request.query_params.get('user_type')
+
+        queryset = self.get_queryset().select_related('user', 'practitioner_profile')
+
+        if not include_inactive:
+            queryset = queryset.filter(user__is_active=True)
+
+        if staff_kind == 'clinical':
+            practitioners_only = True
+        elif staff_kind == 'ops':
+            non_practitioners_only = True
+
+        if practitioners_only:
+            queryset = queryset.filter(practitioner_profile__isnull=False)
+        elif non_practitioners_only:
+            queryset = queryset.filter(practitioner_profile__isnull=True)
+
+        if user_type_param:
+            user_types = [t.strip() for t in user_type_param.split(',') if t.strip()]
+            if user_types:
+                queryset = queryset.filter(user__user_type__in=user_types)
+
+        normalized_query = (
+            query
+            .replace('\u2013', '-')
+            .replace('\u2014', '-')
+            .replace('\u2212', '-')
+        )
+        is_id_query = bool(re.fullmatch(r"[A-Za-z0-9\-]+", normalized_query)) and any(
+            char.isdigit() for char in normalized_query
+        )
+
+        if is_id_query:
+            queryset = queryset.filter(employee_id__istartswith=normalized_query)
+            queryset = queryset.order_by('employee_id')
+        else:
+            tokens = [token for token in normalized_query.split() if token]
+            if len(tokens) >= 2:
+                first, second = tokens[0], tokens[1]
+                queryset = queryset.filter(
+                    Q(user__first_name__icontains=first, user__last_name__icontains=second) |
+                    Q(user__first_name__icontains=second, user__last_name__icontains=first)
+                )
+            else:
+                token = tokens[0] if tokens else normalized_query
+                queryset = queryset.filter(
+                    Q(user__first_name__icontains=token) |
+                    Q(user__last_name__icontains=token)
+                )
+            queryset = queryset.order_by('user__last_name', 'user__first_name')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = StaffSearchSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        serializer = StaffSearchSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
 
     @action(detail=False, methods=['post'])
     def register(self, request):

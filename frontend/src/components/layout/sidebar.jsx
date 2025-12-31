@@ -18,6 +18,7 @@ import {
   Droplet,
   ArrowLeftRight,
   BarChart3,
+  FolderTree,
 } from "lucide-react"
 
 import {
@@ -99,6 +100,7 @@ export function AppSidebar() {
       pharmacy: ['admin', 'pharmacist', 'pharmacy_tech'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
+      organization: ['admin'],
       auditLogs: ['admin'],
     }
   }
@@ -287,6 +289,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Staff" href="/staff">
                   <Shield />
                   <span>Staff</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.organization) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Organization" href="/admin/organization">
+                  <FolderTree />
+                  <span>Organization</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

@@ -17,7 +17,7 @@ WARD_ANALYTICS_CACHE_KEY = 'ward_analytics_view'
 
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
-    WardSerializer, WardListSerializer,
+    WardSerializer, WardListSerializer, WardSearchSerializer,
     BedSerializer, BedListSerializer,
     AdmissionSerializer, AdmissionListSerializer,
     BedAllocationLogSerializer,
@@ -98,6 +98,42 @@ class WardViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Search wards by name for picker UIs.
+        """
+        query = (request.query_params.get('q') or '').strip()
+        if not query or len(query) < 2:
+            return Response(
+                {"detail": "Search query must be at least 2 characters long."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        include_inactive = request.query_params.get('include_inactive') == 'true'
+        ward_type = request.query_params.get('ward_type')
+        department = request.query_params.get('department')
+
+        queryset = Ward.objects.select_related('department')
+
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+
+        if ward_type:
+            queryset = queryset.filter(ward_type=ward_type)
+
+        if department:
+            queryset = queryset.filter(department_id=department)
+
+        queryset = queryset.filter(name__icontains=query).order_by('name')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = WardSearchSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        serializer = WardSearchSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         # Get values from validated_data before saving

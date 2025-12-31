@@ -505,6 +505,21 @@ class WardListSerializer(serializers.ModelSerializer):
         return None
 
 
+class WardSearchSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for ward search pickers.
+    Avoids computed fields that trigger extra queries.
+    """
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = Ward
+        fields = [
+            'id', 'name', 'ward_type', 'is_active',
+            'total_beds', 'department_name'
+        ]
+
+
 class BedListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for bed lists.

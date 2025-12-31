@@ -1,0 +1,835 @@
+/**
+ * React Query hooks for organization management.
+ */
+import { useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  unitTypesApi,
+  leadershipRolesApi,
+  assignmentTypesApi,
+  clinicalUnitsApi,
+  leadershipApi,
+  staffAssignmentsApi,
+  unitMembersApi,
+  crossCoverageApi,
+  wardAllocationsApi,
+} from '@/lib/api/organization';
+import { usePaginatedQuery } from './usePaginatedQuery';
+
+// =============================================================================
+// Query Keys
+// =============================================================================
+
+export const organizationKeys = {
+  all: ['organization'],
+
+  // Unit Types
+  unitTypes: () => [...organizationKeys.all, 'unit-types'],
+  unitTypesList: (params) => [...organizationKeys.unitTypes(), 'list', params],
+  unitType: (id) => [...organizationKeys.unitTypes(), id],
+
+  // Leadership Roles
+  leadershipRoles: () => [...organizationKeys.all, 'leadership-roles'],
+  leadershipRolesList: (params) => [...organizationKeys.leadershipRoles(), 'list', params],
+  leadershipRole: (id) => [...organizationKeys.leadershipRoles(), id],
+
+  // Assignment Types
+  assignmentTypes: () => [...organizationKeys.all, 'assignment-types'],
+  assignmentTypesList: (params) => [...organizationKeys.assignmentTypes(), 'list', params],
+
+  // Clinical Units
+  units: () => [...organizationKeys.all, 'units'],
+  unitsList: (params) => [...organizationKeys.units(), 'list', params],
+  unitsTree: () => [...organizationKeys.units(), 'tree'],
+  unit: (id) => [...organizationKeys.units(), id],
+  unitChildren: (id) => [...organizationKeys.units(), id, 'children'],
+  unitAncestors: (id) => [...organizationKeys.units(), id, 'ancestors'],
+  unitDescendants: (id, params) => [...organizationKeys.units(), id, 'descendants', params],
+  unitLeaders: (id) => [...organizationKeys.units(), id, 'leaders'],
+  unitStaffBase: (id) => [...organizationKeys.units(), id, 'staff'],
+  unitStaff: (id, params) => [...organizationKeys.units(), id, 'staff', params],
+  unitStaffCountsBase: (id) => [...organizationKeys.units(), id, 'staff', 'counts'],
+  unitStaffCounts: (id, params) => [...organizationKeys.units(), id, 'staff', 'counts', params],
+  unitMembersBase: (id) => [...organizationKeys.units(), id, 'members'],
+  unitMembers: (id, params) => [...organizationKeys.units(), id, 'members', params],
+  unitMembersCountsBase: (id) => [...organizationKeys.units(), id, 'members', 'counts'],
+  unitMembersCounts: (id, params) => [...organizationKeys.units(), id, 'members', 'counts', params],
+  unitWards: (id) => [...organizationKeys.units(), id, 'wards'],
+  unitCoverage: (id) => [...organizationKeys.units(), id, 'coverage'],
+
+  // Leadership Assignments
+  leadership: () => [...organizationKeys.all, 'leadership'],
+  leadershipList: (params) => [...organizationKeys.leadership(), 'list', params],
+
+  // Staff Assignments
+  staffAssignments: () => [...organizationKeys.all, 'staff-assignments'],
+  staffAssignmentsList: (params) => [...organizationKeys.staffAssignments(), 'list', params],
+
+  // Ops Unit Members
+  unitMembersList: (params) => [...organizationKeys.all, 'unit-members', 'list', params],
+
+  // Cross Coverage
+  crossCoverage: () => [...organizationKeys.all, 'cross-coverage'],
+  crossCoverageList: (params) => [...organizationKeys.crossCoverage(), 'list', params],
+
+  // Ward Allocations
+  wardAllocations: () => [...organizationKeys.all, 'ward-allocations'],
+  wardAllocationsList: (params) => [...organizationKeys.wardAllocations(), 'list', params],
+};
+
+function getTreeNodes(treeQueryData) {
+  if (!treeQueryData) {
+    return [];
+  }
+  const raw = treeQueryData.data || treeQueryData;
+  return Array.isArray(raw) ? raw : [];
+}
+
+function buildOrgTreeIndex(treeNodes) {
+  const ancestorsById = new Map();
+
+  const walk = (node, ancestors) => {
+    const nextAncestors = [...ancestors, node.id];
+    ancestorsById.set(node.id, nextAncestors);
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (const child of children) {
+      walk(child, nextAncestors);
+    }
+  };
+
+  for (const node of treeNodes) {
+    walk(node, []);
+  }
+
+  return { ancestorsById };
+}
+
+function countAssignmentResults(pages) {
+  if (!Array.isArray(pages)) {
+    return 0;
+  }
+  return pages.reduce((total, page) => total + (page.results?.length || 0), 0);
+}
+
+function filterAssignmentPages(pages, unitId, ancestorsById) {
+  if (!Array.isArray(pages)) {
+    return [];
+  }
+  return pages.map((page) => {
+    const results = Array.isArray(page.results) ? page.results : [];
+    const filtered = results.filter((item) => {
+      const ancestors = ancestorsById.get(item.unit);
+      if (!ancestors) {
+        return item.unit === unitId;
+      }
+      return ancestors.includes(unitId);
+    });
+    if (filtered.length === results.length) {
+      return page;
+    }
+    return { ...page, results: filtered };
+  });
+}
+
+function findClosestCachedAncestorId(queryClient, ancestors, baseKey, querySuffix, hasData) {
+  const hasCachedData = hasData || ((cached) => cached?.pages?.length);
+  for (let i = ancestors.length - 1; i >= 0; i -= 1) {
+    const candidateId = ancestors[i];
+    const key = [...baseKey(candidateId), ...querySuffix];
+    const cached = queryClient.getQueryData(key);
+    if (hasCachedData(cached)) {
+      return candidateId;
+    }
+  }
+  return ancestors[ancestors.length - 1];
+}
+
+function normalizeCountsPayload(payload) {
+  if (!payload) {
+    return {};
+  }
+  if (
+    payload.data &&
+    typeof payload.data === 'object' &&
+    !Array.isArray(payload.data)
+  ) {
+    return payload.data;
+  }
+  return payload;
+}
+
+function aggregateCountsByUnit(countsPayload, ancestorsById) {
+  const aggregated = new Map();
+  if (!countsPayload || typeof countsPayload !== 'object') {
+    return aggregated;
+  }
+  for (const [unitId, countValue] of Object.entries(countsPayload)) {
+    const count = Number(countValue) || 0;
+    const ancestors = ancestorsById.get(unitId);
+    if (!ancestors) {
+      if (count) {
+        aggregated.set(unitId, (aggregated.get(unitId) || 0) + count);
+      }
+      continue;
+    }
+    for (const ancestorId of ancestors) {
+      aggregated.set(ancestorId, (aggregated.get(ancestorId) || 0) + count);
+    }
+  }
+  return aggregated;
+}
+
+// =============================================================================
+// Unit Types Hooks
+// =============================================================================
+
+export function useUnitTypes(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitTypesList(params),
+    queryFn: () => unitTypesApi.list(params),
+    staleTime: 5 * 60 * 1000, // Config data is relatively stable
+  });
+}
+
+export function useUnitType(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitType(id),
+    queryFn: () => unitTypesApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+// =============================================================================
+// Leadership Roles Hooks
+// =============================================================================
+
+export function useLeadershipRoles(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.leadershipRolesList(params),
+    queryFn: () => leadershipRolesApi.list(params),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useLeadershipRole(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.leadershipRole(id),
+    queryFn: () => leadershipRolesApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+// =============================================================================
+// Assignment Types Hooks
+// =============================================================================
+
+export function useAssignmentTypes(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.assignmentTypesList(params),
+    queryFn: () => assignmentTypesApi.list(params),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// =============================================================================
+// Clinical Units Hooks
+// =============================================================================
+
+export function useClinicalUnits(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitsList(params),
+    queryFn: () => clinicalUnitsApi.list(params),
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+export function useClinicalUnitsTree(options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitsTree(),
+    queryFn: () => clinicalUnitsApi.tree(),
+    staleTime: 60 * 1000, // 1 minute - tree changes infrequently
+    ...options,
+  });
+}
+
+export function useClinicalUnit(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unit(id),
+    queryFn: () => clinicalUnitsApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useUnitChildren(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitChildren(id),
+    queryFn: () => clinicalUnitsApi.children(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useUnitAncestors(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitAncestors(id),
+    queryFn: () => clinicalUnitsApi.ancestors(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useUnitLeaders(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitLeaders(id),
+    queryFn: () => clinicalUnitsApi.leaders(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+function useUnitAssignmentList({
+  unitId,
+  params,
+  options,
+  baseKey,
+  fetcher,
+}) {
+  const queryClient = useQueryClient();
+  const treeQuery = useClinicalUnitsTree();
+  const treeNodes = getTreeNodes(treeQuery.data);
+  const treeIndex = useMemo(() => buildOrgTreeIndex(treeNodes), [treeNodes]);
+  const includeDescendants = params?.include_descendants;
+  const queryValue = params?.q || '';
+  const pageSizeValue = params?.page_size || '';
+
+  const querySuffix = useMemo(
+    () => [
+      includeDescendants ? 'desc' : 'direct',
+      queryValue,
+      pageSizeValue,
+    ],
+    [includeDescendants, pageSizeValue, queryValue]
+  );
+
+  const sourceUnitId = useMemo(() => {
+    if (!unitId) {
+      return unitId;
+    }
+    if (!includeDescendants || !treeIndex.ancestorsById.size) {
+      return unitId;
+    }
+    const ancestors = treeIndex.ancestorsById.get(unitId);
+    if (!ancestors || ancestors.length === 0) {
+      return unitId;
+    }
+    return findClosestCachedAncestorId(queryClient, ancestors, baseKey, querySuffix);
+  }, [
+    unitId,
+    includeDescendants,
+    treeIndex,
+    queryClient,
+    baseKey,
+    querySuffix,
+  ]);
+
+  const queryKey = useMemo(() => (
+    sourceUnitId
+      ? [...baseKey(sourceUnitId), ...querySuffix]
+      : []
+  ), [baseKey, querySuffix, sourceUnitId]);
+
+  const queryResult = usePaginatedQuery(
+    queryKey,
+    (queryParams) => fetcher(sourceUnitId, queryParams),
+    {
+      enabled: !!sourceUnitId,
+      params,
+      staleTime: 3 * 60 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      ...options,
+    }
+  );
+
+  const isDerived = Boolean(
+    includeDescendants &&
+    sourceUnitId &&
+    sourceUnitId !== unitId &&
+    treeIndex.ancestorsById.size
+  );
+
+  const derivedPages = useMemo(() => {
+    if (!queryResult.data?.pages) {
+      return [];
+    }
+    if (!isDerived) {
+      return queryResult.data.pages;
+    }
+    return filterAssignmentPages(queryResult.data.pages, unitId, treeIndex.ancestorsById);
+  }, [isDerived, queryResult.data, unitId, treeIndex]);
+
+  const loadedCount = useMemo(
+    () => countAssignmentResults(derivedPages),
+    [derivedPages]
+  );
+
+  const data = useMemo(() => {
+    if (!queryResult.data) {
+      return queryResult.data;
+    }
+    if (!isDerived) {
+      return queryResult.data;
+    }
+    return {
+      ...queryResult.data,
+      pages: derivedPages,
+    };
+  }, [derivedPages, isDerived, queryResult.data]);
+
+  const isCountExact = Boolean(queryResult.data && !queryResult.hasNextPage);
+
+  return {
+    ...queryResult,
+    data,
+    loadedCount,
+    isCountExact,
+    sourceUnitId,
+    isDerived,
+  };
+}
+
+function useUnitAssignmentCounts({
+  unitId,
+  params,
+  options,
+  baseKey,
+  fetcher,
+}) {
+  const queryClient = useQueryClient();
+  const treeQuery = useClinicalUnitsTree();
+  const treeNodes = getTreeNodes(treeQuery.data);
+  const treeIndex = useMemo(() => buildOrgTreeIndex(treeNodes), [treeNodes]);
+  const includeDescendants = params?.include_descendants;
+  const queryValue = params?.q || '';
+
+  const querySuffix = useMemo(
+    () => [includeDescendants ? 'desc' : 'direct', queryValue],
+    [includeDescendants, queryValue]
+  );
+
+  const sourceUnitId = useMemo(() => {
+    if (!unitId) {
+      return unitId;
+    }
+    if (!includeDescendants || !treeIndex.ancestorsById.size) {
+      return unitId;
+    }
+    const ancestors = treeIndex.ancestorsById.get(unitId);
+    if (!ancestors || ancestors.length === 0) {
+      return unitId;
+    }
+    return findClosestCachedAncestorId(
+      queryClient,
+      ancestors,
+      baseKey,
+      querySuffix,
+      (cached) => cached !== undefined
+    );
+  }, [
+    unitId,
+    includeDescendants,
+    treeIndex,
+    queryClient,
+    baseKey,
+    querySuffix,
+  ]);
+
+  const queryKey = useMemo(() => (
+    sourceUnitId
+      ? [...baseKey(sourceUnitId), ...querySuffix]
+      : []
+  ), [baseKey, querySuffix, sourceUnitId]);
+
+  const queryResult = useQuery({
+    queryKey,
+    queryFn: () => fetcher(sourceUnitId, {
+      include_descendants: includeDescendants,
+      q: queryValue,
+    }),
+    enabled: !!sourceUnitId,
+    staleTime: 3 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+
+  const countsPayload = useMemo(
+    () => normalizeCountsPayload(queryResult.data),
+    [queryResult.data]
+  );
+  const aggregatedCounts = useMemo(
+    () => aggregateCountsByUnit(countsPayload, treeIndex.ancestorsById),
+    [countsPayload, treeIndex]
+  );
+  const hasCounts = queryResult.data !== undefined;
+  const hasTreeIndex = treeIndex.ancestorsById.size > 0;
+  const totalCount = useMemo(() => {
+    if (!unitId || !hasCounts) {
+      return null;
+    }
+    if (includeDescendants && !hasTreeIndex) {
+      return null;
+    }
+    if (!hasTreeIndex) {
+      return Number(countsPayload?.[unitId]) || 0;
+    }
+    return aggregatedCounts.get(unitId) || 0;
+  }, [aggregatedCounts, countsPayload, hasCounts, hasTreeIndex, includeDescendants, unitId]);
+
+  const isDerived = Boolean(
+    includeDescendants &&
+    sourceUnitId &&
+    sourceUnitId !== unitId &&
+    treeIndex.ancestorsById.size
+  );
+
+  return {
+    ...queryResult,
+    totalCount,
+    sourceUnitId,
+    isDerived,
+  };
+}
+
+export function useUnitStaff(id, params = {}, options = {}) {
+  return useUnitAssignmentList({
+    unitId: id,
+    params,
+    options,
+    baseKey: organizationKeys.unitStaffBase,
+    fetcher: clinicalUnitsApi.staffPaginated,
+  });
+}
+
+export function useUnitStaffCounts(id, params = {}, options = {}) {
+  return useUnitAssignmentCounts({
+    unitId: id,
+    params,
+    options,
+    baseKey: organizationKeys.unitStaffCountsBase,
+    fetcher: clinicalUnitsApi.staffCounts,
+  });
+}
+
+export function useUnitMembers(id, params = {}, options = {}) {
+  return useUnitAssignmentList({
+    unitId: id,
+    params,
+    options,
+    baseKey: organizationKeys.unitMembersBase,
+    fetcher: clinicalUnitsApi.membersPaginated,
+  });
+}
+
+export function useUnitMembersCounts(id, params = {}, options = {}) {
+  return useUnitAssignmentCounts({
+    unitId: id,
+    params,
+    options,
+    baseKey: organizationKeys.unitMembersCountsBase,
+    fetcher: clinicalUnitsApi.membersCounts,
+  });
+}
+
+export function useUnitWards(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitWards(id),
+    queryFn: () => clinicalUnitsApi.wards(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+// =============================================================================
+// Clinical Unit Mutations
+// =============================================================================
+
+export function useCreateClinicalUnit() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => clinicalUnitsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useUpdateClinicalUnit() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => clinicalUnitsApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.unit(id) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useDeleteClinicalUnit() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => clinicalUnitsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+// =============================================================================
+// Leadership Assignment Hooks & Mutations
+// =============================================================================
+
+export function useLeadershipAssignments(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.leadershipList(params),
+    queryFn: () => leadershipApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateLeadershipAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => leadershipApi.create(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.leadership() });
+      if (variables.unit) {
+        queryClient.invalidateQueries({ queryKey: organizationKeys.unitLeaders(variables.unit) });
+      }
+    },
+  });
+}
+
+export function useUpdateLeadershipAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => leadershipApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.leadership() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useDeleteLeadershipAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => leadershipApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.leadership() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+// =============================================================================
+// Staff Assignment Hooks & Mutations
+// =============================================================================
+
+export function useStaffAssignments(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.staffAssignmentsList(params),
+    queryFn: () => staffAssignmentsApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => staffAssignmentsApi.create(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.staffAssignments() });
+      if (variables.unit) {
+        queryClient.invalidateQueries({ queryKey: organizationKeys.unitStaffBase(variables.unit) });
+      }
+    },
+  });
+}
+
+export function useUpdateStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => staffAssignmentsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.staffAssignments() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useDeleteStaffAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => staffAssignmentsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.staffAssignments() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+// =============================================================================
+// Ops Unit Member Hooks & Mutations
+// =============================================================================
+
+export function useUnitMembersList(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.unitMembersList(params),
+    queryFn: () => unitMembersApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateUnitMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => unitMembersApi.create(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.unitMembersList({}) });
+      if (variables.unit) {
+        queryClient.invalidateQueries({ queryKey: organizationKeys.unitMembersBase(variables.unit) });
+      }
+    },
+  });
+}
+
+export function useUpdateUnitMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => unitMembersApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.unitMembersList({}) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useDeleteUnitMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => unitMembersApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.unitMembersList({}) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+// =============================================================================
+// Cross Coverage Hooks & Mutations
+// =============================================================================
+
+export function useCrossCoverageSchedules(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.crossCoverageList(params),
+    queryFn: () => crossCoverageApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateCrossCoverage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => crossCoverageApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.crossCoverage() });
+    },
+  });
+}
+
+export function useUpdateCrossCoverage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => crossCoverageApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.crossCoverage() });
+    },
+  });
+}
+
+export function useDeleteCrossCoverage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => crossCoverageApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.crossCoverage() });
+    },
+  });
+}
+
+// =============================================================================
+// Ward Allocation Hooks & Mutations
+// =============================================================================
+
+export function useWardAllocations(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.wardAllocationsList(params),
+    queryFn: () => wardAllocationsApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateWardAllocation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => wardAllocationsApi.create(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.wardAllocations() });
+      if (variables.unit) {
+        queryClient.invalidateQueries({ queryKey: organizationKeys.unitWards(variables.unit) });
+      }
+    },
+  });
+}
+
+export function useUpdateWardAllocation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => wardAllocationsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.wardAllocations() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+export function useDeleteWardAllocation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => wardAllocationsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.wardAllocations() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}

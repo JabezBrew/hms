@@ -7,6 +7,7 @@ export const staffKeys = {
   all: ['staff'],
   lists: () => [...staffKeys.all, 'list'],
   list: (filters) => [...staffKeys.lists(), { filters }],
+  search: () => [...staffKeys.all, 'search'],
   details: () => [...staffKeys.all, 'detail'],
   detail: (id) => [...staffKeys.details(), id],
   practitioners: () => [...staffKeys.all, 'practitioners'],
@@ -205,6 +206,23 @@ export function useSearchPractitioners(doctorsOnly = false, options = {}) {
     (query) => staffApi.searchPractitioners(query, doctorsOnly),
     {
       staleTime: 5 * 60 * 1000, // 5 minutes - practitioners list changes less frequently
+      ...options,
+    }
+  );
+}
+
+/**
+ * Search staff (local only) by name or employee ID
+ * @param {Object} filters - Optional filters
+ * @param {Object} options - Search options
+ * @returns {Object} Search query result
+ */
+export function useSearchStaff(filters = {}, options = {}) {
+  return useSearchQuery(
+    [...staffKeys.search(), { filters }],
+    (query) => staffApi.searchStaff(query, filters),
+    {
+      staleTime: 60 * 1000,
       ...options,
     }
   );

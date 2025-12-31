@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'mptt',  # Tree structures for organizational hierarchy
 
     # Local apps
     'apps.core.apps.CoreConfig',  # Shared utilities for API optimization
@@ -98,6 +99,7 @@ INSTALLED_APPS = [
     'apps.referrals.apps.ReferralsConfig',
     'apps.charts.apps.ChartsConfig',
     'apps.pharmacy.apps.PharmacyConfig',
+    'apps.organization.apps.OrganizationConfig',  # Flexible organizational hierarchy
 ]
 
 MIDDLEWARE = [
@@ -281,13 +283,24 @@ AUTH_USER_MODEL = 'users.User'
 
 # Cache configuration
 if DEBUG or IS_BUILD:
-    CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-            'LOCATION': 'hms-local',
-            'TIMEOUT': 300,  # 5 minutes default
+    _dev_redis_url = env('REDIS_URL', default=None)
+    if _dev_redis_url:
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                'LOCATION': _dev_redis_url,
+                'KEY_PREFIX': 'hms',
+                'TIMEOUT': 300,  # 5 minutes default
+            }
         }
-    }
+    else:
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'hms-local',
+                'TIMEOUT': 300,  # 5 minutes default
+            }
+        }
 else:
     CACHES = {
         'default': {

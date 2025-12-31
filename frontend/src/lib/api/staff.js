@@ -149,6 +149,44 @@ export const staffApi = {
   },
 
   /**
+   * Search staff by name or employee ID
+   * @param {string} query - Search query
+   * @param {Object} filters - Optional filters
+   * @returns {Promise<Array>} List of matching staff
+   */
+  searchStaff: async (query, filters = {}) => {
+    try {
+      if (!query || query.length < 2) {
+        return [];
+      }
+
+      const params = new URLSearchParams({ q: query });
+
+      if (filters.staffKind) {
+        params.append('staff_kind', filters.staffKind);
+      }
+      if (filters.practitionersOnly) {
+        params.append('practitioners_only', 'true');
+      }
+      if (filters.userTypes) {
+        const userTypes = Array.isArray(filters.userTypes)
+          ? filters.userTypes.join(',')
+          : filters.userTypes;
+        if (userTypes) {
+          params.append('user_type', userTypes);
+        }
+      }
+      if (filters.includeInactive) {
+        params.append('include_inactive', 'true');
+      }
+
+      return await apiClient.get(`/users/staff/search/?${params.toString()}`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to search staff'));
+    }
+  },
+
+  /**
    * Get a single practitioner by ID
    * @param {string} id - Practitioner ID
    * @returns {Promise<Object>} Practitioner data

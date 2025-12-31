@@ -5,7 +5,7 @@ Treat PHI as toxic waste and p99 latency as a safety issue. When in doubt,
 favor correctness, least privilege, and predictable performance.
 
 ## Source of Truth
-- Read `docs/ai-agent-review.md` before making changes. It consolidates current
+- Read `claude.md` before making changes. It consolidates current
   security, systems, and DB reliability findings.
 
 ## Project Structure
@@ -105,3 +105,6 @@ favor correctness, least privilege, and predictable performance.
 - Use Chronicle design system patterns and components when building clinical UIs.
 - Fonts: Fraunces (display), DM Sans (headings), IBM Plex Mono (data).
 - Visual language: editorial medical journal aesthetic; avoid generic dashboards.
+
+## Running tests
+- Backend tests: Activate virtual environment and run `pytest`.
