@@ -161,15 +161,7 @@ export function OpsStaffPanel({ unitId }) {
     fetchNextPage();
   }, [shouldAutoFetch, isLoading, isFetchingNextPage, fetchNextPage]);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(3)].map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full rounded-lg" />
-        ))}
-      </div>
-    );
-  }
+  const showSkeleton = isLoading && members.length === 0;
 
   return (
     <div className="space-y-6">
@@ -208,7 +200,13 @@ export function OpsStaffPanel({ unitId }) {
         )}
       </div>
 
-      {members.length === 0 ? (
+      {showSkeleton ? (
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : members.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
             <Users className="h-7 w-7 text-muted-foreground/50" />
