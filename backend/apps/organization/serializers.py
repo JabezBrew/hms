@@ -289,7 +289,9 @@ class StaffUnitAssignmentListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for staff assignment lists."""
     unit_name = serializers.CharField(source='unit.name', read_only=True)
     unit_type_name = serializers.CharField(source='unit.unit_type.name', read_only=True)
+    staff_id = serializers.SerializerMethodField()
     practitioner_name = serializers.SerializerMethodField()
+    employee_id = serializers.SerializerMethodField()
     assignment_type_name = serializers.CharField(source='assignment_type.name', read_only=True)
     is_currently_effective = serializers.BooleanField(read_only=True)
 
@@ -297,18 +299,31 @@ class StaffUnitAssignmentListSerializer(serializers.ModelSerializer):
         model = StaffUnitAssignment
         fields = [
             'id', 'unit', 'unit_name', 'unit_type_name',
-            'practitioner', 'practitioner_name',
+            'staff_id',
+            'practitioner', 'practitioner_name', 'employee_id',
             'assignment_type', 'assignment_type_name',
             'is_primary', 'is_secondary', 'fte_percentage',
             'effective_from', 'effective_until',
             'is_active', 'is_currently_effective'
         ]
 
+    def get_staff_id(self, obj):
+        try:
+            return str(obj.practitioner.staff_id)
+        except Exception:
+            return None
+
     def get_practitioner_name(self, obj):
         try:
             return obj.practitioner.staff.user.get_full_name() or obj.practitioner.staff.user.email
         except Exception:
             return str(obj.practitioner_id)
+
+    def get_employee_id(self, obj):
+        try:
+            return obj.practitioner.staff.employee_id
+        except Exception:
+            return None
 
 
 class StaffUnitAssignmentSerializer(serializers.ModelSerializer):

@@ -57,6 +57,7 @@ from .tree_cache import ORG_TREE_CACHE_TTL, get_org_tree_payload
 
 STAFF_LIST_CACHE_TTL = 60 * 60 * 3  # 3 hours
 STAFF_LIST_MIN_QUERY_LEN = 2
+ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION = 2
 
 
 def _get_unit_list_cache_version(kind, unit_id):
@@ -77,8 +78,8 @@ def _build_unit_list_cache_key(kind, unit_id, user_id, include_descendants, quer
     )
     version = _get_unit_list_cache_version(kind, unit_id)
     return (
-        f'org_unit_{kind}_list:v{version}:{unit_id}:{user_id}:'
-        f'{int(include_descendants)}:{page}:{page_size}:{today}:{query_hash}'
+        f'org_unit_{kind}_list:s{ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION}:v{version}:'
+        f'{unit_id}:{user_id}:{int(include_descendants)}:{page}:{page_size}:{today}:{query_hash}'
     )
 
 
@@ -91,8 +92,8 @@ def _build_unit_counts_cache_key(kind, unit_id, user_id, include_descendants, qu
     )
     version = _get_unit_list_cache_version(kind, unit_id)
     return (
-        f'org_unit_{kind}_counts:v{version}:{unit_id}:{user_id}:'
-        f'{int(include_descendants)}:{today}:{query_hash}'
+        f'org_unit_{kind}_counts:s{ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION}:v{version}:'
+        f'{unit_id}:{user_id}:{int(include_descendants)}:{today}:{query_hash}'
     )
 
 
