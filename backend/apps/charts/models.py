@@ -60,6 +60,12 @@ class ChartTemplate(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='chart_templates',
+        help_text="Facility that owns this chart template"
+    )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     icon = models.CharField(max_length=50, default='clipboard-list')
@@ -126,6 +132,7 @@ class ChartTemplate(models.Model):
     class Meta:
         ordering = ['category', 'name']
         indexes = [
+            models.Index(fields=['facility', 'visibility']),
             models.Index(fields=['visibility', 'is_active']),
             models.Index(fields=['category', 'is_active']),
             models.Index(fields=['created_by', 'visibility']),
@@ -148,6 +155,7 @@ class ChartTemplate(models.Model):
             display_mode=self.display_mode,
             columns_per_page=self.columns_per_page,
             created_by=user,
+            facility=self.facility,
         )
 
         # Clone all fields

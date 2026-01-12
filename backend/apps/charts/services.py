@@ -453,6 +453,7 @@ class ChartEntryService:
 
             NursingAlert.objects.create(
                 patient=entry.assignment.patient,
+                facility=entry.assignment.patient.facility,
                 alert_type='vital_signs',
                 severity='high',
                 message=message,

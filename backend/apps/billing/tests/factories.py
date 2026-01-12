@@ -27,7 +27,7 @@ from apps.billing.models import (
     BillingRule, FacilityBillingSettings,
 )
 from apps.users.tests.factories import UserFactory, PatientProfileFactory
-from apps.core.tests.factories import FacilityFactory, DepartmentFactory
+from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory, DepartmentFactory
 
 
 class ServiceCategoryFactory(DjangoModelFactory):
@@ -36,6 +36,7 @@ class ServiceCategoryFactory(DjangoModelFactory):
     class Meta:
         model = ServiceCategory
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     name = factory.Sequence(lambda n: f"Service Category {n}")
     description = factory.Faker('sentence')
     is_active = True
@@ -52,6 +53,7 @@ class ServiceFactory(DjangoModelFactory):
     name = factory.Sequence(lambda n: f"Service {n}")
     description = factory.Faker('sentence')
     category = factory.SubFactory(ServiceCategoryFactory)
+    facility = factory.SelfAttribute('category.facility')
     code = factory.Sequence(lambda n: f"SVC{n:04d}")
     base_price = factory.LazyFunction(lambda: Decimal('100.00'))
     tax_rate = factory.LazyFunction(lambda: Decimal('0.00'))
@@ -98,7 +100,7 @@ class ServicePriceFactory(DjangoModelFactory):
 class FacilityServicePriceFactory(ServicePriceFactory):
     """Factory for facility-specific prices."""
 
-    facility = factory.SubFactory(FacilityFactory)
+    facility = factory.SubFactory(DefaultFacilityFactory)
 
 
 class DepartmentServicePriceFactory(ServicePriceFactory):
@@ -134,6 +136,7 @@ class InsuranceProviderFactory(DjangoModelFactory):
     class Meta:
         model = InsuranceProvider
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     name = factory.Sequence(lambda n: f"Insurance Provider {n}")
     code = factory.Sequence(lambda n: f"INS{n:03d}")
     contact_person = factory.Faker('name')
@@ -152,6 +155,7 @@ class InsurancePlanFactory(DjangoModelFactory):
         model = InsurancePlan
 
     provider = factory.SubFactory(InsuranceProviderFactory)
+    facility = factory.SelfAttribute('provider.facility')
     name = factory.Sequence(lambda n: f"Plan {n}")
     code = factory.Sequence(lambda n: f"PLN{n:03d}")
     description = factory.Faker('sentence')
@@ -169,7 +173,11 @@ class PatientInsuranceFactory(DjangoModelFactory):
         model = PatientInsurance
 
     patient = factory.SubFactory(PatientProfileFactory)
-    plan = factory.SubFactory(InsurancePlanFactory)
+    plan = factory.SubFactory(
+        InsurancePlanFactory,
+        facility=factory.SelfAttribute('..patient.facility'),
+        provider__facility=factory.SelfAttribute('..patient.facility')
+    )
     policy_number = factory.Sequence(lambda n: f"POL{n:08d}")
     valid_from = factory.LazyFunction(lambda: timezone.now().date() - timedelta(days=365))
     valid_until = factory.LazyFunction(lambda: timezone.now().date() + timedelta(days=365))
@@ -187,6 +195,7 @@ class InvoiceFactory(DjangoModelFactory):
 
     invoice_number = factory.Sequence(lambda n: f"INV{n:08d}")
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     invoice_date = factory.LazyFunction(lambda: timezone.now().date())
     due_date = factory.LazyFunction(lambda: timezone.now().date() + timedelta(days=30))
     subtotal = factory.LazyFunction(lambda: Decimal('0.00'))

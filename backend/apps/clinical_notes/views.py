@@ -1,7 +1,8 @@
 from rest_framework import viewsets, permissions, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
-from rest_framework.pagination import PageNumberPagination
+from apps.core.pagination import StandardResultsSetPagination
 from django.db import transaction, models
 from django.db.models import Q, Exists, OuterRef
 from django.utils import timezone
@@ -30,16 +31,17 @@ from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
-from ..core.security import check_clinical_access
+from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
 
 logger = logging.getLogger(__name__)
 
 
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination for clinical notes endpoints."""
-    page_size = 25
-    page_size_query_param = 'page_size'
-    max_page_size = 100
+def _require_patient_facility(request, patient):
+    facility = get_user_facility(request)
+    if not facility:
+        raise PermissionDenied("Facility context is required.")
+    if patient.facility_id != facility.id:
+        raise PermissionDenied("Patient does not belong to the active facility.")
 
 
 class NoteTemplateViewSet(viewsets.ModelViewSet):
@@ -56,7 +58,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
     """
     queryset = NoteTemplate.objects.all()
     serializer_class = NoteTemplateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -78,10 +80,13 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         6. Template is a system template (created_by is NULL)
         """
         user = self.request.user
+        facility = get_user_facility(self.request)
+        if not facility:
+            return NoteTemplate.objects.none()
 
         # Admins can see all templates
         if user.user_type == 'admin':
-            queryset = NoteTemplate.objects.all()
+            queryset = NoteTemplate.objects.filter(facility=facility)
         else:
             # Get user's department from Staff profile if available
             user_department = None
@@ -104,7 +109,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             if user_department:
                 visibility_q |= Q(visibility='department', department=user_department)
 
-            queryset = NoteTemplate.objects.filter(visibility_q).distinct()
+            queryset = NoteTemplate.objects.filter(visibility_q, facility=facility).distinct()
 
         # Apply query parameter filters
         # Filter by active status
@@ -139,6 +144,12 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-updated_at')
 
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(created_by=self.request.user, facility=facility)
+
     def perform_update(self, serializer):
         """Set the updated_by field when updating a template."""
         serializer.save(updated_by=self.request.user)
@@ -158,7 +169,10 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         """
         Get templates created by the current user.
         """
-        queryset = NoteTemplate.objects.filter(created_by=request.user)
+        facility = get_user_facility(request)
+        if not facility:
+            return Response([])
+        queryset = NoteTemplate.objects.filter(created_by=request.user, facility=facility)
         serializer = NoteTemplateListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
 
@@ -191,6 +205,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             icon=original.icon,
             estimated_steps=original.estimated_steps,
             created_by=request.user,
+            facility=original.facility,
         )
 
         serializer = NoteTemplateSerializer(new_template, context={'request': request})
@@ -203,7 +218,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
     """
     queryset = NoteEntry.objects.all()
     serializer_class = NoteEntrySerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor | IsAdminOrNurse]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor | IsAdminOrNurse]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -215,13 +230,17 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         """
         Filter note entries based on query parameters.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return NoteEntry.objects.none()
+
         queryset = NoteEntry.objects.select_related(
             'template', 'patient', 'patient__user', 'encounter', 'practitioner'
         ).annotate(
             is_signed=Exists(
                 NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
             )
-        )
+        ).filter(facility=facility)
 
         # Filter by encounter ID
         encounter_id = self.request.query_params.get('encounter_id') or self.request.query_params.get('encounter')
@@ -231,6 +250,11 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient_id') or self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            _require_patient_facility(self.request, patient)
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by template
@@ -405,11 +429,16 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 new_data[section_name] = copy.deepcopy(source_note.data[section_name])
 
         # Create the new note entry
+        facility = get_user_facility(request)
+        if not facility or target_patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, target_patient)
         new_note = NoteEntry.objects.create(
             template=source_note.template,
             patient=target_patient,
             encounter=encounter,
             practitioner=practitioner_profile,
+            facility=facility,
             data=new_data,
             copied_from=source_note,
         )
@@ -470,6 +499,10 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 {"error": "Patient not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+        facility = get_user_facility(request)
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         # Auto-encounter: Find or create an active encounter
         encounter_id = data.get('encounter')
@@ -522,7 +555,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 serializer.validated_data['composition_fhir_id'] = composition_id
 
             # Save the note entry
-            note_entry = serializer.save()
+            note_entry = serializer.save(facility=facility)
 
             # Audit log - clinical note created
             AuditService.log(
@@ -1315,7 +1348,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
     Doctors create prescriptions, nurses can view them for administration.
     """
     queryset = Prescription.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -1333,11 +1366,20 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         """
         Filter prescriptions based on query parameters.
         """
-        queryset = Prescription.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Prescription.objects.none()
+
+        queryset = Prescription.objects.filter(facility=facility)
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            _require_patient_facility(self.request, patient)
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by status
@@ -1404,6 +1446,10 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
                 {"error": "Patient not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+        facility = get_user_facility(request)
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         # Auto-encounter: Find or create an active encounter
         encounter_id = data.get('encounter')
@@ -1427,7 +1473,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Create prescription with prescribed_by
-        prescription = serializer.save(prescribed_by=practitioner_profile)
+        prescription = serializer.save(prescribed_by=practitioner_profile, facility=facility)
 
         # Audit log - prescription created
         AuditService.log(
@@ -1709,8 +1755,16 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        prescriptions = Prescription.objects.filter(
-            patient_id=patient_id,
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = PatientProfile.objects.get(id=patient_id)
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+
+        prescriptions = self.get_queryset().filter(
+            patient=patient,
             status='active'
         ).filter(
             models.Q(end_date__gte=timezone.now().date()) |
@@ -1814,6 +1868,7 @@ def patient_timeline(request, patient_id):
         )
 
     # SECURITY: Check clinical data access
+    _require_patient_facility(request, patient)
     check_clinical_access(request.user, patient)
 
     # Parse query parameters
@@ -2441,6 +2496,7 @@ def patient_clinical_summary(request, patient_id):
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
+    _require_patient_facility(request, patient)
 
     # Get active prescriptions
     # Show all prescriptions with status='active' regardless of end_date
@@ -2620,6 +2676,7 @@ def timeline_stats(request, patient_id):
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
+    _require_patient_facility(request, patient)
 
     # Count entries by type
     notes_count = NoteEntry.objects.count()  # TODO: Filter by patient when we have proper linking
@@ -2680,6 +2737,7 @@ def chronicle_context(request, patient_id):
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
+    _require_patient_facility(request, patient)
 
     user = patient.user
 
@@ -2932,6 +2990,7 @@ def patient_timeline_v2(request, patient_id):
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
+    _require_patient_facility(request, patient)
 
     # Parse query parameters
     entry_type = request.query_params.get('type', 'all')

@@ -10,6 +10,8 @@ import time
 from django.core.cache import cache
 from mptt.utils import get_cached_trees
 
+from apps.core.cache_utils import facility_cache_key
+from hms_backend.tenancy import get_current_facility_code
 from .models import ClinicalUnit
 from .serializers import ClinicalUnitTreeSerializer
 
@@ -19,18 +21,22 @@ ORG_TREE_LAST_MODIFIED_KEY = 'org_tree_last_modified'
 
 
 def get_org_tree_cache_version():
-    version = cache.get(ORG_TREE_CACHE_VERSION_KEY)
+    version_key = facility_cache_key(ORG_TREE_CACHE_VERSION_KEY)
+    last_modified_key = facility_cache_key(ORG_TREE_LAST_MODIFIED_KEY)
+    version = cache.get(version_key)
     if version is None:
         version = time.time_ns()
-        cache.set(ORG_TREE_CACHE_VERSION_KEY, version, timeout=None)
-        cache.set(ORG_TREE_LAST_MODIFIED_KEY, int(time.time()), timeout=None)
+        cache.set(version_key, version, timeout=None)
+        cache.set(last_modified_key, int(time.time()), timeout=None)
     return version
 
 
 def bump_org_tree_cache_version():
     version = time.time_ns()
-    cache.set(ORG_TREE_CACHE_VERSION_KEY, version, timeout=None)
-    cache.set(ORG_TREE_LAST_MODIFIED_KEY, int(time.time()), timeout=None)
+    version_key = facility_cache_key(ORG_TREE_CACHE_VERSION_KEY)
+    last_modified_key = facility_cache_key(ORG_TREE_LAST_MODIFIED_KEY)
+    cache.set(version_key, version, timeout=None)
+    cache.set(last_modified_key, int(time.time()), timeout=None)
     return version
 
 
@@ -41,10 +47,11 @@ def build_org_tree_cache_key(version, facility_id=None, include_inactive=False):
 
 
 def _get_last_modified_timestamp():
-    last_modified = cache.get(ORG_TREE_LAST_MODIFIED_KEY)
+    cache_key = facility_cache_key(ORG_TREE_LAST_MODIFIED_KEY)
+    last_modified = cache.get(cache_key)
     if last_modified is None:
         last_modified = int(time.time())
-        cache.set(ORG_TREE_LAST_MODIFIED_KEY, last_modified, timeout=None)
+        cache.set(cache_key, last_modified, timeout=None)
     return last_modified
 
 
@@ -98,14 +105,14 @@ def build_org_tree_payload(facility_id=None, include_inactive=False):
 def get_org_tree_payload(facility_id=None, include_inactive=False):
     version = get_org_tree_cache_version()
     cache_key = build_org_tree_cache_key(version, facility_id, include_inactive)
-    payload = cache.get(cache_key)
+    payload = cache.get(facility_cache_key(cache_key))
     if payload is not None:
         return payload
     payload = build_org_tree_payload(
         facility_id=facility_id,
         include_inactive=include_inactive
     )
-    cache.set(cache_key, payload, timeout=ORG_TREE_CACHE_TTL)
+    cache.set(facility_cache_key(cache_key), payload, timeout=ORG_TREE_CACHE_TTL)
     return payload
 
 
@@ -115,7 +122,8 @@ def schedule_org_tree_cache_rebuild(version=None, facility_id=None, include_inac
         rebuild_org_tree_cache.delay(
             version=version,
             facility_id=str(facility_id) if facility_id else None,
-            include_inactive=include_inactive
+            include_inactive=include_inactive,
+            facility_code=get_current_facility_code(),
         )
     except Exception:
         return

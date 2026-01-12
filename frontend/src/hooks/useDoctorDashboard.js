@@ -1,15 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth';
 
 /**
  * Hook for fetching doctor dashboard data
  * Returns today's clinic schedule with current/upcoming/completed appointments
  */
 export function useDoctorDashboard() {
+  const { facilityCode } = useAuth();
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['doctor-dashboard'],
     queryFn: () => apiClient.get('/dashboards/my-work/'),
     refetchInterval: 30000, // Refresh every 30 seconds
+    enabled: Boolean(facilityCode),
   });
 
   return {
@@ -28,6 +31,7 @@ export function useDoctorDashboard() {
  * Hook for fetching detailed clinic schedule
  */
 export function useClinicSchedule(date, practitionerId) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: ['clinic-schedule', date, practitionerId],
     queryFn: () => {
@@ -36,6 +40,6 @@ export function useClinicSchedule(date, practitionerId) {
       if (practitionerId) params.append('practitioner_id', practitionerId);
       return apiClient.get(`/dashboards/clinic/?${params.toString()}`);
     },
-    enabled: !!date || !!practitionerId,
+    enabled: Boolean(facilityCode) && (!!date || !!practitionerId),
   });
 }

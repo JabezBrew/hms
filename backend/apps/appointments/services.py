@@ -157,7 +157,8 @@ class AvailabilityService:
         practitioner_id: str,
         start_date: str,
         end_date: str,
-        appointment_type_id: Optional[str] = None
+        appointment_type_id: Optional[str] = None,
+        facility=None,
     ) -> List[Dict[str, Any]]:
         """
         Compute available slots on-the-fly from recurring schedules.
@@ -182,7 +183,10 @@ class AvailabilityService:
                 practitioner_id=practitioner_id,
                 is_active=True,
                 active_from__lte=end_date_obj
-            ).filter(
+            )
+            if facility is not None:
+                recurring_schedules = recurring_schedules.filter(facility=facility)
+            recurring_schedules = recurring_schedules.filter(
                 Q(active_to__isnull=True) | Q(active_to__gte=start_date_obj)
             ).prefetch_related('practitioner')
 
@@ -199,11 +203,14 @@ class AvailabilityService:
                 return []
 
             # 2. Get blocked times (1 query)
-            blocked_times = list(BlockedTime.objects.filter(
+            blocked_times = BlockedTime.objects.filter(
                 practitioner_id=practitioner_id,
                 date__gte=start_date_obj,
                 date__lte=end_date_obj
-            ))
+            )
+            if facility is not None:
+                blocked_times = blocked_times.filter(facility=facility)
+            blocked_times = list(blocked_times)
 
             # 3. Get booked appointments (1 FHIR query)
             appointments_bundle = AppointmentProxy.search(
@@ -301,7 +308,8 @@ class AvailabilityService:
     def generate_slots_for_date(
         practitioner_id: str,
         target_date: date,
-        user: Optional['User'] = None
+        user: Optional['User'] = None,
+        facility=None,
     ) -> Dict[str, Any]:
         """
         Generate slots for a specific date based on recurring schedules.
@@ -323,7 +331,10 @@ class AvailabilityService:
                 is_active=True,
                 days_of_week__contains=[day_of_week],
                 active_from__lte=target_date
-            ).filter(
+            )
+            if facility is not None:
+                recurring_schedules = recurring_schedules.filter(facility=facility)
+            recurring_schedules = recurring_schedules.filter(
                 Q(active_to__isnull=True) | Q(active_to__gte=target_date)
             )
 
@@ -442,7 +453,8 @@ class AvailabilityService:
     @staticmethod
     def batch_generate_slots_for_next_n_days(
         days: int = 14,
-        user: Optional['User'] = None
+        user: Optional['User'] = None,
+        facility=None,
     ) -> Dict[str, Any]:
         """
         Generate slots for all practitioners for the next N days.
@@ -470,7 +482,10 @@ class AvailabilityService:
         # Get all practitioners with active recurring schedules
         practitioners = PractitionerProfile.objects.filter(
             recurring_schedules__is_active=True
-        ).distinct()
+        )
+        if facility is not None:
+            practitioners = practitioners.filter(recurring_schedules__facility=facility)
+        practitioners = practitioners.distinct()
 
         results["total_practitioners"] = practitioners.count()
 
@@ -497,7 +512,8 @@ class AvailabilityService:
                         result = AvailabilityService.generate_slots_for_date(
                             practitioner_id=str(practitioner.id),
                             target_date=current_date,
-                            user=user
+                            user=user,
+                            facility=facility,
                         )
 
                         practitioner_result["slots_created"] += result["slots_created"]

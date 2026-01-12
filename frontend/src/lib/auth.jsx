@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useContext, createContext, useRef, useCal
 
 import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
-import { setAuthTokenProvider, performTokenRefresh } from "./api-client"
+import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "./api-client"
 import { queryClient } from './react-query'
 
 // Create an authentication context
@@ -13,6 +13,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [facilityCode, setFacilityCodeState] = useState(null)
+  const [mfaSession, setMfaSession] = useState(null)
+  const [mfaUser, setMfaUser] = useState(null)
+  const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false)
+  const [mfaAvailableMethods, setMfaAvailableMethods] = useState(null)
+  const defaultFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || null
   // Store access token in memory (not in localStorage)
   const accessTokenRef = useRef(null)
 
@@ -25,6 +31,19 @@ export function AuthProvider({ children }) {
   const setAccessToken = useCallback((token) => {
     accessTokenRef.current = token
   }, [])
+
+  const setFacilityCode = useCallback((code) => {
+    const normalized = code ? String(code).toUpperCase() : null
+    setFacilityCodeState(normalized)
+    queryClient.clear()
+    if (user) {
+      const updatedUser = { ...user, facilityCode: normalized }
+      localStorage.setItem("user", JSON.stringify(updatedUser))
+      setUser(updatedUser)
+    } else if (mfaUser) {
+      setMfaUser({ ...mfaUser, facilityCode: normalized })
+    }
+  }, [user, mfaUser])
 
   // Logout function - defined early to avoid circular dependency
   const logout = useCallback(async (localOnly = false) => {
@@ -44,6 +63,11 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("refreshTokenIssuedAt")
       setUser(null)
       setAccessToken(null)
+      setFacilityCodeState(null)
+      setMfaSession(null)
+      setMfaUser(null)
+      setMfaEnrollmentRequired(false)
+      setMfaAvailableMethods(null)
 
       // Clear the React Query cache when logging out
       queryClient.clear()
@@ -58,6 +82,11 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("refreshTokenIssuedAt")
       setUser(null)
       setAccessToken(null)
+      setFacilityCodeState(null)
+      setMfaSession(null)
+      setMfaUser(null)
+      setMfaEnrollmentRequired(false)
+      setMfaAvailableMethods(null)
       queryClient.clear()
     }
   }, [setAccessToken])
@@ -138,6 +167,7 @@ export function AuthProvider({ children }) {
           }
 
           setUser(userData)
+          setFacilityCodeState(userData.facilityCode || defaultFacilityCode)
           // Only refresh token if user wasn't just logged in AND we don't have a token
           if (!justLoggedInRef.current && !accessTokenRef.current) {
             // IMPORTANT: Wait for token refresh before setting loading=false
@@ -155,8 +185,8 @@ export function AuthProvider({ children }) {
           localStorage.removeItem("refreshTokenIssuedAt")
         }
       }
-      setLoading(false)
-    }
+    setLoading(false)
+  }
 
     initializeAuth()
   }, [isSessionValid, refreshAccessToken])
@@ -164,47 +194,67 @@ export function AuthProvider({ children }) {
   // Connect auth context to api-client
   useEffect(() => {
     setAuthTokenProvider(getAccessToken, setAccessToken, handleRefreshFailure)
-  }, [getAccessToken, setAccessToken, handleRefreshFailure])
+    setFacilityCodeProvider(() => facilityCode)
+  }, [getAccessToken, setAccessToken, handleRefreshFailure, facilityCode])
 
   // Login function
-  const login = async (email, password) => {
+  const applyAuthResponse = useCallback((response) => {
+    if (!response?.access || !response?.user) {
+      return null
+    }
+
+    setAccessToken(response.access)
+
+    const now = Date.now().toString()
+    localStorage.setItem("sessionStartTime", now)
+    localStorage.setItem("refreshTokenIssuedAt", now)
+
+    const userData = {
+      email: response.user.email,
+      id: response.user.id,
+      role: response.user.user_type,
+      firstName: response.user.first_name,
+      lastName: response.user.last_name,
+      staffId: response.user.staff_id || null,
+      practitionerId: response.user.practitioner_id || null,
+      facilityCode: response.user.facility_code || defaultFacilityCode,
+      accessContext: response.access_context || null,
+    }
+    localStorage.setItem("user", JSON.stringify(userData))
+    setUser(userData)
+    setFacilityCodeState(userData.facilityCode || null)
+
+    setMfaSession(null)
+    setMfaUser(null)
+    setMfaEnrollmentRequired(false)
+    setMfaAvailableMethods(null)
+
+    justLoggedInRef.current = true
+    setTimeout(() => {
+      justLoggedInRef.current = false
+    }, 5000)
+
+    return userData
+  }, [defaultFacilityCode, setAccessToken])
+
+  const login = async (email, password, facility) => {
     setError(null)
     try {
       // Call the login API
-      const response = await authApi.login(email, password)
+      const response = await authApi.login(email, password, facility)
 
-      // Store access token in memory
-      setAccessToken(response.access)
-
-      // Store session timing data
-      const now = Date.now().toString()
-      localStorage.setItem("sessionStartTime", now)
-      localStorage.setItem("refreshTokenIssuedAt", now)
-
-      // Store user data (without token) in localStorage
-      const userData = {
-        email: response.user.email,
-        id: response.user.id,
-        role: response.user.user_type, // Store the user's role
-        firstName: response.user.first_name,
-        lastName: response.user.last_name,
-        staffId: response.user.staff_id || null,
-        practitionerId: response.user.practitioner_id || null,
-        // Include access context for off-site read-only mode
-        accessContext: response.access_context || null,
+      if (response?.mfa_required) {
+        setMfaSession(response.mfa_session)
+        setMfaUser(response.user || null)
+        setMfaEnrollmentRequired(Boolean(response.mfa?.enrollment_required))
+        setMfaAvailableMethods(response.mfa || null)
+        if (response.user?.facility_code || facility) {
+          setFacilityCode(response.user?.facility_code || facility)
+        }
+        return { mfaRequired: true }
       }
-      localStorage.setItem("user", JSON.stringify(userData))
-      setUser(userData)
 
-      // Set the flag to indicate user just logged in
-      justLoggedInRef.current = true
-
-      // Reset the flag after 5 seconds
-      setTimeout(() => {
-        justLoggedInRef.current = false
-      }, 5000)
-
-      return userData
+      return applyAuthResponse(response)
     } catch (error) {
       const errorMessage = error.message || "Failed to login"
       setError(errorMessage)
@@ -231,20 +281,43 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const completeMfa = useCallback((response) => applyAuthResponse(response), [applyAuthResponse])
+
   const value = useMemo(
     () => ({
       user,
       loading,
       error,
       login,
+      completeMfa,
       logout,
       resetPassword,
+      facilityCode,
+      setFacilityCode,
       getAccessToken,
       refreshAccessToken,
       isSessionValid,
+      mfaSession,
+      mfaUser,
+      mfaEnrollmentRequired,
+      mfaAvailableMethods,
       isAuthenticated: !!user,
     }),
-    [user, loading, error, getAccessToken, refreshAccessToken, isSessionValid]
+    [
+      user,
+      loading,
+      error,
+      facilityCode,
+      setFacilityCode,
+      getAccessToken,
+      refreshAccessToken,
+      isSessionValid,
+      mfaSession,
+      mfaUser,
+      mfaEnrollmentRequired,
+      mfaAvailableMethods,
+      completeMfa,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

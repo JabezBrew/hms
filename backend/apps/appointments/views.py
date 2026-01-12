@@ -1,6 +1,8 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError
 import datetime
 
 from .models import (
@@ -19,7 +21,89 @@ from ..fhir_client.utils import (
     create_reference, create_period, generate_fhir_id
 )
 from ..users.permissions import IsAdminOrOwner
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_demographics_access,
+    get_user_facility,
+)
+from apps.users.models import PatientProfile
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
+
+
+def _resolve_patient_profile(patient_id):
+    if not patient_id:
+        return None
+    try:
+        return PatientProfile.objects.get(id=patient_id)
+    except (PatientProfile.DoesNotExist, ValueError, TypeError, ValidationError):
+        return PatientProfile.objects.filter(fhir_patient_id=patient_id).first()
+
+
+def _extract_patient_fhir_id(appointment):
+    participant_data = appointment.get('participant', [])
+    for participant in participant_data:
+        actor = participant.get('actor', {})
+        reference = actor.get('reference', '')
+        if reference.startswith('Patient/'):
+            return reference.split('/')[-1]
+    return None
+
+
+def _filter_appointments_by_facility(appointments, facility):
+    if not facility:
+        return []
+    pairs = [(appt, _extract_patient_fhir_id(appt)) for appt in appointments]
+    patient_ids = {pid for _, pid in pairs if pid}
+    if not patient_ids:
+        return []
+    allowed_ids = set(
+        PatientProfile.objects.filter(
+            fhir_patient_id__in=patient_ids,
+            facility=facility
+        ).values_list('fhir_patient_id', flat=True)
+    )
+    return [appt for appt, pid in pairs if pid in allowed_ids]
+
+
+def _filter_appointment_bundle(bundle, facility):
+    if not bundle or 'entry' not in bundle:
+        return bundle
+    if not facility:
+        return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+    entries = bundle.get('entry', [])
+    resources = [entry.get('resource') for entry in entries if entry.get('resource')]
+    filtered_resources = _filter_appointments_by_facility(resources, facility)
+    allowed_ids = {
+        _extract_patient_fhir_id(resource)
+        for resource in filtered_resources
+        if _extract_patient_fhir_id(resource)
+    }
+    filtered_entries = [
+        entry for entry in entries
+        if _extract_patient_fhir_id(entry.get('resource', {})) in allowed_ids
+    ]
+    bundle['entry'] = filtered_entries
+    bundle['total'] = len(filtered_entries)
+    return bundle
+
+
+def _get_patient_for_appointment(appointment):
+    patient_fhir_id = _extract_patient_fhir_id(appointment)
+    if not patient_fhir_id:
+        return None
+    return PatientProfile.objects.filter(fhir_patient_id=patient_fhir_id).first()
+
+
+def _ensure_appointment_facility_access(appointment, facility, user):
+    if not facility:
+        raise PermissionDenied("Facility context is required.")
+    patient = _get_patient_for_appointment(appointment)
+    if not patient:
+        raise PermissionDenied("Appointment patient not found.")
+    if patient.facility_id != facility.id:
+        raise PermissionDenied("Patient does not belong to the active facility.")
+    check_demographics_access(user, patient)
 
 
 class AppointmentTypeViewSet(viewsets.ModelViewSet):
@@ -29,6 +113,7 @@ class AppointmentTypeViewSet(viewsets.ModelViewSet):
     queryset = AppointmentType.objects.all()
     serializer_class = AppointmentTypeSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -48,6 +133,7 @@ class AppointmentFHIRMappingViewSet(viewsets.ModelViewSet):
     queryset = AppointmentFHIRMapping.objects.all()
     serializer_class = AppointmentFHIRMappingSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -62,6 +148,7 @@ class AppointmentViewSet(viewsets.ViewSet):
     """
     permission_classes = [
         permissions.IsAuthenticated,
+        FacilityScopedPermission,
         (IsAdmin | IsDoctor | IsNurse | IsReceptionist)  # Use the | operator instead of permissions.OR
     ]
 
@@ -96,12 +183,27 @@ class AppointmentViewSet(viewsets.ViewSet):
                 logger.warning(f"Error getting practitioner profile for user {request.user.id}: {str(e)}")
                 return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
 
+        if patient_id:
+            patient = _resolve_patient_profile(patient_id)
+            if not patient:
+                return Response({"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []})
+            facility = get_user_facility(request)
+            if facility and patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_demographics_access(request.user, patient)
+
         appointments = AppointmentProxy.search(
             patient_id=patient_id,
             practitioner_id=practitioner_id,
             date=date,
             status=status
         )
+
+        facility = get_user_facility(request)
+        if isinstance(appointments, list):
+            appointments = _filter_appointments_by_facility(appointments, facility)
+        else:
+            appointments = _filter_appointment_bundle(appointments, facility)
 
         return Response(appointments)
 
@@ -111,7 +213,11 @@ class AppointmentViewSet(viewsets.ViewSet):
         """
         try:
             appointment = AppointmentProxy.get(pk)
+            facility = get_user_facility(request)
+            _ensure_appointment_facility_access(appointment, facility, request.user)
             return Response(appointment)
+        except PermissionDenied as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             return Response(
                 {"error": str(e)},
@@ -153,6 +259,22 @@ class AppointmentViewSet(viewsets.ViewSet):
                     {"error": "Missing required fields: patient_id, practitioner_id, start_time, end_time, appointment_type_id"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            patient = _resolve_patient_profile(patient_id)
+            if not patient:
+                return Response(
+                    {"error": "Patient not found."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            facility = get_user_facility(request)
+            if facility and patient.facility_id != facility.id:
+                return Response(
+                    {"error": "Patient does not belong to the active facility."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            check_demographics_access(request.user, patient)
 
             # Parse datetime strings
             try:
@@ -205,8 +327,12 @@ class AppointmentViewSet(viewsets.ViewSet):
             if end_time:
                 end_time = datetime.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
 
+            appointment = AppointmentProxy.get(pk)
+            facility = get_user_facility(request)
+            _ensure_appointment_facility_access(appointment, facility, request.user)
+
             # Update the appointment
-            appointment = AppointmentProxy.update(
+            updated = AppointmentProxy.update(
                 appointment_id=pk,
                 start_time=start_time,
                 end_time=end_time,
@@ -215,7 +341,7 @@ class AppointmentViewSet(viewsets.ViewSet):
                 comment=comment
             )
 
-            return Response(appointment)
+            return Response(updated)
 
         except Exception as e:
             return Response(
@@ -228,8 +354,13 @@ class AppointmentViewSet(viewsets.ViewSet):
         Delete an appointment.
         """
         try:
+            appointment = AppointmentProxy.get(pk)
+            facility = get_user_facility(request)
+            _ensure_appointment_facility_access(appointment, facility, request.user)
             AppointmentProxy.delete(pk)
             return Response(status=status.HTTP_204_NO_CONTENT)
+        except PermissionDenied as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             return Response(
                 {"error": str(e)},
@@ -255,11 +386,13 @@ class AppointmentViewSet(viewsets.ViewSet):
 
         try:
             # Use new just-in-time computation method
+            facility = get_user_facility(request)
             slots = AvailabilityService.compute_available_slots(
                 practitioner_id=practitioner_id,
                 start_date=start_date,
                 end_date=end_date,
-                appointment_type_id=appointment_type_id
+                appointment_type_id=appointment_type_id,
+                facility=facility,
             )
 
             # Filter to only free slots by default, unless status param says otherwise
@@ -283,7 +416,7 @@ class SlotViewSet(viewsets.ViewSet):
     """
     API endpoint for FHIR Slot resources.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
 
     def list(self, request):
         """
@@ -347,7 +480,7 @@ class ScheduleViewSet(viewsets.ViewSet):
     """
     API endpoint for FHIR Schedule resources.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
 
     def list(self, request):
         """
@@ -485,6 +618,7 @@ class ScheduleFHIRMappingViewSet(viewsets.ModelViewSet):
     queryset = ScheduleFHIRMapping.objects.all()
     serializer_class = ScheduleFHIRMappingSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
@@ -566,6 +700,7 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
     queryset = RecurringAppointmentRule.objects.all()
     serializer_class = RecurringAppointmentRuleSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -692,14 +827,18 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
     """
     queryset = RecurringSchedule.objects.all()
     serializer_class = RecurringScheduleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter schedules by practitioner and active status.
         Doctors/nurses automatically see only their own schedules.
         """
-        queryset = RecurringSchedule.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return RecurringSchedule.objects.none()
+        queryset = RecurringSchedule.objects.filter(facility=facility)
         practitioner_id = self.request.query_params.get('practitioner')
         is_active = self.request.query_params.get('is_active')
 
@@ -722,7 +861,14 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user,
+            facility=facility,
+        )
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -804,7 +950,7 @@ class BatchGenerationViewSet(viewsets.ViewSet):
 
     This endpoint is kept for backwards compatibility but will be removed in a future version.
     """
-    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor]
 
     @action(detail=False, methods=['post'])
     def generate_slots(self, request):
@@ -837,9 +983,11 @@ class BatchGenerationViewSet(viewsets.ViewSet):
                 )
 
             # Call the service to generate slots
+            facility = get_user_facility(request)
             result = AvailabilityService.batch_generate_slots_for_next_n_days(
                 days=days,
-                user=request.user
+                user=request.user,
+                facility=facility,
             )
 
             return Response(result)
@@ -859,14 +1007,18 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
     """
     queryset = BlockedTime.objects.all()
     serializer_class = BlockedTimeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdmin | IsDoctor]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter blocked times by practitioner and date range.
         Doctors/nurses automatically see only their own blocked times.
         """
-        queryset = BlockedTime.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return BlockedTime.objects.none()
+        queryset = BlockedTime.objects.filter(facility=facility)
 
         practitioner_id = self.request.query_params.get('practitioner_id')
         start_date = self.request.query_params.get('start_date')
@@ -893,7 +1045,14 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
         return queryset.select_related('practitioner', 'practitioner__staff', 'practitioner__staff__user')
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user,
+            facility=facility,
+        )
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -930,6 +1089,12 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
 
             start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            facility = get_user_facility(request)
+            if not facility:
+                return Response(
+                    {"error": "Facility context is required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             # Create blocked time for each day in the range
             blocked_times = []
@@ -938,6 +1103,7 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
             while current_date <= end_date:
                 blocked_time = BlockedTime.objects.create(
                     practitioner_id=practitioner_id,
+                    facility=facility,
                     date=current_date,
                     start_time=start_time if start_time else datetime.time(0, 0),
                     end_time=end_time if end_time else datetime.time(23, 59),

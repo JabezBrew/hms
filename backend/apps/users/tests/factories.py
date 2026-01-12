@@ -18,6 +18,7 @@ from apps.users.models import (
     Staff, PractitionerProfile, PatientProfile,
     PasswordResetToken, UserPatientList
 )
+from apps.core.tests.factories import DefaultFacilityFactory
 
 User = get_user_model()
 
@@ -38,6 +39,7 @@ class UserFactory(factory.django.DjangoModelFactory):
     is_active = True
     is_staff = False
     is_superuser = False
+    primary_facility = factory.SubFactory(DefaultFacilityFactory)
 
     @factory.post_generation
     def password(self, create, extracted, **kwargs):
@@ -109,7 +111,10 @@ class StaffFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Staff
 
-    user = factory.SubFactory(DoctorUserFactory)
+    user = factory.SubFactory(
+        DoctorUserFactory,
+        primary_facility=factory.SelfAttribute('..primary_facility')
+    )
     employee_id = factory.Sequence(lambda n: f"EMP{n:05d}")
     department = factory.Faker('random_element', elements=[
         'Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics',
@@ -120,7 +125,7 @@ class StaffFactory(factory.django.DjangoModelFactory):
         'Resident', 'Consultant', 'Intern'
     ])
     hire_date = factory.LazyFunction(lambda: date.today() - timedelta(days=365))
-    primary_facility = None  # Nullable for backward compatibility
+    primary_facility = factory.SubFactory(DefaultFacilityFactory)
     created_by = factory.LazyAttribute(lambda o: o.user)
     updated_by = factory.LazyAttribute(lambda o: o.user)
 
@@ -151,7 +156,11 @@ class PatientProfileFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = PatientProfile
 
-    user = factory.SubFactory(PatientUserFactory)
+    facility = factory.SubFactory(DefaultFacilityFactory)
+    user = factory.SubFactory(
+        PatientUserFactory,
+        primary_facility=factory.SelfAttribute('..facility')
+    )
     medical_record_number = factory.Sequence(lambda n: f"MRN{n:08d}")
     nhis_id = factory.LazyFunction(lambda: None)
     blood_group = factory.Faker('random_element', elements=[
@@ -208,7 +217,10 @@ class UserPatientListFactory(factory.django.DjangoModelFactory):
         model = UserPatientList
 
     user = factory.SubFactory(DoctorUserFactory)
-    patient = factory.SubFactory(PatientProfileFactory)
+    patient = factory.SubFactory(
+        PatientProfileFactory,
+        facility=factory.SelfAttribute('..user.primary_facility')
+    )
     notes = factory.Faker('sentence')
     is_pinned = factory.Faker('boolean', chance_of_getting_true=30)
 

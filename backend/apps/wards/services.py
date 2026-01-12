@@ -7,7 +7,8 @@ for patients, ensuring clinical entries are always properly linked.
 from django.utils import timezone
 from django.db import transaction
 
-from .models import Encounter, Admission
+from apps.encounters.models import Encounter
+from .models import Admission
 
 
 def get_or_create_active_encounter(patient, practitioner=None, encounter_type=None, reason=None):
@@ -46,6 +47,7 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
         with transaction.atomic():
             encounter = Encounter.objects.create(
                 patient=patient,
+                facility=patient.facility,
                 practitioner=active_admission.admitting_doctor,
                 encounter_type='inpatient',
                 status='in-progress',
@@ -83,6 +85,7 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     with transaction.atomic():
         encounter = Encounter.objects.create(
             patient=patient,
+            facility=patient.facility,
             practitioner=practitioner,
             encounter_type=encounter_type or 'outpatient',
             status='in-progress',

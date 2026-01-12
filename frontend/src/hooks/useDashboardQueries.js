@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { dashboardsApi } from '@/lib/api/dashboards';
+import { useAuth } from '@/lib/auth';
 
 // Query keys
 export const dashboardKeys = {
@@ -22,6 +23,7 @@ const DEFAULT_REFETCH_INTERVAL = 30000;
  * @returns {Object} Query result
  */
 export function useNurseDashboard(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.nurse(filters),
     queryFn: () => dashboardsApi.getNurseDashboard(filters),
@@ -29,6 +31,7 @@ export function useNurseDashboard(filters = {}, options = {}) {
     refetchIntervalInBackground: false, // Only poll when tab is active
     staleTime: 10000, // Consider data stale after 10 seconds
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -38,6 +41,7 @@ export function useNurseDashboard(filters = {}, options = {}) {
  * @returns {Object} Query result
  */
 export function useInpatientDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.inpatient(),
     queryFn: () => dashboardsApi.getInpatientDashboard(),
@@ -45,6 +49,7 @@ export function useInpatientDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -54,6 +59,7 @@ export function useInpatientDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useReceptionistDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.receptionist(),
     queryFn: () => dashboardsApi.getReceptionistDashboard(),
@@ -61,6 +67,7 @@ export function useReceptionistDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -70,6 +77,7 @@ export function useReceptionistDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useAdminDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.admin(),
     queryFn: () => dashboardsApi.getAdminDashboard(),
@@ -77,6 +85,7 @@ export function useAdminDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -87,6 +96,7 @@ export function useAdminDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useMyWorkDashboard(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.myWork(filters),
     queryFn: () => dashboardsApi.getMyWorkDashboard(filters),
@@ -94,6 +104,7 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -104,6 +115,7 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
  * @returns {Object} Query result
  */
 export function useClinicSchedule(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.clinic(filters),
     queryFn: () => dashboardsApi.getClinicSchedule(filters),
@@ -111,5 +123,6 @@ export function useClinicSchedule(filters = {}, options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }

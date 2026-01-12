@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import {
   Plus,
   Clock,
@@ -109,6 +111,15 @@ const mockTasks = [
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const [selectedTask, setSelectedTask] = useState(null);
+  const { facilityCode } = useAuth();
+
+  if (!facilityCode) {
+    return (
+      <div className="min-h-screen bg-background">
+        <FacilityRequiredPanel className="max-w-4xl mx-auto" />
+      </div>
+    );
+  }
 
   const todayDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',

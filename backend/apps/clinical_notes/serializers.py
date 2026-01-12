@@ -18,7 +18,7 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = NoteTemplate
         fields = [
-            'id', 'title', 'description', 'is_active', 'structure',
+            'id', 'facility', 'title', 'description', 'is_active', 'structure',
             # Visibility/sharing fields
             'visibility', 'visibility_display', 'department',
             # Organization fields
@@ -31,7 +31,7 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'created_by', 'created_by_name', 'is_system_template',
+            'id', 'facility', 'created_by', 'created_by_name', 'is_system_template',
             'can_edit', 'can_delete', 'created_at', 'updated_at',
             'visibility_display', 'category_display'
         ]
@@ -105,7 +105,7 @@ class NoteTemplateListSerializer(serializers.ModelSerializer):
     class Meta:
         model = NoteTemplate
         fields = [
-            'id', 'title', 'description', 'is_active',
+            'id', 'facility', 'title', 'description', 'is_active',
             'visibility', 'visibility_display', 'department',
             'category', 'category_display', 'icon', 'estimated_steps',
             'structure',  # Include structure for workflow step derivation

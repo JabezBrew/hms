@@ -9,6 +9,10 @@ Example usage:
         list_serializer_class = MyListSerializer
 """
 
+from rest_framework.exceptions import PermissionDenied
+
+from apps.core.security import get_user_facility, resolve_object_facility
+
 
 class ListDetailSerializerMixin:
     """
@@ -96,3 +100,35 @@ class OptimizedQuerysetMixin:
                 queryset = queryset.prefetch_related(*self.detail_prefetch_related)
 
         return queryset
+
+
+class FacilityScopedCreateMixin:
+    """
+    Mixin to enforce facility scoping on create.
+
+    Attributes:
+        facility_assignment_field: Model field to set (e.g., 'facility'), or None.
+        facility_relation_fields: Iterable of related field names to validate (e.g., ['patient']).
+    """
+    facility_assignment_field = 'facility'
+    facility_relation_fields = ()
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        if self.facility_assignment_field:
+            serializer.save(**{self.facility_assignment_field: facility})
+            return
+
+        if self.facility_relation_fields:
+            for field in self.facility_relation_fields:
+                related = serializer.validated_data.get(field)
+                if related is None:
+                    continue
+                related_facility = resolve_object_facility(related)
+                if related_facility is None or related_facility.id != facility.id:
+                    raise PermissionDenied("Facility access denied.")
+
+        serializer.save()

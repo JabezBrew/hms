@@ -10,10 +10,13 @@ from .tree_cache import (
     build_org_tree_payload,
     get_org_tree_cache_version,
 )
+from hms_backend.tenancy import facility_task
+from apps.core.cache_utils import facility_cache_key
 
 
 @shared_task
-def rebuild_org_tree_cache(version=None, facility_id=None, include_inactive=False):
+@facility_task
+def rebuild_org_tree_cache(version=None, facility_id=None, include_inactive=False, facility_code=None):
     current_version = get_org_tree_cache_version()
     if version is not None and version != current_version:
         return
@@ -26,4 +29,4 @@ def rebuild_org_tree_cache(version=None, facility_id=None, include_inactive=Fals
         facility_id,
         include_inactive
     )
-    cache.set(cache_key, payload, timeout=ORG_TREE_CACHE_TTL)
+    cache.set(facility_cache_key(cache_key), payload, timeout=ORG_TREE_CACHE_TTL)

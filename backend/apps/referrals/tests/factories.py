@@ -22,7 +22,11 @@ class ReferralFactory(DjangoModelFactory):
         model = Referral
 
     patient = factory.SubFactory(PatientProfileFactory)
-    encounter = factory.SubFactory(EncounterFactory)
+    encounter = factory.SubFactory(
+        EncounterFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    facility = factory.SelfAttribute('patient.facility')
     referring_provider = factory.SubFactory(PractitionerProfileFactory)
     referring_department = factory.Faker('random_element', elements=[
         'Internal Medicine', 'Emergency', 'General Practice', 'Pediatrics'

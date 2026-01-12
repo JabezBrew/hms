@@ -24,6 +24,7 @@ from apps.wards.models import (
     WardTransfer, BedAmenity, WardSection,
     StaffRole, WardStaffAssignment
 )
+from apps.core.tests.factories import DepartmentFactory, DefaultFacilityFactory
 from apps.users.tests.factories import UserFactory, PatientProfileFactory, PractitionerProfileFactory
 
 
@@ -39,7 +40,10 @@ class WardFactory(DjangoModelFactory):
     is_active = True
     total_beds = 10
     base_rate_per_night = Decimal('100.00')
-    department = None  # Nullable for backward compatibility (hierarchy: Facility → Department → Ward)
+    department = factory.SubFactory(
+        DepartmentFactory,
+        facility=factory.SubFactory(DefaultFacilityFactory)
+    )
     created_by = factory.SubFactory(UserFactory, user_type='admin')
     updated_by = factory.LazyAttribute(lambda obj: obj.created_by)
 
@@ -87,6 +91,7 @@ class BedFactory(DjangoModelFactory):
         model = Bed
 
     ward = factory.SubFactory(WardFactory)
+    facility = factory.SelfAttribute('ward.department.facility')
     bed_number = factory.Sequence(lambda n: f'BED-{n:03d}')
     bed_type = 'standard'
     status = 'available'
@@ -107,7 +112,11 @@ class AdmissionFactory(DjangoModelFactory):
         model = Admission
 
     patient = factory.SubFactory(PatientProfileFactory)
-    bed = factory.SubFactory(BedFactory, status='available')
+    bed = factory.SubFactory(
+        BedFactory,
+        status='available'
+    )
+    facility = factory.SelfAttribute('patient.facility')
     admission_date = factory.LazyFunction(timezone.now)
     expected_discharge_date = factory.LazyAttribute(
         lambda obj: obj.admission_date + timedelta(days=7)
@@ -162,6 +171,7 @@ class BedAllocationLogFactory(DjangoModelFactory):
         model = BedAllocationLog
 
     bed = factory.SubFactory(BedFactory)
+    facility = factory.SelfAttribute('bed.facility')
     previous_status = 'available'
     new_status = 'occupied'
     notes = factory.Faker('sentence')
@@ -179,8 +189,15 @@ class WardTransferFactory(DjangoModelFactory):
         model = WardTransfer
 
     patient = factory.SubFactory(PatientProfileFactory)
-    from_admission = factory.SubFactory(AdmissionFactory)
-    to_admission = factory.SubFactory(AdmissionFactory)
+    from_admission = factory.SubFactory(
+        AdmissionFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    to_admission = factory.SubFactory(
+        AdmissionFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    facility = factory.SelfAttribute('patient.facility')
     reason = factory.Faker('paragraph')
     transfer_time = factory.LazyFunction(timezone.now)
     created_by = factory.SubFactory(UserFactory, user_type='nurse')

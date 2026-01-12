@@ -7,6 +7,7 @@ This replaces the previous FHIR-first approach for better performance.
 import uuid as uuid_module
 
 from rest_framework import viewsets, permissions, status, filters
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
@@ -21,7 +22,8 @@ from .serializers import (
     EncounterUpdateSerializer,
 )
 from ..users.permissions import IsAdminOrOwner
-from ..core.pagination import StandardResultsSetPagination
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, get_user_facility
 
 
 def is_valid_uuid(value):
@@ -59,7 +61,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - page: Page number (default: 1)
         - page_size: Items per page (default: 100, max: 1000)
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
@@ -70,6 +72,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Return encounters with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Encounter.objects.none()
+
         queryset = Encounter.objects.select_related(
             'patient',
             'patient__user',
@@ -77,7 +83,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff',
             'practitioner__staff__user',
             'admission',
-        ).all()
+        ).filter(facility=facility)
 
         # Filter by patient - supports UUID, MRN, or name search
         patient_id = self.request.query_params.get('patient_id')
@@ -138,7 +144,13 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Set created_by on creation and trigger FHIR sync.
         """
-        encounter = serializer.save(created_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        encounter = serializer.save(created_by=self.request.user, facility=facility)
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
 

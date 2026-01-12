@@ -9,6 +9,10 @@ from .models import (
 from ..users.models import PatientProfile, User
 from ..users.serializers import PatientProfileSerializer, UserSerializer, generate_secure_password
 from ..fhir_client.client import fhir_client
+from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
+from hms_backend.tenancy import get_current_facility_code
+from apps.core.security import get_user_facility
+from apps.core.models import Facility
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
     create_address, generate_fhir_id
@@ -60,8 +64,8 @@ class PatientSearchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientSearch
-        fields = ['id', 'user', 'user_details', 'search_query', 'search_date']
-        read_only_fields = ['id', 'search_date']
+        fields = ['id', 'user', 'facility', 'user_details', 'search_query', 'search_date']
+        read_only_fields = ['id', 'facility', 'search_date']
 
 
 class PatientRecentListSerializer(serializers.ModelSerializer):
@@ -280,9 +284,42 @@ class PatientRegistrationSerializer(serializers.Serializer):
         # Generate a unique medical record number
         medical_record_number = generate_unique_mrn()
 
+        request = self.context.get('request')
+        facility_code = getattr(request, 'facility_code', None) or get_current_facility_code()
+        facility = get_user_facility(request) if request else None
+        if not facility and facility_code:
+            facility = Facility.get_by_code(facility_code)
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise serializers.ValidationError("User belongs to a different facility.")
+        if user.primary_facility_id is None:
+            user.primary_facility = facility
+            user.save(update_fields=['primary_facility'])
+        user.facilities.add(facility)
+
+        try:
+            patient_identity, identity_created = resolve_patient_identity(
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                date_of_birth=validated_data['date_of_birth'],
+                gender=validated_data.get('gender', ''),
+                nhis_id=validated_data.get('nhis_id', ''),
+                phone=validated_data.get('phone_number', ''),
+                email=validated_data.get('email', ''),
+                created_by_facility_code=facility_code or '',
+                created_by_user_id=getattr(request.user, 'id', None) if request else None,
+            )
+        except Exception as exc:
+            user.delete()
+            raise serializers.ValidationError(f"Failed to create MPI identity: {exc}") from exc
+
         # Create PatientProfile
         patient_profile = PatientProfile.objects.create(
             user=user,
+            facility=facility,
+            patient_identity_id=patient_identity.id if patient_identity else None,
             medical_record_number=medical_record_number,
             nhis_id=validated_data.get('nhis_id', ''),
             blood_group=validated_data.get('blood_group', ''),
@@ -292,6 +329,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
             emergency_contact_relationship=validated_data.get('emergency_contact_relationship', ''),
             created_by=self.context['request'].user,
             updated_by=self.context['request'].user
+        )
+
+        link_patient_to_facility(
+            patient_identity=patient_identity,
+            facility_code=facility_code or '',
+            facility_patient_id=patient_profile.id,
+            created_by_facility_code=facility_code or '',
+            created_by_user_id=getattr(request.user, 'id', None) if request else None,
         )
 
         # Create FHIR Patient resource
@@ -407,6 +452,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                 Admission.objects.create(
                     patient=patient_profile,
                     bed=bed,
+                    facility=patient_profile.facility,
                     fhir_encounter_id=encounter['id'],
                     admission_type='emergency', # Defaulting to emergency for now or could be passed
                     status=admission_status,
@@ -423,6 +469,16 @@ class PatientRegistrationSerializer(serializers.Serializer):
             # If FHIR creation fails, delete the local resources and raise the error
             patient_profile.delete()
             user.delete()
+            try:
+                from apps.mpi.models import PatientFacilityLink
+                PatientFacilityLink.objects.filter(
+                    patient_identity=patient_identity,
+                    facility_code=facility_code or ''
+                ).delete()
+                if identity_created and not patient_identity.facility_links.exists():
+                    patient_identity.delete()
+            except Exception:
+                pass
             raise serializers.ValidationError(f"Failed to create FHIR Patient resource: {str(e)}")
 
         return patient_profile

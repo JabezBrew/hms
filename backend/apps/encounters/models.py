@@ -36,6 +36,14 @@ class Encounter(models.Model):
         on_delete=models.CASCADE,
         related_name='encounters'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='encounters',
+        help_text="Facility where this encounter occurred"
+    )
     practitioner = models.ForeignKey(
         PractitionerProfile,
         on_delete=models.SET_NULL,
@@ -136,6 +144,7 @@ class Encounter(models.Model):
         ordering = ['-start_time']
         db_table = 'wards_encounter'  # Keep existing table name for migration
         indexes = [
+            models.Index(fields=['facility', 'status']),
             models.Index(fields=['patient', 'status']),
             models.Index(fields=['practitioner', 'status']),
             models.Index(fields=['status', 'start_time']),

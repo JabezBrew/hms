@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+from uuid import UUID
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -23,6 +24,128 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
+
+
+def _scrub_path(path):
+    if not path:
+        return path
+    parts = []
+    for segment in path.split('/'):
+        if not segment:
+            parts.append(segment)
+            continue
+        try:
+            UUID(segment)
+            parts.append('<id>')
+            continue
+        except (ValueError, AttributeError, TypeError):
+            pass
+        if segment.isdigit() and len(segment) >= 4:
+            parts.append('<id>')
+            continue
+        parts.append(segment)
+    return '/'.join(parts)
+
+
+class FacilityContextMiddleware(MiddlewareMixin):
+    """
+    Resolve facility context early so access control and cache scoping are consistent.
+
+    Facility code resolution order:
+    1) X-Facility-Code header
+    2) JWT claim (facility_code)
+    3) Default facility code (single-site deployments)
+    """
+
+    def process_request(self, request):
+        from django.conf import settings
+        from apps.core.security import get_user_facility_codes, normalize_facility_code
+        from apps.core.models import Facility
+        from hms_backend.tenancy import (
+            clear_current_facility_code,
+            get_current_facility_code,
+            set_current_facility_code,
+        )
+
+        # Clear any stale facility context from previous requests
+        clear_current_facility_code()
+
+        request.facility = None
+        request.facility_code = None
+
+        header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
+        header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
+        facility_code = normalize_facility_code(request.META.get(header_key))
+        facility_code_source = 'header' if facility_code else None
+
+        user = None
+        jwt_auth = JWTAuthentication()
+        validated_token = None
+        try:
+            header = jwt_auth.get_header(request)
+            if header is not None:
+                raw_token = jwt_auth.get_raw_token(header)
+                if raw_token is not None:
+                    validated_token = jwt_auth.get_validated_token(raw_token)
+                    user = jwt_auth.get_user(validated_token)
+        except (InvalidToken, AttributeError, KeyError, TypeError):
+            validated_token = None
+            user = None
+
+        if not facility_code and validated_token:
+            facility_code = normalize_facility_code(validated_token.get('facility_code'))
+            facility_code_source = 'token' if facility_code else None
+
+        allowed_codes = get_user_facility_codes(user) if user else set()
+        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+
+        if not facility_code and allowed_codes:
+            if len(allowed_codes) == 1:
+                facility_code = next(iter(allowed_codes))
+                facility_code_source = 'user'
+            elif getattr(settings, 'MULTI_FACILITY_MODE', False):
+                if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
+                    return JsonResponse(
+                        {'detail': 'Facility context is required.', 'code': 'facility_required'},
+                        status=400
+                    )
+
+        if not facility_code and not allowed_codes:
+            default_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
+            if default_code:
+                facility_code = default_code
+                facility_code_source = 'default'
+
+        if facility_code and allowed_codes:
+            is_admin = bool(user and user.user_type == 'admin')
+            if facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+                return JsonResponse(
+                    {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
+                    status=403
+                )
+
+        if facility_code:
+            set_current_facility_code(facility_code)
+
+        request.facility_code = get_current_facility_code()
+        if request.facility_code:
+            request.facility = Facility.get_by_code(request.facility_code)
+            if request.facility is None and facility_code_source in {'header', 'token', 'user'}:
+                return JsonResponse(
+                    {'detail': 'Facility not found.', 'code': 'facility_invalid'},
+                    status=404
+                )
+
+        if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
+            skip_paths = ['/api/auth/', '/api/facilities/', '/admin/', '/static/', '/media/']
+            if not any(request.path.startswith(path) for path in skip_paths):
+                if not request.facility_code:
+                    return JsonResponse(
+                        {'detail': 'Facility context is required.', 'code': 'facility_required'},
+                        status=400
+                    )
+
+        return None
 
 
 class OffSiteDetectionMiddleware(MiddlewareMixin):
@@ -104,13 +227,16 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             return None
             
         # Log the request
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        if user_id is not None:
+            user_id = str(user_id)
+
         log_data = {
             'remote_address': request.META.get('REMOTE_ADDR'),
             'server_hostname': request.META.get('SERVER_NAME'),
             'request_method': request.method,
-            'request_path': request.get_full_path(),
-            'request_body': self._get_request_body(request),
-            'user': str(request.user) if request.user.is_authenticated else 'Anonymous',
+            'request_path': _scrub_path(request.path),
+            'user_id': user_id,
         }
         
         logger.info(f"Request: {json.dumps(log_data)}")
@@ -131,39 +257,24 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             processing_time = 0
             
         # Log the response
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        if user_id is not None:
+            user_id = str(user_id)
+
         log_data = {
             'remote_address': request.META.get('REMOTE_ADDR'),
             'request_method': request.method,
-            'request_path': request.get_full_path(),
+            'request_path': _scrub_path(request.path),
             'response_status': response.status_code,
             'processing_time': processing_time,
-            'user': str(request.user) if request.user.is_authenticated else 'Anonymous',
+            'user_id': user_id,
         }
         
         logger.info(f"Response: {json.dumps(log_data)}")
         return response
         
     def _get_request_body(self, request):
-        """
-        Get the request body, but don't log sensitive information.
-        """
-        if not request.body:
-            return ''
-            
-        try:
-            # Try to parse as JSON
-            body = json.loads(request.body)
-            
-            # Remove sensitive information
-            if 'password' in body:
-                body['password'] = '********'
-            if 'confirm_password' in body:
-                body['confirm_password'] = '********'
-                
-            return json.dumps(body)
-        except:
-            # If not JSON, return truncated body
-            return str(request.body)[:100] + '...' if len(str(request.body)) > 100 else str(request.body)
+        return ''
 
 
 class JWTUserTypeValidationMiddleware(MiddlewareMixin):

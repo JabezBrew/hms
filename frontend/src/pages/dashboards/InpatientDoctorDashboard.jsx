@@ -29,9 +29,12 @@ import {
   Inbox,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
+  const { facilityCode } = useAuth();
 
   // Fetch dashboard data with polling
   const {
@@ -46,6 +49,15 @@ export default function InpatientDoctorDashboard() {
     { label: 'Dashboards', href: '/dashboards' },
     { label: 'Inpatient Dashboard', href: '/dashboards/inpatient' },
   ];
+
+  if (!facilityCode) {
+    return (
+      <Layout>
+        <PageBreadcrumb items={breadcrumbItems} />
+        <FacilityRequiredPanel />
+      </Layout>
+    );
+  }
 
   if (error) {
     return (

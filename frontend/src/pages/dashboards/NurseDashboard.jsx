@@ -34,10 +34,13 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useWards } from '@/hooks/useWardQueries';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 
 export default function NurseDashboard() {
   const navigate = useNavigate();
   const [selectedWard, setSelectedWard] = useState('all');
+  const { facilityCode } = useAuth();
 
   // Fetch ward list
   const { data: wardsData } = useWards();
@@ -67,6 +70,15 @@ export default function NurseDashboard() {
     { label: 'Dashboards', href: '/dashboards' },
     { label: 'Nurse Dashboard', href: '/dashboards/nurse' },
   ];
+
+  if (!facilityCode) {
+    return (
+      <Layout>
+        <PageBreadcrumb items={breadcrumbItems} />
+        <FacilityRequiredPanel />
+      </Layout>
+    );
+  }
 
   if (error) {
     return (

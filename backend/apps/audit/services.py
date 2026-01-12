@@ -1,6 +1,7 @@
 from django.utils import timezone
 from .models import AuditLog, AuditAction, AuditCategory
 from .tasks import log_audit_async
+from apps.core.security import get_user_facility, resolve_object_facility
 
 
 class AuditService:
@@ -15,6 +16,8 @@ class AuditService:
         user=None,
         resource_name=None,
         changes=None,
+        facility_id=None,
+        facility=None,
     ):
         """
         Create an audit log entry asynchronously.
@@ -41,6 +44,13 @@ class AuditService:
 
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
+        if facility_id is None:
+            if facility is not None:
+                facility_id = getattr(facility, 'id', None)
+            elif request:
+                request_facility = get_user_facility(request)
+                facility_id = getattr(request_facility, 'id', None)
+
         # Dispatch async task
         log_audit_async.delay(
             user_id=user_id,
@@ -55,6 +65,7 @@ class AuditService:
             user_type=user_type,
             resource_name=resource_name,
             changes=changes,
+            facility_id=str(facility_id) if facility_id else None,
         )
 
     @staticmethod
@@ -107,6 +118,11 @@ class AuditService:
         user_email = user.email if user else email
         user_type = getattr(user, 'user_type', 'unknown') if user else 'unknown'
 
+        facility_id = None
+        if request:
+            request_facility = get_user_facility(request)
+            facility_id = getattr(request_facility, 'id', None)
+
         log_audit_async.delay(
             user_id=user_id,
             action=action,
@@ -119,6 +135,7 @@ class AuditService:
             user_email=user_email,
             user_type=user_type,
             resource_name=user_email,
+            facility_id=str(facility_id) if facility_id else None,
         )
 
     @classmethod
@@ -145,6 +162,7 @@ class AuditService:
         # Build description
         description = cls._build_description(action, model_name, resource_name)
 
+        facility = resolve_object_facility(instance)
         return cls.log(
             request=request,
             action=action,
@@ -154,6 +172,7 @@ class AuditService:
             resource_name=resource_name,
             description=description,
             changes=changes,
+            facility=facility,
         )
 
     @classmethod

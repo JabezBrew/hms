@@ -63,6 +63,7 @@ def get_or_create_active_encounter(
             # Edge case: Admission exists but no encounter linked (shouldn't happen but handle it)
             encounter = Encounter.objects.create(
                 patient=patient,
+                facility=patient.facility,
                 practitioner=active_admission.admitting_doctor,
                 encounter_type='inpatient',
                 status='in-progress',
@@ -151,6 +152,7 @@ def get_or_create_active_encounter(
         # Rule 4: Create new encounter
         encounter = Encounter.objects.create(
             patient=patient,
+            facility=patient.facility,
             practitioner=practitioner,
             encounter_type=effective_type,
             status='in-progress',

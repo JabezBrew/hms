@@ -160,6 +160,7 @@ class TestNoteEntryModel:
         entry = NoteEntry.objects.create(
             template=template,
             patient=patient,
+            facility=patient.facility,
             encounter=encounter,
             practitioner=practitioner,
             data={'test': 'data'}
@@ -234,6 +235,7 @@ class TestNoteEntryVersionModel:
 
         version = NoteEntryVersion.objects.create(
             note_entry=entry,
+            facility=entry.facility,
             version_number=1,
             data={'content': 'Original content'},
             edited_by=user,
@@ -294,6 +296,7 @@ class TestNoteEntryVersionModel:
 
         NoteEntryVersion.objects.create(
             note_entry=entry,
+            facility=entry.facility,
             version_number=1,
             data={'test': 'data'}
         )
@@ -302,6 +305,7 @@ class TestNoteEntryVersionModel:
         with pytest.raises(IntegrityError):
             NoteEntryVersion.objects.create(
                 note_entry=entry,
+                facility=entry.facility,
                 version_number=1,  # Same version number
                 data={'test': 'duplicate'}
             )
@@ -331,6 +335,7 @@ class TestPrescriptionModel:
 
         prescription = Prescription.objects.create(
             patient=patient,
+            facility=patient.facility,
             prescribed_by=prescriber,
             encounter=encounter,
             medication_name='Aspirin',

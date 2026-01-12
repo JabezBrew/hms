@@ -27,6 +27,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 # Configure Django settings BEFORE importing Django/DRF modules
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
+os.environ.setdefault('DEFAULT_FACILITY_CODE', 'TEST')
+os.environ.setdefault('CONTROL_PLANE_DB_ALIAS', 'default')
 django.setup()
 
 # Import Django/DRF modules after setup
@@ -54,6 +56,24 @@ def enable_db_access_for_all_tests(db):
 
 
 # =============================================================================
+# Facility Fixtures
+# =============================================================================
+
+@pytest.fixture(autouse=True)
+def default_facility(db):
+    """Ensure a default facility exists for facility-scoped requests."""
+    from django.core.cache import cache
+    from apps.core.cache_utils import facility_cache_key
+    from apps.core.tests.factories import DefaultFacilityFactory
+
+    cache.clear()
+    facility = DefaultFacilityFactory()
+    cache.set(facility_cache_key(f'facility_{facility.code}'), facility, 300)
+    cache.set(facility_cache_key('active_facilities'), [facility], 300)
+    return facility
+
+
+# =============================================================================
 # API Client Fixtures
 # =============================================================================
 
@@ -64,10 +84,14 @@ def api_client():
 
 
 @pytest.fixture
-def authenticated_client(api_client, user):
+def authenticated_client(api_client, user, default_facility):
     """Return an API client authenticated with a generic user."""
     token = AccessToken.for_user(user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
@@ -204,66 +228,98 @@ def patient_user(user_factory):
 
 def _make_authenticated_client(api_client_fixture, user_fixture):
     """Helper to create authenticated client."""
-    def fixture(api_client, user):
+    def fixture(api_client, user, default_facility):
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = getattr(user, 'primary_facility', None) or default_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code
+        )
         return api_client
     return fixture
 
 
 @pytest.fixture
-def admin_client(api_client, admin_user):
+def admin_client(api_client, admin_user, default_facility):
     """Return an API client authenticated as admin."""
     token = AccessToken.for_user(admin_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(admin_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def doctor_client(api_client, doctor_user):
+def doctor_client(api_client, doctor_user, default_facility):
     """Return an API client authenticated as doctor."""
     token = AccessToken.for_user(doctor_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(doctor_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def nurse_client(api_client, nurse_user):
+def nurse_client(api_client, nurse_user, default_facility):
     """Return an API client authenticated as nurse."""
     token = AccessToken.for_user(nurse_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(nurse_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def receptionist_client(api_client, receptionist_user):
+def receptionist_client(api_client, receptionist_user, default_facility):
     """Return an API client authenticated as receptionist."""
     token = AccessToken.for_user(receptionist_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(receptionist_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def lab_technician_client(api_client, lab_technician_user):
+def lab_technician_client(api_client, lab_technician_user, default_facility):
     """Return an API client authenticated as lab technician."""
     token = AccessToken.for_user(lab_technician_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(lab_technician_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def pharmacist_client(api_client, pharmacist_user):
+def pharmacist_client(api_client, pharmacist_user, default_facility):
     """Return an API client authenticated as pharmacist."""
     token = AccessToken.for_user(pharmacist_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(pharmacist_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
 @pytest.fixture
-def patient_client(api_client, patient_user):
+def patient_client(api_client, patient_user, default_facility):
     """Return an API client authenticated as patient."""
     token = AccessToken.for_user(patient_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    facility = getattr(patient_user, 'primary_facility', None) or default_facility
+    api_client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return api_client
 
 
@@ -382,6 +438,7 @@ def nurse_practitioner(practitioner_factory, nurse_user):
 def patient_profile_factory(db, user_factory, admin_user):
     """Factory fixture for creating patient profiles."""
     counter = [0]
+    from apps.core.tests.factories import FacilityFactory
 
     def create_patient_profile(
         user=None,
@@ -404,8 +461,15 @@ def patient_profile_factory(db, user_factory, admin_user):
         if medical_record_number is None:
             medical_record_number = f'MRN{counter[0]:06d}'
 
+        facility = kwargs.pop('facility', None)
+        if not facility:
+            facility = getattr(user, 'primary_facility', None)
+        if not facility:
+            facility = FacilityFactory()
+
         return PatientProfile.objects.create(
             user=user,
+            facility=facility,
             medical_record_number=medical_record_number,
             blood_group=blood_group,
             allergies=allergies,

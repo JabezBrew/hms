@@ -224,6 +224,14 @@ class AuditLog(models.Model):
     Optimized with composite indexes for efficient querying.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='audit_logs',
+        help_text="Facility context for this audit event"
+    )
 
     # Who performed the action
     user = models.ForeignKey(
@@ -258,6 +266,7 @@ class AuditLog(models.Model):
         db_table = 'audit_logs'
         ordering = ['-timestamp']
         indexes = [
+            models.Index(fields=['facility', '-timestamp'], name='audit_facility_ts_idx'),
             models.Index(fields=['user', '-timestamp'], name='audit_user_ts_idx'),
             models.Index(fields=['category', '-timestamp'], name='audit_cat_ts_idx'),
             models.Index(fields=['action', '-timestamp'], name='audit_act_ts_idx'),

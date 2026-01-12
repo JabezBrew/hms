@@ -3,6 +3,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from apps.users.models import PatientProfile
+from apps.core.models import Facility
+from apps.core.tests.factories import DepartmentFactory
 from apps.wards.models import Ward, Bed, Admission
 from django.utils import timezone
 from datetime import timedelta
@@ -11,15 +13,32 @@ User = get_user_model()
 
 class PatientSearchTests(APITestCase):
     def setUp(self):
+        self.facility = Facility.objects.filter(code='TEST').first()
+        if not self.facility:
+            self.facility = Facility.objects.create(
+                code='TEST',
+                name='Test Facility',
+                facility_type='hospital',
+                address='123 Test St',
+                city='Testville',
+                region='Test Region',
+                country='Ghana',
+                postal_code='00000',
+                phone='+233000000000',
+                email='test@example.com',
+            )
+
         # Create user
         self.user = User.objects.create_user(
             username='testuser',
             email='testuser@example.com',
             password='testpassword',
             first_name='Test',
-            last_name='User'
+            last_name='User',
+            primary_facility=self.facility
         )
         self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_X_FACILITY_CODE=self.facility.code)
 
         # Create patients
         self.patient1_user = User.objects.create_user(
@@ -32,6 +51,7 @@ class PatientSearchTests(APITestCase):
         )
         self.patient1 = PatientProfile.objects.create(
             user=self.patient1_user,
+            facility=self.facility,
             medical_record_number='MRN001',
             nhis_id='NHIS001'
         )
@@ -46,19 +66,23 @@ class PatientSearchTests(APITestCase):
         )
         self.patient2 = PatientProfile.objects.create(
             user=self.patient2_user,
+            facility=self.facility,
             medical_record_number='MRN002',
             nhis_id='NHIS002'
         )
 
         # Create Ward and Bed
+        self.department = DepartmentFactory(facility=self.facility)
         self.ward = Ward.objects.create(
             name="General Ward",
             ward_type="general",
             total_beds=10,
-            base_rate_per_night=100.00
+            base_rate_per_night=100.00,
+            department=self.department
         )
         self.bed = Bed.objects.create(
             ward=self.ward,
+            facility=self.facility,
             bed_number="101",
             status="available"
         )
@@ -68,6 +92,7 @@ class PatientSearchTests(APITestCase):
         self.admission = Admission.objects.create(
             patient=self.patient1,
             bed=self.bed,
+            facility=self.facility,
             admission_date=timezone.now(),
             status='admitted',
             admission_type='emergency'

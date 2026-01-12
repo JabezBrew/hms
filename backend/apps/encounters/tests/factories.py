@@ -16,6 +16,7 @@ class EncounterFactory(DjangoModelFactory):
         model = Encounter
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     practitioner = factory.SubFactory(PractitionerProfileFactory)
     encounter_type = 'outpatient'
     status = 'in-progress'

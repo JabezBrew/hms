@@ -24,6 +24,7 @@ class TestEncounterModel:
 
         encounter = Encounter.objects.create(
             patient=patient,
+            facility=patient.facility,
             practitioner=practitioner,
             encounter_type='outpatient',
             status='in-progress',

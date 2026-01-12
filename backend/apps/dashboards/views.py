@@ -10,12 +10,13 @@ from apps.wards.models import Admission, Ward, Bed
 from apps.nursing.models import NursingAlert, MedicationAdministration, NursingTask
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.users.serializers import PatientProfileListSerializer
+from apps.core.security import FacilityScopedPermission, get_user_facility
 
 logger = logging.getLogger(__name__)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_work_dashboard(request):
     """
     Role-based dashboard data
@@ -43,6 +44,38 @@ def my_work_dashboard(request):
         })
 
 
+def _extract_patient_fhir_id(appointment):
+    participant_data = appointment.get('participant', [])
+    for participant in participant_data:
+        actor = participant.get('actor', {})
+        reference = actor.get('reference', '')
+        if reference.startswith('Patient/'):
+            return reference.split('/')[-1]
+    return None
+
+
+def _filter_appointments_by_facility(appointments, facility):
+    if not facility:
+        return []
+    patient_ids = {
+        _extract_patient_fhir_id(appt)
+        for appt in appointments
+        if _extract_patient_fhir_id(appt)
+    }
+    if not patient_ids:
+        return []
+    allowed_ids = set(
+        PatientProfile.objects.filter(
+            fhir_patient_id__in=patient_ids,
+            facility=facility
+        ).values_list('fhir_patient_id', flat=True)
+    )
+    return [
+        appt for appt in appointments
+        if _extract_patient_fhir_id(appt) in allowed_ids
+    ]
+
+
 def get_doctor_dashboard_data(user, request):
     """
     Doctor dashboard: Today's clinic with scheduled consultations
@@ -56,6 +89,17 @@ def get_doctor_dashboard_data(user, request):
             'completed': [...]
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'doctor',
+            'user_name': user.get_full_name(),
+            'error': 'Facility context is required',
+            'current_patient': None,
+            'upcoming': [],
+            'completed': [],
+        }
+
     # Get today's date
     today = timezone.now().date()
     today_start = timezone.make_aware(datetime.combine(today, datetime.min.time()))
@@ -90,6 +134,8 @@ def get_doctor_dashboard_data(user, request):
             for entry in bundle['entry']:
                 if 'resource' in entry:
                     all_appointments.append(entry['resource'])
+
+        all_appointments = _filter_appointments_by_facility(all_appointments, facility)
 
         # Separate by status
         current_patient = None
@@ -165,6 +211,18 @@ def get_nurse_dashboard_data(user, request):
             'tasks': [...],
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'nurse',
+            'user_name': user.get_full_name(),
+            'assigned_ward': None,
+            'urgent': {},
+            'shift_patients': [],
+            'medications_schedule': [],
+            'tasks': [],
+        }
+
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -176,7 +234,7 @@ def get_nurse_dashboard_data(user, request):
     assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
 
     # Build admission filter
-    admission_filter = {'status': 'admitted'}
+    admission_filter = {'status': 'admitted', 'facility': facility}
     if assigned_ward:
         admission_filter['bed__ward_id'] = assigned_ward
 
@@ -189,6 +247,7 @@ def get_nurse_dashboard_data(user, request):
 
     # Critical alerts (unacknowledged, high severity)
     critical_alerts = NursingAlert.objects.filter(
+        facility=facility,
         patient_id__in=patient_ids,
         is_acknowledged=False,
         severity__in=['critical', 'high']
@@ -196,6 +255,7 @@ def get_nurse_dashboard_data(user, request):
 
     # Overdue medications
     overdue_meds = MedicationAdministration.objects.filter(
+        facility=facility,
         patient_id__in=patient_ids,
         status='scheduled',
         scheduled_time__lt=now
@@ -203,6 +263,7 @@ def get_nurse_dashboard_data(user, request):
 
     # Medications due in next 2 hours
     medications_due = MedicationAdministration.objects.filter(
+        facility=facility,
         patient_id__in=patient_ids,
         status='scheduled',
         scheduled_time__gte=now,
@@ -211,6 +272,7 @@ def get_nurse_dashboard_data(user, request):
 
     # Today's pending tasks
     pending_tasks = NursingTask.objects.filter(
+        facility=facility,
         patient_id__in=patient_ids,
         status__in=['pending', 'overdue'],
         scheduled_time__gte=today_start
@@ -310,6 +372,17 @@ def get_receptionist_dashboard_data(user, request):
             'stats': {...},
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'receptionist',
+            'user_name': user.get_full_name(),
+            'date': timezone.now().date().isoformat(),
+            'check_in_queue': [],
+            'schedule': {'scheduled': [], 'in_progress': []},
+            'stats': {'total_today': 0, 'waiting': 0, 'scheduled': 0, 'in_progress': 0},
+        }
+
     today = timezone.now().date()
 
     # Get today's appointments from FHIR
@@ -324,6 +397,7 @@ def get_receptionist_dashboard_data(user, request):
         logger.error(f"Error fetching appointments: {e}")
 
     # Format all appointments
+    appointments = _filter_appointments_by_facility(appointments, facility)
     formatted_appointments = [format_appointment_for_dashboard(appt) for appt in appointments]
 
     # Categorize by status
@@ -422,7 +496,7 @@ def format_appointment_for_dashboard(appointment):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def clinic_schedule(request):
     """
     Get clinic schedule for a specific date
@@ -434,6 +508,9 @@ def clinic_schedule(request):
         - practitioner_id: Filter by practitioner (defaults to current user)
     """
     user = request.user
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'error': 'Facility context is required'}, status=400)
 
     # Get date from query params
     date_str = request.query_params.get('date')
@@ -468,6 +545,7 @@ def clinic_schedule(request):
                 if 'resource' in entry:
                     appointments.append(entry['resource'])
 
+        appointments = _filter_appointments_by_facility(appointments, facility)
         formatted_appointments = [format_appointment_for_dashboard(appt) for appt in appointments]
 
         # Sort by start time
@@ -486,7 +564,7 @@ def clinic_schedule(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def nurse_dashboard(request):
     """
     Nurse-specific dashboard data
@@ -499,13 +577,20 @@ def nurse_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def inpatient_dashboard(request):
     """
     Inpatient doctor dashboard data
     GET /api/dashboards/inpatient/
     """
     user = request.user
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({
+            'error': 'Facility context is required',
+            'role': 'inpatient_doctor',
+            'user_name': user.get_full_name(),
+        })
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today_start - timedelta(days=1)
@@ -521,6 +606,7 @@ def inpatient_dashboard(request):
 
     # New admissions (last 24 hours)
     new_admissions = Admission.objects.filter(
+        facility=facility,
         status='admitted',
         admission_date__gte=yesterday,
         admitting_doctor=practitioner
@@ -528,12 +614,14 @@ def inpatient_dashboard(request):
 
     # All my patients
     my_patients = Admission.objects.filter(
+        facility=facility,
         status='admitted',
         admitting_doctor=practitioner
     ).select_related('patient', 'patient__user', 'bed', 'bed__ward')
 
     # Planned discharges today
     planned_discharges = Admission.objects.filter(
+        facility=facility,
         status='admitted',
         expected_discharge_date__date=today_start.date(),
         admitting_doctor=practitioner
@@ -595,7 +683,7 @@ def inpatient_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def reception_dashboard(request):
     """
     Receptionist dashboard data
@@ -606,7 +694,7 @@ def reception_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def admin_dashboard(request):
     """
     Admin dashboard with system-wide statistics
@@ -617,13 +705,23 @@ def admin_dashboard(request):
     from django.db.models import Count, Q
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({
+            'role': 'admin',
+            'user_name': request.user.get_full_name(),
+            'error': 'Facility context is required',
+            'stats': {},
+            'wards': [],
+        })
+
     today = timezone.now().date()
 
     # Patient count
-    total_patients = PatientProfile.objects.count()
+    total_patients = PatientProfile.objects.filter(facility=facility).count()
 
     # Bed statistics - single query with aggregation
-    bed_stats = Bed.objects.aggregate(
+    bed_stats = Bed.objects.filter(facility=facility).aggregate(
         total=Count('id'),
         occupied=Count('id', filter=Q(status='occupied')),
     )
@@ -632,14 +730,25 @@ def admin_dashboard(request):
     occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
 
     # Current admissions
-    current_admissions = Admission.objects.filter(status='admitted').count()
+    current_admissions = Admission.objects.filter(
+        facility=facility,
+        status='admitted'
+    ).count()
 
     # Today's appointments - with timeout to avoid blocking dashboard
     appointments_today = 0
     try:
         def fetch_appointments():
             bundle = AppointmentProxy.search(date=today.isoformat())
-            return len(bundle.get('entry', [])) if bundle else 0
+            if not bundle:
+                return 0
+            appointments = [
+                entry.get('resource')
+                for entry in bundle.get('entry', [])
+                if entry.get('resource')
+            ]
+            filtered = _filter_appointments_by_facility(appointments, facility)
+            return len(filtered)
 
         # Use ThreadPoolExecutor with 5-second timeout
         with ThreadPoolExecutor(max_workers=1) as executor:
@@ -654,12 +763,18 @@ def admin_dashboard(request):
         appointments_today = 0
 
     # Active staff (count practitioners whose user accounts are active)
-    active_staff = PractitionerProfile.objects.filter(staff__user__is_active=True).count()
+    active_staff = PractitionerProfile.objects.filter(
+        staff__user__is_active=True,
+        staff__primary_facility=facility
+    ).count()
 
     # Ward breakdown - optimized with annotation to avoid N+1
     # Note: Annotation names must not conflict with Ward model properties
     # (e.g., available_beds_count is a @property on Ward, so we use _annotated suffix)
-    wards = Ward.objects.filter(is_active=True).annotate(
+    wards = Ward.objects.filter(
+        is_active=True,
+        department__facility=facility
+    ).annotate(
         total_beds_annotated=Count('beds'),
         occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
         available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
@@ -696,7 +811,7 @@ def admin_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_context_patients(request):
     """
     Return context-specific patients based on user role.
@@ -734,13 +849,23 @@ def _get_nurse_context_patients(user, request):
     """
     from django.db.models import Prefetch
 
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'ward',
+            'context_label': 'Ward Patients',
+            'ward_id': None,
+            'patients': [],
+            'total': 0,
+        }
+
     # Get ward filter from query params or nurse's assigned ward
     ward_id = request.query_params.get('ward')
     nurse_profile = getattr(user, 'practitionerprofile', None)
     assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
 
     # Build admission filter
-    admission_filter = {'status': 'admitted'}
+    admission_filter = {'status': 'admitted', 'facility': facility}
     if assigned_ward:
         admission_filter['bed__ward_id'] = assigned_ward
 
@@ -787,6 +912,16 @@ def _get_doctor_context_patients(user, request):
     Get patients for doctor context.
     Returns today's appointments + admitted patients under their care.
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'doctor',
+            'context_label': "Today's Patients",
+            'patients': [],
+            'total': 0,
+            'breakdown': {'appointments': 0, 'inpatients': 0},
+        }
+
     today = timezone.now().date()
     practitioner = getattr(user, 'practitionerprofile', None)
 
@@ -819,7 +954,8 @@ def _get_doctor_context_patients(user, request):
                 # Get local patient profiles for these FHIR patients
                 if appointment_patient_ids:
                     appointment_patients_qs = PatientProfile.objects.filter(
-                        fhir_patient_id__in=appointment_patient_ids
+                        fhir_patient_id__in=appointment_patient_ids,
+                        facility=facility,
                     ).select_related('user')[:30]
 
                     for patient in appointment_patients_qs:
@@ -839,6 +975,7 @@ def _get_doctor_context_patients(user, request):
     # Get admitted patients under this doctor's care
     if practitioner:
         my_admissions = Admission.objects.filter(
+            facility=facility,
             status='admitted',
             admitting_doctor=practitioner
         ).select_related('patient', 'patient__user', 'bed', 'bed__ward')[:30]
@@ -882,6 +1019,15 @@ def _get_receptionist_context_patients(user, request):
     Get patients for receptionist context.
     Returns today's scheduled arrivals.
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'reception',
+            'context_label': "Today's Scheduled Patients",
+            'patients': [],
+            'total': 0,
+        }
+
     today = timezone.now().date()
     patients = []
 
@@ -905,7 +1051,8 @@ def _get_receptionist_context_patients(user, request):
             # Get local patient profiles
             if fhir_patient_ids:
                 scheduled_patients = PatientProfile.objects.filter(
-                    fhir_patient_id__in=fhir_patient_ids
+                    fhir_patient_id__in=fhir_patient_ids,
+                    facility=facility,
                 ).select_related('user')[:50]
 
                 for patient in scheduled_patients:

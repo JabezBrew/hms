@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
 from ..fhir_client.client import fhir_client
+from apps.core.security import get_user_facility
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
     create_address, generate_fhir_id
@@ -147,13 +148,21 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id',
+        fields = ['id', 'user', 'user_details', 'patient_identity_id',
+                  'medical_record_number', 'nhis_id',
                   'blood_group', 'allergies', 'emergency_contact_name',
                   'emergency_contact_phone', 'emergency_contact_relationship',
                   'fhir_patient_id', 'current_ward', 'current_ward_id',
                   'current_admission_id', 'admission_status', 'admission_date',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = [
+            'id',
+            'patient_identity_id',
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by',
+        ]
 
     def _get_active_admission(self, obj):
         """
@@ -387,6 +396,9 @@ class StaffInviteSerializer(serializers.Serializer):
     def create(self, validated_data):
         request = self.context.get('request')
         actor = getattr(request, 'user', None)
+        facility = get_user_facility(request) if request else None
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
 
         email = validated_data['email'].lower()
         user_type = validated_data['user_type']
@@ -423,6 +435,13 @@ class StaffInviteSerializer(serializers.Serializer):
             user.set_unusable_password()
             user.save(update_fields=['password'])
 
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise serializers.ValidationError("User belongs to a different facility.")
+        if user.primary_facility_id is None:
+            user.primary_facility = facility
+            user.save(update_fields=['primary_facility'])
+        user.facilities.add(facility)
+
         # Ensure staff profile exists
         staff, staff_created = Staff.objects.get_or_create(
             user=user,
@@ -431,6 +450,7 @@ class StaffInviteSerializer(serializers.Serializer):
                 'department': validated_data['department'],
                 'position': validated_data['position'],
                 'hire_date': validated_data['hire_date'],
+                'primary_facility': facility,
                 'created_by': actor if getattr(actor, 'is_authenticated', False) else None,
                 'updated_by': actor if getattr(actor, 'is_authenticated', False) else None,
             }
@@ -442,7 +462,9 @@ class StaffInviteSerializer(serializers.Serializer):
             staff.hire_date = validated_data['hire_date']
             if getattr(actor, 'is_authenticated', False):
                 staff.updated_by = actor
-            staff.save(update_fields=['department', 'position', 'hire_date', 'updated_by'])
+            if staff.primary_facility_id is None:
+                staff.primary_facility = facility
+            staff.save(update_fields=['department', 'position', 'hire_date', 'updated_by', 'primary_facility'])
 
         # Practitioner profile (doctor/nurse only)
         if user_type in ['doctor', 'nurse']:
@@ -523,6 +545,11 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Create a new staff member with both local and FHIR resources.
         """
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
         # Check if we're reusing an existing user
         existing_user = validated_data.pop('_existing_user', None)
         user_created = existing_user is None
@@ -567,6 +594,13 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 user_type=validated_data['user_type']
             )
 
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise serializers.ValidationError("User belongs to a different facility.")
+        if user.primary_facility_id is None:
+            user.primary_facility = facility
+            user.save(update_fields=['primary_facility'])
+        user.facilities.add(facility)
+
         # Generate a unique employee ID
         employee_id = generate_unique_employee_id()
 
@@ -577,6 +611,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
             department=validated_data['department'],
             position=validated_data['position'],
             hire_date=validated_data['hire_date'],
+            primary_facility=facility,
             created_by=self.context['request'].user,
             updated_by=self.context['request'].user
         )

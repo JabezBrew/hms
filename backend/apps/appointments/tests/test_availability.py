@@ -4,18 +4,35 @@ from datetime import datetime, timedelta, date, time
 from apps.appointments.services import AvailabilityService
 from apps.appointments.models import RecurringSchedule, ScheduleFHIRMapping
 from apps.users.models import PractitionerProfile, User
+from apps.core.models import Facility
 from rest_framework.test import APIClient
 
 from unittest.mock import patch, MagicMock
 
 class AvailabilityServiceTest(TestCase):
     def setUp(self):
+        self.facility, _ = Facility.objects.get_or_create(
+            code='TEST',
+            defaults={
+                'name': 'Test Facility',
+                'facility_type': 'hospital',
+                'address': '123 Test St',
+                'city': 'Testville',
+                'region': 'Test Region',
+                'country': 'Ghana',
+                'postal_code': '00000',
+                'phone': '+233000000000',
+                'email': 'test@example.com',
+            }
+        )
         self.user = User.objects.create_user(
             username='testdoctor',
             email='doctor@example.com',
             password='password123',
             user_type='doctor'
         )
+        self.user.primary_facility = self.facility
+        self.user.save(update_fields=['primary_facility'])
         from apps.users.models import Staff
         
         self.staff = Staff.objects.create(
@@ -23,7 +40,8 @@ class AvailabilityServiceTest(TestCase):
             employee_id='EMP-001',
             department='Cardiology',
             position='Senior Doctor',
-            hire_date=date.today()
+            hire_date=date.today(),
+            primary_facility=self.facility,
         )
         self.practitioner = PractitionerProfile.objects.create(
             staff=self.staff,
@@ -34,6 +52,7 @@ class AvailabilityServiceTest(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_X_FACILITY_CODE=self.facility.code)
 
     @patch('apps.appointments.services.SlotProxy')
     @patch('apps.appointments.services.ScheduleProxy')
@@ -45,6 +64,7 @@ class AvailabilityServiceTest(TestCase):
         schedule = RecurringSchedule.objects.create(
             name="Test Schedule",
             practitioner=self.practitioner,
+            facility=self.facility,
             days_of_week=[0, 1, 2, 3, 4, 5, 6],  # All days
             start_time=time(9, 0),
             end_time=time(17, 0),
@@ -104,6 +124,7 @@ class AvailabilityServiceTest(TestCase):
         schedule = RecurringSchedule.objects.create(
             name="Overlap Test",
             practitioner=self.practitioner,
+            facility=self.facility,
             days_of_week=[0, 1, 2, 3, 4, 5, 6],
             start_time=time(9, 0),
             end_time=time(10, 0),

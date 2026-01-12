@@ -29,7 +29,7 @@ def dispense_medication(mar_entry, dispensed_by):
     return mar_entry
 
 
-def get_pending_dispensing(patient_id=None):
+def get_pending_dispensing(patient_id=None, facility=None):
     """
     Get MAR entries awaiting dispensing.
 
@@ -53,13 +53,16 @@ def get_pending_dispensing(patient_id=None):
         'prescribed_by', 'prescribed_by__staff', 'prescribed_by__staff__user'
     )
 
+    if facility is not None:
+        queryset = queryset.filter(facility=facility)
+
     if patient_id:
         queryset = queryset.filter(patient_id=patient_id)
 
     return queryset.order_by('scheduled_time')
 
 
-def get_dispensed_ready_for_admin(patient_id=None):
+def get_dispensed_ready_for_admin(patient_id=None, facility=None):
     """
     Get MAR entries that are dispensed and ready for nurse administration.
 
@@ -76,6 +79,9 @@ def get_dispensed_ready_for_admin(patient_id=None):
         is_dispensed=True,
         scheduled_time__lte=timezone.now() + timedelta(hours=2),  # Due within 2 hours
     ).select_related('patient', 'prescription', 'prescribed_by')
+
+    if facility is not None:
+        queryset = queryset.filter(facility=facility)
 
     if patient_id:
         queryset = queryset.filter(patient_id=patient_id)
@@ -129,7 +135,7 @@ def reject_supply_request(supply_request, rejection_reason, rejected_by):
     return supply_request
 
 
-def get_pending_supply_requests(patient_id=None, admission_id=None):
+def get_pending_supply_requests(patient_id=None, admission_id=None, facility=None):
     """
     Get pending supply requests, optionally filtered.
 
@@ -153,6 +159,9 @@ def get_pending_supply_requests(patient_id=None, admission_id=None):
         'requested_by__staff',
         'requested_by__staff__user'
     ).order_by('-requested_at')
+
+    if facility is not None:
+        queryset = queryset.filter(facility=facility)
 
     if patient_id:
         queryset = queryset.filter(treatment_entry__patient_id=patient_id)

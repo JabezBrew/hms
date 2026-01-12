@@ -107,4 +107,8 @@ favor correctness, least privilege, and predictable performance.
 - Visual language: editorial medical journal aesthetic; avoid generic dashboards.
 
 ## Running tests
-- Backend tests: Activate virtual environment and run `pytest`.
+- Backend tests: Activate virtual environment and run `pytest`. This is how to activate the virtual environment in the backend directory:
+
+```bash
+source .venv/bin/activate
+```

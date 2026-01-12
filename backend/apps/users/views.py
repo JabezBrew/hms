@@ -2,7 +2,7 @@ import re
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
@@ -25,16 +25,11 @@ from .rbac import (
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
     setup_groups_and_permissions
 )
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, check_demographics_access, get_user_facility
 from ..fhir_client.client import fhir_client
 
 User = get_user_model()
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination for users endpoints."""
-    page_size = 25
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 
 # Initialize RBAC system
@@ -43,7 +38,7 @@ def initialize_rbac():
     Initialize the RBAC system by setting up groups and permissions.
     This should be called when the app is ready.
     """
-    setup_groups_and_permissions()
+    setup_groups_and_permissions(using='default')
 
 # Call initialize_rbac when the app is ready
 apps.get_app_config('users').ready = lambda self: initialize_rbac()
@@ -133,7 +128,7 @@ class StaffViewSet(viewsets.ModelViewSet):
     """
     queryset = Staff.objects.all()
     serializer_class = StaffSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -147,11 +142,12 @@ class StaffViewSet(viewsets.ModelViewSet):
         """
         if self.action in ['create', 'register']:
             # Only admins can create staff
-            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         elif self.action in ['list', 'search']:
             # Admins, doctors, nurses, and receptionists can view staff list
             permission_classes = [
                 permissions.IsAuthenticated,
+                FacilityScopedPermission,
                 (IsAdmin | IsDoctor | IsNurse | IsReceptionist)
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
@@ -159,30 +155,40 @@ class StaffViewSet(viewsets.ModelViewSet):
             if self.request.method in permissions.SAFE_METHODS:
                 permission_classes = [
                     permissions.IsAuthenticated,
+                    FacilityScopedPermission,
                     (IsAdmin | IsDoctor | IsNurse | IsReceptionist)
                 ]
             else:
-                permission_classes = [permissions.IsAuthenticated, IsAdmin]
+                permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         else:
-            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         """
         Filter the queryset based on the user's role.
         """
-        user = self.request.user
-        if user.user_type == 'admin':
-            return Staff.objects.all()
-        elif user.user_type in ['doctor', 'nurse', 'receptionist']:
-            # These roles can see all staff but not modify them
-            return Staff.objects.all()
-        else:
-            # Other roles can't see staff
+        facility = get_user_facility(self.request)
+        if not facility:
             return Staff.objects.none()
 
+        user = self.request.user
+        base_qs = Staff.objects.select_related('user').filter(primary_facility=facility)
+
+        if user.user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
+            # These roles can see staff in their facility
+            return base_qs
+        return Staff.objects.none()
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user,
+            primary_facility=facility
+        )
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -344,7 +350,7 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
     """
     queryset = PractitionerProfile.objects.all()
     serializer_class = PractitionerProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -358,11 +364,12 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
         """
         if self.action == 'create':
             # Only admins can create practitioner profiles
-            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         elif self.action in ['list', 'search']:
             # Clinical and support staff can view practitioner list
             permission_classes = [
                 permissions.IsAuthenticated,
+                FacilityScopedPermission,
                 IsAdmin | IsDoctor | IsNurse | IsReceptionist | IsLabTechnician | IsPharmacist
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
@@ -370,26 +377,32 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
             if self.request.method in permissions.SAFE_METHODS:
                 permission_classes = [
                     permissions.IsAuthenticated,
+                    FacilityScopedPermission,
                     IsAdmin | IsDoctor | IsNurse | IsReceptionist | IsLabTechnician | IsPharmacist
                 ]
             else:
-                permission_classes = [permissions.IsAuthenticated, IsAdmin]
+                permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         else:
-            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         """
         Filter the queryset based on the user's role and query parameters.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PractitionerProfile.objects.none()
+
         user = self.request.user
-        if user.user_type == 'admin':
-            queryset = PractitionerProfile.objects.all()
-        elif user.user_type in ['doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist']:
-            # These roles can see all practitioners but not modify them
-            queryset = PractitionerProfile.objects.all()
+        base_qs = PractitionerProfile.objects.select_related(
+            'staff',
+            'staff__user'
+        ).filter(staff__primary_facility=facility)
+
+        if user.user_type in ['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist']:
+            queryset = base_qs
         else:
-            # Other roles can't see practitioners
             return PractitionerProfile.objects.none()
 
         # Filter by user_type (e.g., ?user_type=doctor to get only doctors)
@@ -400,6 +413,15 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        staff = serializer.validated_data.get('staff')
+        if staff and staff.primary_facility_id and staff.primary_facility_id != facility.id:
+            raise PermissionDenied("Staff does not belong to the active facility.")
+        if staff and staff.primary_facility_id is None:
+            staff.primary_facility = facility
+            staff.save(update_fields=['primary_facility'])
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -521,9 +543,26 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = PractitionerFHIRMapping.objects.all()
     serializer_class = PractitionerFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PractitionerFHIRMapping.objects.none()
+        return PractitionerFHIRMapping.objects.select_related(
+            'practitioner_profile',
+            'practitioner_profile__staff'
+        ).filter(practitioner_profile__staff__primary_facility=facility)
 
     def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        practitioner_profile = serializer.validated_data.get('practitioner_profile')
+        staff = getattr(practitioner_profile, 'staff', None)
+        if staff and staff.primary_facility_id and staff.primary_facility_id != facility.id:
+            raise PermissionDenied("Practitioner does not belong to the active facility.")
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -572,7 +611,7 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
         'admissions__bed__ward'
     ).order_by('-created_at')
     serializer_class = PatientProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -588,26 +627,29 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             # Admins, doctors, nurses, and receptionists can create patients
             permission_classes = [
                 permissions.IsAuthenticated,
+                FacilityScopedPermission,
                 IsAdmin | IsDoctor | IsNurse | IsReceptionist
             ]
         elif self.action == 'list':
             # All roles except patients can view patient list
             permission_classes = [
                 permissions.IsAuthenticated,
+                FacilityScopedPermission,
                 IsAdmin | IsDoctor | IsNurse | IsReceptionist | IsLabTechnician | IsPharmacist | IsBillingOfficer
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             if self.request.method in permissions.SAFE_METHODS:
                 # All roles can view patient details
-                permission_classes = [permissions.IsAuthenticated]
+                permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
             else:
                 # Only admins, doctors, and nurses can edit patients
                 permission_classes = [
                     permissions.IsAuthenticated,
+                    FacilityScopedPermission,
                     IsAdmin | IsDoctor | IsNurse
                 ]
         else:
-            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
@@ -617,12 +659,17 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
         Includes current ward information via prefetched admissions.
         """
         user = self.request.user
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientProfile.objects.none()
 
         # Base queryset with optimization and ordering
         base_qs = PatientProfile.objects.select_related('user').prefetch_related(
             'admissions',
             'admissions__bed',
             'admissions__bed__ward'
+        ).filter(
+            facility=facility
         ).order_by('-created_at')
 
         # Patients can only see their own profile
@@ -648,7 +695,14 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             return PatientProfile.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user,
+            facility=facility
+        )
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -661,12 +715,17 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
     Only clinical providers (doctors, nurses, lab technicians, pharmacists) can access this feature.
     """
     serializer_class = UserPatientListSerializer
-    permission_classes = [permissions.IsAuthenticated, IsClinicalProvider]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsClinicalProvider]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """Return only the current user's patient list."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            return UserPatientList.objects.none()
         return UserPatientList.objects.filter(
-            user=self.request.user
+            user=self.request.user,
+            patient__facility=facility
         ).select_related(
             'patient',
             'patient__user'
@@ -683,6 +742,14 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Set the user when creating a new list entry."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_demographics_access(self.request.user, patient)
         serializer.save(user=self.request.user)
 
     @action(detail=True, methods=['post'])
@@ -724,6 +791,10 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
 
         try:
             patient = PatientProfile.objects.get(id=patient_id)
+            facility = get_user_facility(request)
+            if not facility or patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_demographics_access(request.user, patient)
         except PatientProfile.DoesNotExist:
             return Response(
                 {'error': 'Patient not found'},
@@ -761,9 +832,23 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return Response(
+                {'error': 'Patient not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_demographics_access(request.user, patient)
+
         deleted_count, _ = UserPatientList.objects.filter(
             user=request.user,
-            patient_id=patient_id
+            patient_id=patient_id,
+            patient__facility=facility
         ).delete()
 
         if deleted_count == 0:
@@ -790,9 +875,23 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return Response(
+                {'error': 'Patient not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_demographics_access(request.user, patient)
+
         exists = UserPatientList.objects.filter(
             user=request.user,
-            patient_id=patient_id
+            patient_id=patient_id,
+            patient__facility=facility
         ).exists()
 
         return Response({'in_list': exists})

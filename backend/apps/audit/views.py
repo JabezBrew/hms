@@ -10,8 +10,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import get_user_facility
 from .models import AuditLog
 from .serializers import AuditLogSerializer, AuditLogStatsSerializer
+from django.conf import settings
 
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -23,11 +25,21 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated, IsAdmin]
     pagination_class = StandardResultsSetPagination
 
+    def _facility_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return AuditLog.objects.none()
+
+        if getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False) and self.request.user.user_type == 'admin':
+            return AuditLog.objects.select_related('user')
+
+        return AuditLog.objects.select_related('user').filter(facility=facility)
+
     def get_queryset(self):
         """
         Return filtered audit logs based on query parameters.
         """
-        queryset = AuditLog.objects.select_related('user').order_by('-timestamp')
+        queryset = self._facility_queryset().order_by('-timestamp')
 
         # Filter by user
         user_id = self.request.query_params.get('user_id')
@@ -90,7 +102,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=7)
 
-        queryset = AuditLog.objects.all()
+        queryset = self._facility_queryset()
 
         # Basic counts
         total_logs = queryset.count()
@@ -183,7 +195,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
         # Get unique resource types from database
         resource_types = list(
-            AuditLog.objects.values_list('resource_type', flat=True)
+            self._facility_queryset()
+            .values_list('resource_type', flat=True)
             .distinct()
             .order_by('resource_type')
         )

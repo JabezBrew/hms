@@ -1,7 +1,6 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -19,23 +18,19 @@ from .serializers import (
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
 from ..encounters.models import Encounter
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.users.models import PatientProfile
+from rest_framework.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination for referrals endpoints."""
-    page_size = 25
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
 
 class ReferralViewSet(viewsets.ModelViewSet):
     """
     API endpoint for referrals with workflow management.
     """
     queryset = Referral.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -59,16 +54,26 @@ class ReferralViewSet(viewsets.ModelViewSet):
         """
         Filter referrals with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Referral.objects.none()
+
         queryset = Referral.objects.select_related(
             'patient__user',
             'referring_provider__staff__user',
             'referred_to_provider__staff__user',
             'encounter'
-        )
+        ).filter(facility=facility)
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by referring provider
@@ -127,17 +132,29 @@ class ReferralViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """Create referral with referring provider set to current user."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_clinical_access(self.request.user, patient)
+        encounter = serializer.validated_data.get('encounter')
+        if encounter and encounter.facility_id != facility.id:
+            raise PermissionDenied("Encounter does not belong to the active facility.")
+
         # If referring_provider not specified, use current user
         if not serializer.validated_data.get('referring_provider'):
             try:
                 practitioner = self.request.user.staff_profile.practitioner_profile
-                serializer.save(referring_provider=practitioner)
+                serializer.save(referring_provider=practitioner, facility=facility)
             except AttributeError:
                 # Current user is not a practitioner - raise error
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("Only practitioners can create referrals. Your account is not linked to a practitioner profile.")
         else:
-            serializer.save()
+            serializer.save(facility=facility)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic
@@ -354,6 +371,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
             try:
                 encounter = Encounter.objects.create(
                     patient=referral.patient,
+                    facility=referral.patient.facility,
                     practitioner=practitioner,
                     encounter_type='outpatient',
                     status='in-progress',

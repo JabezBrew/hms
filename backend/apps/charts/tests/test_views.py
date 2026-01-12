@@ -24,12 +24,15 @@ def api_client():
 
 
 @pytest.fixture
-def authenticated_user(api_client):
+def authenticated_user(api_client, settings):
+    settings.TEAM_ACCESS_STRICT = False
+
     # Create staff with user, then create practitioner profile
     staff = StaffFactory()
     user = staff.user
     PractitionerProfileFactory(staff=staff)
     api_client.force_authenticate(user=user)
+    api_client.credentials(HTTP_X_FACILITY_CODE=staff.primary_facility.code)
     return user
 
 

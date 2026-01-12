@@ -7,6 +7,7 @@ This module implements DATA-TYPE SPECIFIC access control with team-based enforce
 - Support staff can ONLY access their specific data domain
 """
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import BasePermission
 from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
@@ -18,6 +19,160 @@ logger = logging.getLogger(__name__)
 ACTIVE_ADMISSION_STATUSES = ['admitted', 'waiting']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
 
+
+def normalize_facility_code(code):
+    if not code:
+        return None
+    return str(code).strip().upper()
+
+
+def get_user_facility_codes(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return set()
+
+    codes = set()
+    primary_facility = getattr(user, 'primary_facility', None)
+    if primary_facility:
+        codes.add(normalize_facility_code(primary_facility.code))
+
+    try:
+        staff = getattr(user, 'staff_profile', None)
+    except Exception:
+        staff = None
+    if staff and getattr(staff, 'primary_facility', None):
+        codes.add(normalize_facility_code(staff.primary_facility.code))
+
+    try:
+        facility_codes = user.facilities.values_list('code', flat=True)
+    except Exception:
+        facility_codes = []
+    for code in facility_codes:
+        normalized = normalize_facility_code(code)
+        if normalized:
+            codes.add(normalized)
+
+    codes.discard(None)
+    return codes
+
+
+def get_user_facility(request):
+    facility = getattr(request, 'facility', None)
+    if facility:
+        return facility
+
+    facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
+    if not facility_code:
+        return None
+
+    from apps.core.models import Facility
+    return Facility.get_by_code(facility_code)
+
+
+def resolve_object_facility(obj):
+    if obj is None:
+        return None
+
+    direct = getattr(obj, 'facility', None)
+    if direct is not None:
+        return direct
+
+    for path in (
+        ('primary_facility',),
+        ('staff', 'primary_facility'),
+        ('practitioner_profile', 'staff', 'primary_facility'),
+        ('patient', 'facility'),
+        ('patient_profile', 'facility'),
+        ('encounter', 'facility'),
+        ('admission', 'patient', 'facility'),
+        ('admission', 'bed', 'ward', 'facility'),
+        ('ward', 'facility'),
+        ('bed', 'ward', 'facility'),
+        ('department', 'facility'),
+        ('unit', 'facility'),
+        ('clinical_unit', 'facility'),
+        ('root_unit',),
+        ('order', 'patient', 'facility'),
+        ('lab_order', 'patient', 'facility'),
+        ('order_test', 'order', 'patient', 'facility'),
+        ('specimen', 'order', 'patient', 'facility'),
+        ('assignment', 'patient', 'facility'),
+        ('treatment_entry', 'patient', 'facility'),
+        ('prescription', 'patient', 'facility'),
+        ('note_entry', 'patient', 'facility'),
+        ('invoice', 'facility'),
+        ('item', 'facility'),
+        ('inventory_item', 'facility'),
+        ('audit', 'facility'),
+        ('schedule', 'facility'),
+        ('recurring_schedule', 'facility'),
+        ('blocked_time', 'facility'),
+    ):
+        value = obj
+        for attr in path:
+            value = getattr(value, attr, None)
+            if value is None:
+                break
+        if value is not None:
+            if path == ('root_unit',):
+                try:
+                    from apps.core.models import Facility
+                    mapped = Facility.get_by_code(getattr(value, 'code', None))
+                    if mapped:
+                        return mapped
+                except Exception:
+                    pass
+            return value
+
+    facility_code = getattr(obj, 'facility_code', None)
+    if facility_code:
+        from apps.core.models import Facility
+        return Facility.get_by_code(facility_code)
+
+    return None
+
+class FacilityScopedQuerysetMixin:
+    """
+    Scope querysets to the active facility on the request.
+    """
+    facility_field = 'facility'
+
+    def get_facility_field(self):
+        return self.facility_field
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        return queryset.filter(**{self.get_facility_field(): facility})
+
+
+class FacilityScopedPermission(BasePermission):
+    """
+    Require that objects belong to the active facility.
+    """
+    message = "Facility access denied."
+
+    def has_permission(self, request, view):
+        return get_user_facility(request) is not None
+
+    def has_object_permission(self, request, view, obj):
+        facility = get_user_facility(request)
+        if not facility:
+            return False
+        obj_facility = resolve_object_facility(obj)
+        if obj_facility is not None:
+            return getattr(obj_facility, 'id', None) == facility.id
+
+        facility_id = getattr(obj, 'facility_id', None)
+        if facility_id is not None:
+            return facility_id == facility.id
+
+        facility_code = getattr(obj, 'facility_code', None)
+        if facility_code is not None:
+            return normalize_facility_code(facility_code) == facility.code
+
+        return False
 
 def _get_patient_profile(patient_or_id):
     """Helper to get PatientProfile from ID or instance."""
@@ -269,7 +424,7 @@ def check_prescription_access(user, patient_or_id):
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'pharmacist':
-        from apps.prescriptions.models import Prescription
+        from apps.clinical_notes.models import Prescription
         if Prescription.objects.filter(
             patient=patient_profile,
             status='active'
@@ -330,7 +485,7 @@ def check_demographics_access(user, patient_or_id):
             return True
 
     if user.user_type == 'pharmacist':
-        from apps.prescriptions.models import Prescription
+        from apps.clinical_notes.models import Prescription
         if Prescription.objects.filter(patient=patient_profile).exists():
             return True
 
@@ -412,7 +567,7 @@ def get_access_flags(user, patient_or_id):
 
     # Pharmacist - check for prescriptions
     if user.user_type == 'pharmacist':
-        from apps.prescriptions.models import Prescription
+        from apps.clinical_notes.models import Prescription
         flags['prescription'] = Prescription.objects.filter(
             patient=patient_profile,
             status='active'

@@ -14,13 +14,15 @@ const AUTH_ENDPOINTS = [
   '/auth/password-reset/',
   '/auth/password-reset/confirm/',
   '/auth/password-reset/validate-token/',
-  '/auth/logout/'
+  '/auth/logout/',
+  '/auth/mfa/'
 ];
 
 // Token provider - will be set by the auth context
 let getAccessToken = () => null;
 let setAccessTokenFn = () => {};
 let onRefreshFailure = async () => {};
+let getFacilityCode = () => null;
 
 // Flag to track if a token refresh is in progress (singleton across all callers)
 let isRefreshing = false;
@@ -39,6 +41,10 @@ export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHan
   getAccessToken = tokenGetter;
   setAccessTokenFn = tokenSetter;
   onRefreshFailure = refreshFailureHandler;
+}
+
+export function setFacilityCodeProvider(facilityGetter) {
+  getFacilityCode = facilityGetter;
 }
 
 /**
@@ -153,6 +159,11 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   // Add auth token if available
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const facilityCode = getFacilityCode();
+  if (facilityCode && !headers['X-Facility-Code']) {
+    headers['X-Facility-Code'] = facilityCode;
   }
 
   // Add CSRF token for non-GET requests

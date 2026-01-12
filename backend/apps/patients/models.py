@@ -37,11 +37,20 @@ class PatientSearch(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='patient_searches')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='patient_searches',
+        help_text="Facility context for this patient search"
+    )
     search_query = models.CharField(max_length=255)
     search_date = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         ordering = ['-search_date']
+        indexes = [
+            models.Index(fields=['facility', 'user', '-search_date'], name='pat_search_fac_user_dt_idx'),
+        ]
     
     def __str__(self):
         return f"{self.user.email} - {self.search_query}"
@@ -54,11 +63,20 @@ class RecentPatient(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recent_patients')
     patient_profile = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='recent_accesses')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='recent_patient_accesses',
+        help_text="Facility context for this recent patient access"
+    )
     access_date = models.DateTimeField(auto_now=True)
     
     class Meta:
         ordering = ['-access_date']
         unique_together = ['user', 'patient_profile']
+        indexes = [
+            models.Index(fields=['facility', 'user', '-access_date'], name='pat_recent_fac_user_dt_idx'),
+        ]
     
     def __str__(self):
         return f"{self.user.email} - {self.patient_profile.user.get_full_name()}"
@@ -91,6 +109,12 @@ class PatientNote(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient_profile = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='notes')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='patient_notes',
+        help_text="Facility context for this patient note"
+    )
     note_text = models.TextField()
     is_private = models.BooleanField(default=False)
     
@@ -102,6 +126,9 @@ class PatientNote(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['facility', 'patient_profile', '-created_at'], name='pat_note_fac_pat_dt_idx'),
+        ]
     
     def __str__(self):
         return f"Note for {self.patient_profile.user.get_full_name()} by {self.created_by.get_full_name()}"

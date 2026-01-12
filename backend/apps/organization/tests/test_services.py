@@ -17,6 +17,7 @@ from apps.organization.models import (
     CrossCoverageSchedule,
 )
 from apps.organization.services import UnitAccessService, UnitHierarchyService
+from apps.core.cache_utils import facility_cache_key
 
 
 @pytest.fixture(autouse=True)
@@ -374,7 +375,7 @@ class TestUnitAccessService:
 
         # Manually clear and re-populate cache to test caching works
         # (signals auto-invalidate on delete, so we test the caching mechanism differently)
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
 
         # Verify cache was set
         cached_value = cache.get(cache_key)

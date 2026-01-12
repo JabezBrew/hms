@@ -14,9 +14,9 @@ class InventoryCategorySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryCategory
-        fields = ['id', 'name', 'description', 'parent', 'parent_name',
+        fields = ['id', 'facility', 'name', 'description', 'parent', 'parent_name',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -25,9 +25,9 @@ class SupplierSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Supplier
-        fields = ['id', 'name', 'contact_person', 'email', 'phone', 'address',
+        fields = ['id', 'facility', 'name', 'contact_person', 'email', 'phone', 'address',
                   'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):

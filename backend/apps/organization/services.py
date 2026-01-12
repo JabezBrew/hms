@@ -4,6 +4,8 @@ Services for the organization app.
 Contains business logic for unit access, permissions, and other operations.
 """
 from django.core.cache import cache
+
+from apps.core.cache_utils import facility_cache_key
 from django.db.models import Q
 from django.utils import timezone
 
@@ -41,7 +43,7 @@ class UnitAccessService:
         if not user or not user.is_authenticated:
             return set()
 
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
@@ -164,7 +166,7 @@ class UnitAccessService:
         Invalidate the unit access cache for a user.
         Call on staff/leadership/coverage changes.
         """
-        cache.delete(f'user_unit_access:{user_id}')
+        cache.delete(facility_cache_key(f'user_unit_access:{user_id}'))
 
     @classmethod
     def user_has_access(cls, user, unit):

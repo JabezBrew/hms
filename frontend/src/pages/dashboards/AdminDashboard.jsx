@@ -10,6 +10,7 @@ import {
   OccupancyTrendChart,
 } from '@/components/dashboard';
 import { useAdminDashboard } from '@/hooks/useDashboardQueries';
+import { useFacilities } from '@/hooks/useFacilityQueries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
@@ -26,9 +27,12 @@ import {
   Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const { facilityCode } = useAuth();
 
   // Fetch dashboard data with polling
   const {
@@ -39,10 +43,25 @@ export default function AdminDashboard() {
     isFetching,
   } = useAdminDashboard({ refetchInterval: 30000 });
 
+  const {
+    data: facilities = [],
+    isLoading: facilitiesLoading,
+    error: facilitiesError,
+  } = useFacilities({ includeInactive: true });
+
   const breadcrumbItems = [
     { label: 'Dashboards', href: '/dashboards' },
     { label: 'Admin Dashboard', href: '/dashboards/admin' },
   ];
+
+  if (!facilityCode) {
+    return (
+      <Layout>
+        <PageBreadcrumb items={breadcrumbItems} />
+        <FacilityRequiredPanel />
+      </Layout>
+    );
+  }
 
   if (error) {
     return (
@@ -221,6 +240,78 @@ export default function AdminDashboard() {
               <span>Manage Wards</span>
             </Button>
           </DashboardGrid>
+        </DashboardSection>
+
+        {/* Facility Management */}
+        <DashboardSection
+          title="Facilities"
+          subtitle="Facility registry status and availability"
+        >
+          {facilitiesLoading ? (
+            <DashboardGrid columns="3">
+              {[...Array(3)].map((_, i) => (
+                <Skeleton key={i} className="h-32" />
+              ))}
+            </DashboardGrid>
+          ) : facilitiesError ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
+              <AlertTriangle className="h-5 w-5 text-rose-400 mb-2" />
+              <p className="text-sm text-muted-foreground">
+                {facilitiesError.message || 'Failed to load facilities.'}
+              </p>
+            </div>
+          ) : facilities.length === 0 ? (
+            <div className="text-center py-10 rounded-xl border border-border bg-card/50">
+              <Building2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">No facilities configured</p>
+            </div>
+          ) : (
+            <DashboardGrid columns="3">
+              {facilities.map((facility) => {
+                const status = facility.status || (facility.is_active ? 'ready' : 'suspended');
+                const statusTone =
+                  status === 'ready'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : status === 'running'
+                    ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                    : status === 'pending'
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+
+                return (
+                  <div
+                    key={facility.id}
+                    className="rounded-xl border border-border bg-card p-4 sm:p-5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-heading text-base font-semibold text-foreground">
+                          {facility.name}
+                        </h3>
+                        <p className="text-xs font-mono text-muted-foreground">
+                          {facility.code} · {facility.facility_type?.replace('_', ' ')}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          'text-[10px] uppercase tracking-wide border rounded-full px-2 py-1',
+                          statusTone
+                        )}
+                      >
+                        {status}
+                      </span>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{facility.parent_facility_code ? `Parent: ${facility.parent_facility_code}` : 'Primary facility'}</span>
+                      <span className={facility.is_active ? 'text-emerald-400' : 'text-rose-400'}>
+                        {facility.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </DashboardGrid>
+          )}
         </DashboardSection>
 
         {/* Ward Overview with Analytics Chart */}

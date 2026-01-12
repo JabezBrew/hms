@@ -893,6 +893,7 @@ class AdmissionEngine(BaseWorkflowEngine):
 
         encounter = Encounter.objects.create(
             patient=workflow.patient,
+            facility=workflow.patient.facility,
             practitioner=practitioner,
             encounter_type='inpatient',
             status='in-progress',

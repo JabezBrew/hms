@@ -198,6 +198,7 @@ class TestMAROverdueDetection:
 
         mar = MedicationAdministration.objects.create(
             patient=patient,
+            facility=patient.facility,
             medication_name='Test Medication',
             dosage='100mg',
             route='Oral',

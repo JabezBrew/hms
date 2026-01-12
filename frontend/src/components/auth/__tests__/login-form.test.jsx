@@ -70,17 +70,17 @@ describe('LoginForm', () => {
     it('renders the login form with all elements', () => {
       renderLoginForm()
 
-      expect(screen.getByText('Login to your account')).toBeInTheDocument()
-      expect(screen.getByText('Enter your email and password below to login')).toBeInTheDocument()
-      expect(screen.getByLabelText('Email')).toBeInTheDocument()
+      expect(screen.getByText('Welcome Back')).toBeInTheDocument()
+      expect(screen.getByText('Sign in to access your account')).toBeInTheDocument()
+      expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
       expect(screen.getByLabelText('Password')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
     })
 
     it('renders email input with correct attributes', () => {
       renderLoginForm()
 
-      const emailInput = screen.getByLabelText('Email')
+      const emailInput = screen.getByLabelText('Email Address')
       expect(emailInput).toHaveAttribute('type', 'email')
       expect(emailInput).toHaveAttribute('placeholder', 'name@example.com')
       expect(emailInput).toHaveAttribute('autocomplete', 'email')
@@ -104,14 +104,6 @@ describe('LoginForm', () => {
       expect(forgotLink).toHaveAttribute('href', '/reset-password')
     })
 
-    it('renders register link', () => {
-      renderLoginForm()
-
-      expect(screen.getByText("Don't have an account?")).toBeInTheDocument()
-      const registerLink = screen.getByText('Register')
-      expect(registerLink).toBeInTheDocument()
-      expect(registerLink).toHaveAttribute('href', '/register')
-    })
   })
 
   // =============================================================================
@@ -124,11 +116,11 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
     })
 
     it('shows success notification on successful login', async () => {
@@ -136,9 +128,9 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
         expect(notifications.success).toHaveBeenCalledWith('Logged in successfully')
@@ -150,9 +142,9 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/')
@@ -164,11 +156,11 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123{enter}')
 
       await waitFor(() => {
-        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
+        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
       })
     })
   })
@@ -185,11 +177,11 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(screen.getByLabelText('Email')).toBeDisabled()
+      expect(screen.getByLabelText('Email Address')).toBeDisabled()
       expect(screen.getByLabelText('Password')).toBeDisabled()
     })
 
@@ -200,11 +192,11 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(screen.getByRole('button', { name: /logging in/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled()
     })
 
     it('shows loading text during submission', async () => {
@@ -214,11 +206,11 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(screen.getByRole('button', { name: /logging in/i })).toHaveTextContent('Logging in...')
+      expect(screen.getByRole('button', { name: /signing in/i })).toHaveTextContent('Signing in...')
     })
 
     it('re-enables form after successful submission', async () => {
@@ -228,12 +220,12 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /login/i })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: /sign in/i })).not.toBeDisabled()
       })
     })
 
@@ -244,13 +236,13 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'wrong-password')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /login/i })).not.toBeDisabled()
-        expect(screen.getByRole('button', { name: /login/i })).toHaveTextContent('Login')
+        expect(screen.getByRole('button', { name: /sign in/i })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: /sign in/i })).toHaveTextContent('Sign In')
       })
     })
   })
@@ -267,12 +259,12 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'wrong-password')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /login/i })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: /sign in/i })).not.toBeDisabled()
       })
 
       // Should not show success or navigate
@@ -287,15 +279,15 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'wrong-password')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /login/i })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: /sign in/i })).not.toBeDisabled()
       })
 
-      expect(screen.getByLabelText('Email')).toHaveValue('test@example.com')
+      expect(screen.getByLabelText('Email Address')).toHaveValue('test@example.com')
       // Password field may or may not be cleared depending on UX preference
     })
   })
@@ -371,7 +363,7 @@ describe('LoginForm', () => {
       // Submit without email
       await user.type(screen.getByLabelText('Password'), 'password123')
 
-      const form = screen.getByRole('button', { name: /login/i }).closest('form')
+      const form = screen.getByRole('button', { name: /sign in/i }).closest('form')
       expect(form).toBeInvalid()
     })
 
@@ -381,16 +373,16 @@ describe('LoginForm', () => {
       renderLoginForm()
 
       // Submit without password
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
 
-      const form = screen.getByRole('button', { name: /login/i }).closest('form')
+      const form = screen.getByRole('button', { name: /sign in/i }).closest('form')
       expect(form).toBeInvalid()
     })
 
     it('validates email format (browser validation)', () => {
       renderLoginForm()
 
-      const emailInput = screen.getByLabelText('Email')
+      const emailInput = screen.getByLabelText('Email Address')
       expect(emailInput).toHaveAttribute('type', 'email')
     })
   })
@@ -403,7 +395,7 @@ describe('LoginForm', () => {
     it('has proper label associations', () => {
       renderLoginForm()
 
-      const emailInput = screen.getByLabelText('Email')
+      const emailInput = screen.getByLabelText('Email Address')
       const passwordInput = screen.getByLabelText('Password')
 
       expect(emailInput).toHaveAttribute('id', 'email')
@@ -414,7 +406,7 @@ describe('LoginForm', () => {
       renderLoginForm()
 
       // First focusable element should be email
-      const emailInput = screen.getByLabelText('Email')
+      const emailInput = screen.getByLabelText('Email Address')
       emailInput.focus()
       expect(document.activeElement).toBe(emailInput)
     })
@@ -437,12 +429,12 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), '  test@example.com  ')
+      await user.type(screen.getByLabelText('Email Address'), '  test@example.com  ')
       await user.type(screen.getByLabelText('Password'), 'password123')
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       // Email should be trimmed before submission
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
     })
 
     it('handles empty form submission attempt', async () => {
@@ -451,7 +443,7 @@ describe('LoginForm', () => {
       renderLoginForm()
 
       // Try to submit without filling anything
-      await user.click(screen.getByRole('button', { name: /login/i }))
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       // Should not call login due to HTML5 validation
       expect(mockLogin).not.toHaveBeenCalled()
@@ -464,15 +456,15 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      await user.type(screen.getByLabelText('Email'), 'test@example.com')
+      await user.type(screen.getByLabelText('Email Address'), 'test@example.com')
       await user.type(screen.getByLabelText('Password'), 'password123')
 
       // Click submit multiple times quickly
-      const submitButton = screen.getByRole('button', { name: /login/i })
+      const submitButton = screen.getByRole('button', { name: /sign in/i })
       await user.click(submitButton)
-      // After first click, button shows "Logging in..." and is disabled
+      // After first click, button shows "Signing in..." and is disabled
       // Try to click again (should be blocked by disabled state)
-      await user.click(screen.getByRole('button', { name: /logging in/i }))
+      await user.click(screen.getByRole('button', { name: /signing in/i }))
 
       // Should only be called once (button is disabled after first click)
       expect(mockLogin).toHaveBeenCalledTimes(1)

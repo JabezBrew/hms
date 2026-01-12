@@ -22,7 +22,13 @@ from .serializers import (
     EncounterUpdateSerializer,
 )
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
+from apps.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +68,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - page: Page number (default: 1)
         - page_size: Items per page (default: 100, max: 1000)
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
@@ -73,6 +79,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Return encounters with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Encounter.objects.none()
+
         queryset = Encounter.objects.select_related(
             'patient',
             'patient__user',
@@ -80,7 +90,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff',
             'practitioner__staff__user',
             'admission',
-        ).all()
+        ).filter(facility=facility)
 
         user = self.request.user
         if user.user_type == 'admin':
@@ -98,6 +108,12 @@ class EncounterViewSet(viewsets.ModelViewSet):
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
             if is_valid_uuid(patient_id):
+                patient = PatientProfile.objects.filter(id=patient_id).first()
+                if not patient:
+                    return queryset.none()
+                if patient.facility_id != facility.id:
+                    raise PermissionDenied("Patient does not belong to the active facility.")
+                check_clinical_access(self.request.user, patient)
                 queryset = queryset.filter(patient_id=patient_id)
             else:
                 # Search by MRN or patient name if not a valid UUID
@@ -156,11 +172,16 @@ class EncounterViewSet(viewsets.ModelViewSet):
         if self.request.user.user_type not in ['admin', 'doctor', 'nurse']:
             raise PermissionDenied("You do not have permission to create encounters.")
 
-        if self.request.user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
-            patient_id = serializer.validated_data.get('patient_id')
-            if patient_id:
-                from apps.users.models import PatientProfile, PractitionerProfile
-                patient = PatientProfile.objects.get(id=patient_id)
+        patient_id = serializer.validated_data.get('patient_id')
+        patient = None
+        if patient_id:
+            from apps.users.models import PatientProfile, PractitionerProfile
+            patient = PatientProfile.objects.get(id=patient_id)
+            facility = get_user_facility(self.request)
+            if not facility or patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+
+            if self.request.user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
                 try:
                     check_clinical_access(self.request.user, patient)
                 except PermissionDenied:
@@ -180,7 +201,14 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 staff__user=self.request.user
             ).first()
 
-        encounter = serializer.save(created_by=self.request.user, practitioner=practitioner)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        encounter = serializer.save(
+            created_by=self.request.user,
+            practitioner=practitioner,
+            facility=facility
+        )
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
 
@@ -358,6 +386,17 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 {"error": "patient_id parameter is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        facility = get_user_facility(request)
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         encounters = self.get_queryset().filter(patient_id=patient_id)
         serializer = EncounterListSerializer(encounters, many=True)

@@ -129,6 +129,14 @@ class RecurringSchedule(models.Model):
     Model for defining recurring practitioner availability schedules.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='recurring_schedules',
+        help_text="Facility where this schedule applies"
+    )
     name = models.CharField(max_length=100)
     practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='recurring_schedules')
     days_of_week = ArrayField(models.IntegerField(), help_text="List of days (0=Monday, 6=Sunday)")
@@ -149,6 +157,7 @@ class RecurringSchedule(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
+            models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
             models.Index(fields=['days_of_week']),
         ]
@@ -163,6 +172,14 @@ class BlockedTime(models.Model):
     Used to block specific time ranges that override recurring schedules.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='blocked_times',
+        help_text="Facility where this blocked time applies"
+    )
     practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='blocked_times')
     date = models.DateField(help_text="Date to block")
     start_time = models.TimeField(help_text="Start time of blocked period")
@@ -179,6 +196,7 @@ class BlockedTime(models.Model):
     class Meta:
         ordering = ['date', 'start_time']
         indexes = [
+            models.Index(fields=['facility', 'date']),
             models.Index(fields=['practitioner', 'date']),
             models.Index(fields=['date']),
         ]

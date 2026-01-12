@@ -19,7 +19,8 @@ from apps.appointments.models import (
 from .factories import (
     AppointmentTypeFactory, RecurringScheduleFactory, BlockedTimeFactory
 )
-from apps.users.tests.factories import PractitionerProfileFactory
+from apps.users.tests.factories import PractitionerProfileFactory, PatientProfileFactory
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 # Base URL prefix for appointments app
@@ -294,10 +295,15 @@ class TestAppointmentViewSetWithMocks:
     @patch('apps.appointments.views.AppointmentProxy')
     def test_retrieve_appointment(self, mock_proxy, admin_client, db):
         """Test retrieving a single appointment with mocked FHIR proxy."""
+        facility = DefaultFacilityFactory()
+        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
         mock_proxy.get.return_value = {
             'id': 'apt-123',
             'status': 'booked',
-            'start': '2024-06-15T10:00:00Z'
+            'start': '2024-06-15T10:00:00Z',
+            'participant': [
+                {'actor': {'reference': 'Patient/patient-123'}}
+            ]
         }
 
         response = admin_client.get(f'{BASE_URL}/appointments/apt-123/')
@@ -312,6 +318,8 @@ class TestAppointmentViewSetWithMocks:
             {'id': 'new-apt', 'status': 'booked'}
         )
 
+        facility = DefaultFacilityFactory()
+        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
         apt_type = AppointmentTypeFactory()
         data = {
             'patient_id': 'patient-123',
@@ -336,6 +344,8 @@ class TestAppointmentViewSetWithMocks:
             {'error': 'Time slot already booked'}
         )
 
+        facility = DefaultFacilityFactory()
+        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
         apt_type = AppointmentTypeFactory()
         data = {
             'patient_id': 'patient-123',

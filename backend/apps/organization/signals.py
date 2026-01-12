@@ -10,6 +10,8 @@ from django.db import transaction
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 
+from apps.core.cache_utils import facility_cache_key
+
 from .models import (
     UnitTypeConfig,
     ClinicalUnit,
@@ -110,11 +112,11 @@ def _update_descendant_caches(unit):
 
 def invalidate_user_unit_cache(user_id):
     """Invalidate the unit access cache for a user."""
-    cache.delete(f'user_unit_access:{user_id}')
+    cache.delete(facility_cache_key(f'user_unit_access:{user_id}'))
 
 
 def _bump_unit_list_cache_version(unit_id, kind):
-    cache_key = f'org_unit_{kind}_version:{unit_id}'
+    cache_key = facility_cache_key(f'org_unit_{kind}_version:{unit_id}')
     try:
         cache.incr(cache_key)
     except ValueError:

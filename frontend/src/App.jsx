@@ -62,6 +62,7 @@ const NurseDashboard = lazy(() => import('./pages/dashboards/NurseDashboard'))
 const InpatientDoctorDashboard = lazy(() => import('./pages/dashboards/InpatientDoctorDashboard'))
 const ReceptionistDashboard = lazy(() => import('./pages/dashboards/ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./pages/dashboards/AdminDashboard'))
+const RoleDashboard = lazy(() => import('./pages/dashboards/RoleDashboard'))
 const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
 const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
 const WardRoundWorkflowPage = lazy(() => import('./pages/workflows/ward-round/WardRoundWorkflowPage'))
@@ -190,15 +191,8 @@ function AppContent() {
         <ReadOnlyBanner />
         <Suspense fallback={<PageLoader />}>
           <Routes>
-          {/* Dashboard - accessible to all authenticated users */}
-          <Route path="/" element={
-            <Layout>
-              <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-                <h1 className="text-3xl font-bold">Hospital Management System</h1>
-                <p className="text-muted-foreground">Welcome to the HMS Dashboard</p>
-              </div>
-            </Layout>
-          } />
+          {/* Dashboard - role-based routing to appropriate dashboard */}
+          <Route path="/" element={<RoleDashboard />} />
 
           {/* Unauthorized page */}
           <Route path="/unauthorized" element={

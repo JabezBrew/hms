@@ -12,6 +12,12 @@ class InventoryCategory(models.Model):
     Model for categorizing inventory items.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='inventory_categories',
+        help_text="Facility that owns this inventory category"
+    )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
@@ -23,8 +29,11 @@ class InventoryCategory(models.Model):
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_categories')
     
     class Meta:
-        verbose_name_plural = "Inventory Categories"
         ordering = ['name']
+        indexes = [
+            models.Index(fields=['facility', 'name']),
+        ]
+
     
     def __str__(self):
         return self.name
@@ -35,22 +44,31 @@ class Supplier(models.Model):
     Model for suppliers of inventory items.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='suppliers',
+        help_text="Facility that owns this supplier"
+    )
     name = models.CharField(max_length=100)
     contact_person = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
-    
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_suppliers')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_suppliers')
-    
+
     class Meta:
         ordering = ['name']
-    
+        indexes = [
+            models.Index(fields=['facility', 'name']),
+        ]
+
     def __str__(self):
         return self.name
 
@@ -60,6 +78,12 @@ class InventoryItem(models.Model):
     Model for inventory items.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='inventory_items',
+        help_text="Facility that owns this inventory item"
+    )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(InventoryCategory, on_delete=models.SET_NULL, null=True, related_name='items')
@@ -128,6 +152,12 @@ class StockMovement(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(InventoryItem, on_delete=models.CASCADE, related_name='movements')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='stock_movements',
+        help_text="Facility context for this stock movement"
+    )
     
     # Movement type
     MOVEMENT_TYPE_CHOICES = (
@@ -163,6 +193,9 @@ class StockMovement(models.Model):
     
     class Meta:
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['facility', '-timestamp']),
+        ]
     
     def __str__(self):
         return f"{self.get_movement_type_display()} - {self.item.name} - {self.quantity} {self.item.unit_of_measure}"
@@ -276,6 +309,12 @@ class InventoryAudit(models.Model):
     Model for inventory audits.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='inventory_audits',
+        help_text="Facility context for this audit"
+    )
     audit_date = models.DateField(default=timezone.now)
     notes = models.TextField(blank=True, null=True)
     
@@ -296,6 +335,9 @@ class InventoryAudit(models.Model):
     
     class Meta:
         ordering = ['-audit_date']
+        indexes = [
+            models.Index(fields=['facility', '-audit_date']),
+        ]
     
     def __str__(self):
         return f"Audit {self.audit_date} - {self.get_status_display()}"

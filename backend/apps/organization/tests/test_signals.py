@@ -17,6 +17,7 @@ from apps.organization.models import (
     CrossCoverageSchedule,
 )
 from apps.organization.services import UnitAccessService
+from apps.core.cache_utils import facility_cache_key
 
 
 @pytest.fixture(autouse=True)
@@ -254,7 +255,7 @@ class TestCacheInvalidationSignals:
         UnitAccessService.get_accessible_unit_ids(user)
 
         # Check cache exists
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
         assert cache.get(cache_key) is not None
 
         # Create leadership (should invalidate cache)
@@ -286,7 +287,7 @@ class TestCacheInvalidationSignals:
 
         # Populate cache
         UnitAccessService.get_accessible_unit_ids(user)
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
         assert cache.get(cache_key) is not None
 
         # Delete leadership
@@ -308,7 +309,7 @@ class TestCacheInvalidationSignals:
 
         # Populate cache
         UnitAccessService.get_accessible_unit_ids(user)
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
         assert cache.get(cache_key) is not None
 
         # Create staff assignment
@@ -335,7 +336,7 @@ class TestCacheInvalidationSignals:
 
         # Populate cache
         UnitAccessService.get_accessible_unit_ids(user)
-        cache_key = f'user_unit_access:{user.id}'
+        cache_key = facility_cache_key(f'user_unit_access:{user.id}')
         assert cache.get(cache_key) is not None
 
         # Create coverage

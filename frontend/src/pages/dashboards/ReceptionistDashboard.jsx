@@ -26,9 +26,12 @@ import {
   Mail,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 
 export default function ReceptionistDashboard() {
   const navigate = useNavigate();
+  const { facilityCode } = useAuth();
 
   // Fetch dashboard data with polling
   const {
@@ -46,6 +49,15 @@ export default function ReceptionistDashboard() {
     { label: 'Dashboards', href: '/dashboards' },
     { label: 'Reception Dashboard', href: '/dashboards/reception' },
   ];
+
+  if (!facilityCode) {
+    return (
+      <Layout>
+        <PageBreadcrumb items={breadcrumbItems} />
+        <FacilityRequiredPanel />
+      </Layout>
+    );
+  }
 
   if (error) {
     return (

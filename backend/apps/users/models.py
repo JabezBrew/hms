@@ -40,6 +40,22 @@ class User(AbstractUser):
     )
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='patient')
 
+    # Facility access (single-DB facility scoping)
+    primary_facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_users',
+        help_text="Primary facility for this user"
+    )
+    facilities = models.ManyToManyField(
+        'core.Facility',
+        blank=True,
+        related_name='assigned_users',
+        help_text="Facilities this user can access"
+    )
+
     # Required for using email as username
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']  # Username still required by AbstractUser
@@ -136,6 +152,20 @@ class PatientProfile(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='patient_profile')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='patients',
+        help_text="Facility responsible for this patient record"
+    )
+    patient_identity_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="MPI patient identity ID (control-plane reference)"
+    )
     medical_record_number = models.CharField(max_length=20, unique=True)
     nhis_id = models.CharField(max_length=50, blank=True, null=True)
     blood_group = models.CharField(max_length=5, blank=True, null=True)
@@ -158,6 +188,7 @@ class PatientProfile(models.Model):
 
     class Meta:
         indexes = [
+            models.Index(fields=['facility']),
             models.Index(fields=['medical_record_number']),
             models.Index(fields=['nhis_id']),
             models.Index(fields=['fhir_patient_id']),
@@ -297,3 +328,91 @@ class UserPatientList(models.Model):
 
     def __str__(self):
         return f"{self.user.email} -> {self.patient.medical_record_number}"
+
+
+class UserMFAProfile(models.Model):
+    """
+    Stores MFA configuration and recovery codes for a user.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='mfa_profile')
+    totp_secret_encrypted = models.CharField(max_length=255, blank=True)
+    totp_confirmed_at = models.DateTimeField(null=True, blank=True)
+    totp_last_used_at = models.DateTimeField(null=True, blank=True)
+    recovery_codes = models.JSONField(default=list, blank=True)
+    recovery_codes_generated_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user']),
+        ]
+        verbose_name = 'User MFA Profile'
+        verbose_name_plural = 'User MFA Profiles'
+
+    def __str__(self):
+        return f"MFA Profile for {self.user.email}"
+
+
+class WebAuthnCredential(models.Model):
+    """
+    Stores WebAuthn credentials for a user.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='webauthn_credentials')
+    credential_id = models.CharField(max_length=255, unique=True)
+    public_key = models.TextField()
+    sign_count = models.PositiveIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    name = models.CharField(max_length=100, blank=True)
+    is_resident_key = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+        ]
+        verbose_name = 'WebAuthn Credential'
+        verbose_name_plural = 'WebAuthn Credentials'
+
+    def __str__(self):
+        return f"WebAuthn Credential for {self.user.email}"
+
+
+class MFASession(models.Model):
+    """
+    Short-lived MFA session used during login/enrollment.
+    """
+    PURPOSE_CHOICES = [
+        ('login', 'Login'),
+        ('enrollment', 'Enrollment'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mfa_sessions')
+    token_hash = models.CharField(max_length=64, unique=True)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES, default='login')
+    facility_code = models.CharField(max_length=20, blank=True)
+    enrollment_required = models.BooleanField(default=False)
+    totp_verified = models.BooleanField(default=False)
+    webauthn_verified = models.BooleanField(default=False)
+    webauthn_challenge = models.CharField(max_length=255, blank=True)
+    webauthn_challenge_expires_at = models.DateTimeField(null=True, blank=True)
+    webauthn_challenge_type = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    expires_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['token_hash']),
+            models.Index(fields=['user', 'expires_at']),
+        ]
+        verbose_name = 'MFA Session'
+        verbose_name_plural = 'MFA Sessions'
+
+    def __str__(self):
+        return f"MFA Session for {self.user.email}"

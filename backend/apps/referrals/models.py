@@ -40,6 +40,12 @@ class Referral(models.Model):
         on_delete=models.CASCADE,
         related_name='referrals'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='referrals',
+        help_text="Facility context for this referral"
+    )
     encounter = models.ForeignKey(
         'encounters.Encounter',
         on_delete=models.CASCADE,
@@ -199,6 +205,7 @@ class Referral(models.Model):
             models.Index(fields=['referred_to_department', 'status']),
             models.Index(fields=['urgency', 'status']),
             models.Index(fields=['submitted_at']),
+            models.Index(fields=['facility', 'status']),
         ]
 
     def __str__(self):

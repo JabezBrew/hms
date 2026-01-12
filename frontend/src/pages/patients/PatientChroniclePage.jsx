@@ -34,6 +34,8 @@ import {
 } from "@/components/charts";
 import LabOrderForm from "@/components/laboratory/LabOrderForm";
 import ReferralForm from "@/components/referrals/ReferralForm";
+import CrossFacilitySharePanel from "@/components/consent/CrossFacilitySharePanel";
+import ReceiveRecordPanel from "@/components/interop/ReceiveRecordPanel";
 import { useChartAssignments } from "@/hooks/useChartQueries";
 import {
   Clock,
@@ -86,7 +88,19 @@ const PatientChroniclePage = () => {
   const referralIdParam = searchParams.get('referral_id');
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(['note', 'vitals', 'prescription', 'labs', 'referral', 'fluids', 'charts', 'chartEntry', 'insurance']);
+  const slideOvers = useMultipleSlideOvers([
+    'note',
+    'vitals',
+    'prescription',
+    'labs',
+    'referral',
+    'crossFacility',
+    'receiveRecord',
+    'fluids',
+    'charts',
+    'chartEntry',
+    'insurance',
+  ]);
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
@@ -139,6 +153,7 @@ const PatientChroniclePage = () => {
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
+  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
 
   // Use chronicle context data directly - no more legacy fallback needed
   const medications = chronicleContext?.active_medications || [];
@@ -484,6 +499,8 @@ const PatientChroniclePage = () => {
   const handlePrescribe = useCallback(() => slideOvers.open('prescription'), [slideOvers]);
   const handleOrderLabs = useCallback(() => slideOvers.open('labs'), [slideOvers]);
   const handleRequestConsult = useCallback(() => slideOvers.open('referral'), [slideOvers]);
+  const handleShareRecord = useCallback(() => slideOvers.open('crossFacility'), [slideOvers]);
+  const handleReceiveRecord = useCallback(() => slideOvers.open('receiveRecord'), [slideOvers]);
   const handleRecordFluids = useCallback(() => slideOvers.open('fluids'), [slideOvers]);
 
   // Close handler with data refresh
@@ -801,6 +818,8 @@ const PatientChroniclePage = () => {
         onPrescribe={handlePrescribe}
         onOrderLabs={handleOrderLabs}
         onRequestConsult={handleRequestConsult}
+        onShareRecord={handleShareRecord}
+        onReceiveRecord={handleReceiveRecord}
         onScheduleFollowUp={handleScheduleFollowUp}
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onRecordFluids={handleRecordFluids}
@@ -1238,6 +1257,19 @@ const PatientChroniclePage = () => {
           patient={patient}
           encounter={activeEncounter}
           onReferralCreated={handleReferralCreated}
+        />
+
+        <CrossFacilitySharePanel
+          open={slideOvers.isOpen('crossFacility')}
+          onClose={handleSlideOverClose}
+          patient={patient}
+          patientIdentityId={patientIdentityId}
+        />
+
+        <ReceiveRecordPanel
+          open={slideOvers.isOpen('receiveRecord')}
+          onClose={handleSlideOverClose}
+          patient={patient}
         />
 
         {/* Fluid Balance Slide-Over */}

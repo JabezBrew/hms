@@ -24,6 +24,7 @@ from apps.patients.models import (
 )
 from apps.users.models import PatientProfile
 from apps.core.models import BreakGlassEvent
+from apps.core.tests.factories import DefaultFacilityFactory
 from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -37,11 +38,16 @@ from .factories import (
 )
 
 
-def get_authenticated_client(user):
+def get_authenticated_client(user, facility=None):
     """Get an API client authenticated as the given user."""
     client = APIClient()
     refresh = RefreshToken.for_user(user)
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    if facility is None:
+        facility = getattr(user, 'primary_facility', None) or DefaultFacilityFactory()
+    client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return client
 
 
@@ -104,14 +110,15 @@ class TestPatientSearchViewSet:
     def test_list_own_searches(self, db):
         """Test user can list their own searches."""
         user = DoctorUserFactory()
-        PatientSearchFactory(user=user, search_query='my search')
-        PatientSearchFactory(user=user, search_query='another search')
+        facility = user.primary_facility
+        PatientSearchFactory(user=user, facility=facility, search_query='my search')
+        PatientSearchFactory(user=user, facility=facility, search_query='another search')
 
         # Create another user's search
-        other_user = DoctorUserFactory()
-        PatientSearchFactory(user=other_user, search_query='other search')
+        other_user = DoctorUserFactory(primary_facility=facility)
+        PatientSearchFactory(user=other_user, facility=facility, search_query='other search')
 
-        client = get_authenticated_client(user)
+        client = get_authenticated_client(user, facility)
         response = client.get('/api/patients/searches/')
 
         assert response.status_code == status.HTTP_200_OK
@@ -123,12 +130,13 @@ class TestPatientSearchViewSet:
     def test_cannot_see_other_users_searches(self, db):
         """Test user cannot see other users' searches."""
         user1 = DoctorUserFactory()
-        user2 = DoctorUserFactory()
+        facility = user1.primary_facility
+        user2 = DoctorUserFactory(primary_facility=facility)
 
-        PatientSearchFactory(user=user1, search_query='user1 search')
-        PatientSearchFactory(user=user2, search_query='user2 search')
+        PatientSearchFactory(user=user1, facility=facility, search_query='user1 search')
+        PatientSearchFactory(user=user2, facility=facility, search_query='user2 search')
 
-        client = get_authenticated_client(user1)
+        client = get_authenticated_client(user1, facility)
         response = client.get('/api/patients/searches/')
 
         results = response.data.get('results', response.data)
@@ -178,7 +186,11 @@ class TestRecentPatientViewSet:
         """Test adding existing patient updates access date."""
         user = DoctorUserFactory()
         patient = PatientProfileFactory()
-        existing = RecentPatient.objects.create(user=user, patient_profile=patient)
+        existing = RecentPatient.objects.create(
+            user=user,
+            patient_profile=patient,
+            facility=patient.facility
+        )
         original_access = existing.access_date
 
         client = get_authenticated_client(user)
@@ -292,6 +304,7 @@ class TestPatientNoteViewSet:
         # Doctor's own private note
         own_private = PatientNote.objects.create(
             patient_profile=patient,
+            facility=patient.facility,
             note_text='My private note',
             is_private=True,
             created_by=doctor,
@@ -301,6 +314,7 @@ class TestPatientNoteViewSet:
         # Other's private note (shouldn't see)
         other_private = PatientNote.objects.create(
             patient_profile=patient,
+            facility=patient.facility,
             note_text='Other private note',
             is_private=True,
             created_by=other_doctor,
@@ -310,6 +324,7 @@ class TestPatientNoteViewSet:
         # Public note (should see)
         public_note = PatientNote.objects.create(
             patient_profile=patient,
+            facility=patient.facility,
             note_text='Public note',
             is_private=False,
             created_by=admin,

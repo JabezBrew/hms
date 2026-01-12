@@ -2,6 +2,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoctorDashboard } from '@/hooks/useDoctorDashboard';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock,
@@ -18,8 +20,17 @@ import {
 } from 'lucide-react';
 
 export default function DoctorDashboard() {
+  const { facilityCode } = useAuth();
   const { data, loading, error, refetch } = useDoctorDashboard();
   const navigate = useNavigate();
+
+  if (!facilityCode) {
+    return (
+      <div className="min-h-screen bg-background">
+        <FacilityRequiredPanel className="max-w-4xl mx-auto" />
+      </div>
+    );
+  }
 
   const handleStartConsultation = (patient) => {
     const params = new URLSearchParams({

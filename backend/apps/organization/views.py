@@ -16,9 +16,11 @@ from django.utils.http import http_date, parse_http_date
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, get_user_facility
 from apps.users.rbac import IsAdmin
 
 from .models import (
@@ -53,6 +55,7 @@ from .serializers import (
     UnitWardAllocationListSerializer,
     UnitWardAllocationSerializer,
 )
+from apps.core.cache_utils import facility_cache_key
 from .tree_cache import ORG_TREE_CACHE_TTL, get_org_tree_payload
 
 STAFF_LIST_CACHE_TTL = 60 * 60 * 3  # 3 hours
@@ -61,7 +64,7 @@ ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION = 2
 
 
 def _get_unit_list_cache_version(kind, unit_id):
-    cache_key = f'org_unit_{kind}_version:{unit_id}'
+    cache_key = facility_cache_key(f'org_unit_{kind}_version:{unit_id}')
     version = cache.get(cache_key)
     if version is None:
         cache.set(cache_key, 1, timeout=None)
@@ -77,7 +80,7 @@ def _build_unit_list_cache_key(kind, unit_id, user_id, include_descendants, quer
         else 'none'
     )
     version = _get_unit_list_cache_version(kind, unit_id)
-    return (
+    return facility_cache_key(
         f'org_unit_{kind}_list:s{ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION}:v{version}:'
         f'{unit_id}:{user_id}:{int(include_descendants)}:{page}:{page_size}:{today}:{query_hash}'
     )
@@ -91,7 +94,7 @@ def _build_unit_counts_cache_key(kind, unit_id, user_id, include_descendants, qu
         else 'none'
     )
     version = _get_unit_list_cache_version(kind, unit_id)
-    return (
+    return facility_cache_key(
         f'org_unit_{kind}_counts:s{ASSIGNMENT_LIST_CACHE_SCHEMA_VERSION}:v{version}:'
         f'{unit_id}:{user_id}:{int(include_descendants)}:{today}:{query_hash}'
     )
@@ -184,7 +187,7 @@ class UnitTypeConfigViewSet(viewsets.ModelViewSet):
     (e.g., facility, department, team) and their capabilities.
     """
     queryset = UnitTypeConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -212,7 +215,7 @@ class LeadershipRoleConfigViewSet(viewsets.ModelViewSet):
     and their associated permissions.
     """
     queryset = LeadershipRoleConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -245,7 +248,7 @@ class StaffAssignmentTypeConfigViewSet(viewsets.ModelViewSet):
     """
     queryset = StaffAssignmentTypeConfig.objects.all()
     serializer_class = StaffAssignmentTypeConfigSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
@@ -271,14 +274,14 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
     - Ward allocations
     """
     queryset = ClinicalUnit.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['unit_type', 'parent', 'is_active', 'accepts_admissions']
     search_fields = ['code', 'name', 'short_name']
 
     def get_permissions(self):
         if self.action == 'tree':
-            return [IsAdmin()]
+            return [IsAdmin(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -293,6 +296,10 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+
         # Optimize with select_related for common foreign keys
         queryset = queryset.select_related('unit_type', 'parent', 'root_unit')
 
@@ -300,16 +307,40 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
 
-        # Filter by root/facility
-        facility = self.request.query_params.get('facility')
-        if facility:
-            queryset = queryset.filter(root_unit_id=facility)
+        # Scope to the active facility context
+        queryset = queryset.filter(root_unit__code=facility.code)
 
         # Filter to only root nodes
         if self.request.query_params.get('roots_only') == 'true':
             queryset = queryset.filter(parent__isnull=True)
 
         return queryset.order_by('tree_id', 'lft')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        parent = serializer.validated_data.get('parent')
+        if parent:
+            root = parent.root_unit or parent.get_root()
+            if root and root.code != facility.code:
+                raise PermissionDenied("Parent unit does not belong to the active facility.")
+        else:
+            code = serializer.validated_data.get('code')
+            if code and code.strip().upper() != facility.code:
+                raise PermissionDenied("Root unit code must match active facility code.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        parent = serializer.validated_data.get('parent')
+        if parent:
+            root = parent.root_unit or parent.get_root()
+            if root and root.code != facility.code:
+                raise PermissionDenied("Parent unit does not belong to the active facility.")
+        serializer.save()
 
     @action(detail=False, methods=['get'])
     def tree(self, request):
@@ -319,7 +350,16 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
         Returns root nodes with nested children for building a tree UI.
         """
         include_inactive = request.query_params.get('include_inactive') == 'true'
+        facility = get_user_facility(request)
         facility_id = request.query_params.get('facility') or None
+        if facility:
+            root_unit = ClinicalUnit.objects.filter(
+                unit_type__code='facility',
+                code=facility.code
+            ).only('id').first()
+            if not root_unit:
+                return Response([])
+            facility_id = root_unit.id
         payload = get_org_tree_payload(
             facility_id=facility_id,
             include_inactive=include_inactive
@@ -660,7 +700,7 @@ class UnitLeadershipViewSet(viewsets.ModelViewSet):
     ViewSet for managing unit leadership assignments.
     """
     queryset = UnitLeadership.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['unit', 'role', 'user', 'is_active']
 
@@ -672,6 +712,11 @@ class UnitLeadershipViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         queryset = queryset.select_related('unit', 'role', 'user')
+
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        queryset = queryset.filter(unit__root_unit__code=facility.code)
 
         # Filter by currently effective
         if self.request.query_params.get('current') == 'true':
@@ -685,6 +730,15 @@ class UnitLeadershipViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-effective_from')
 
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        serializer.save()
+
 
 # =============================================================================
 # Staff Assignment ViewSet
@@ -696,7 +750,7 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
     ViewSet for managing staff unit assignments.
     """
     queryset = StaffUnitAssignment.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['unit', 'practitioner', 'assignment_type', 'is_primary', 'is_active']
 
@@ -708,6 +762,11 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         queryset = queryset.select_related('unit', 'practitioner', 'assignment_type')
+
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        queryset = queryset.filter(unit__root_unit__code=facility.code)
 
         # Filter by currently effective
         if self.request.query_params.get('current') == 'true':
@@ -721,6 +780,15 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
             )
 
         return queryset.order_by('-assigned_at')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        serializer.save()
 
 
 # =============================================================================
@@ -746,6 +814,11 @@ class UnitMemberAssignmentViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         queryset = queryset.select_related('unit', 'staff', 'staff__user', 'assignment_type')
 
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        queryset = queryset.filter(unit__root_unit__code=facility.code)
+
         if self.request.query_params.get('current') == 'true':
             today = timezone.now().date()
             queryset = queryset.filter(
@@ -757,6 +830,15 @@ class UnitMemberAssignmentViewSet(viewsets.ModelViewSet):
             )
 
         return queryset.order_by('-assigned_at')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        serializer.save()
 
 # =============================================================================
 # Cross Coverage ViewSet
@@ -781,6 +863,11 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         queryset = queryset.select_related('covered_unit', 'covering_practitioner', 'covering_unit')
 
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        queryset = queryset.filter(covered_unit__root_unit__code=facility.code)
+
         # Filter by currently active
         if self.request.query_params.get('current') == 'true':
             now = timezone.now()
@@ -791,6 +878,15 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
             )
 
         return queryset.order_by('-start_datetime')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        covered_unit = serializer.validated_data.get('covered_unit')
+        if covered_unit and covered_unit.root_unit and covered_unit.root_unit.code != facility.code:
+            raise PermissionDenied("Covered unit does not belong to the active facility.")
+        serializer.save()
 
 
 # =============================================================================
@@ -816,6 +912,14 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         queryset = queryset.select_related('unit', 'ward')
 
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        queryset = queryset.filter(
+            unit__root_unit__code=facility.code,
+            ward__department__facility=facility
+        )
+
         # Filter by currently effective
         if self.request.query_params.get('current') == 'true':
             today = timezone.now().date()
@@ -828,3 +932,15 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
             )
 
         return queryset.order_by('priority', 'unit__name')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        ward = serializer.validated_data.get('ward')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        if ward and ward.department and ward.department.facility_id != facility.id:
+            raise PermissionDenied("Ward does not belong to the active facility.")
+        serializer.save()

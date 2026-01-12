@@ -16,6 +16,12 @@ class VitalSigns(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='vital_signs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='vital_sign_records',
+        help_text="Facility context for this vital sign record"
+    )
     recorded_by = models.ForeignKey(PractitionerProfile, on_delete=models.SET_NULL, null=True, related_name='recorded_vitals')
 
     # Link to encounter - required, groups vitals by clinical visit
@@ -93,6 +99,7 @@ class VitalSigns(models.Model):
         indexes = [
             models.Index(fields=['patient', '-recorded_at']),
             models.Index(fields=['is_critical', '-recorded_at']),
+            models.Index(fields=['facility', '-recorded_at']),
         ]
         verbose_name = 'Vital Sign'
         verbose_name_plural = 'Vital Signs'
@@ -139,6 +146,7 @@ class VitalSigns(models.Model):
         if self.is_critical:
             NursingAlert.objects.create(
                 patient=self.patient,
+                facility=self.facility,
                 alert_type='vital_signs',
                 severity='high',
                 message=f"Critical vital signs recorded: {self.get_critical_values_message()}",
@@ -197,6 +205,12 @@ class NursingTask(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='nursing_tasks')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nursing_tasks',
+        help_text="Facility context for this nursing task"
+    )
     task_type = models.CharField(max_length=20, choices=TASK_TYPE_CHOICES)
     description = models.TextField()
 
@@ -236,6 +250,7 @@ class NursingTask(models.Model):
             models.Index(fields=['patient', 'status', 'scheduled_time']),
             models.Index(fields=['assigned_to', 'status']),
             models.Index(fields=['priority', 'scheduled_time']),
+            models.Index(fields=['facility', 'status', 'scheduled_time']),
         ]
 
     def __str__(self):
@@ -272,6 +287,12 @@ class NursingAlert(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='nursing_alerts')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nursing_alerts',
+        help_text="Facility context for this nursing alert"
+    )
     alert_type = models.CharField(max_length=20, choices=ALERT_TYPE_CHOICES)
     severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES)
     message = models.TextField()
@@ -314,6 +335,7 @@ class NursingAlert(models.Model):
             models.Index(fields=['patient', 'is_acknowledged', '-created_at']),
             models.Index(fields=['severity', 'is_acknowledged']),
             models.Index(fields=['alert_type', '-created_at']),
+            models.Index(fields=['facility', 'is_acknowledged', '-created_at']),
         ]
 
     def __str__(self):
@@ -344,6 +366,12 @@ class MedicationAdministration(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='medication_administrations')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='medication_administrations',
+        help_text="Facility context for this medication administration"
+    )
 
     # Medication details
     medication_name = models.CharField(max_length=200)
@@ -419,6 +447,7 @@ class MedicationAdministration(models.Model):
             models.Index(fields=['patient', 'status', 'scheduled_time'], name='nursing_med_patient_status_idx'),  # For dashboard prefetch
             models.Index(fields=['status', 'scheduled_time']),
             models.Index(fields=['administered_by', 'administered_time']),
+            models.Index(fields=['facility', 'status', 'scheduled_time']),
         ]
 
     def __str__(self):
@@ -434,6 +463,7 @@ class MedicationAdministration(models.Model):
             if time_diff.total_seconds() > 1800:  # 30 minutes
                 NursingAlert.objects.get_or_create(
                     patient=self.patient,
+                    facility=self.facility,
                     alert_type='medication',
                     defaults={
                         'severity': 'medium',
@@ -454,6 +484,12 @@ class ShiftHandoff(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='shift_handoffs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='shift_handoffs',
+        help_text="Facility context for this shift handoff"
+    )
 
     # Shift details
     shift_date = models.DateField(default=timezone.now)
@@ -497,6 +533,7 @@ class ShiftHandoff(models.Model):
             models.Index(fields=['patient', '-shift_date']),
             models.Index(fields=['shift_date', 'shift_type']),
             models.Index(fields=['from_nurse', 'to_nurse']),
+            models.Index(fields=['facility', '-shift_date']),
         ]
 
     def __str__(self):
@@ -523,6 +560,12 @@ class TreatmentSheetEntry(models.Model):
         PatientProfile,
         on_delete=models.CASCADE,
         related_name='treatment_sheet_entries'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='treatment_sheet_entries',
+        help_text="Facility context for this treatment sheet entry"
     )
     admission = models.ForeignKey(
         'wards.Admission',
@@ -610,6 +653,7 @@ class TreatmentSheetEntry(models.Model):
             models.Index(fields=['admission', 'status']),
             models.Index(fields=['patient', 'status', '-start_datetime']),
             models.Index(fields=['status', '-start_datetime']),
+            models.Index(fields=['facility', 'status', '-start_datetime']),
         ]
         verbose_name = 'Treatment Sheet Entry'
         verbose_name_plural = 'Treatment Sheet Entries'
@@ -671,6 +715,12 @@ class SupplyRequest(models.Model):
         on_delete=models.CASCADE,
         related_name='supply_requests'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='supply_requests',
+        help_text="Facility context for this supply request"
+    )
 
     # Request details
     quantity_requested = models.PositiveIntegerField(
@@ -715,6 +765,7 @@ class SupplyRequest(models.Model):
             models.Index(fields=['status', '-requested_at']),
             models.Index(fields=['treatment_entry', '-requested_at']),
             models.Index(fields=['requested_by', 'status']),
+            models.Index(fields=['facility', 'status', '-requested_at']),
         ]
         verbose_name = 'Supply Request'
         verbose_name_plural = 'Supply Requests'
@@ -760,6 +811,12 @@ class FluidBalance(models.Model):
         PatientProfile,
         on_delete=models.CASCADE,
         related_name='fluid_balance_records'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='fluid_balance_entries',
+        help_text="Facility context for this fluid balance entry"
     )
     admission = models.ForeignKey(
         'wards.Admission',
@@ -847,6 +904,7 @@ class FluidBalance(models.Model):
             models.Index(fields=['patient', 'entry_type', '-recorded_at']),
             models.Index(fields=['admission', '-recorded_at']),
             models.Index(fields=['is_deleted', '-recorded_at']),
+            models.Index(fields=['facility', 'entry_type', '-recorded_at']),
         ]
         verbose_name = 'Fluid Balance Entry'
         verbose_name_plural = 'Fluid Balance Entries'

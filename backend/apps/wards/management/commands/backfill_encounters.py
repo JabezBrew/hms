@@ -102,6 +102,7 @@ class Command(BaseCommand):
             if apply_changes:
                 encounter = Encounter.objects.create(
                     patient=patient,
+                    facility=patient.facility,
                     practitioner=admission.admitting_doctor,
                     encounter_type='inpatient',
                     status='in-progress' if admission.status == 'admitted' else 'finished',
@@ -140,6 +141,7 @@ class Command(BaseCommand):
 
             encounter = Encounter.objects.create(
                 patient=patient,
+                facility=patient.facility,
                 practitioner=practitioner,
                 encounter_type='outpatient',
                 status='finished',  # Historical entries are finished

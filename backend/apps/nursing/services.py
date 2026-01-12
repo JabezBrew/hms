@@ -112,8 +112,12 @@ def generate_mar_entries_for_prescription(prescription, days=None, start_date=No
                 ).exists()
 
                 if not existing:
+                    facility = getattr(prescription, 'facility', None)
+                    if not facility and prescription.patient_id:
+                        facility = prescription.patient.facility
                     mar_entry = MedicationAdministration.objects.create(
                         patient=prescription.patient,
+                        facility=facility,
                         medication_name=prescription.medication_name,
                         dosage=prescription.dosage,
                         route=prescription.get_route_display(),
@@ -240,6 +244,16 @@ def create_treatment_entry_with_mar(treatment_data, created_by=None):
         Created TreatmentSheetEntry instance
     """
     with transaction.atomic():
+        facility = treatment_data.get('facility')
+        if not facility:
+            patient = treatment_data.get('patient')
+            encounter = treatment_data.get('encounter')
+            if encounter and getattr(encounter, 'facility_id', None):
+                facility = encounter.facility
+            elif patient and getattr(patient, 'facility_id', None):
+                facility = patient.facility
+            if facility:
+                treatment_data['facility'] = facility
         # Create treatment entry
         entry = TreatmentSheetEntry.objects.create(**treatment_data, created_by=created_by)
 
@@ -275,6 +289,7 @@ def create_treatment_entry_with_mar(treatment_data, created_by=None):
 
                     mar_entry = MedicationAdministration.objects.create(
                         patient=entry.patient,
+                        facility=entry.facility,
                         medication_name=entry.medication_name,
                         dosage=entry.dosage,
                         route=entry.route,
@@ -331,6 +346,7 @@ def create_supply_request(treatment_entry, quantity, requested_by, notes=''):
     """
     supply_request = SupplyRequest.objects.create(
         treatment_entry=treatment_entry,
+        facility=treatment_entry.facility,
         quantity_requested=quantity,
         requested_by=requested_by,
         notes=notes
@@ -375,12 +391,16 @@ def reject_supply_request(supply_request, rejection_reason, rejected_by):
     )
 
 
-def get_pending_supply_requests(patient_id=None):
+def get_pending_supply_requests(patient_id=None, admission_id=None, facility=None):
     """
     Backwards-compatible wrapper for pharmacy get_pending_supply_requests.
     """
     from apps.pharmacy import services as pharmacy_services
-    return pharmacy_services.get_pending_supply_requests(patient_id=patient_id)
+    return pharmacy_services.get_pending_supply_requests(
+        patient_id=patient_id,
+        admission_id=admission_id,
+        facility=facility,
+    )
 
 
 def get_treatment_sheet_by_admission(admission_id):

@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
 
+from .cache_utils import facility_cache_key, facility_cache_key_for_code
+
 User = get_user_model()
 
 
@@ -34,6 +36,13 @@ class Facility(models.Model):
         ('laboratory', 'Laboratory'),
         ('rehabilitation', 'Rehabilitation Center'),
         ('urgent_care', 'Urgent Care'),
+    ]
+    FACILITY_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('ready', 'Ready'),
+        ('failed', 'Failed'),
+        ('suspended', 'Suspended'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -112,10 +121,21 @@ class Facility(models.Model):
     )
 
     # Operational
+    status = models.CharField(
+        max_length=20,
+        choices=FACILITY_STATUS_CHOICES,
+        default='ready',
+        help_text="Provisioning status for this facility"
+    )
     is_active = models.BooleanField(default=True)
     is_headquarters = models.BooleanField(
         default=False,
         help_text="Whether this is the main/headquarters facility"
+    )
+    provisioned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this facility was provisioned"
     )
 
     # Audit fields
@@ -153,23 +173,27 @@ class Facility(models.Model):
         # Ensure code is uppercase
         self.code = self.code.upper()
         super().save(*args, **kwargs)
-        # Clear facility cache
+        # Clear facility cache for all facility contexts
         cache.delete('active_facilities')
-        cache.delete(f'facility_{self.code}')
+        for code in Facility.objects.values_list('code', flat=True):
+            cache.delete(facility_cache_key_for_code(code, 'active_facilities'))
+        cache.delete(facility_cache_key_for_code(self.code, f'facility_{self.code}'))
+        cache.delete(facility_cache_key(f'facility_{self.code}'))
 
     @classmethod
     def get_active_facilities(cls):
         """Get all active facilities with caching."""
-        facilities = cache.get('active_facilities')
+        cache_key = facility_cache_key('active_facilities')
+        facilities = cache.get(cache_key)
         if facilities is None:
             facilities = list(cls.objects.filter(is_active=True))
-            cache.set('active_facilities', facilities, 300)  # 5 min cache
+            cache.set(cache_key, facilities, 300)  # 5 min cache
         return facilities
 
     @classmethod
     def get_by_code(cls, code):
         """Get facility by code with caching."""
-        cache_key = f'facility_{code.upper()}'
+        cache_key = facility_cache_key(f'facility_{code.upper()}')
         facility = cache.get(cache_key)
         if facility is None:
             try:
@@ -322,13 +346,14 @@ class Department(models.Model):
         # Ensure code is uppercase
         self.code = self.code.upper()
         super().save(*args, **kwargs)
-        # Clear department cache
-        cache.delete(f'facility_departments_{self.facility_id}')
+        # Clear department cache across facility contexts
+        cache.delete(facility_cache_key_for_code(self.facility.code, f'facility_departments_{self.facility_id}'))
+        cache.delete(facility_cache_key(f'facility_departments_{self.facility_id}'))
 
     @classmethod
     def get_facility_departments(cls, facility_id):
         """Get all active departments for a facility with caching."""
-        cache_key = f'facility_departments_{facility_id}'
+        cache_key = facility_cache_key(f'facility_departments_{facility_id}')
         departments = cache.get(cache_key)
         if departments is None:
             departments = list(cls.objects.filter(
@@ -392,20 +417,21 @@ class SiteNetwork(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
         # Clear cache when networks change
-        cache.delete('site_networks')
+        cache.delete(facility_cache_key('site_networks'))
 
     def delete(self, *args, **kwargs):
         super().delete(*args, **kwargs)
         # Clear cache when networks change
-        cache.delete('site_networks')
+        cache.delete(facility_cache_key('site_networks'))
 
     @classmethod
     def get_active_networks(cls):
         """Get all active networks, with caching."""
-        networks = cache.get('site_networks')
+        cache_key = facility_cache_key('site_networks')
+        networks = cache.get(cache_key)
         if networks is None:
             networks = list(cls.objects.filter(is_active=True).values_list('cidr', flat=True))
-            cache.set('site_networks', networks, 300)  # Cache for 5 minutes
+            cache.set(cache_key, networks, 300)  # Cache for 5 minutes
         return networks
 
     @classmethod
@@ -501,15 +527,16 @@ class OffSiteAccessSettings(models.Model):
         self.pk = 1
         super().save(*args, **kwargs)
         # Clear cache when settings change
-        cache.delete('offsite_settings')
+        cache.delete(facility_cache_key('offsite_settings'))
 
     @classmethod
     def get_settings(cls):
         """Get settings with caching."""
-        settings = cache.get('offsite_settings')
+        cache_key = facility_cache_key('offsite_settings')
+        settings = cache.get(cache_key)
         if settings is None:
             settings, _ = cls.objects.get_or_create(pk=1)
-            cache.set('offsite_settings', settings, 300)  # Cache for 5 minutes
+            cache.set(cache_key, settings, 300)  # Cache for 5 minutes
         return settings
 
 
@@ -568,15 +595,16 @@ class FacilityFluidBalanceSettings(models.Model):
         self.pk = 1
         super().save(*args, **kwargs)
         # Clear cache when settings change
-        cache.delete('facility_fluid_balance_settings')
+        cache.delete(facility_cache_key('facility_fluid_balance_settings'))
 
     @classmethod
     def get_settings(cls):
         """Get settings with caching."""
-        settings = cache.get('facility_fluid_balance_settings')
+        cache_key = facility_cache_key('facility_fluid_balance_settings')
+        settings = cache.get(cache_key)
         if settings is None:
             settings, _ = cls.objects.get_or_create(pk=1)
-            cache.set('facility_fluid_balance_settings', settings, 300)  # Cache for 5 minutes
+            cache.set(cache_key, settings, 300)  # Cache for 5 minutes
         return settings
 
 

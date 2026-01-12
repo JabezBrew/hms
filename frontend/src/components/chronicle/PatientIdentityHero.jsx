@@ -13,6 +13,7 @@ import {
   Droplets,
   BarChart3,
   Shield,
+  Download,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -38,6 +39,8 @@ const PatientIdentityHero = ({
   onPrescribe,
   onOrderLabs,
   onRequestConsult,
+  onShareRecord,
+  onReceiveRecord,
   onScheduleFollowUp,
   onViewTreatmentSheet,
   onRecordFluids,
@@ -405,7 +408,18 @@ const PatientIdentityHero = ({
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => window.print()}>Print Summary</DropdownMenuItem>
-              <DropdownMenuItem>Export Record</DropdownMenuItem>
+              {onShareRecord && (
+                <DropdownMenuItem onClick={onShareRecord}>
+                  <Shield className="h-4 w-4 mr-2" />
+                  Share Record
+                </DropdownMenuItem>
+              )}
+              {onReceiveRecord && (
+                <DropdownMenuItem onClick={onReceiveRecord}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Receive Record
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

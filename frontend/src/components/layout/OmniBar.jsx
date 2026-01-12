@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
 import { ThemeToggle } from "../theme-toggle"
+import { FacilitySwitcher } from "./FacilitySwitcher"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -81,6 +82,8 @@ export function OmniBar() {
             <div className="ml-auto flex items-center space-x-4">
                 {/* Only show appointment notifications for roles that have access to appointments */}
                 {user && ['admin', 'doctor', 'nurse', 'receptionist'].includes(user.role) && <AppointmentNotifications />}
+
+                <FacilitySwitcher />
 
                 <ThemeToggle />
 

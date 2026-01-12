@@ -222,6 +222,12 @@ class Bed(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ward = models.ForeignKey(Ward, on_delete=models.CASCADE, related_name='beds')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='ward_beds',
+        help_text="Facility context for this bed"
+    )
     bed_number = models.CharField(max_length=20)
 
     # Bed type
@@ -321,6 +327,7 @@ class Bed(models.Model):
             models.Index(fields=['accommodation_tier']),
             models.Index(fields=['current_isolation_type']),
             models.Index(fields=['is_isolation_capable']),
+            models.Index(fields=['facility', 'status']),
         ]
 
     def __str__(self):
@@ -382,6 +389,12 @@ class Admission(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='admissions')
     bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='admissions', null=True, blank=True)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='admissions',
+        help_text="Facility context for this admission"
+    )
 
     # FHIR Encounter reference
     fhir_encounter_id = models.CharField(max_length=100, blank=True, null=True)
@@ -459,6 +472,7 @@ class Admission(models.Model):
             models.Index(fields=['admission_date']),
             models.Index(fields=['fhir_encounter_id']),
             models.Index(fields=['primary_team', 'status']),  # For team-based filtering
+            models.Index(fields=['facility', 'status', 'admission_date']),
         ]
 
     def __str__(self):
@@ -629,6 +643,12 @@ class BedAllocationLog(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='allocation_logs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='bed_allocation_logs',
+        help_text="Facility context for this bed allocation log"
+    )
 
     # Status change
     previous_status = models.CharField(max_length=20, choices=Bed.STATUS_CHOICES)
@@ -646,6 +666,9 @@ class BedAllocationLog(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['facility', '-timestamp']),
+        ]
 
     def __str__(self):
         return f"{self.bed} - {self.previous_status} to {self.new_status} - {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
@@ -662,6 +685,12 @@ class WardTransfer(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='transfers')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='ward_transfers',
+        help_text="Facility context for this ward transfer"
+    )
 
     # Transfer details
     from_admission = models.ForeignKey(
@@ -687,6 +716,9 @@ class WardTransfer(models.Model):
 
     class Meta:
         ordering = ['-transfer_time']
+        indexes = [
+            models.Index(fields=['facility', '-transfer_time']),
+        ]
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.from_admission.bed.ward.name} to {self.to_admission.bed.ward.name}"

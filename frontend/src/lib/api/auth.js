@@ -10,9 +10,14 @@ export const authApi = {
    * @param {string} password - User password
    * @returns {Promise<Object>} User data with token
    */
-  login: async (email, password) => {
+  login: async (email, password, facilityCode) => {
     try {
-      return await apiClient.post('/auth/login/', { email, password });
+      const payload = { email, password };
+      if (facilityCode) {
+        payload.facility_code = facilityCode;
+      }
+      const headers = facilityCode ? { 'X-Facility-Code': facilityCode } : undefined;
+      return await apiClient.post('/auth/login/', payload, { headers });
     } catch (error) {
       throw new Error(handleApiError(error, 'Login failed'));
     }
@@ -122,6 +127,92 @@ export const authApi = {
       return await apiClient.post('/auth/admin/force-reset/', { user_id: userId });
     } catch (error) {
       throw new Error(handleApiError(error, 'Password reset failed'));
+    }
+  },
+
+  mfaStatus: async () => {
+    try {
+      return await apiClient.get('/auth/mfa/status/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to load MFA status'));
+    }
+  },
+
+  mfaTotpStart: async (mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/totp/start/', { mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to start TOTP setup'));
+    }
+  },
+
+  mfaTotpConfirm: async (code, mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/totp/confirm/', { code, mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to confirm TOTP'));
+    }
+  },
+
+  mfaTotpVerify: async (code, mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/totp/verify/', { code, mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to verify TOTP'));
+    }
+  },
+
+  mfaRecoveryGenerate: async () => {
+    try {
+      return await apiClient.post('/auth/mfa/recovery/', {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
+    }
+  },
+
+  mfaRecoveryVerify: async (code, mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/recovery/verify/', { code, mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to verify recovery code'));
+    }
+  },
+
+  mfaWebAuthnRegistrationOptions: async (mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/webauthn/registration/options/', { mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to start WebAuthn registration'));
+    }
+  },
+
+  mfaWebAuthnRegistrationVerify: async (credential, mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/webauthn/registration/verify/', {
+        credential,
+        mfa_session: mfaSession,
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to verify WebAuthn registration'));
+    }
+  },
+
+  mfaWebAuthnAuthOptions: async (mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/webauthn/authentication/options/', { mfa_session: mfaSession });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to start WebAuthn authentication'));
+    }
+  },
+
+  mfaWebAuthnAuthVerify: async (credential, mfaSession) => {
+    try {
+      return await apiClient.post('/auth/mfa/webauthn/authentication/verify/', {
+        credential,
+        mfa_session: mfaSession,
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to verify WebAuthn authentication'));
     }
   },
 };

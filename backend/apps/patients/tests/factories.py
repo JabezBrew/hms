@@ -20,6 +20,7 @@ from apps.patients.models import (
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, PatientProfileFactory
 )
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 class PatientFHIRMappingFactory(factory.django.DjangoModelFactory):
@@ -54,6 +55,7 @@ class PatientSearchFactory(factory.django.DjangoModelFactory):
         model = PatientSearch
 
     user = factory.SubFactory(UserFactory)
+    facility = factory.SubFactory(DefaultFacilityFactory)
     search_query = factory.Faker('sentence', nb_words=3)
 
 
@@ -65,6 +67,7 @@ class RecentPatientFactory(factory.django.DjangoModelFactory):
 
     user = factory.SubFactory(UserFactory)
     patient_profile = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient_profile.facility')
 
 
 class PatientRegistrationValidationFactory(factory.django.DjangoModelFactory):
@@ -107,6 +110,7 @@ class PatientNoteFactory(factory.django.DjangoModelFactory):
         model = PatientNote
 
     patient_profile = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient_profile.facility')
     note_text = factory.Faker('paragraph')
     is_private = factory.Faker('boolean', chance_of_getting_true=30)
 

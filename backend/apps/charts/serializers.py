@@ -150,7 +150,7 @@ class ChartTemplateListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChartTemplate
         fields = [
-            'id', 'name', 'description', 'icon',
+            'id', 'facility', 'name', 'description', 'icon',
             'category', 'category_display',
             'visibility', 'default_interval', 'interval_display',
             'field_count', 'is_active', 'is_system',
@@ -180,7 +180,7 @@ class ChartTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChartTemplate
         fields = [
-            'id', 'name', 'description', 'icon',
+            'id', 'facility', 'name', 'description', 'icon',
             'visibility', 'visibility_display', 'department',
             'category', 'category_display',
             'default_interval', 'interval_display',
@@ -191,7 +191,7 @@ class ChartTemplateSerializer(serializers.ModelSerializer):
             'created_by', 'created_by_name', 'created_at',
             'updated_by', 'updated_by_name', 'updated_at',
         ]
-        read_only_fields = ['id', 'is_system', 'version', 'created_by', 'created_at', 'updated_by', 'updated_at']
+        read_only_fields = ['id', 'facility', 'is_system', 'version', 'created_by', 'created_at', 'updated_by', 'updated_at']
 
     def get_created_by_name(self, obj):
         if obj.created_by:

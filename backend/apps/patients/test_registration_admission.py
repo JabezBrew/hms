@@ -17,6 +17,7 @@ from rest_framework import status
 
 from apps.wards.models import Ward, Bed, Admission
 from apps.users.models import PatientProfile
+from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory
 
 User = get_user_model()
 
@@ -26,24 +27,32 @@ class PatientRegistrationAdmissionTests(TestCase):
     """
     def setUp(self):
         self.client = APIClient()
+        self.facility = DefaultFacilityFactory()
+        self.department = DepartmentFactory(facility=self.facility)
         self.admin_user = User.objects.create_superuser(
             email='admin@example.com',
             username='adminuser',
-            password='AdminPassword123'
+            password='AdminPassword123',
+            primary_facility=self.facility
         )
+        self.admin_user.user_type = 'admin'
+        self.admin_user.save(update_fields=['user_type'])
         self.client.force_authenticate(user=self.admin_user)
-        
+        self.client.credentials(HTTP_X_FACILITY_CODE=self.facility.code)
+
         # Create Ward and Bed
         self.ward = Ward.objects.create(
             name='General Ward',
             ward_type='general',
             total_beds=10,
             base_rate_per_night=100.00,
+            department=self.department,
             created_by=self.admin_user
         )
-        
+
         self.bed = Bed.objects.create(
             ward=self.ward,
+            facility=self.facility,
             bed_number='101',
             bed_type='standard',
             status='available',

@@ -27,9 +27,16 @@ from .serializers import (
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
-from apps.core.security import check_demographics_access, get_access_flags
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_demographics_access,
+    get_access_flags,
+    get_user_facility,
+)
 from apps.core.models import BreakGlassEvent
 from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
+from apps.core.cache_utils import facility_cache_key
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
 from apps.fhir_client.client import fhir_client
@@ -44,9 +51,25 @@ class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientFHIRMapping.objects.select_related('patient_profile', 'patient_profile__user').all()
     serializer_class = PatientFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, CanAccessPatient]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, CanAccessPatient]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientFHIRMapping.objects.none()
+        return PatientFHIRMapping.objects.select_related(
+            'patient_profile',
+            'patient_profile__user'
+        ).filter(patient_profile__facility=facility)
 
     def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient_profile = serializer.validated_data.get('patient_profile')
+        if patient_profile and patient_profile.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -60,7 +83,10 @@ class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
         mapping = self.get_object()
 
         # Queue the sync task
-        task = sync_patient_with_fhir.delay(str(mapping.id))
+        task = sync_patient_with_fhir.delay(
+            str(mapping.id),
+            facility_code=request.facility_code
+        )
 
         return Response({
             "message": "FHIR sync has been queued for background processing.",
@@ -75,16 +101,23 @@ class PatientSearchViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientSearch.objects.all()
     serializer_class = PatientSearchSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter searches to only show the current user's searches.
         """
-        return PatientSearch.objects.filter(user=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientSearch.objects.none()
+        return PatientSearch.objects.filter(user=self.request.user, facility=facility)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(user=self.request.user, facility=facility)
 
 
 class RecentPatientViewSet(viewsets.ModelViewSet):
@@ -93,7 +126,8 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
     """
     queryset = RecentPatient.objects.all()
     serializer_class = RecentPatientSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
@@ -105,8 +139,13 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
         limit = int(self.request.query_params.get('limit', 10))
         # Cap at 20 to prevent abuse
         limit = min(limit, 20)
+        facility = get_user_facility(self.request)
+        if not facility:
+            return RecentPatient.objects.none()
+
         return RecentPatient.objects.filter(
-            user=self.request.user
+            user=self.request.user,
+            facility=facility
         ).select_related(
             'patient_profile',
             'patient_profile__user'
@@ -126,7 +165,13 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
         return super().get_serializer_class()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient_profile = serializer.validated_data.get('patient_profile')
+        if patient_profile and patient_profile.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        serializer.save(user=self.request.user, facility=facility)
 
     @action(detail=False, methods=['post'])
     def add_recent(self, request):
@@ -144,6 +189,9 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             from apps.wards.models import Admission
 
             patient_profile = PatientProfile.objects.get(id=patient_profile_id)
+            facility = get_user_facility(request)
+            if not facility or patient_profile.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
 
             # SECURITY: Check if user has permission to access this patient
             check_demographics_access(request.user, patient_profile)
@@ -151,8 +199,11 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             # Check if already exists
             recent, created = RecentPatient.objects.get_or_create(
                 user=request.user,
-                patient_profile=patient_profile
+                patient_profile=patient_profile,
+                defaults={'facility': facility}
             )
+            if not created and recent.facility_id != facility.id:
+                raise PermissionDenied("Recent patient entry does not match facility context.")
 
             # If it exists, update the access_date
             if not created:
@@ -198,6 +249,7 @@ class PatientRegistrationValidationViewSet(viewsets.ModelViewSet):
     queryset = PatientRegistrationValidation.objects.all()
     serializer_class = PatientRegistrationValidationSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -212,24 +264,34 @@ class PatientNoteViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientNote.objects.all()
     serializer_class = PatientNoteSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter notes based on permissions.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientNote.objects.none()
+
+        base_qs = PatientNote.objects.filter(facility=facility)
         if self.request.user.is_staff:
-            return PatientNote.objects.all()
+            return base_qs
 
         # Regular users can only see their own notes and non-private notes
-        return PatientNote.objects.filter(
-            created_by=self.request.user
-        ) | PatientNote.objects.filter(
-            is_private=False
-        )
+        return base_qs.filter(created_by=self.request.user) | base_qs.filter(is_private=False)
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient_profile = serializer.validated_data.get('patient_profile')
+        if patient_profile and patient_profile.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient_profile:
+            check_demographics_access(self.request.user, patient_profile)
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -239,7 +301,7 @@ class PatientViewSet(viewsets.ViewSet):
     """
     API endpoint for patient management.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
 
     @action(detail=False, methods=['post'])
     def register(self, request):
@@ -251,6 +313,9 @@ class PatientViewSet(viewsets.ViewSet):
         if request.user.user_type not in ['admin', 'receptionist']:
             raise PermissionDenied("Only admin and receptionist staff can register patients.")
 
+        if not get_user_facility(request):
+            raise PermissionDenied("Facility context is required.")
+
         serializer = PatientRegistrationSerializer(data=request.data, context={'request': request})
 
         if serializer.is_valid():
@@ -261,13 +326,15 @@ class PatientViewSet(viewsets.ViewSet):
                     # Log the search
                     PatientSearch.objects.create(
                         user=request.user,
+                        facility=patient_profile.facility,
                         search_query=f"Registration: {patient_profile.user.get_full_name()}"
                     )
 
                     # Add to recent patients
                     RecentPatient.objects.create(
                         user=request.user,
-                        patient_profile=patient_profile
+                        patient_profile=patient_profile,
+                        facility=patient_profile.facility
                     )
 
                     return Response(
@@ -318,7 +385,9 @@ class PatientViewSet(viewsets.ViewSet):
 
         # Generate cache key based on search parameters
         cache_params = f"{query}:{ward_id}:{admission_date}"
-        cache_key = f"patient_search_{hashlib.md5(cache_params.encode()).hexdigest()}"
+        cache_key = facility_cache_key(
+            f"patient_search_{hashlib.md5(cache_params.encode()).hexdigest()}"
+        )
 
         # Try to get from cache first (skip cache if include_fhir is requested)
         if not include_fhir:
@@ -327,7 +396,12 @@ class PatientViewSet(viewsets.ViewSet):
                 logger.info("Search cache hit for user %s", request.user.id)
                 # Log search for cache hits
                 search_desc = f"Query: {query}" + (f", Ward: {ward_id}" if ward_id else "") + (f", Date: {admission_date}" if admission_date else "")
-                log_patient_search.delay(str(request.user.id), search_desc)
+                facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
+                log_patient_search.delay(
+                    str(request.user.id),
+                    search_desc,
+                    facility_code=facility.code if facility else None
+                )
                 return Response(cached_result)
 
         # Log search for auditing/history
@@ -336,11 +410,19 @@ class PatientViewSet(viewsets.ViewSet):
             search_desc += f", Ward: {ward_id}"
         if admission_date:
             search_desc += f", Date: {admission_date}"
-        log_patient_search.delay(str(request.user.id), search_desc)
+        facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
+        log_patient_search.delay(
+            str(request.user.id),
+            search_desc,
+            facility_code=facility.code if facility else None
+        )
 
         try:
             from django.db.models import Q
             from apps.wards.models import Admission
+            facility = get_user_facility(request)
+            if not facility:
+                raise PermissionDenied("Facility context is required.")
 
             # OPTIMIZED: Base query with Prefetch for active admissions only
             local_patients_qs = PatientProfile.objects.select_related('user').prefetch_related(
@@ -351,7 +433,7 @@ class PatientViewSet(viewsets.ViewSet):
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
                 )
-            )
+            ).filter(facility=facility)
 
             # Filter by text query (Name, MRN, NHIS)
             if query:
@@ -480,7 +562,8 @@ class PatientViewSet(viewsets.ViewSet):
         # Add to recent patients
         RecentPatient.objects.get_or_create(
             user=request.user,
-            patient_profile=patient_profile
+            patient_profile=patient_profile,
+            facility=patient_profile.facility
         )
 
         # SECURITY: If user only has demographics access (not clinical),
@@ -533,7 +616,8 @@ class PatientViewSet(viewsets.ViewSet):
         # Add to recent patients
         RecentPatient.objects.get_or_create(
             user=request.user,
-            patient_profile=patient_profile
+            patient_profile=patient_profile,
+            facility=patient_profile.facility
         )
 
         return Response(PatientProfileSerializer(patient_profile).data)

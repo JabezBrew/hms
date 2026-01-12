@@ -10,6 +10,18 @@ from django.http import JsonResponse
 from django.db import connection
 from rest_framework_simplejwt.views import TokenVerifyView
 from .auth_views import CookieTokenRefreshView, LogoutView, LoginView
+from apps.users.mfa_views import (
+    MFAStatusView,
+    MFATOTPStartView,
+    MFATOTPConfirmView,
+    MFATOTPVerifyView,
+    MFARecoveryGenerateView,
+    MFARecoveryVerifyView,
+    MFAWebAuthnRegistrationOptionsView,
+    MFAWebAuthnRegistrationVerifyView,
+    MFAWebAuthnAuthenticationOptionsView,
+    MFAWebAuthnAuthenticationVerifyView,
+)
 from apps.users.password_reset_views import (
     PasswordResetRequestView,
     PasswordResetConfirmView,
@@ -53,6 +65,16 @@ urlpatterns = [
     path('api/auth/token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('api/auth/logout/', LogoutView.as_view(), name='auth_logout'),
+    path('api/auth/mfa/status/', MFAStatusView.as_view(), name='mfa_status'),
+    path('api/auth/mfa/totp/start/', MFATOTPStartView.as_view(), name='mfa_totp_start'),
+    path('api/auth/mfa/totp/confirm/', MFATOTPConfirmView.as_view(), name='mfa_totp_confirm'),
+    path('api/auth/mfa/totp/verify/', MFATOTPVerifyView.as_view(), name='mfa_totp_verify'),
+    path('api/auth/mfa/recovery/', MFARecoveryGenerateView.as_view(), name='mfa_recovery_generate'),
+    path('api/auth/mfa/recovery/verify/', MFARecoveryVerifyView.as_view(), name='mfa_recovery_verify'),
+    path('api/auth/mfa/webauthn/registration/options/', MFAWebAuthnRegistrationOptionsView.as_view(), name='mfa_webauthn_reg_options'),
+    path('api/auth/mfa/webauthn/registration/verify/', MFAWebAuthnRegistrationVerifyView.as_view(), name='mfa_webauthn_reg_verify'),
+    path('api/auth/mfa/webauthn/authentication/options/', MFAWebAuthnAuthenticationOptionsView.as_view(), name='mfa_webauthn_auth_options'),
+    path('api/auth/mfa/webauthn/authentication/verify/', MFAWebAuthnAuthenticationVerifyView.as_view(), name='mfa_webauthn_auth_verify'),
 
     # Password reset endpoints
     path('api/auth/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
@@ -76,6 +98,8 @@ urlpatterns = [
     path('api/referrals/', include('apps.referrals.urls')),
     path('api/charts/', include('apps.charts.urls')),
     path('api/organization/', include('apps.organization.urls')),
+    path('api/interop/', include('apps.interop.urls')),
+    path('api/consent/', include('apps.consent.urls')),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),
     path('api/admin/', include('apps.audit.urls')),

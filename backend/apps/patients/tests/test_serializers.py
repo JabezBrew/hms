@@ -89,7 +89,7 @@ class TestPatientSearchSerializer:
         serializer = PatientSearchSerializer(search)
 
         expected_fields = [
-            'id', 'user', 'user_details', 'search_query', 'search_date'
+            'id', 'user', 'facility', 'user_details', 'search_query', 'search_date'
         ]
 
         for field in expected_fields:
@@ -365,6 +365,13 @@ class TestPatientRegistrationSerializer:
         assert patient_profile.user.first_name == 'FHIR'
         assert patient_profile.medical_record_number.startswith('HMS-')
         mock_create_resource.assert_called_once()
+        assert patient_profile.patient_identity_id is not None
+
+        from apps.mpi.models import PatientFacilityLink
+        link = PatientFacilityLink.objects.filter(
+            patient_identity_id=patient_profile.patient_identity_id
+        ).first()
+        assert link is not None
 
 
 # =============================================================================
