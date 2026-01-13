@@ -2,7 +2,7 @@
 Serializer tests for the organization app.
 """
 import pytest
-from datetime import timedelta
+from datetime import date, time, timedelta
 from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
@@ -16,6 +16,7 @@ from apps.organization.models import (
     StaffUnitAssignment,
     UnitMemberAssignment,
     CrossCoverageSchedule,
+    DutyRosterTemplate,
 )
 from apps.organization.serializers import (
     ClinicalUnitSerializer,
@@ -25,6 +26,7 @@ from apps.organization.serializers import (
     UnitLeadershipListSerializer,
     StaffUnitAssignmentSerializer,
     UnitMemberAssignmentSerializer,
+    DutyRosterTemplateSerializer,
 )
 
 
@@ -57,6 +59,17 @@ def leadership_roles(seed_organization_data):
 def assignment_types(seed_organization_data):
     """Get all seeded assignment types."""
     return {at.code: at for at in StaffAssignmentTypeConfig.objects.all()}
+
+
+@pytest.fixture
+def facility_obj(db):
+    """Create a Facility object."""
+    from apps.core.models import Facility
+    return Facility.objects.create(
+        code='MAIN',
+        name='Main Hospital',
+        is_active=True
+    )
 
 
 @pytest.fixture
@@ -405,6 +418,38 @@ class TestCrossCoverageScheduleSerializer:
             'coverage_type': 'on_call',
         })
         assert not serializer.is_valid()
+
+
+# =============================================================================
+# DutyRosterTemplateSerializer Tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+class TestDutyRosterTemplateSerializer:
+    """Tests for DutyRosterTemplateSerializer."""
+
+    def test_partial_update_uses_existing_times(self, facility_obj, team, practitioner):
+        """Test partial updates without overriding shift/times."""
+        template = DutyRosterTemplate.objects.create(
+            facility=facility_obj,
+            unit=team,
+            practitioner=practitioner,
+            day_of_week=0,
+            custom_start_time=time(9, 0),
+            custom_end_time=time(17, 0),
+            role='admitting',
+            context='inpatient',
+            seniority_level='attending',
+            effective_from=date.today(),
+        )
+
+        serializer = DutyRosterTemplateSerializer(
+            template,
+            data={'is_active': False},
+            partial=True
+        )
+        assert serializer.is_valid(), serializer.errors
 
 
 # =============================================================================

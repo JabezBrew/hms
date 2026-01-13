@@ -33,6 +33,9 @@ from .models import (
     UnitMemberAssignment,
     CrossCoverageSchedule,
     UnitWardAllocation,
+    ShiftDefinition,
+    DutyRosterTemplate,
+    DutyRoster,
 )
 from .serializers import (
     UnitTypeConfigListSerializer,
@@ -54,6 +57,15 @@ from .serializers import (
     CrossCoverageScheduleSerializer,
     UnitWardAllocationListSerializer,
     UnitWardAllocationSerializer,
+    ShiftDefinitionListSerializer,
+    ShiftDefinitionSerializer,
+    DutyRosterTemplateListSerializer,
+    DutyRosterTemplateSerializer,
+    DutyRosterListSerializer,
+    DutyRosterSerializer,
+    GenerateRosterSerializer,
+    SwapDutySerializer,
+    OnDutyQuerySerializer,
 )
 from apps.core.cache_utils import facility_cache_key
 from .tree_cache import ORG_TREE_CACHE_TTL, get_org_tree_payload
@@ -944,3 +956,254 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
         if ward and ward.department and ward.department.facility_id != facility.id:
             raise PermissionDenied("Ward does not belong to the active facility.")
         serializer.save()
+
+
+# =============================================================================
+# Duty Roster ViewSets
+# =============================================================================
+
+
+class ShiftDefinitionViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing shift definitions.
+    """
+    queryset = ShiftDefinition.objects.all()
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['is_active']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ShiftDefinitionListSerializer
+        return ShiftDefinitionSerializer
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ShiftDefinition.objects.none()
+
+        queryset = super().get_queryset().filter(facility=facility)
+
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        return queryset.order_by('display_order', 'start_time')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(facility=facility)
+
+
+class DutyRosterTemplateViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing duty roster templates.
+    """
+    queryset = DutyRosterTemplate.objects.all()
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['unit', 'practitioner', 'day_of_week', 'role', 'context', 'is_active']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return DutyRosterTemplateListSerializer
+        return DutyRosterTemplateSerializer
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return DutyRosterTemplate.objects.none()
+
+        queryset = super().get_queryset().filter(facility=facility)
+        queryset = queryset.select_related('unit', 'practitioner', 'shift', 'facility')
+
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        return queryset.order_by('unit', 'day_of_week')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        serializer.save(facility=facility)
+
+
+class DutyRosterViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing duty roster entries.
+    """
+    queryset = DutyRoster.objects.all()
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['unit', 'practitioner', 'date', 'role', 'context', 'is_active']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return DutyRosterListSerializer
+        if self.action == 'generate':
+            return GenerateRosterSerializer
+        if self.action == 'swap':
+            return SwapDutySerializer
+        if self.action == 'on_duty':
+            return OnDutyQuerySerializer
+        return DutyRosterSerializer
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return DutyRoster.objects.none()
+
+        queryset = super().get_queryset().filter(facility=facility)
+        queryset = queryset.select_related(
+            'unit', 'practitioner', 'practitioner__staff', 'practitioner__staff__user',
+            'shift', 'original_practitioner'
+        )
+
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        # Date range filter
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(date__lte=date_to)
+
+        return queryset.order_by('date', 'start_time')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit')
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        serializer.save(facility=facility)
+
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        """
+        Generate roster entries from templates.
+
+        POST /api/organization/duty-roster/generate/
+        Body: { unit_id?: UUID, start_date: date, end_date: date, overwrite: bool }
+        """
+        serializer = GenerateRosterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        unit_id = serializer.validated_data.get('unit_id')
+        start_date = serializer.validated_data['start_date']
+        end_date = serializer.validated_data['end_date']
+        overwrite = serializer.validated_data['overwrite']
+
+        from .services import DutyRosterService
+
+        if unit_id:
+            unit = ClinicalUnit.objects.filter(id=unit_id).first()
+            if not unit:
+                return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
+            if unit.root_unit and unit.root_unit.code != facility.code:
+                raise PermissionDenied("Unit does not belong to the active facility.")
+
+            entries = DutyRosterService.generate_roster(
+                unit=unit,
+                start_date=start_date,
+                end_date=end_date,
+                overwrite=overwrite,
+                created_by=request.user,
+            )
+            count = len(entries)
+        else:
+            count = DutyRosterService.generate_facility_roster(
+                facility=facility,
+                start_date=start_date,
+                end_date=end_date,
+                created_by=request.user,
+            )
+
+        return Response({
+            'success': True,
+            'entries_created': count,
+        })
+
+    @action(detail=True, methods=['post'])
+    def swap(self, request, pk=None):
+        """
+        Swap a duty assignment to a different practitioner.
+
+        POST /api/organization/duty-roster/{id}/swap/
+        Body: { replacement_practitioner_id: UUID, reason: str }
+        """
+        roster_entry = self.get_object()
+        serializer = SwapDutySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        from apps.users.models import PractitionerProfile
+        from .services import DutyRosterService
+
+        replacement = PractitionerProfile.objects.get(
+            id=serializer.validated_data['replacement_practitioner_id']
+        )
+
+        new_entry = DutyRosterService.swap_duty(
+            roster_entry=roster_entry,
+            replacement_practitioner=replacement,
+            reason=serializer.validated_data.get('reason', ''),
+            created_by=request.user,
+        )
+
+        # Trigger notification task (if tasks are set up)
+        try:
+            from .tasks import notify_duty_swap
+            notify_duty_swap.delay(str(new_entry.id))
+        except ImportError:
+            pass  # Tasks not yet set up
+
+        return Response({
+            'success': True,
+            'new_entry': DutyRosterSerializer(new_entry).data,
+        })
+
+    @action(detail=False, methods=['get'])
+    def on_duty(self, request):
+        """
+        Get practitioners currently on duty.
+
+        GET /api/organization/duty-roster/on-duty/?unit_id=...&role=...&context=...
+        """
+        serializer = OnDutyQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        unit = ClinicalUnit.objects.filter(id=data['unit_id']).first()
+        if not unit:
+            return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        facility = get_user_facility(request)
+        if unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+
+        from .services import DutyRosterService
+
+        on_duty = DutyRosterService.get_on_duty(
+            unit=unit,
+            at_datetime=data.get('at_datetime'),
+            role=data.get('role'),
+            context=data.get('context'),
+            include_descendants=data.get('include_descendants', False),
+        )
+
+        return Response({
+            'results': DutyRosterListSerializer(on_duty, many=True).data,
+            'count': on_duty.count(),
+        })

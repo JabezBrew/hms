@@ -17,6 +17,7 @@ const PatientChronicleCard = ({
   patient,
   index = 0,
   onStartRound,
+  onStartConsultation,
   onAddToMyPatients,
   onRemoveFromMyPatients,
   onTogglePin,
@@ -168,6 +169,16 @@ const PatientChronicleCard = ({
     return patient?.pending_orders || 0;
   };
 
+  const getIsAdmitted = (patient) => {
+    return !!(
+      patient?.current_admission_id ||
+      patient?.local_data?.current_admission_id ||
+      patient?.patient_profile_details?.current_admission_id ||
+      patient?.admission_status === 'admitted' ||
+      patient?.local_data?.admission_status === 'admitted'
+    );
+  };
+
   // ============================================
   // Extracted data
   // ============================================
@@ -186,6 +197,7 @@ const PatientChronicleCard = ({
   const vitals = getVitals(patient);
   const status = getPatientStatus(patient);
   const pendingOrders = getPendingOrders(patient);
+  const isAdmitted = getIsAdmitted(patient);
 
   // Build location string
   const location = [ward, bed ? `Bed ${bed}` : null].filter(Boolean).join(', ');
@@ -211,6 +223,13 @@ const PatientChronicleCard = ({
     e.stopPropagation();
     if (onStartRound) {
       onStartRound(patient);
+    }
+  };
+
+  const handleStartConsultation = (e) => {
+    e.stopPropagation();
+    if (onStartConsultation) {
+      onStartConsultation(patient);
     }
   };
 
@@ -440,13 +459,23 @@ const PatientChronicleCard = ({
           >
             View Record
           </Button>
-          {onStartRound && (
+          {onStartRound && isAdmitted && (
             <Button
               size="sm"
               className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
               onClick={handleStartRound}
             >
               Start Round
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          )}
+          {onStartConsultation && !isAdmitted && (
+            <Button
+              size="sm"
+              className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
+              onClick={handleStartConsultation}
+            >
+              Consult
               <ChevronRight className="h-3 w-3 ml-1" />
             </Button>
           )}

@@ -14,8 +14,10 @@ import PatientDemographicsPage from './PatientDemographicsPage';
  * - Uses a single URL for all roles (/patients/:id)
  * - Prevents URL-based access bypass
  * - Backend still enforces API-level permissions
+ *
+ * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
  */
-const PatientPage = () => {
+const PatientPage = ({ defaultAction }) => {
   const { user } = useAuth();
 
   // Administrative roles see demographics-only view
@@ -26,7 +28,7 @@ const PatientPage = () => {
   }
 
   // Clinical roles and admin see full chronicle
-  return <PatientChroniclePage />;
+  return <PatientChroniclePage defaultAction={defaultAction} />;
 };
 
 export default PatientPage;

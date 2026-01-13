@@ -14,6 +14,7 @@ import {
   BarChart3,
   Shield,
   Download,
+  Stethoscope,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -45,6 +46,7 @@ const PatientIdentityHero = ({
   onViewTreatmentSheet,
   onRecordFluids,
   onAssignChart,
+  onStartWardRound,
   onManageInsurance,
   insurance = [],
   activeAdmission,
@@ -397,13 +399,21 @@ const PatientIdentityHero = ({
                   Assign Chart
                 </DropdownMenuItem>
               )}
-              {activeAdmission && onRecordFluids && (
+              {activeAdmission && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onRecordFluids}>
-                    <Droplets className="h-4 w-4 mr-2" />
-                    Record Fluids
-                  </DropdownMenuItem>
+                  {onStartWardRound && (
+                    <DropdownMenuItem onClick={onStartWardRound}>
+                      <Stethoscope className="h-4 w-4 mr-2" />
+                      Ward Round
+                    </DropdownMenuItem>
+                  )}
+                  {onRecordFluids && (
+                    <DropdownMenuItem onClick={onRecordFluids}>
+                      <Droplets className="h-4 w-4 mr-2" />
+                      Record Fluids
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
               <DropdownMenuSeparator />

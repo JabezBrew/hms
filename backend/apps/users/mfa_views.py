@@ -14,6 +14,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from hms_backend.throttling import MFARecoveryThrottle
+
 from apps.audit.models import AuditAction
 from apps.audit.services import AuditService
 from hms_backend.auth_utils import build_auth_response
@@ -253,6 +255,7 @@ class MFARecoveryGenerateView(APIView):
 
 class MFARecoveryVerifyView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [MFARecoveryThrottle]
 
     def post(self, request):
         session = _get_mfa_session(request)

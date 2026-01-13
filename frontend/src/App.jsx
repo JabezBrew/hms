@@ -64,7 +64,6 @@ const ReceptionistDashboard = lazy(() => import('./pages/dashboards/Receptionist
 const AdminDashboard = lazy(() => import('./pages/dashboards/AdminDashboard'))
 const RoleDashboard = lazy(() => import('./pages/dashboards/RoleDashboard'))
 const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
-const ConsultationWorkflow = lazy(() => import('./workflows/consultation/ConsultationWorkflow').then(m => ({ default: m.ConsultationWorkflow })))
 const WardRoundWorkflowPage = lazy(() => import('./pages/workflows/ward-round/WardRoundWorkflowPage'))
 const AdmissionWorkflowPage = lazy(() => import('./pages/workflows/admission/AdmissionWorkflowPage'))
 const DischargeWorkflowPage = lazy(() => import('./pages/workflows/discharge/DischargeWorkflowPage'))
@@ -79,6 +78,7 @@ const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'))
 const OrganizationPage = lazy(() => import('./pages/admin/organization/OrganizationPage'))
 const UnitTypesPage = lazy(() => import('./pages/admin/organization/UnitTypesPage'))
 const LeadershipRolesPage = lazy(() => import('./pages/admin/organization/LeadershipRolesPage'))
+const DutyRosterPage = lazy(() => import('./pages/admin/organization/DutyRosterPage'))
 
 // Referral Pages
 const ReferralInbox = lazy(() => import('./components/referrals/ReferralInbox'))
@@ -232,6 +232,15 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
               <Layout>
                 <PatientPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Ward Round - dedicated URL that renders patient page with ward round open */}
+          <Route path="/patients/:id/ward-round" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
+              <Layout>
+                <PatientPage defaultAction="ward_round" />
               </Layout>
             </RoleBasedRoute>
           } />
@@ -620,14 +629,6 @@ function AppContent() {
           } />
 
           {/* Workflow routes */}
-          <Route path="/workflows/consultation" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <Layout>
-                <ConsultationWorkflow />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
           <Route path="/workflows/ward-round" element={
             <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
               <WardRoundWorkflowPage />
@@ -700,6 +701,14 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin']}>
               <Layout>
                 <LeadershipRolesPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/admin/organization/duty-roster" element={
+            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
+              <Layout>
+                <DutyRosterPage />
               </Layout>
             </RoleBasedRoute>
           } />

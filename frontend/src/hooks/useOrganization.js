@@ -13,6 +13,9 @@ import {
   unitMembersApi,
   crossCoverageApi,
   wardAllocationsApi,
+  shiftDefinitionsApi,
+  dutyRosterTemplatesApi,
+  dutyRosterApi,
 } from '@/lib/api/organization';
 import { usePaginatedQuery } from './usePaginatedQuery';
 
@@ -75,6 +78,22 @@ export const organizationKeys = {
   // Ward Allocations
   wardAllocations: () => [...organizationKeys.all, 'ward-allocations'],
   wardAllocationsList: (params) => [...organizationKeys.wardAllocations(), 'list', params],
+
+  // Shift Definitions
+  shiftDefinitions: () => [...organizationKeys.all, 'shift-definitions'],
+  shiftDefinitionsList: (params) => [...organizationKeys.shiftDefinitions(), 'list', params],
+  shiftDefinition: (id) => [...organizationKeys.shiftDefinitions(), id],
+
+  // Duty Roster Templates
+  dutyRosterTemplates: () => [...organizationKeys.all, 'duty-roster-templates'],
+  dutyRosterTemplatesList: (params) => [...organizationKeys.dutyRosterTemplates(), 'list', params],
+  dutyRosterTemplate: (id) => [...organizationKeys.dutyRosterTemplates(), id],
+
+  // Duty Roster
+  dutyRoster: () => [...organizationKeys.all, 'duty-roster'],
+  dutyRosterList: (params) => [...organizationKeys.dutyRoster(), 'list', params],
+  dutyRosterEntry: (id) => [...organizationKeys.dutyRoster(), id],
+  onDuty: (params) => [...organizationKeys.dutyRoster(), 'on-duty', params],
 };
 
 function getTreeNodes(treeQueryData) {
@@ -830,6 +849,199 @@ export function useDeleteWardAllocation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.wardAllocations() });
       queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
+    },
+  });
+}
+
+// =============================================================================
+// Shift Definition Hooks & Mutations
+// =============================================================================
+
+export function useShiftDefinitions(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.shiftDefinitionsList(params),
+    queryFn: () => shiftDefinitionsApi.list(params),
+    staleTime: 5 * 60 * 1000, // 5 minutes - shifts don't change often
+  });
+}
+
+export function useShiftDefinition(id) {
+  return useQuery({
+    queryKey: organizationKeys.shiftDefinition(id),
+    queryFn: () => shiftDefinitionsApi.get(id),
+    enabled: !!id,
+  });
+}
+
+export function useCreateShiftDefinition() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => shiftDefinitionsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.shiftDefinitions() });
+    },
+  });
+}
+
+export function useUpdateShiftDefinition() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => shiftDefinitionsApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.shiftDefinition(id) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.shiftDefinitions() });
+    },
+  });
+}
+
+export function useDeleteShiftDefinition() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => shiftDefinitionsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.shiftDefinitions() });
+    },
+  });
+}
+
+// =============================================================================
+// Duty Roster Template Hooks & Mutations
+// =============================================================================
+
+export function useDutyRosterTemplates(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.dutyRosterTemplatesList(params),
+    queryFn: () => dutyRosterTemplatesApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDutyRosterTemplate(id) {
+  return useQuery({
+    queryKey: organizationKeys.dutyRosterTemplate(id),
+    queryFn: () => dutyRosterTemplatesApi.get(id),
+    enabled: !!id,
+  });
+}
+
+export function useCreateDutyRosterTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => dutyRosterTemplatesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRosterTemplates() });
+    },
+  });
+}
+
+export function useUpdateDutyRosterTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => dutyRosterTemplatesApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRosterTemplate(id) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRosterTemplates() });
+    },
+  });
+}
+
+export function useDeleteDutyRosterTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => dutyRosterTemplatesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRosterTemplates() });
+    },
+  });
+}
+
+// =============================================================================
+// Duty Roster Hooks & Mutations
+// =============================================================================
+
+export function useDutyRoster(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.dutyRosterList(params),
+    queryFn: () => dutyRosterApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDutyRosterEntry(id) {
+  return useQuery({
+    queryKey: organizationKeys.dutyRosterEntry(id),
+    queryFn: () => dutyRosterApi.get(id),
+    enabled: !!id,
+  });
+}
+
+export function useOnDuty(params) {
+  return useQuery({
+    queryKey: organizationKeys.onDuty(params),
+    queryFn: () => dutyRosterApi.onDuty(params),
+    enabled: !!params?.unit_id,
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+export function useCreateDutyRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => dutyRosterApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
+    },
+  });
+}
+
+export function useGenerateRoster() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => dutyRosterApi.generate(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
+    },
+  });
+}
+
+export function useSwapDuty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => dutyRosterApi.swap(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
+    },
+  });
+}
+
+export function useUpdateDutyRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => dutyRosterApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRosterEntry(id) });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
+    },
+  });
+}
+
+export function useDeleteDutyRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => dutyRosterApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
     },
   });
 }

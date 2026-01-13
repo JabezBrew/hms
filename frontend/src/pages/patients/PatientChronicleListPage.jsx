@@ -128,7 +128,14 @@ const PatientChronicleListPage = () => {
   const handleStartRound = (patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
-      navigate(`/workflows/consultation?patient=${patientId}`);
+      navigate(`/patients/${patientId}?wardRound=true`);
+    }
+  };
+
+  const handleStartConsultation = (patient) => {
+    const patientId = patient?.id || patient?.patient_profile;
+    if (patientId) {
+      navigate(`/patients/${patientId}?consultation=true`);
     }
   };
 
@@ -272,6 +279,7 @@ const PatientChronicleListPage = () => {
             searchQuery={debouncedSearchTerm}
             viewMode={viewMode}
             onStartRound={handleStartRound}
+            onStartConsultation={handleStartConsultation}
             onAddToMyPatients={handleAddToMyPatients}
             showMyPatientsActions={isClinicalProvider}
           />
@@ -287,6 +295,7 @@ const PatientChronicleListPage = () => {
               data={contextPatientsData}
               isLoading={isContextLoading}
               onStartRound={handleStartRound}
+              onStartConsultation={handleStartConsultation}
               onAddToMyPatients={handleAddToMyPatients}
               showMyPatientsActions={isClinicalProvider}
             />
@@ -307,6 +316,7 @@ const SearchResultsSection = ({
   searchQuery,
   viewMode,
   onStartRound,
+  onStartConsultation,
   onAddToMyPatients,
   showMyPatientsActions,
 }) => {
@@ -366,6 +376,7 @@ const SearchResultsSection = ({
           patient={patient}
           index={index}
           onStartRound={onStartRound}
+          onStartConsultation={onStartConsultation}
           onAddToMyPatients={onAddToMyPatients}
           showMyPatientsActions={showMyPatientsActions}
           className={viewMode === 'list' ? 'max-w-none' : ''}

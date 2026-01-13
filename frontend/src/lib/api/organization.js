@@ -169,6 +169,46 @@ export const wardAllocationsApi = {
   delete: (id) => apiClient.delete(`/organization/ward-allocations/${id}/`),
 };
 
+// =============================================================================
+// Duty Roster Endpoints
+// =============================================================================
+
+/**
+ * Shift Definitions API
+ */
+export const shiftDefinitionsApi = {
+  list: (params = {}) => apiClient.get('/organization/shift-definitions/', { params }),
+  get: (id) => apiClient.get(`/organization/shift-definitions/${id}/`),
+  create: (data) => apiClient.post('/organization/shift-definitions/', data),
+  update: (id, data) => apiClient.patch(`/organization/shift-definitions/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/shift-definitions/${id}/`),
+};
+
+/**
+ * Duty Roster Templates API
+ */
+export const dutyRosterTemplatesApi = {
+  list: (params = {}) => apiClient.get('/organization/duty-roster-templates/', { params }),
+  get: (id) => apiClient.get(`/organization/duty-roster-templates/${id}/`),
+  create: (data) => apiClient.post('/organization/duty-roster-templates/', data),
+  update: (id, data) => apiClient.patch(`/organization/duty-roster-templates/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/duty-roster-templates/${id}/`),
+};
+
+/**
+ * Duty Roster API
+ */
+export const dutyRosterApi = {
+  list: (params = {}) => apiClient.get('/organization/duty-roster/', { params }),
+  get: (id) => apiClient.get(`/organization/duty-roster/${id}/`),
+  create: (data) => apiClient.post('/organization/duty-roster/', data),
+  update: (id, data) => apiClient.patch(`/organization/duty-roster/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/duty-roster/${id}/`),
+  generate: (data) => apiClient.post('/organization/duty-roster/generate/', data),
+  swap: (id, data) => apiClient.post(`/organization/duty-roster/${id}/swap/`, data),
+  onDuty: (params) => apiClient.get('/organization/duty-roster/on-duty/', { params }),
+};
+
 export default {
   unitTypes: unitTypesApi,
   leadershipRoles: leadershipRolesApi,
@@ -179,4 +219,7 @@ export default {
   unitMembers: unitMembersApi,
   crossCoverage: crossCoverageApi,
   wardAllocations: wardAllocationsApi,
+  shiftDefinitions: shiftDefinitionsApi,
+  dutyRosterTemplates: dutyRosterTemplatesApi,
+  dutyRoster: dutyRosterApi,
 };

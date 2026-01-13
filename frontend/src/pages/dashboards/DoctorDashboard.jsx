@@ -33,13 +33,10 @@ export default function DoctorDashboard() {
   }
 
   const handleStartConsultation = (patient) => {
-    const params = new URLSearchParams({
-      patient_id: patient.patient_id,
-    });
-    if (patient.id) {
-      params.append('appointment_id', patient.id);
+    const patientId = patient.patient_id || patient.id;
+    if (patientId) {
+      navigate(`/patients/${patientId}?consultation=true`);
     }
-    navigate(`/workflows/consultation?${params.toString()}`);
   };
 
   const handleViewPatient = (patientId) => {

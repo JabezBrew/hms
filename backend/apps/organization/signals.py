@@ -20,6 +20,7 @@ from .models import (
     StaffUnitAssignment,
     UnitMemberAssignment,
     CrossCoverageSchedule,
+    DutyRoster,
 )
 
 
@@ -289,3 +290,28 @@ def invalidate_coverage_cache(sender, instance, **kwargs):
             invalidate_user_unit_cache(user_id)
         except Exception:
             pass  # Practitioner may not have staff/user relationship
+
+
+# =============================================================================
+# Duty Roster Cache Invalidation
+# =============================================================================
+
+
+def invalidate_duty_roster_cache(unit_id, date):
+    """Invalidate the duty roster cache for a specific unit and date."""
+    cache.delete(facility_cache_key(f'duty_roster:{unit_id}:{date}'))
+
+
+@receiver(post_save, sender=DutyRoster)
+@receiver(post_delete, sender=DutyRoster)
+def invalidate_duty_roster_on_change(sender, instance, **kwargs):
+    """Invalidate cache when duty roster entries change."""
+    invalidate_duty_roster_cache(instance.unit_id, instance.date)
+
+    # Invalidate practitioner's schedule cache
+    if instance.practitioner_id:
+        try:
+            user_id = instance.practitioner.staff.user_id
+            cache.delete(facility_cache_key(f'practitioner_schedule:{user_id}'))
+        except Exception:
+            pass

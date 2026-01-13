@@ -768,3 +768,330 @@ class UnitWardAllocation(models.Model):
         if self.effective_until and self.effective_until < today:
             return False
         return True
+
+
+# =============================================================================
+# Duty Roster Models
+# =============================================================================
+
+
+class ShiftDefinition(models.Model):
+    """
+    Facility-configurable shift definitions.
+    Examples: Day Shift (07:00-15:00), Evening Shift (15:00-23:00), Night Shift (23:00-07:00)
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='shift_definitions',
+        help_text='Facility this shift belongs to'
+    )
+
+    name = models.CharField(max_length=100, help_text='Display name (e.g., "Day Shift")')
+    code = models.CharField(max_length=50, help_text='Short code (e.g., "DAY", "EVE", "NIGHT")')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    crosses_midnight = models.BooleanField(
+        default=False,
+        help_text='True if shift ends after midnight (e.g., night shift 23:00-07:00)'
+    )
+
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_shift_definitions'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'code'],
+                name='unique_shift_code_per_facility'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'is_active']),
+            models.Index(fields=['facility', 'display_order']),
+        ]
+        ordering = ['display_order', 'start_time']
+        verbose_name = 'Shift Definition'
+        verbose_name_plural = 'Shift Definitions'
+
+    def __str__(self):
+        return f'{self.name} ({self.start_time.strftime("%H:%M")}-{self.end_time.strftime("%H:%M")})'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        # Auto-detect if shift crosses midnight
+        if self.start_time and self.end_time:
+            self.crosses_midnight = self.end_time < self.start_time
+
+    def save(self, *args, **kwargs):
+        # Auto-detect crosses_midnight on save
+        if self.start_time and self.end_time:
+            self.crosses_midnight = self.end_time < self.start_time
+        super().save(*args, **kwargs)
+
+
+class DutyRosterTemplate(models.Model):
+    """
+    Recurring duty patterns for automatic roster generation.
+    Templates define which practitioner works which shift on which days of the week.
+    """
+    ROLE_CHOICES = [
+        ('admitting', 'Admitting'),
+        ('covering', 'Covering'),
+        ('consulting', 'Consulting'),
+        ('clinic', 'Clinic'),
+        ('on_call', 'On Call'),
+    ]
+
+    CONTEXT_CHOICES = [
+        ('inpatient', 'Inpatient'),
+        ('outpatient', 'Outpatient'),
+        ('emergency', 'Emergency'),
+        ('all', 'All Contexts'),
+    ]
+
+    SENIORITY_CHOICES = [
+        ('attending', 'Attending'),
+        ('fellow', 'Fellow'),
+        ('resident', 'Resident'),
+        ('intern', 'Intern'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='duty_roster_templates',
+    )
+    unit = models.ForeignKey(
+        ClinicalUnit,
+        on_delete=models.CASCADE,
+        related_name='duty_roster_templates',
+        help_text='Clinical unit this template applies to'
+    )
+    practitioner = models.ForeignKey(
+        'users.PractitionerProfile',
+        on_delete=models.CASCADE,
+        related_name='duty_roster_templates',
+    )
+
+    # Schedule - either use shift definition OR custom times
+    day_of_week = models.IntegerField(
+        help_text='0=Monday, 6=Sunday'
+    )
+    shift = models.ForeignKey(
+        ShiftDefinition,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='templates',
+        help_text='Predefined shift (use this OR custom times)'
+    )
+    custom_start_time = models.TimeField(null=True, blank=True)
+    custom_end_time = models.TimeField(null=True, blank=True)
+
+    # Role and context
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='admitting')
+    context = models.CharField(max_length=20, choices=CONTEXT_CHOICES, default='inpatient')
+    seniority_level = models.CharField(max_length=20, choices=SENIORITY_CHOICES, default='attending')
+    is_primary = models.BooleanField(
+        default=False,
+        help_text='Primary on-duty practitioner for this shift'
+    )
+
+    # Validity period
+    effective_from = models.DateField()
+    effective_until = models.DateField(null=True, blank=True)
+
+    is_active = models.BooleanField(default=True)
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_duty_roster_templates'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_duty_roster_templates'
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(shift__isnull=False, custom_start_time__isnull=True, custom_end_time__isnull=True) |
+                    models.Q(shift__isnull=True, custom_start_time__isnull=False, custom_end_time__isnull=False)
+                ),
+                name='template_shift_or_custom_times'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['unit', 'is_active']),
+            models.Index(fields=['practitioner', 'is_active']),
+            models.Index(fields=['unit', 'day_of_week', 'is_active']),
+            models.Index(fields=['facility', 'is_active', 'effective_from', 'effective_until']),
+        ]
+        ordering = ['unit', 'day_of_week']
+        verbose_name = 'Duty Roster Template'
+        verbose_name_plural = 'Duty Roster Templates'
+
+    def __str__(self):
+        day_name = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][self.day_of_week]
+        return f'{self.practitioner} - {self.unit.name} - {day_name}'
+
+    @property
+    def start_time(self):
+        return self.shift.start_time if self.shift else self.custom_start_time
+
+    @property
+    def end_time(self):
+        return self.shift.end_time if self.shift else self.custom_end_time
+
+    @property
+    def is_currently_effective(self):
+        today = timezone.now().date()
+        if not self.is_active:
+            return False
+        if self.effective_from > today:
+            return False
+        if self.effective_until and self.effective_until < today:
+            return False
+        return True
+
+
+class DutyRoster(models.Model):
+    """
+    Actual duty roster entries (generated from templates or manually created).
+    This is the source of truth for "who's on duty when".
+    """
+    SOURCE_CHOICES = [
+        ('template', 'Generated from Template'),
+        ('manual', 'Manually Created'),
+        ('swap', 'Duty Swap'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='duty_roster_entries',
+    )
+    unit = models.ForeignKey(
+        ClinicalUnit,
+        on_delete=models.CASCADE,
+        related_name='duty_roster_entries',
+    )
+    practitioner = models.ForeignKey(
+        'users.PractitionerProfile',
+        on_delete=models.CASCADE,
+        related_name='duty_roster_entries',
+    )
+
+    # Schedule
+    date = models.DateField()
+    shift = models.ForeignKey(
+        ShiftDefinition,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='roster_entries',
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    # Role and context (copied from template or set manually)
+    role = models.CharField(
+        max_length=20,
+        choices=DutyRosterTemplate.ROLE_CHOICES,
+        default='admitting'
+    )
+    context = models.CharField(
+        max_length=20,
+        choices=DutyRosterTemplate.CONTEXT_CHOICES,
+        default='inpatient'
+    )
+    seniority_level = models.CharField(
+        max_length=20,
+        choices=DutyRosterTemplate.SENIORITY_CHOICES,
+        default='attending'
+    )
+    is_primary = models.BooleanField(default=False)
+
+    # Tracking
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
+    template = models.ForeignKey(
+        DutyRosterTemplate,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='generated_entries',
+        help_text='Template this entry was generated from'
+    )
+    original_practitioner = models.ForeignKey(
+        'users.PractitionerProfile',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='swapped_duty_entries',
+        help_text='Original practitioner (for swaps)'
+    )
+    swap_reason = models.TextField(blank=True, help_text='Reason for the swap')
+    notes = models.TextField(blank=True)
+
+    is_active = models.BooleanField(default=True)
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_duty_roster_entries'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_duty_roster_entries'
+    )
+
+    class Meta:
+        indexes = [
+            # "Who's on duty now?" query
+            models.Index(fields=['unit', 'date', 'start_time', 'end_time', 'is_active']),
+            # "My schedule" query
+            models.Index(fields=['practitioner', 'date', 'is_active']),
+            # "Facility daily roster" query
+            models.Index(fields=['facility', 'date', 'is_active']),
+            # Role-based queries
+            models.Index(fields=['unit', 'date', 'role', 'context', 'is_active']),
+            # Primary on-duty lookup
+            models.Index(fields=['unit', 'date', 'is_primary', 'is_active']),
+        ]
+        ordering = ['date', 'start_time', 'seniority_level']
+        verbose_name = 'Duty Roster Entry'
+        verbose_name_plural = 'Duty Roster Entries'
+
+    def __str__(self):
+        return f'{self.practitioner} - {self.unit.name} - {self.date}'
+
+    @property
+    def crosses_midnight(self):
+        return self.end_time < self.start_time

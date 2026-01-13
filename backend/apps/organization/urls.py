@@ -14,6 +14,9 @@ from .views import (
     UnitMemberAssignmentViewSet,
     CrossCoverageScheduleViewSet,
     UnitWardAllocationViewSet,
+    ShiftDefinitionViewSet,
+    DutyRosterTemplateViewSet,
+    DutyRosterViewSet,
 )
 
 router = DefaultRouter()
@@ -30,6 +33,11 @@ router.register(r'staff-assignments', StaffUnitAssignmentViewSet, basename='staf
 router.register(r'unit-members', UnitMemberAssignmentViewSet, basename='unit-member')
 router.register(r'cross-coverage', CrossCoverageScheduleViewSet, basename='cross-coverage')
 router.register(r'ward-allocations', UnitWardAllocationViewSet, basename='ward-allocation')
+
+# Duty roster endpoints
+router.register(r'shift-definitions', ShiftDefinitionViewSet, basename='shift-definition')
+router.register(r'duty-roster-templates', DutyRosterTemplateViewSet, basename='duty-roster-template')
+router.register(r'duty-roster', DutyRosterViewSet, basename='duty-roster')
 
 unit_staff_counts = ClinicalUnitViewSet.as_view({'get': 'staff_counts'})
 unit_member_counts = ClinicalUnitViewSet.as_view({'get': 'members_counts'})

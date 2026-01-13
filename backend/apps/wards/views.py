@@ -943,6 +943,27 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 if to_bed.ward.department and to_bed.ward.department.facility_id != facility.id:
                     raise PermissionDenied("Destination bed does not belong to the active facility.")
 
+                # Try to get admitting practitioner from duty roster for destination ward
+                dest_practitioner = from_admission.admitting_doctor
+                primary_team = from_admission.primary_team
+                try:
+                    from apps.organization.services import DutyRosterService
+                    from apps.organization.models import UnitWardAllocation
+
+                    unit_allocation = UnitWardAllocation.objects.filter(
+                        ward=to_bed.ward, is_active=True
+                    ).select_related('unit').first()
+
+                    if unit_allocation:
+                        roster_practitioner = DutyRosterService.get_admitting_practitioner(
+                            unit=unit_allocation.unit
+                        )
+                        if roster_practitioner:
+                            dest_practitioner = roster_practitioner
+                        primary_team = unit_allocation.unit
+                except Exception:
+                    pass  # Fall back to original practitioner
+
                 # Create a new admission for the destination bed
                 to_admission = Admission.objects.create(
                     patient=from_admission.patient,
@@ -954,7 +975,8 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     admission_type=from_admission.admission_type,
                     admission_notes=f"Transferred from {from_admission.bed.ward.name}: {reason}",
                     daily_rate=to_bed.total_rate,
-                    admitting_doctor=from_admission.admitting_doctor,
+                    admitting_doctor=dest_practitioner,
+                    primary_team=primary_team,
                     created_by=request.user,
                     updated_by=request.user,
                     facility=facility

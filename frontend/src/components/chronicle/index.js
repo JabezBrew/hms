@@ -17,3 +17,5 @@ export { default as EditNoteSlideOver } from './EditNoteSlideOver';
 export { default as NoteHistoryModal } from './NoteHistoryModal';
 export { default as PatientInsuranceSlideOver } from './PatientInsuranceSlideOver';
 export { default as BreakGlassDialog } from './BreakGlassDialog';
+export { default as WardRoundSlideOver } from './WardRoundSlideOver';
+export { default as ConsultationSlideOver } from './ConsultationSlideOver';

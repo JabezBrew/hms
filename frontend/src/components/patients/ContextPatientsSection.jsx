@@ -23,6 +23,7 @@ const ContextPatientsSection = ({
   data,
   isLoading = false,
   onStartRound,
+  onStartConsultation,
   showMyPatientsActions = false,
   onAddToMyPatients,
   className,
@@ -100,6 +101,7 @@ const ContextPatientsSection = ({
             patient={transformContextPatient(patient)}
             index={index}
             onStartRound={onStartRound}
+            onStartConsultation={onStartConsultation}
             showMyPatientsActions={showMyPatientsActions}
             onAddToMyPatients={onAddToMyPatients}
           />

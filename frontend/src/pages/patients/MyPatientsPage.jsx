@@ -113,7 +113,14 @@ const MyPatientsPage = () => {
   const handleStartRound = (patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
-      navigate(`/workflows/consultation?patient=${patientId}`);
+      navigate(`/patients/${patientId}?wardRound=true`);
+    }
+  };
+
+  const handleStartConsultation = (patient) => {
+    const patientId = patient?.id || patient?.patient_profile;
+    if (patientId) {
+      navigate(`/patients/${patientId}?consultation=true`);
     }
   };
 
@@ -264,6 +271,7 @@ const MyPatientsPage = () => {
                   patient={patient}
                   index={index}
                   onStartRound={handleStartRound}
+                  onStartConsultation={handleStartConsultation}
                   showMyPatientsActions={true}
                   isInMyPatients={true}
                   onRemoveFromMyPatients={handleRemoveFromMyPatients}

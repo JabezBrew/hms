@@ -49,3 +49,9 @@ class LoadTestAwareUserThrottle(UserRateThrottle):
         if _has_valid_load_test_key(request):
             return True
         return super().allow_request(request, view)
+
+
+class MFARecoveryThrottle(LoadTestAwareAnonThrottle):
+    """Strict throttle for MFA recovery verification."""
+
+    rate = '3/hour'

@@ -24,6 +24,8 @@ import {
   AddFluidBalanceSlideOver,
   PatientInsuranceSlideOver,
   BreakGlassDialog,
+  WardRoundSlideOver,
+  ConsultationSlideOver,
 } from "@/components/chronicle";
 import { usePatientInsurance } from "@/hooks/useBillingQueries";
 import { patientsApi } from "@/lib/api/patients";
@@ -63,8 +65,10 @@ import { useDebounce } from "@/hooks/use-debounce";
  * - Hero header with patient identity
  * - Two-column layout: Clinical Summary | Timeline Chronicle
  * - Timeline with filterable entries
+ *
+ * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
  */
-const PatientChroniclePage = () => {
+const PatientChroniclePage = ({ defaultAction }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
@@ -100,19 +104,32 @@ const PatientChroniclePage = () => {
     'charts',
     'chartEntry',
     'insurance',
+    'wardRound',
+    'consultation',
   ]);
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
 
-  // Auto-open slide-over based on action query param
+  // Auto-open slide-over based on action query param or defaultAction prop
+  const wardRoundParam = searchParams.get('wardRound');
+  const consultationParam = searchParams.get('consultation');
   useEffect(() => {
-    if (actionParam === 'add_note') {
+    const action = actionParam || defaultAction;
+    if (action === 'add_note') {
       slideOvers.open('note');
       // Clear the query params after opening
-      setSearchParams({}, { replace: true });
+      if (actionParam) setSearchParams({}, { replace: true });
+    } else if (action === 'ward_round' || wardRoundParam === 'true') {
+      slideOvers.open('wardRound');
+      // Clear the query params after opening
+      if (actionParam || wardRoundParam) setSearchParams({}, { replace: true });
+    } else if (action === 'consultation' || consultationParam === 'true') {
+      slideOvers.open('consultation');
+      // Clear the query params after opening
+      if (actionParam || consultationParam) setSearchParams({}, { replace: true });
     }
-  }, [actionParam, slideOvers, setSearchParams]);
+  }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, setSearchParams]);
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -502,6 +519,7 @@ const PatientChroniclePage = () => {
   const handleShareRecord = useCallback(() => slideOvers.open('crossFacility'), [slideOvers]);
   const handleReceiveRecord = useCallback(() => slideOvers.open('receiveRecord'), [slideOvers]);
   const handleRecordFluids = useCallback(() => slideOvers.open('fluids'), [slideOvers]);
+  const handleStartWardRound = useCallback(() => slideOvers.open('wardRound'), [slideOvers]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -572,6 +590,11 @@ const PatientChroniclePage = () => {
   }, [refreshData, slideOvers]);
 
   const handleReferralCreated = useCallback(() => {
+    refreshData();
+    slideOvers.close();
+  }, [refreshData, slideOvers]);
+
+  const handleWardRoundCompleted = useCallback(() => {
     refreshData();
     slideOvers.close();
   }, [refreshData, slideOvers]);
@@ -824,6 +847,7 @@ const PatientChroniclePage = () => {
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
+        onStartWardRound={handleStartWardRound}
         onManageInsurance={() => slideOvers.open('insurance')}
         insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
@@ -1318,6 +1342,33 @@ const PatientChroniclePage = () => {
           open={slideOvers.isOpen('insurance')}
           onClose={handleSlideOverClose}
           patient={patient}
+        />
+
+        {/* Ward Round Slide-Over */}
+        <WardRoundSlideOver
+          open={slideOvers.isOpen('wardRound')}
+          onClose={handleSlideOverClose}
+          patient={patient}
+          admission={
+            patient?.local_data?.current_admission_id
+              ? { id: patient.local_data.current_admission_id }
+              : patient?.current_admission_id
+                ? { id: patient.current_admission_id }
+                : null
+          }
+          onComplete={handleWardRoundCompleted}
+        />
+
+        {/* Consultation Slide-Over */}
+        <ConsultationSlideOver
+          open={slideOvers.isOpen('consultation')}
+          onClose={handleSlideOverClose}
+          patient={patient}
+          referralId={referralIdParam}
+          onComplete={() => {
+            refetchTimeline?.();
+            refetchContext?.();
+          }}
         />
       </div>
     </div>

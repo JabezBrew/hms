@@ -15,6 +15,9 @@ from .models import (
     UnitMemberAssignment,
     CrossCoverageSchedule,
     UnitWardAllocation,
+    ShiftDefinition,
+    DutyRosterTemplate,
+    DutyRoster,
 )
 
 MIXED_DEFAULT_UNIT_TYPES = {'facility', 'department', 'division'}
@@ -537,3 +540,232 @@ class UnitWardAllocationSerializer(serializers.ModelSerializer):
         if request and request.user:
             validated_data['created_by'] = request.user
         return super().create(validated_data)
+
+
+# =============================================================================
+# Duty Roster Serializers
+# =============================================================================
+
+
+class ShiftDefinitionListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for shift lists."""
+
+    class Meta:
+        model = ShiftDefinition
+        fields = [
+            'id', 'code', 'name', 'start_time', 'end_time',
+            'crosses_midnight', 'display_order', 'is_active'
+        ]
+
+
+class ShiftDefinitionSerializer(serializers.ModelSerializer):
+    """Full serializer for shift details."""
+
+    class Meta:
+        model = ShiftDefinition
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'crosses_midnight']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['created_by'] = request.user
+        return super().create(validated_data)
+
+
+class DutyRosterTemplateListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for template lists."""
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+    shift_name = serializers.CharField(source='shift.name', read_only=True, allow_null=True)
+    day_name = serializers.SerializerMethodField()
+    effective_start_time = serializers.TimeField(source='start_time', read_only=True)
+    effective_end_time = serializers.TimeField(source='end_time', read_only=True)
+    is_currently_effective = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DutyRosterTemplate
+        fields = [
+            'id', 'unit', 'unit_name', 'practitioner', 'practitioner_name',
+            'day_of_week', 'day_name', 'shift', 'shift_name',
+            'effective_start_time', 'effective_end_time',
+            'role', 'context', 'seniority_level', 'is_primary',
+            'effective_from', 'effective_until', 'is_active', 'is_currently_effective'
+        ]
+
+    def get_practitioner_name(self, obj):
+        try:
+            return obj.practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.practitioner_id)
+
+    def get_day_name(self, obj):
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        return days[obj.day_of_week]
+
+
+class DutyRosterTemplateSerializer(serializers.ModelSerializer):
+    """Full serializer for template details and create/update."""
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+    shift_name = serializers.CharField(source='shift.name', read_only=True, allow_null=True)
+
+    class Meta:
+        model = DutyRosterTemplate
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_practitioner_name(self, obj):
+        try:
+            return obj.practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.practitioner_id)
+
+    def validate(self, data):
+        instance = getattr(self, 'instance', None)
+        shift = data.get('shift', getattr(instance, 'shift', None))
+        custom_start = data.get('custom_start_time', getattr(instance, 'custom_start_time', None))
+        custom_end = data.get('custom_end_time', getattr(instance, 'custom_end_time', None))
+
+        if shift and (custom_start or custom_end):
+            raise serializers.ValidationError(
+                "Provide either a shift OR custom times, not both."
+            )
+        if not shift and not (custom_start and custom_end):
+            raise serializers.ValidationError(
+                "Either shift or both custom_start_time and custom_end_time are required."
+            )
+
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['created_by'] = request.user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['updated_by'] = request.user
+        return super().update(instance, validated_data)
+
+
+class DutyRosterListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for roster lists."""
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+    shift_name = serializers.CharField(source='shift.name', read_only=True, allow_null=True)
+    original_practitioner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DutyRoster
+        fields = [
+            'id', 'unit', 'unit_name', 'practitioner', 'practitioner_name',
+            'date', 'shift', 'shift_name', 'start_time', 'end_time',
+            'role', 'context', 'seniority_level', 'is_primary',
+            'source', 'original_practitioner', 'original_practitioner_name',
+            'is_active'
+        ]
+
+    def get_practitioner_name(self, obj):
+        try:
+            return obj.practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.practitioner_id)
+
+    def get_original_practitioner_name(self, obj):
+        if not obj.original_practitioner:
+            return None
+        try:
+            return obj.original_practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.original_practitioner_id)
+
+
+class DutyRosterSerializer(serializers.ModelSerializer):
+    """Full serializer for roster details."""
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+    shift_name = serializers.CharField(source='shift.name', read_only=True, allow_null=True)
+    original_practitioner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DutyRoster
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'source', 'template', 'original_practitioner']
+
+    def get_practitioner_name(self, obj):
+        try:
+            return obj.practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.practitioner_id)
+
+    def get_original_practitioner_name(self, obj):
+        if not obj.original_practitioner:
+            return None
+        try:
+            return obj.original_practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.original_practitioner_id)
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['created_by'] = request.user
+        validated_data['source'] = 'manual'
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['updated_by'] = request.user
+        return super().update(instance, validated_data)
+
+
+class GenerateRosterSerializer(serializers.Serializer):
+    """Serializer for roster generation request."""
+    unit_id = serializers.UUIDField(required=False, help_text="Unit ID (optional, generates for all units if omitted)")
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    overwrite = serializers.BooleanField(default=False)
+
+    def validate(self, data):
+        if data['end_date'] < data['start_date']:
+            raise serializers.ValidationError("end_date must be >= start_date")
+
+        # Limit to 90 days to prevent accidental large generations
+        delta = (data['end_date'] - data['start_date']).days
+        if delta > 90:
+            raise serializers.ValidationError("Maximum generation range is 90 days")
+
+        return data
+
+
+class SwapDutySerializer(serializers.Serializer):
+    """Serializer for duty swap request."""
+    replacement_practitioner_id = serializers.UUIDField()
+    reason = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate_replacement_practitioner_id(self, value):
+        from apps.users.models import PractitionerProfile
+        try:
+            PractitionerProfile.objects.get(id=value)
+        except PractitionerProfile.DoesNotExist:
+            raise serializers.ValidationError("Practitioner not found")
+        return value
+
+
+class OnDutyQuerySerializer(serializers.Serializer):
+    """Serializer for on-duty query parameters."""
+    unit_id = serializers.UUIDField()
+    at_datetime = serializers.DateTimeField(required=False)
+    role = serializers.ChoiceField(
+        choices=DutyRosterTemplate.ROLE_CHOICES,
+        required=False
+    )
+    context = serializers.ChoiceField(
+        choices=DutyRosterTemplate.CONTEXT_CHOICES,
+        required=False
+    )
+    include_descendants = serializers.BooleanField(default=False)
