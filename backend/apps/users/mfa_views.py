@@ -103,6 +103,27 @@ def _get_user_and_session(request):
     return None, None
 
 
+def _log_mfa_failure(request, user=None, session=None, details=None, email=None):
+    try:
+        resolved_user = user or (session.user if session else None)
+        resolved_email = email or (resolved_user.email if resolved_user else None)
+        facility = None
+        if session and session.facility_code:
+            from apps.core.models import Facility
+
+            facility = Facility.get_by_code(session.facility_code)
+        AuditService.log_authentication(
+            request,
+            action=AuditAction.LOGIN_FAILED,
+            user=resolved_user,
+            email=resolved_email,
+            details=details,
+            facility=facility,
+        )
+    except Exception:
+        pass
+
+
 def _ensure_webauthn_available():
     if generate_registration_options is None or verify_registration_response is None:
         raise RuntimeError("webauthn is required for WebAuthn support.")
@@ -171,6 +192,7 @@ class MFAStatusView(APIView):
     def get(self, request):
         user, session = _get_user_and_session(request)
         if not user:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         status_payload = get_mfa_enrollment_status(user)
@@ -189,6 +211,7 @@ class MFATOTPStartView(APIView):
     def post(self, request):
         user, session = _get_user_and_session(request)
         if not user:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         profile = get_or_create_mfa_profile(user)
@@ -210,18 +233,22 @@ class MFATOTPConfirmView(APIView):
         session = _get_mfa_session(request)
         user = session.user if session else request.user if request.user.is_authenticated else None
         if not user:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         code = request.data.get('code')
         if not code:
+            _log_mfa_failure(request, user=user, details="Code is required.")
             return Response({'detail': 'Code is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = get_or_create_mfa_profile(user)
         if not profile.totp_secret_encrypted:
+            _log_mfa_failure(request, user=user, details="TOTP setup not started.")
             return Response({'detail': 'TOTP setup not started.'}, status=status.HTTP_409_CONFLICT)
 
         secret = decrypt_secret(profile.totp_secret_encrypted)
         if not verify_totp_code(secret, str(code)):
+            _log_mfa_failure(request, user=user, details="Invalid TOTP code.")
             return Response({'detail': 'Invalid code.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile.totp_confirmed_at = timezone.now()
@@ -260,15 +287,18 @@ class MFARecoveryVerifyView(APIView):
     def post(self, request):
         session = _get_mfa_session(request)
         if not session:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         code = request.data.get('code')
         if not code:
+            _log_mfa_failure(request, session=session, details="Code is required.")
             return Response({'detail': 'Code is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = get_or_create_mfa_profile(session.user)
         hashed = hash_recovery_code(str(code), str(session.user.id))
         if hashed not in (profile.recovery_codes or []):
+            _log_mfa_failure(request, session=session, details="Invalid recovery code.")
             return Response({'detail': 'Invalid recovery code.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile.recovery_codes = [c for c in profile.recovery_codes if c != hashed]
@@ -279,6 +309,17 @@ class MFARecoveryVerifyView(APIView):
         session.save(update_fields=['totp_verified', 'webauthn_verified', 'updated_at'])
         return _complete_session(request, session)
 
+    def handle_exception(self, exc):
+        from rest_framework.exceptions import Throttled
+
+        if isinstance(exc, Throttled):
+            _log_mfa_failure(
+                self.request,
+                details=f"MFA recovery throttled. Retry after {int(exc.wait)} seconds.",
+            )
+        return super().handle_exception(exc)
+
+
 
 class MFAWebAuthnRegistrationOptionsView(APIView):
     permission_classes = [AllowAny]
@@ -287,10 +328,15 @@ class MFAWebAuthnRegistrationOptionsView(APIView):
         try:
             _ensure_webauthn_available()
         except RuntimeError as exc:
+            _log_mfa_failure(request, details="WebAuthn unavailable.")
             return Response({'detail': str(exc)}, status=status.HTTP_501_NOT_IMPLEMENTED)
+
+
+
         user, session = _get_user_and_session(request)
         session_token = None
         if not user:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         if not session:
@@ -350,12 +396,15 @@ class MFAWebAuthnRegistrationVerifyView(APIView):
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         if session.webauthn_challenge_type != 'registration':
+            _log_mfa_failure(request, session=session, details="No active WebAuthn registration.")
             return Response({'detail': 'No active WebAuthn registration.'}, status=status.HTTP_409_CONFLICT)
         if session.webauthn_challenge_expires_at and session.webauthn_challenge_expires_at <= timezone.now():
+            _log_mfa_failure(request, session=session, details="WebAuthn challenge expired.")
             return Response({'detail': 'WebAuthn challenge expired.'}, status=status.HTTP_400_BAD_REQUEST)
 
         credential = request.data.get('credential')
         if not credential:
+            _log_mfa_failure(request, session=session, details="Credential payload required.")
             return Response({'detail': 'Credential payload required.'}, status=status.HTTP_400_BAD_REQUEST)
         credential = _parse_registration_credential(credential)
 
@@ -372,6 +421,7 @@ class MFAWebAuthnRegistrationVerifyView(APIView):
                 require_user_verification=True,
             )
         except Exception as exc:
+            _log_mfa_failure(request, session=session, details="WebAuthn registration verification failed.")
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         credential_id = _bytes_to_base64url(verification.credential_id)
@@ -412,12 +462,15 @@ class MFAWebAuthnAuthenticationOptionsView(APIView):
             return Response({'detail': str(exc)}, status=status.HTTP_501_NOT_IMPLEMENTED)
         session = _get_mfa_session(request)
         if not session:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
         if session.enrollment_required:
+            _log_mfa_failure(request, session=session, details="MFA enrollment required.")
             return Response({'detail': 'MFA enrollment required.'}, status=status.HTTP_409_CONFLICT)
 
         credentials = WebAuthnCredential.objects.filter(user=session.user, is_active=True)
         if not credentials.exists():
+            _log_mfa_failure(request, session=session, details="No WebAuthn credentials enrolled.")
             return Response({'detail': 'No WebAuthn credentials enrolled.'}, status=status.HTTP_409_CONFLICT)
         allow = [
             PublicKeyCredentialDescriptor(
@@ -450,17 +503,22 @@ class MFAWebAuthnAuthenticationVerifyView(APIView):
             return Response({'detail': str(exc)}, status=status.HTTP_501_NOT_IMPLEMENTED)
         session = _get_mfa_session(request)
         if not session:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
         if session.enrollment_required:
+            _log_mfa_failure(request, session=session, details="MFA enrollment required.")
             return Response({'detail': 'MFA enrollment required.'}, status=status.HTTP_409_CONFLICT)
 
         if session.webauthn_challenge_type != 'authentication':
+            _log_mfa_failure(request, session=session, details="No active WebAuthn authentication.")
             return Response({'detail': 'No active WebAuthn authentication.'}, status=status.HTTP_409_CONFLICT)
         if session.webauthn_challenge_expires_at and session.webauthn_challenge_expires_at <= timezone.now():
+            _log_mfa_failure(request, session=session, details="WebAuthn challenge expired.")
             return Response({'detail': 'WebAuthn challenge expired.'}, status=status.HTTP_400_BAD_REQUEST)
 
         credential = request.data.get('credential')
         if not credential:
+            _log_mfa_failure(request, session=session, details="Credential payload required.")
             return Response({'detail': 'Credential payload required.'}, status=status.HTTP_400_BAD_REQUEST)
         credential = _parse_authentication_credential(credential)
 
@@ -469,6 +527,7 @@ class MFAWebAuthnAuthenticationVerifyView(APIView):
         else:
             credential_id = getattr(credential, 'id', None)
         if not credential_id:
+            _log_mfa_failure(request, session=session, details="Credential ID required.")
             return Response({'detail': 'Credential ID required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         stored = WebAuthnCredential.objects.filter(
@@ -477,6 +536,7 @@ class MFAWebAuthnAuthenticationVerifyView(APIView):
             is_active=True,
         ).first()
         if not stored:
+            _log_mfa_failure(request, session=session, details="Credential not found.")
             return Response({'detail': 'Credential not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         try:
@@ -490,6 +550,7 @@ class MFAWebAuthnAuthenticationVerifyView(APIView):
                 require_user_verification=True,
             )
         except Exception as exc:
+            _log_mfa_failure(request, session=session, details="WebAuthn authentication verification failed.")
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         stored.sign_count = verification.new_sign_count
@@ -518,20 +579,25 @@ class MFATOTPVerifyView(APIView):
     def post(self, request):
         session = _get_mfa_session(request)
         if not session:
+            _log_mfa_failure(request, details="MFA session required.")
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
         if session.enrollment_required:
+            _log_mfa_failure(request, session=session, details="MFA enrollment required.")
             return Response({'detail': 'MFA enrollment required.'}, status=status.HTTP_409_CONFLICT)
 
         code = request.data.get('code')
         if not code:
+            _log_mfa_failure(request, session=session, details="Code is required.")
             return Response({'detail': 'Code is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = get_or_create_mfa_profile(session.user)
         if not profile.totp_confirmed_at or not profile.totp_secret_encrypted:
+            _log_mfa_failure(request, session=session, details="TOTP not enrolled.")
             return Response({'detail': 'TOTP not enrolled.'}, status=status.HTTP_409_CONFLICT)
 
         secret = decrypt_secret(profile.totp_secret_encrypted)
         if not verify_totp_code(secret, str(code)):
+            _log_mfa_failure(request, session=session, details="Invalid TOTP code.")
             return Response({'detail': 'Invalid code.'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile.totp_last_used_at = timezone.now()

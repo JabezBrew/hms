@@ -1,7 +1,10 @@
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from .models import AuditLog, AuditAction, AuditCategory
 from .tasks import log_audit_async
 from apps.core.security import get_user_facility, resolve_object_facility
+
+User = get_user_model()
 
 
 class AuditService:
@@ -69,7 +72,7 @@ class AuditService:
         )
 
     @staticmethod
-    def log_authentication(request, action, user=None, email=None, details=None):
+    def log_authentication(request, action, user=None, email=None, details=None, facility_id=None, facility=None):
         """
         Log authentication events (login/logout/failed) asynchronously.
 
@@ -79,7 +82,18 @@ class AuditService:
             user: The user object (for successful auth events)
             email: Email address (for failed login attempts where user may not exist)
             details: Additional details to append to description
+            facility_id: Explicit facility ID override
+            facility: Facility object override
         """
+        normalized_email = email.strip() if isinstance(email, str) else email
+        email = normalized_email
+
+        resolved_user = user
+        if not resolved_user and email:
+            resolved_user = User.objects.filter(email__iexact=email).select_related('primary_facility').first()
+        if resolved_user and not user:
+            user = resolved_user
+
         # Build description based on action
         if action == AuditAction.LOGIN:
             user_identifier = user.email if user else email or 'unknown'
@@ -88,7 +102,7 @@ class AuditService:
             user_identifier = user.email if user else email or 'unknown'
             description = f"User {user_identifier} logged out"
         elif action == AuditAction.LOGIN_FAILED:
-            user_identifier = email or 'unknown'
+            user_identifier = email or (user.email if user else 'unknown')
             description = f"Failed login attempt for {user_identifier}"
         elif action == AuditAction.OFFSITE_ACCESS:
             user_identifier = user.email if user else email or 'unknown'
@@ -118,10 +132,16 @@ class AuditService:
         user_email = user.email if user else email
         user_type = getattr(user, 'user_type', 'unknown') if user else 'unknown'
 
-        facility_id = None
-        if request:
-            request_facility = get_user_facility(request)
-            facility_id = getattr(request_facility, 'id', None)
+        if facility_id is None:
+            if facility is not None:
+                facility_id = getattr(facility, 'id', None)
+            elif request:
+                request_facility = get_user_facility(request)
+                facility_id = getattr(request_facility, 'id', None)
+
+        if facility_id is None and user:
+            primary_facility = getattr(user, 'primary_facility', None)
+            facility_id = getattr(primary_facility, 'id', None)
 
         log_audit_async.delay(
             user_id=user_id,

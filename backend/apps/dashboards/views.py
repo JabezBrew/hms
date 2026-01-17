@@ -5,12 +5,16 @@ from django.utils import timezone
 from datetime import timedelta, datetime
 import logging
 
+from django.core.cache import cache
+
 from apps.appointments.proxies import AppointmentProxy
 from apps.wards.models import Admission, Ward, Bed
 from apps.nursing.models import NursingAlert, MedicationAdministration, NursingTask
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.users.serializers import PatientProfileListSerializer
 from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.core.cache_utils import facility_cache_key_for_code
+from apps.dashboards.tasks import refresh_admin_dashboard_appointments
 
 logger = logging.getLogger(__name__)
 
@@ -703,7 +707,6 @@ def admin_dashboard(request):
     Optimized to avoid N+1 queries and handle slow external APIs gracefully.
     """
     from django.db.models import Count, Q
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
     facility = get_user_facility(request)
     if not facility:
@@ -735,32 +738,29 @@ def admin_dashboard(request):
         status='admitted'
     ).count()
 
-    # Today's appointments - with timeout to avoid blocking dashboard
-    appointments_today = 0
-    try:
-        def fetch_appointments():
-            bundle = AppointmentProxy.search(date=today.isoformat())
-            if not bundle:
-                return 0
-            appointments = [
-                entry.get('resource')
-                for entry in bundle.get('entry', [])
-                if entry.get('resource')
-            ]
-            filtered = _filter_appointments_by_facility(appointments, facility)
-            return len(filtered)
+    # Today's appointments - cached + refreshed async to avoid blocking on FHIR
+    cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"admin_dashboard_appointments_{today.isoformat()}"
+    )
+    stale_cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"admin_dashboard_appointments_{today.isoformat()}_stale"
+    )
+    lock_key = f"{cache_key}:lock"
 
-        # Use ThreadPoolExecutor with 5-second timeout
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fetch_appointments)
+    appointments_today = cache.get(cache_key)
+    if appointments_today is None:
+        appointments_today = cache.get(stale_cache_key, 0)
+        if cache.add(lock_key, '1', timeout=30):
             try:
-                appointments_today = future.result(timeout=5)  # 5 second timeout
-            except FuturesTimeoutError:
-                logger.warning("FHIR appointment search timed out for admin dashboard")
-                appointments_today = 0
-    except Exception as e:
-        logger.warning(f"Failed to fetch appointments for admin dashboard: {e}")
-        appointments_today = 0
+                refresh_admin_dashboard_appointments.delay(
+                    facility_id=str(facility.id),
+                    facility_code=facility.code,
+                    date_str=today.isoformat(),
+                )
+            except Exception as e:
+                logger.warning("Failed to queue admin dashboard appointments refresh: %s", e)
 
     # Active staff (count practitioners whose user accounts are active)
     active_staff = PractitionerProfile.objects.filter(

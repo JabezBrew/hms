@@ -240,28 +240,71 @@ class LoginView(APIView):
             ip = request.META.get('REMOTE_ADDR')
         return ip
 
+    def _extract_login_email(self, request):
+        try:
+            data = request.data
+        except Exception:
+            data = {}
+        if isinstance(data, dict):
+            value = data.get('email')
+        else:
+            value = request.query_params.get('email')
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    def _log_login_failure(self, request, email=None, details=None, facility_code=None, user=None):
+        try:
+            facility = Facility.get_by_code(facility_code) if facility_code else None
+            AuditService.log_authentication(
+                request,
+                action=AuditAction.LOGIN_FAILED,
+                user=user,
+                email=email,
+                details=details,
+                facility=facility,
+            )
+        except Exception:
+            pass
+
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         password = request.data.get('password')
-
-        # Validate required fields before authentication (and before rate limiting counts)
-        if not email:
-            return Response(
-                {"email": ["This field is required."]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if not password:
-            return Response(
-                {"password": ["This field is required."]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
         header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
         requested_facility = normalize_facility_code(
             request.META.get(header_key) or request.data.get('facility_code')
         )
+
+        # Validate required fields before authentication (and before rate limiting counts)
+        if not email:
+            self._log_login_failure(
+                request,
+                details="Missing email.",
+                facility_code=requested_facility,
+            )
+            return Response(
+                {"email": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not password:
+            self._log_login_failure(
+                request,
+                email=email,
+                details="Missing password.",
+                facility_code=requested_facility,
+            )
+            return Response(
+                {"password": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         if settings.FACILITY_CONTEXT_REQUIRED and not requested_facility and not settings.DEFAULT_FACILITY_CODE:
+            self._log_login_failure(
+                request,
+                email=email,
+                details="Facility code required.",
+            )
             return Response(
                 {'detail': 'Facility code is required.', 'code': 'facility_required'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -275,12 +318,25 @@ class LoginView(APIView):
             if requested_facility and allowed_codes:
                 is_admin = user.user_type == 'admin'
                 if requested_facility not in allowed_codes and not (allow_cross_facility and is_admin):
+                    self._log_login_failure(
+                        request,
+                        email=email,
+                        user=user,
+                        details=f"Facility access denied for {requested_facility}.",
+                        facility_code=requested_facility,
+                    )
                     return Response(
                         {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
                         status=status.HTTP_403_FORBIDDEN
                     )
             if (not requested_facility and allowed_codes and len(allowed_codes) > 1
                     and getattr(settings, 'MULTI_FACILITY_MODE', False)):
+                self._log_login_failure(
+                    request,
+                    email=email,
+                    user=user,
+                    details="Facility code required for multi-facility user.",
+                )
                 return Response(
                     {'detail': 'Facility code is required.', 'code': 'facility_required'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -347,10 +403,12 @@ class LoginView(APIView):
             return response
 
         # Log failed login attempt
-        try:
-            AuditService.log_authentication(request, action=AuditAction.LOGIN_FAILED, email=email)
-        except Exception:
-            pass  # Don't let audit logging break login
+        self._log_login_failure(
+            request,
+            email=email,
+            details="Invalid credentials.",
+            facility_code=requested_facility,
+        )
 
         return Response(
             {"detail": "Invalid credentials"},
@@ -363,6 +421,11 @@ class LoginView(APIView):
         """
         from rest_framework.exceptions import Throttled
         if isinstance(exc, Throttled):
+            self._log_login_failure(
+                self.request,
+                email=self._extract_login_email(self.request),
+                details=f"Login throttled. Retry after {int(exc.wait)} seconds.",
+            )
             return Response(
                 {
                     "detail": f"Too many login attempts. Please try again in {int(exc.wait)} seconds.",
