@@ -443,6 +443,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'user-agent',
     'x-csrftoken',
+    'x-facility-code',
     'x-requested-with',
 ]
 
@@ -661,5 +662,12 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-user-sessions-daily': {
         'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
+    },
+    'refresh-admin-dashboard-appointments': {
+        'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
+        'schedule': 60.0,  # Every 60 seconds
+        'options': {
+            'expires': 50,
+        },
     },
 }

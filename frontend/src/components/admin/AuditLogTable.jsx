@@ -105,7 +105,7 @@ const AuditLogTable = ({ logs, className, sortBy, onSortChange }) => {
   };
 
   return (
-    <div className={cn("rounded-lg border border-border overflow-hidden max-h-[calc(100vh-350px)] overflow-y-auto", className)}>
+    <div className={cn("rounded-lg overflow-hidden max-h-[calc(100vh-350px)] overflow-y-auto", className)}>
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -178,9 +178,9 @@ const AuditLogRow = ({ log, isExpanded, onToggle }) => {
     <Fragment>
       <TableRow
         className={cn(
-          "group cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
+          "group cursor-pointer transition-colors",
           rowHighlight,
-          isExpanded && "bg-muted/30"
+          isExpanded && "border-b-0"
         )}
         onClick={onToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
@@ -268,9 +268,9 @@ const AuditLogRow = ({ log, isExpanded, onToggle }) => {
 
       {/* Expanded details row */}
       {isExpanded && (
-        <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={7} className="p-0">
-            <div className="px-6 py-4 space-y-3">
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={7} className="pt-0 pb-4">
+            <div className="pl-10 pr-4 space-y-3">
               {/* Description */}
               <div>
                 <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
