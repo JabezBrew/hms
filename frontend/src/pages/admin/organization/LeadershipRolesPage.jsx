@@ -1,3 +1,12 @@
+import Crown from 'lucide-react/dist/esm/icons/crown.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import UserCog from 'lucide-react/dist/esm/icons/user-cog.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import ClipboardCheck from 'lucide-react/dist/esm/icons/clipboard-check.js';
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
@@ -21,17 +30,7 @@ import {
 } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { useLeadershipRoles } from '@/hooks/useOrganization';
-import {
-  Crown,
-  Search,
-  UserCog,
-  ChevronLeft,
-  Check,
-  X,
-  Shield,
-  Users,
-  ClipboardCheck,
-} from 'lucide-react';
+
 import { Link } from 'react-router-dom';
 
 /**

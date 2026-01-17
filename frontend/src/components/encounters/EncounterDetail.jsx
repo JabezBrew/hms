@@ -1,6 +1,22 @@
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { format, parseISO, isValid } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+import isValid from 'date-fns/isValid';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,22 +34,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Calendar,
-  Clock,
-  User,
-  Building2,
-  FileText,
-  Edit,
-  CheckCircle,
-  XCircle,
-  ChevronLeft,
-  Stethoscope,
-  MapPin,
-  Activity,
-  AlertTriangle,
-  ExternalLink
-} from 'lucide-react';
 
 /**
  * EncounterDetail - Chronicle-style encounter view

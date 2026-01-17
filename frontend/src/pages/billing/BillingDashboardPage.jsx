@@ -1,3 +1,17 @@
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -7,22 +21,6 @@ import {
   useRecentInvoices,
   useRecentPayments,
 } from '@/hooks/useBillingQueries';
-import {
-  DollarSign,
-  FileText,
-  Receipt,
-  AlertTriangle,
-  RefreshCw,
-  ChevronRight,
-  Clock,
-  CreditCard,
-  TrendingUp,
-  Users,
-  Calendar,
-  Plus,
-  FileSpreadsheet,
-  Shield,
-} from 'lucide-react';
 
 export default function BillingDashboardPage() {
   const navigate = useNavigate();

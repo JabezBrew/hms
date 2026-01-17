@@ -1,3 +1,19 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Globe from 'lucide-react/dist/esm/icons/globe.js';
+import Lock from 'lucide-react/dist/esm/icons/lock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
@@ -19,24 +35,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
-import {
-  Plus,
-  Search,
-  FileText,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Pencil,
-  Trash2,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  X,
-  Globe,
-  Lock,
-  CheckCircle,
-  XCircle
-} from 'lucide-react';
 
 /**
  * TemplateListPage - Chronicle-style clinical note templates

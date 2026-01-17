@@ -1,11 +1,10 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import ToggleLeft from 'lucide-react/dist/esm/icons/toggle-left.js';
 import { useViewMode, VIEW_MODES } from '@/contexts/ViewModeContext';
 import { Button } from '@/components/ui/button';
-import {
-  FileText,
-  LayoutGrid,
-  Activity,
-  ToggleLeft
-} from 'lucide-react';
+
 import {
   DropdownMenu,
   DropdownMenuContent,

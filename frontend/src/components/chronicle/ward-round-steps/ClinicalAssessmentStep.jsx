@@ -1,3 +1,9 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,8 +23,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { Activity, Thermometer, Heart, Wind, Droplets, AlertTriangle } from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 

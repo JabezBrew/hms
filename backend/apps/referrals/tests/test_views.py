@@ -118,6 +118,40 @@ class TestReferralViewSet:
         assert referral.reason == 'Updated reason'
 
 
+@pytest.mark.tier2
+class TestReferralInbox:
+    """Tests for referral inbox endpoints."""
+
+    def test_inbox_count_filters_results(self, api_client, db):
+        """Test inbox-count returns only matching referrals."""
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        practitioner = PractitionerProfileFactory()
+        user = practitioner.staff.user
+        facility = user.primary_facility
+        token = AccessToken.for_user(user)
+        token['facility_code'] = facility.code
+
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code
+        )
+
+        patient = PatientProfileFactory(facility=facility)
+        ReferralFactory(status='pending', patient=patient, referred_to_provider=practitioner)
+        ReferralFactory(status='accepted', patient=patient, referred_to_provider=practitioner)
+        ReferralFactory(status='pending', patient=patient, referred_to_provider=None)
+        ReferralFactory(status='completed', patient=patient, referred_to_provider=practitioner)
+
+        other_practitioner = PractitionerProfileFactory(staff__primary_facility=facility)
+        ReferralFactory(status='pending', patient=patient, referred_to_provider=other_practitioner)
+
+        response = api_client.get(f'{BASE_URL}/inbox-count/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 3
+
+
 @pytest.mark.tier1
 class TestReferralWorkflowActions:
     """Tests for referral workflow actions."""

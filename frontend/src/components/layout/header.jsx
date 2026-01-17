@@ -1,7 +1,9 @@
+import PanelLeftIcon from 'lucide-react/dist/esm/icons/panel-left.js';
+import LogOutIcon from 'lucide-react/dist/esm/icons/log-out.js';
+import UserIcon from 'lucide-react/dist/esm/icons/user.js';
 import { ThemeToggle } from "../theme-toggle"
 import { useAuth } from "../../lib/auth"
 import { useIsMobile } from "../../hooks/use-mobile"
-import { PanelLeftIcon, LogOutIcon, UserIcon } from "lucide-react"
 import AppointmentNotifications from "../appointments/AppointmentNotifications"
 
 // Helper function to check if a user has access to a menu item

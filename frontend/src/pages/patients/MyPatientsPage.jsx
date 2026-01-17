@@ -1,3 +1,12 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import Pin from 'lucide-react/dist/esm/icons/pin.js';
 import { useState, useMemo } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
@@ -12,17 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PatientChronicleCard } from "@/components/chronicle";
-import {
-  Search,
-  Plus,
-  Users,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  X,
-  Star,
-  Pin,
-} from "lucide-react";
 
 /**
  * MyPatientsPage - Dedicated page for user's personal patient list

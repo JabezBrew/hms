@@ -1,7 +1,9 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus } from 'lucide-react';
+
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import PatientForm from '@/components/patients/PatientForm';
 

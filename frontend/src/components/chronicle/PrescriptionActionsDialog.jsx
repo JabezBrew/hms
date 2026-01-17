@@ -1,3 +1,11 @@
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import PauseCircle from 'lucide-react/dist/esm/icons/circle-pause.js';
+import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,16 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Pill,
-  Edit,
-  XCircle,
-  PauseCircle,
-  PlayCircle,
-  RefreshCw,
-  Loader2,
-  AlertTriangle,
-} from "lucide-react";
+
 import {
   useUpdatePrescription,
   useDiscontinuePrescription,

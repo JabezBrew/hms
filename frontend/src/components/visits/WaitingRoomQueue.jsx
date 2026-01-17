@@ -1,11 +1,13 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatDistanceToNow } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { ActionCard } from '@/components/dashboard';
 import { VisitStatusBadge } from './VisitStatusBadge';
 import { useWaitingRoom, useVisitActions } from '@/hooks/useVisitQueries';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, User, Phone } from 'lucide-react';
 
 /**
  * WaitingRoomQueue - Displays clinic waiting room with patient queue

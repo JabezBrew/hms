@@ -1,10 +1,12 @@
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import AppointmentList from '@/components/appointments/AppointmentList';
 import AppointmentTypeManager from '@/components/appointments/AppointmentTypeManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Settings } from 'lucide-react';
+
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 
 const AppointmentsPage = () => {

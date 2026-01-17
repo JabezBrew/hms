@@ -1,10 +1,24 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import CalendarPlus from 'lucide-react/dist/esm/icons/calendar-plus.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
 import { usePatientDemographics, useUpdatePatient, patientKeys } from '@/hooks/usePatientQueries';
 import { usePatientInsurance } from '@/hooks/useBillingQueries';
@@ -29,22 +43,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
-import {
-  ChevronLeft,
-  Edit,
-  Save,
-  X,
-  User,
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  Heart,
-  Shield,
-  AlertCircle,
-  CalendarPlus,
-  FileText,
-} from 'lucide-react';
 
 // Edit form validation schema
 const demographicsSchema = z.object({

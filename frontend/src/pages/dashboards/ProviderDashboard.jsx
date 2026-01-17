@@ -1,3 +1,16 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Video from 'lucide-react/dist/esm/icons/video.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -5,21 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
-import {
-  Plus,
-  Clock,
-  Calendar,
-  User,
-  Video,
-  ChevronRight,
-  Inbox,
-  Pill,
-  FlaskConical,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  RefreshCw
-} from 'lucide-react';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SlideOver } from '@/components/ui/SlideOver';

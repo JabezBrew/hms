@@ -1,3 +1,12 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X, Pill, AlertCircle, Check, Calendar, Shield, Loader2, Package, ClipboardList } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";

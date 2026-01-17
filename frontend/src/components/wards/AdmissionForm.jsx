@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import { BedAssignment } from './BedAssignment';
 import { searchPatientsForAdmission, searchPractitionersForAdmission, createAdmission } from '@/lib/api.js';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
   AlertDialog,

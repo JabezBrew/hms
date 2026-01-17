@@ -1,3 +1,16 @@
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -13,22 +26,9 @@ import { WorkflowLauncher } from '@/components/workflow';
 import { useInpatientDashboard } from '@/hooks/useDashboardQueries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  UserPlus,
-  Users,
-  UserCheck,
-  FileText,
-  AlertTriangle,
-  Bed,
-  Clock,
-  Activity,
-  RefreshCw,
-  Calendar,
-  Stethoscope,
-  Send,
-  Inbox,
-} from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+
+import format from 'date-fns/format';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 

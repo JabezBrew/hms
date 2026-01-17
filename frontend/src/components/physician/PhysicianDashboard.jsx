@@ -1,3 +1,10 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fetchWardsRoot, fetchAdmissions } from '@/lib/api';
-import { Search, Stethoscope, ClipboardList, FileText, Pill, FlaskConical, MessageSquare } from 'lucide-react';
+
 import { PatientList } from './PatientList';
 import { WardRoundTools } from './WardRoundTools';
 import { OrderEntry } from './OrderEntry';

@@ -1,3 +1,8 @@
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,11 +33,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Package, MoreVertical, XCircle, AlertTriangle, CheckCircle
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import {
   useRequestSupply,
   useDiscontinueTreatmentEntry

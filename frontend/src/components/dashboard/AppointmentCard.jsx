@@ -1,8 +1,9 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Video from 'lucide-react/dist/esm/icons/video.js';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { Clock, Video } from "lucide-react"
 
 export function AppointmentCard({ appointment, onClick }) {
     const {

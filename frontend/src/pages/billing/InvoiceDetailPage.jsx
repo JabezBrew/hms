@@ -1,3 +1,19 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
+import Printer from 'lucide-react/dist/esm/icons/printer.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -6,24 +22,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useInvoice, useGenerateClaim } from '@/hooks/useBillingQueries';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 import { toast } from 'sonner';
-import {
-  FileText,
-  ArrowLeft,
-  AlertTriangle,
-  RefreshCw,
-  CreditCard,
-  FileSpreadsheet,
-  Printer,
-  Calendar,
-  User,
-  Building,
-  Phone,
-  Mail,
-  CheckCircle,
-  Clock,
-  DollarSign,
-  Loader2,
-} from 'lucide-react';
+
 import RecordPaymentSlideOver from '@/components/billing/RecordPaymentSlideOver';
 
 export default function InvoiceDetailPage() {

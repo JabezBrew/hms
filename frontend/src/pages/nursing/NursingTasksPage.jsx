@@ -1,3 +1,15 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,22 +43,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Plus,
-  Search,
-  Filter,
-  MoreHorizontal,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
-  Loader2,
-  RefreshCw,
-  User,
-  Calendar,
-  ClipboardList,
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format, formatDistanceToNow } from 'date-fns';
+import format from 'date-fns/format';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { normalizeApiResults } from '@/lib/utils';
 import {
   useNursingTasks,

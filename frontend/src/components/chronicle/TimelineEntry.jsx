@@ -1,3 +1,24 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import Expand from 'lucide-react/dist/esm/icons/expand.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import PauseCircle from 'lucide-react/dist/esm/icons/circle-pause.js';
+import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Copy from 'lucide-react/dist/esm/icons/copy.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,29 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  FileText,
-  Pill,
-  TestTube,
-  Activity,
-  Stethoscope,
-  ClipboardList,
-  UserPlus,
-  LogOut,
-  Expand,
-  Send,
-  ArrowRight,
-  MoreHorizontal,
-  Edit,
-  XCircle,
-  PauseCircle,
-  PlayCircle,
-  RefreshCw,
-  Copy,
-  Pencil,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+
 import NoteDetailModal from "./NoteDetailModal";
 import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
 import CopyNoteModal from "./CopyNoteModal";

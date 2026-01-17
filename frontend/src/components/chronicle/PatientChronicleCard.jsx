@@ -1,7 +1,14 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import StarOff from 'lucide-react/dist/esm/icons/star-off.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import UserMinus from 'lucide-react/dist/esm/icons/user-minus.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Activity, AlertTriangle, Clock, ChevronRight, Star, StarOff, UserPlus, UserMinus } from "lucide-react";
 
 /**
  * PatientChronicleCard - A magazine-style patient card for the Chronicle design system

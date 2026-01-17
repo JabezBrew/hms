@@ -1,3 +1,16 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -5,21 +18,7 @@ import { useDoctorDashboard } from '@/hooks/useDoctorDashboard';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { useNavigate } from 'react-router-dom';
-import {
-  Clock,
-  User,
-  Calendar,
-  CheckCircle,
-  PlayCircle,
-  RefreshCw,
-  ChevronRight,
-  AlertTriangle,
-  Stethoscope,
-  Send,
-  Inbox,
-  Users,
-  Phone,
-} from 'lucide-react';
+
 import { useVisitActions } from '@/hooks/useVisitQueries';
 
 export default function DoctorDashboard() {

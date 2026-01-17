@@ -1,3 +1,13 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,18 +22,7 @@ import {
 } from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard";
 import { LabOrderCard, LabOrderDetailSlideOver } from "@/components/laboratory";
-import {
-  Search,
-  TestTube2,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  X,
-  UserRound,
-} from "lucide-react";
+
 import { useAuth } from "@/lib/auth";
 import { useLabOrders } from "@/hooks/useLabQueries";
 import { usePractitioners } from "@/hooks/useStaffQueries";

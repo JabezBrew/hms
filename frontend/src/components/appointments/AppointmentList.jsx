@@ -1,21 +1,20 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
 import { cn } from '@/lib/utils';
-import {
-  Calendar as CalendarIcon,
-  Clock,
-  User,
-  UserRound,
-  Search,
-  Plus,
-  Filter,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  AlertTriangle,
-  RefreshCw
-} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

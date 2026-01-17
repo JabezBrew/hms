@@ -1,5 +1,7 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { getAuthJSON } from '@/lib/auth-storage';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle } from 'lucide-react';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { useWard, useUpdateWard } from '@/hooks/useWardQueries';
@@ -39,13 +41,12 @@ export default function EditWardPage() {
 
   // Check if user is admin
   useEffect(() => {
-    const userJson = localStorage.getItem('user');
-    if (!userJson) {
+    const user = getAuthJSON('user');
+    if (!user) {
       navigate('/login');
       return;
     }
 
-    const user = JSON.parse(userJson);
     if (user.role !== 'admin') {
       navigate('/wards');
       return;

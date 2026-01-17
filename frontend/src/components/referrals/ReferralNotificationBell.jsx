@@ -1,6 +1,13 @@
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, FileText, Clock, AlertCircle, CheckCircle, XCircle, Calendar } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -11,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import {
   useReferralNotifications,

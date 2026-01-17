@@ -1,7 +1,8 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { AlertCircle, Clock } from 'lucide-react';
 
 export function PatientList({ patients, onPatientSelect }) {
   // Function to calculate time since admission

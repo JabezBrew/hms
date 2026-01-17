@@ -1,3 +1,12 @@
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import Settings2 from 'lucide-react/dist/esm/icons/settings-2.js';
+import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import Tag from 'lucide-react/dist/esm/icons/tag.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,17 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  TestTube2,
-  MoreHorizontal,
-  Settings2,
-  RotateCcw,
-  Trash2,
-  Clock,
-  DollarSign,
-  Tag,
-  Info,
-} from "lucide-react";
+
 import {
   Tooltip,
   TooltipContent,

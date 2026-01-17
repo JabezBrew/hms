@@ -1,6 +1,10 @@
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
+import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { useNavigate } from 'react-router-dom';
 import { useState } from "react";
-import { Eye, EyeOff, LogIn, Building2 } from "lucide-react";
+
 import { useAuth } from "../../lib/auth.jsx"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"

@@ -1,3 +1,10 @@
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,9 +17,11 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { wardsApi } from '@/lib/api/wards';
-import { format, subDays, differenceInDays, addDays } from 'date-fns';
+import format from 'date-fns/format';
+import subDays from 'date-fns/subDays';
+import differenceInDays from 'date-fns/differenceInDays';
+import addDays from 'date-fns/addDays';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Download, Calendar, TrendingUp, Clock, Users, Bed, FileText } from 'lucide-react';
 
 export function WardOccupancyReports() {
   const [loading, setLoading] = useState(true);
@@ -84,7 +93,6 @@ export function WardOccupancyReports() {
 
     fetchAnalytics();
   }, [wards, selectedWard, dateRange]);
-
 
   // Handle ward selection change
   const handleWardChange = (value) => {

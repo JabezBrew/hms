@@ -1,3 +1,11 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, NavLink, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,16 +26,6 @@ import { Input } from "@/components/ui/input";
 import { PatientChronicleCard } from "@/components/chronicle";
 import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
 import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
-import {
-  Search,
-  Plus,
-  Users,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  X,
-  Star,
-} from "lucide-react";
 
 // Clinical provider roles that can access "My Patients" feature
 const CLINICAL_PROVIDER_ROLES = ['doctor', 'nurse', 'lab_technician', 'pharmacist'];

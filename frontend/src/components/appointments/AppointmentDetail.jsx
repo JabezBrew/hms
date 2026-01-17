@@ -1,21 +1,21 @@
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
-import {
-  Calendar,
-  Clock,
-  User,
-  UserRound,
-  FileText,
-  MessageSquare,
-  Edit,
-  Trash2,
-  ArrowLeft,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Stethoscope
-} from 'lucide-react';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';

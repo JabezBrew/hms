@@ -1,3 +1,11 @@
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import ImageIcon from 'lucide-react/dist/esm/icons/image.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,16 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Pill,
-  FlaskConical,
-  ImageIcon,
-  Stethoscope,
-  ClipboardList,
-  Plus,
-  X,
-  AlertCircle,
-} from 'lucide-react';
+
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /**

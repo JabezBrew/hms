@@ -1,9 +1,33 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Briefcase from 'lucide-react/dist/esm/icons/briefcase.js';
+import Award from 'lucide-react/dist/esm/icons/award.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
+import GraduationCap from 'lucide-react/dist/esm/icons/graduation-cap.js';
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
+import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
+import History from 'lucide-react/dist/esm/icons/history.js';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
 import { useUpdateStaff, staffKeys } from '@/hooks/useStaffQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -33,32 +57,7 @@ import {
 import { DatePicker } from '@/components/ui/date-picker';
 import { staffApi } from '@/lib/api/staff';
 import { authApi } from '@/lib/api/auth';
-import {
-  ChevronLeft,
-  Edit,
-  Save,
-  X,
-  Trash2,
-  Calendar,
-  Mail,
-  Phone,
-  Building,
-  Building2,
-  Briefcase,
-  Award,
-  FileText,
-  Clock,
-  Stethoscope,
-  Shield,
-  ClipboardList,
-  Pill,
-  FlaskConical,
-  Receipt,
-  GraduationCap,
-  ExternalLink,
-  KeyRound,
-  History,
-} from 'lucide-react';
+
 import StaffActivityLog from './StaffActivityLog';
 import { StaffWardAssignments } from './StaffWardAssignments';
 

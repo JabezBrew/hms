@@ -1,3 +1,8 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -12,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, CreditCard, Loader2, DollarSign, Receipt } from 'lucide-react';
+
 import { useRecordPayment } from '@/hooks/useBillingQueries';
 import { toast } from 'sonner';
 

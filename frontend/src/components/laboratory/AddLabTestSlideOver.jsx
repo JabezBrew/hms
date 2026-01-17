@@ -1,3 +1,10 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,15 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  X,
-  TestTube2,
-  Check,
-  Loader2,
-  DollarSign,
-  Clock,
-  FlaskConical,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import {
   useCreateLabTest,

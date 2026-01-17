@@ -1,10 +1,8 @@
 
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  MoreHorizontalIcon,
-} from "lucide-react"
 
+import ChevronLeftIcon from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRightIcon from 'lucide-react/dist/esm/icons/chevron-right.js';
+import MoreHorizontalIcon from 'lucide-react/dist/esm/icons/ellipsis.js';
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button";
 

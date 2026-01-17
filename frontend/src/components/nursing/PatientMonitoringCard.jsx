@@ -1,10 +1,15 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Activity, AlertTriangle, Pill, ClipboardList,
-  Heart, Thermometer, Wind, Droplets
-} from 'lucide-react';
+
 import { useNavigate } from 'react-router-dom';
 
 export function PatientMonitoringCard({ patientData }) {

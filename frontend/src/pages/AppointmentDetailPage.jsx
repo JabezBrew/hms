@@ -1,10 +1,11 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import AppointmentDetail from '@/components/appointments/AppointmentDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 
 const AppointmentDetailPage = () => {

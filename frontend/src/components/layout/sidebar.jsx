@@ -1,26 +1,24 @@
-import {
-  LayoutDashboard,
-  Calendar,
-  Inbox,
-  Settings,
-  Activity,
-  FileText,
-  Pill,
-  FlaskConical,
-  CreditCard,
-  Shield,
-  Package,
-  Clock,
-  BookOpen,
-  ClipboardList,
-  FileSearch,
-  TestTube2,
-  Droplet,
-  ArrowLeftRight,
-  BarChart3,
-  FolderTree,
-} from "lucide-react"
 
+import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import BookOpen from 'lucide-react/dist/esm/icons/book-open.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import FileSearch from 'lucide-react/dist/esm/icons/file-search.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import {
   SidebarContent,
   SidebarGroup,

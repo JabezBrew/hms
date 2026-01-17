@@ -1,3 +1,12 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import HeartPulse from 'lucide-react/dist/esm/icons/heart-pulse.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState } from 'react';
 import { cn, normalizeApiResults } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -32,17 +41,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Plus,
-  Edit,
-  Trash2,
-  Users,
-  UserPlus,
-  Star,
-  Stethoscope,
-  HeartPulse,
-  Loader2,
-} from 'lucide-react';
+
 import {
   useStaffAssignments,
   useStaffRoles,

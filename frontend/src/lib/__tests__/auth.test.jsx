@@ -14,6 +14,8 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderHook } from '@testing-library/react'
 import { AuthProvider, useAuth } from '../auth'
+import { AUTH_STORAGE_KEYS } from '../auth-storage'
+import { getStorageKey } from '../safe-storage'
 
 // Mock the auth API
 vi.mock('../api/auth', () => ({
@@ -38,6 +40,7 @@ vi.mock('../notifications', () => ({
 const mockPerformTokenRefresh = vi.fn()
 vi.mock('../api-client', () => ({
   setAuthTokenProvider: vi.fn(),
+  setFacilityCodeProvider: vi.fn(),
   performTokenRefresh: () => mockPerformTokenRefresh(),
 }))
 
@@ -68,6 +71,13 @@ const localStorageMock = {
 }
 
 Object.defineProperty(window, 'localStorage', { value: localStorageMock })
+
+const authStorageKey = (key) => getStorageKey(AUTH_STORAGE_KEYS[key].current)
+const AUTH_STORAGE = {
+  user: authStorageKey('user'),
+  sessionStartTime: authStorageKey('sessionStartTime'),
+  refreshTokenIssuedAt: authStorageKey('refreshTokenIssuedAt'),
+}
 
 // Test component that uses useAuth
 function TestConsumer() {
@@ -123,9 +133,9 @@ describe('AuthProvider', () => {
         role: 'doctor',
       }
 
-      localStorageMock.store['user'] = JSON.stringify(storedUser)
-      localStorageMock.store['sessionStartTime'] = Date.now().toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
@@ -144,7 +154,7 @@ describe('AuthProvider', () => {
     })
 
     it('clears user if stored user data is invalid JSON', async () => {
-      localStorageMock.store['user'] = 'invalid-json'
+      localStorageMock.store[AUTH_STORAGE.user] = 'invalid-json'
 
       render(
         <AuthProvider>
@@ -156,7 +166,7 @@ describe('AuthProvider', () => {
         expect(screen.getByTestId('loading').textContent).toBe('false')
       })
 
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('user')
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.user)
       expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
     })
 
@@ -168,9 +178,9 @@ describe('AuthProvider', () => {
       }
 
       // Session started 8+ hours ago (expired)
-      localStorageMock.store['user'] = JSON.stringify(storedUser)
-      localStorageMock.store['sessionStartTime'] = (Date.now() - 9 * 60 * 60 * 1000).toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = (Date.now() - 9 * 60 * 60 * 1000).toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       render(
         <AuthProvider>
@@ -219,9 +229,9 @@ describe('AuthProvider', () => {
         expect(screen.getByTestId('isAuthenticated').textContent).toBe('true')
       })
 
-      expect(authApi.login).toHaveBeenCalledWith('test@test.com', 'password123')
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('sessionStartTime', expect.any(String))
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('refreshTokenIssuedAt', expect.any(String))
+      expect(authApi.login).toHaveBeenCalledWith('test@test.com', 'password123', undefined)
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(AUTH_STORAGE.sessionStartTime, expect.any(String))
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(AUTH_STORAGE.refreshTokenIssuedAt, expect.any(String))
     })
 
     it('stores user data with role in localStorage', async () => {
@@ -249,7 +259,7 @@ describe('AuthProvider', () => {
       await user.click(screen.getByText('Login'))
 
       await waitFor(() => {
-        const storedUser = JSON.parse(localStorageMock.store['user'])
+        const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
         expect(storedUser.role).toBe('doctor')
         expect(storedUser.email).toBe('doctor@test.com')
       })
@@ -308,7 +318,7 @@ describe('AuthProvider', () => {
       await user.click(screen.getByText('Login'))
 
       await waitFor(() => {
-        const storedUser = JSON.parse(localStorageMock.store['user'])
+        const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
         expect(storedUser.accessContext).toEqual({
           is_offsite: true,
           is_readonly: true,
@@ -361,9 +371,9 @@ describe('AuthProvider', () => {
       })
 
       expect(authApi.logout).toHaveBeenCalled()
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('user')
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('sessionStartTime')
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('refreshTokenIssuedAt')
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.user)
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.sessionStartTime)
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.refreshTokenIssuedAt)
       expect(queryClient.clear).toHaveBeenCalled()
       expect(notifications.success).toHaveBeenCalledWith('Logged out successfully')
     })
@@ -375,9 +385,9 @@ describe('AuthProvider', () => {
         role: 'doctor',
       }
 
-      localStorageMock.store['user'] = JSON.stringify(storedUser)
-      localStorageMock.store['sessionStartTime'] = Date.now().toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
@@ -442,8 +452,8 @@ describe('AuthProvider', () => {
 
   describe('Session validation', () => {
     it('isSessionValid returns true for fresh session', () => {
-      localStorageMock.store['sessionStartTime'] = Date.now().toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -455,8 +465,8 @@ describe('AuthProvider', () => {
     it('isSessionValid returns false when refresh token expired (7+ days)', () => {
       // Refresh token issued 8 days ago
       const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
-      localStorageMock.store['sessionStartTime'] = eightDaysAgo.toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = eightDaysAgo.toString()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = eightDaysAgo.toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = eightDaysAgo.toString()
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -468,8 +478,8 @@ describe('AuthProvider', () => {
     it('isSessionValid returns false when session exceeds 8 hours', () => {
       // Session started 9 hours ago
       const nineHoursAgo = Date.now() - 9 * 60 * 60 * 1000
-      localStorageMock.store['sessionStartTime'] = nineHoursAgo.toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = nineHoursAgo.toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -493,8 +503,8 @@ describe('AuthProvider', () => {
 
   describe('Token refresh', () => {
     it('refreshes token successfully', async () => {
-      localStorageMock.store['sessionStartTime'] = Date.now().toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       mockPerformTokenRefresh.mockResolvedValue('new-access-token')
 
@@ -512,7 +522,7 @@ describe('AuthProvider', () => {
       })
 
       expect(newToken).toBe('new-access-token')
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('refreshTokenIssuedAt', expect.any(String))
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(AUTH_STORAGE.refreshTokenIssuedAt, expect.any(String))
     })
 
     it('logs out on refresh failure', async () => {
@@ -522,9 +532,9 @@ describe('AuthProvider', () => {
         role: 'doctor',
       }
 
-      localStorageMock.store['user'] = JSON.stringify(storedUser)
-      localStorageMock.store['sessionStartTime'] = Date.now().toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       // First call during mount succeeds, second call (manual refresh) fails
       mockPerformTokenRefresh
@@ -549,8 +559,8 @@ describe('AuthProvider', () => {
 
     it('does not refresh if session is invalid', async () => {
       // Session started 9 hours ago (expired)
-      localStorageMock.store['sessionStartTime'] = (Date.now() - 9 * 60 * 60 * 1000).toString()
-      localStorageMock.store['refreshTokenIssuedAt'] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = (Date.now() - 9 * 60 * 60 * 1000).toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,

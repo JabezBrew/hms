@@ -1,9 +1,10 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import AppointmentForm from '@/components/appointments/AppointmentForm';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';

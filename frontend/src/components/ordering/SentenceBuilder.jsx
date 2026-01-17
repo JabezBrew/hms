@@ -1,9 +1,10 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, X } from "lucide-react"
 
 export function SentenceBuilder() {
     const [orders, setOrders] = useState([])

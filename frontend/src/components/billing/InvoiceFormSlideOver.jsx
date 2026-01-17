@@ -1,3 +1,8 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
+
 import { useCreateInvoice, useServices } from '@/hooks/useBillingQueries';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';

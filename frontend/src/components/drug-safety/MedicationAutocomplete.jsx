@@ -1,8 +1,12 @@
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState } from 'react';
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { Check, ChevronsUpDown, Pill, Loader2 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { useDrugSearch } from '@/hooks/useDrugSafetyQueries';
 import { useDebounce } from '@/hooks/use-debounce';

@@ -52,6 +52,19 @@ class ReferralViewSet(viewsets.ModelViewSet):
             return ReferralListSerializer
         return ReferralSerializer
 
+    def _get_inbox_queryset(self, practitioner):
+        return self.get_queryset().filter(
+            Q(referred_to_provider=practitioner) |
+            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
+        ).exclude(
+            status__in=[
+                ReferralStatus.DRAFT,
+                ReferralStatus.COMPLETED,
+                ReferralStatus.DECLINED,
+                ReferralStatus.CANCELLED,
+            ]
+        )
+
     def get_queryset(self):
         """
         Filter referrals with optimized queries.
@@ -544,19 +557,30 @@ class ReferralViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Get referrals sent to this practitioner or pending for their department
-        queryset = self.get_queryset().filter(
-            Q(referred_to_provider=practitioner) |
-            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
-        ).exclude(
-            status__in=[ReferralStatus.DRAFT, ReferralStatus.COMPLETED, ReferralStatus.DECLINED, ReferralStatus.CANCELLED]
-        )
+        queryset = self._get_inbox_queryset(practitioner)
+        total = queryset.count()
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({
-            'count': queryset.count(),
+            'count': total,
             'referrals': serializer.data
         })
+
+    @action(detail=False, methods=['get'], url_path='inbox-count', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    def inbox_count(self, request):
+        """
+        Get referral inbox count for the current user.
+        """
+        try:
+            practitioner = request.user.staff_profile.practitioner_profile
+        except AttributeError:
+            return Response(
+                {'error': 'Only practitioners have an inbox'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        total = self._get_inbox_queryset(practitioner).count()
+        return Response({'count': total})
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     def sent(self, request):

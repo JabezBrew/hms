@@ -1,7 +1,9 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,7 +104,6 @@ const ScheduleSlotsPage = () => {
             return dateString;
         }
     };
-
 
     // Get status badge color
     const getStatusBadge = (status) => {

@@ -1,8 +1,8 @@
+import Lightbulb from 'lucide-react/dist/esm/icons/lightbulb.js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { Lightbulb } from "lucide-react";
 
 /**
  * AssessmentPlanStep - Final step of consultation workflow

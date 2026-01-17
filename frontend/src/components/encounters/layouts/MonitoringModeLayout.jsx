@@ -1,24 +1,22 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
+import Minus from 'lucide-react/dist/esm/icons/minus.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import {
-  Activity,
-  Heart,
-  Droplet,
-  Thermometer,
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Clock,
-  User,
-  Pill,
-  ClipboardList,
-  Bell,
-  CheckCircle2,
-} from 'lucide-react';
 
 /**
  * Monitoring Mode Layout

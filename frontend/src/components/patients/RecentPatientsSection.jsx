@@ -1,7 +1,8 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, ChevronRight } from "lucide-react";
 
 /**
  * RecentPatientsSection - Horizontal scrollable row of recently accessed patients

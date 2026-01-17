@@ -1,14 +1,12 @@
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PatientChronicleCard } from "@/components/chronicle";
-import {
-  Users,
-  Stethoscope,
-  Building2,
-  ClipboardList,
-  Search,
-} from "lucide-react";
 
 /**
  * ContextPatientsSection - Role-specific patient list

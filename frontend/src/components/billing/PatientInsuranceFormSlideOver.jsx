@@ -1,3 +1,6 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
-import { X, Shield, Loader2 } from 'lucide-react';
+
 import {
   useCreatePatientInsurance,
   useUpdatePatientInsurance,
@@ -21,7 +24,8 @@ import {
   useInsurancePlans,
 } from '@/hooks/useBillingQueries';
 import { toast } from 'sonner';
-import { format, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
 import PatientSelector from '@/components/patients/PatientSelector';
 
 /**

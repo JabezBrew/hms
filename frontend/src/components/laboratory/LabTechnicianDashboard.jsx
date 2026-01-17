@@ -1,3 +1,13 @@
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import Play from 'lucide-react/dist/esm/icons/play.js';
+import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,19 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  TestTube2,
-  AlertTriangle,
-  Clock,
-  User,
-  Calendar,
-  Search,
-  Package,
-  CheckCircle2,
-  Play,
-  Beaker,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import {
   useLabOrders,
   useCollectLabOrder,

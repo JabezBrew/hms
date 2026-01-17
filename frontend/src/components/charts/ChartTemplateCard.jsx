@@ -5,6 +5,26 @@
  * Follows Chronicle Design System with warm colors and editorial typography.
  */
 
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Brain from 'lucide-react/dist/esm/icons/brain.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Flame from 'lucide-react/dist/esm/icons/flame.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Bandage from 'lucide-react/dist/esm/icons/bandage.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Apple from 'lucide-react/dist/esm/icons/apple.js';
+import Move from 'lucide-react/dist/esm/icons/move.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import Copy from 'lucide-react/dist/esm/icons/copy.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import Globe from 'lucide-react/dist/esm/icons/globe.js';
+import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,28 +34,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ClipboardList,
-  Brain,
-  Heart,
-  Wind,
-  Flame,
-  Droplets,
-  Activity,
-  Bandage,
-  Shield,
-  Apple,
-  Move,
-  MoreHorizontal,
-  Copy,
-  Pencil,
-  Trash2,
-  Eye,
-  Users,
-  Building,
-  Globe,
-  Lock
-} from "lucide-react";
 
 // Category to icon mapping
 const CATEGORY_ICONS = {

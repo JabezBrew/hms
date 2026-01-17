@@ -1,3 +1,10 @@
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -8,7 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { ClipboardList, Calendar, FileText, Users, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

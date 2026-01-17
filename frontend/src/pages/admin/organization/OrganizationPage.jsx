@@ -1,3 +1,17 @@
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import UserCog from 'lucide-react/dist/esm/icons/user-cog.js';
+import BedDouble from 'lucide-react/dist/esm/icons/bed-double.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
@@ -37,22 +51,7 @@ import { LeadershipPanel } from './components/LeadershipPanel';
 import { StaffPanel } from './components/StaffPanel';
 import { OpsStaffPanel } from './components/OpsStaffPanel';
 import { WardAllocationPanel } from './components/WardAllocationPanel';
-import {
-  Building2,
-  ChevronRight,
-  ChevronDown,
-  Plus,
-  Search,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Users,
-  UserCog,
-  BedDouble,
-  RefreshCw,
-  FolderTree,
-  X,
-} from 'lucide-react';
+
 import { toast } from 'sonner';
 
 /**

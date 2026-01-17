@@ -1,11 +1,14 @@
+import Bold from 'lucide-react/dist/esm/icons/bold.js';
+import Italic from 'lucide-react/dist/esm/icons/italic.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import ListOrdered from 'lucide-react/dist/esm/icons/list-ordered.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Mic from 'lucide-react/dist/esm/icons/mic.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import { useState, useRef, useEffect } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-    Bold, Italic, List, ListOrdered,
-    Sparkles, Mic, ChevronDown
-} from "lucide-react"
 import {
     DropdownMenu,
     DropdownMenuContent,

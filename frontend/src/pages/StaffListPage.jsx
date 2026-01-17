@@ -1,3 +1,11 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStaff } from "@/hooks/useStaffQueries";
@@ -13,16 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
-import {
-  Search,
-  Plus,
-  Users,
-  Filter,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  X
-} from "lucide-react";
 
 /**
  * StaffListPage - Chronicle-style staff directory

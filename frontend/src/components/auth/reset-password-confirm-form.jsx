@@ -1,3 +1,8 @@
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { authApi } from '../../lib/api/auth'
@@ -6,7 +11,6 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Alert, AlertDescription } from '../ui/alert'
 import { notifications } from '../../lib/notifications'
-import { Loader2, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react'
 
 export function ResetPasswordConfirmForm() {
   const [searchParams] = useSearchParams()

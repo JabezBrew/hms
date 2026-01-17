@@ -1,15 +1,14 @@
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bell,
-  FileText,
-  CheckCircle,
-  XCircle,
-  Calendar,
-  User,
-  ArrowRight,
-} from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -18,7 +17,7 @@ import {
 } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { fetchUpcomingAppointments } from '@/lib/api';

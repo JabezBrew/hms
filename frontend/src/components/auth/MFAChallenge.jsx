@@ -1,5 +1,11 @@
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';
+import Key from 'lucide-react/dist/esm/icons/key.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Copy from 'lucide-react/dist/esm/icons/copy.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useEffect, useMemo, useState } from 'react'
-import { Shield, Smartphone, Key, CheckCircle2, AlertCircle, Copy, Check } from 'lucide-react'
 import { authApi } from '@/lib/api/auth'
 import { notifications } from '@/lib/notifications'
 import { toRegistrationOptions, toAuthenticationOptions, serializeCredential } from '@/lib/webauthn'

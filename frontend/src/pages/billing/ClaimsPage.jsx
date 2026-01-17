@@ -1,3 +1,16 @@
+import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,21 +26,6 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClaims } from '@/hooks/useBillingQueries';
 import { useDebounce } from '@/hooks/use-debounce';
-import {
-  FileSpreadsheet,
-  Search,
-  ChevronRight,
-  ChevronLeft,
-  AlertTriangle,
-  RefreshCw,
-  Filter,
-  Calendar,
-  Building,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Send,
-} from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },

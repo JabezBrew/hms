@@ -1,3 +1,15 @@
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Printer from 'lucide-react/dist/esm/icons/printer.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useMemo, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -14,20 +26,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { usePayments } from '@/hooks/useBillingQueries';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
-import {
-  CreditCard,
-  Search,
-  AlertTriangle,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  Printer,
-  FileText,
-  ArrowLeft,
-  Filter,
-  Calendar,
-  Loader2,
-} from 'lucide-react';
 
 const PAYMENT_METHODS = [
   { value: 'all', label: 'All Methods' },

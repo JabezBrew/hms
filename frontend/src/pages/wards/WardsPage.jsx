@@ -1,20 +1,20 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Search,
-  Plus,
-  Building2,
-  Bed,
-  Users,
-  Activity,
-  BarChart3,
-  ChevronRight,
-  RefreshCw
-} from 'lucide-react';
+
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { useWards } from '@/hooks/useWardQueries';
 
@@ -42,11 +42,8 @@ export default function WardsPage() {
   const breadcrumbs = [{ label: 'Wards', path: '/wards' }];
 
   useEffect(() => {
-    const userJson = localStorage.getItem('user');
-    if (userJson) {
-      const user = JSON.parse(userJson);
-      setIsAdmin(user.role === 'admin');
-    }
+    const user = getAuthJSON('user');
+    setIsAdmin(user?.role === 'admin');
   }, []);
 
   // Calculate aggregate statistics

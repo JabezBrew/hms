@@ -1,3 +1,9 @@
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import ClipboardCopy from 'lucide-react/dist/esm/icons/clipboard-copy.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Shield, Send, KeyRound, Building2, ClipboardCopy, X } from "lucide-react";
+
 import {
   useCreateConsentGrant,
   useCreateCrossFacilityReferral,

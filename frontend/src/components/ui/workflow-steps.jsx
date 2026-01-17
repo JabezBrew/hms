@@ -1,6 +1,7 @@
+import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+
 import {
   Tooltip,
   TooltipContent,

@@ -1,7 +1,14 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { X, ChevronLeft, ChevronRight, Save, Check, AlertCircle, Stethoscope } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   WorkflowSteps,

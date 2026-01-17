@@ -1,3 +1,5 @@
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info, AlertTriangle } from 'lucide-react';
+
 import { fetchWards, fetchBeds } from '@/lib/api';
 import { useAvailableBeds } from '@/hooks/useWardQueries';
 import { SectionSelector } from './SectionSelector';

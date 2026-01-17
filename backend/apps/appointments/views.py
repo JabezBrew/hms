@@ -240,6 +240,48 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
 
         return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['get'])
+    def available_slots(self, request):
+        """
+        Get available slots for scheduling using just-in-time computation.
+        This computes slots on-demand from recurring schedules without pre-generation.
+        """
+        practitioner_id = request.query_params.get('practitioner_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        appointment_type_id = request.query_params.get('appointment_type_id')
+
+        if not all([practitioner_id, start_date, end_date]):
+            return Response(
+                {"error": "Missing required parameters: practitioner_id, start_date, end_date"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            facility = get_user_facility(request)
+            slots = AvailabilityService.compute_available_slots(
+                practitioner_id=practitioner_id,
+                start_date=start_date,
+                end_date=end_date,
+                appointment_type_id=appointment_type_id,
+                facility=facility,
+            )
+
+            status_filter = request.query_params.get('status', 'free')
+            if status_filter:
+                slots = [slot for slot in slots if slot['status'] == status_filter]
+
+            return Response({
+                "total": len(slots),
+                "slots": slots
+            })
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 class AppointmentTypeViewSet(viewsets.ModelViewSet):
     """

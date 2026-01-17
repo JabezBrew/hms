@@ -1,23 +1,22 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ClipboardEdit from 'lucide-react/dist/esm/icons/clipboard-pen.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  X,
-  TestTube2,
-  User,
-  Calendar,
-  Clock,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  FileText,
-  Loader2,
-  Droplet,
-  ClipboardEdit,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { useLabOrder } from "@/hooks/useLabQueries";
 import { CancelOrderDialog } from "./CancelOrderDialog";
 import { SpecimenCollectionDialog } from "./SpecimenCollectionDialog";

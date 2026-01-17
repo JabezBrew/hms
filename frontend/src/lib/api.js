@@ -7,6 +7,7 @@ import { staffApi } from './api/staff';
 import { admissionsApi } from './api/admissions';
 import { encountersApi } from './api/encounters';
 import { apiClient } from './api-client';
+import { getAuthJSON } from '@/lib/auth-storage';
 
 export { apiClient };
 
@@ -110,13 +111,11 @@ export const cancelSchedule = async (mappingId) => {
  */
 export const fetchUpcomingAppointments = async () => {
   try {
-    // Get user from localStorage
-    const userJson = localStorage.getItem('user');
-    if (!userJson) {
+    // Get user from local storage safely
+    const user = getAuthJSON('user');
+    if (!user) {
       return [];
     }
-
-    const user = JSON.parse(userJson);
 
     // If user is an admin, don't show any notifications
     if (user.role === 'admin') {
@@ -139,35 +138,39 @@ export const fetchUpcomingAppointments = async () => {
 
     // Process appointments for notifications
     if (response && response.entry) {
-      return response.entry
-        .filter(entry => entry.resource && entry.resource.resourceType === 'Appointment')
-        .map(entry => {
-          const appointment = entry.resource;
+      return response.entry.reduce((acc, entry) => {
+        if (!entry.resource || entry.resource.resourceType !== 'Appointment') {
+          return acc;
+        }
 
-          // Get patient name
-          const patientParticipant = appointment.participant?.find(p =>
-            p.actor?.reference?.startsWith('Patient/'));
-          const patientName = patientParticipant?.actor?.display || 'Unknown Patient';
+        const appointment = entry.resource;
 
-          // Format start time
-          let startTime = 'Unknown time';
-          try {
-            if (appointment.start) {
-              const date = new Date(appointment.start);
-              startTime = date.toLocaleString();
-            }
-          } catch (error) {
-            console.error('Error parsing appointment date:', error);
+        // Get patient name
+        const patientParticipant = appointment.participant?.find(p =>
+          p.actor?.reference?.startsWith('Patient/'));
+        const patientName = patientParticipant?.actor?.display || 'Unknown Patient';
+
+        // Format start time
+        let startTime = 'Unknown time';
+        try {
+          if (appointment.start) {
+            const date = new Date(appointment.start);
+            startTime = date.toLocaleString();
           }
+        } catch (error) {
+          console.error('Error parsing appointment date:', error);
+        }
 
-          return {
-            id: appointment.id,
-            patientName,
-            startTime,
-            status: appointment.status,
-            type: appointment.appointmentType?.coding?.[0]?.display || 'General'
-          };
+        acc.push({
+          id: appointment.id,
+          patientName,
+          startTime,
+          status: appointment.status,
+          type: appointment.appointmentType?.coding?.[0]?.display || 'General'
         });
+
+        return acc;
+      }, []);
     }
 
     return [];

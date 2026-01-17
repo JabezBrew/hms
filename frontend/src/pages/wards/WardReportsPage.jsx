@@ -1,8 +1,29 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, BarChart3 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
-import { WardOccupancyReports } from '@/components/reports/WardOccupancyReports';
+
+// Lazy load chart-heavy reports component to reduce initial bundle size
+const WardOccupancyReports = lazy(() =>
+  import('@/components/reports/WardOccupancyReports').then(m => ({ default: m.WardOccupancyReports }))
+);
+
+// Loading skeleton for reports
+const ReportsLoadingFallback = () => (
+  <div className="space-y-6">
+    <div className="flex gap-4">
+      <Skeleton className="h-32 flex-1" />
+      <Skeleton className="h-32 flex-1" />
+      <Skeleton className="h-32 flex-1" />
+    </div>
+    <Skeleton className="h-64 w-full" />
+    <Skeleton className="h-48 w-full" />
+  </div>
+);
 
 /**
  * WardReportsPage - Chronicle-style ward reports page
@@ -57,7 +78,9 @@ export default function WardReportsPage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <WardOccupancyReports />
+        <Suspense fallback={<ReportsLoadingFallback />}>
+          <WardOccupancyReports />
+        </Suspense>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+
 import TemplateSelector from '@/components/clinical-notes/TemplateSelector';
 import DynamicNoteForm from '@/components/clinical-notes/DynamicNoteForm';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
@@ -198,7 +199,6 @@ export default function CreateClinicalNotePage() {
     toast.success('Template created successfully. You can now select it from the template list.');
     setShowTemplateBuilder(false);
   };
-
 
   // Check if encounter is valid for adding notes
   const isEncounterValid = encounter && 

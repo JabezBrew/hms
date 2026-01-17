@@ -1,7 +1,11 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Plus, ArrowLeft, Clock, Trash2, Edit } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

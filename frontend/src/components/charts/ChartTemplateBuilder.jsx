@@ -8,6 +8,27 @@
  * 4. Preview (show how data entry will look)
  */
 
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import GripVertical from 'lucide-react/dist/esm/icons/grip-vertical.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import ListOrdered from 'lucide-react/dist/esm/icons/list-ordered.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import Brain from 'lucide-react/dist/esm/icons/brain.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Bandage from 'lucide-react/dist/esm/icons/bandage.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,29 +60,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  X,
-  ClipboardList,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Loader2,
-  Plus,
-  GripVertical,
-  Pencil,
-  Trash2,
-  Eye,
-  Settings,
-  ListOrdered,
-  Info,
-  Brain,
-  Heart,
-  Wind,
-  Beaker,
-  Activity,
-  Bandage,
-  MoreHorizontal,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import { ChartFieldEditor } from "./ChartFieldEditor";
 import { ChartFieldRenderer } from "./ChartFieldRenderer";

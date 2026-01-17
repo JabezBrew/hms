@@ -1,3 +1,15 @@
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -14,21 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  User,
-  Calendar,
-  Clock,
-  Building2,
-  FileText,
-  CheckCircle,
-  XCircle,
-  Search,
-  AlertCircle,
-  Stethoscope,
-  PlayCircle,
-  MessageSquare,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import {
   useReferralInbox,
   useAcceptReferral,

@@ -1,15 +1,14 @@
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  TestTube2,
-  Clock,
-  User,
-  Calendar,
-  AlertTriangle,
-  ChevronRight,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 
 /**
  * LabOrderCard - Chronicle-styled card for displaying lab orders

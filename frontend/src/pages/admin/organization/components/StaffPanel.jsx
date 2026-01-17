@@ -1,3 +1,10 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -31,8 +38,8 @@ import {
 } from '@/hooks/useOrganization';
 import { useSearchStaff } from '@/hooks/useStaffQueries';
 import { useDebounce } from '@/hooks/use-debounce';
-import { Plus, Trash2, Users, Star, ChevronUp, ChevronDown, Pencil } from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 import { toast } from 'sonner';
 import { cn, normalizeApiResults, getHashColor } from '@/lib/utils';
 

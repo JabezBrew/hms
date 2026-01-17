@@ -1,5 +1,6 @@
 
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { DayPicker, useNavigation } from "react-day-picker"
 
 import { cn } from "@/lib/utils"

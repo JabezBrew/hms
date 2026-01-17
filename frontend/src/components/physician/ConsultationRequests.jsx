@@ -1,3 +1,7 @@
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,8 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-import { MessageSquare, Clock, CheckCircle, XCircle } from 'lucide-react';
+import format from 'date-fns/format';
 
 export function ConsultationRequests({ patient }) {
   const [consultations, setConsultations] = useState([]);

@@ -1,5 +1,6 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { Component } from 'react';
-import { AlertCircle } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 

@@ -1,10 +1,16 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import React from 'react';
-import { AlertTriangle, User, TestTube2, TrendingUp, TrendingDown, Eye } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { useLabResults } from '@/hooks/useLabQueries';
 import { useNavigate } from 'react-router-dom';
 

@@ -1,3 +1,13 @@
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,18 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  TestTube2,
-  Search,
-  Plus,
-  RefreshCw,
-  Loader2,
-  FlaskConical,
-  LayoutGrid,
-  List,
-  Filter,
-  X,
-} from "lucide-react";
+
 import { LabTestCard, LabPanelCard } from "@/components/laboratory/LabTestCard";
 import { LabTestCustomizeSlideOver } from "@/components/laboratory/LabTestCustomizeSlideOver";
 import { AddLabTestSlideOver } from "@/components/laboratory/AddLabTestSlideOver";

@@ -1,5 +1,10 @@
+import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Play from 'lucide-react/dist/esm/icons/play.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import React from 'react';
-import { Beaker, Clock, CheckCircle, Play, TestTube2 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

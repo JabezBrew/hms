@@ -1,7 +1,11 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Search, FileText, FlaskConical, Pill, Calendar } from "lucide-react"
 
 export function TimelineFeed({ items }) {
     const getIcon = (type) => {

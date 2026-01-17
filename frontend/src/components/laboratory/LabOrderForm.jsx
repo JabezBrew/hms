@@ -1,3 +1,12 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,7 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { X, TestTube2, Package, AlertCircle, Check, Search, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   WorkflowSteps,

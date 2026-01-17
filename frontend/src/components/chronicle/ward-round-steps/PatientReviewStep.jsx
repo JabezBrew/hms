@@ -1,10 +1,15 @@
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Bed, Calendar, Clock, User } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+
+import format from 'date-fns/format';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 
 /**
  * PatientReviewStep - Step 1 of Ward Round Workflow

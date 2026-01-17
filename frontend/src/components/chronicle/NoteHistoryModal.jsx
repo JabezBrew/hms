@@ -1,3 +1,10 @@
+import History from 'lucide-react/dist/esm/icons/history.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -11,15 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  History,
-  ChevronRight,
-  Clock,
-  User,
-  FileText,
-  ArrowLeftRight,
-  ArrowRight,
-} from "lucide-react";
+
 import { useNoteEntryHistory, useCompareNoteVersions } from "@/hooks/useClinicalNotesQueries";
 import DiffRenderer from "./DiffRenderer";
 

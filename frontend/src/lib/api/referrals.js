@@ -119,6 +119,17 @@ export const referralsApi = {
     }
   },
 
+  getReferralInboxCount: async () => {
+    try {
+      const response = await apiClient.get('/referrals/inbox-count/');
+      return response?.count || 0;
+    } catch (error) {
+      // Return 0 on error to avoid breaking the UI
+      console.error('Failed to fetch referral inbox count:', error);
+      return 0;
+    }
+  },
+
   getReferralsSent: async () => {
     try {
       return await apiClient.get('/referrals/sent/');
@@ -156,8 +167,8 @@ export const referralsApi = {
 
   getUnreadNotificationCount: async () => {
     try {
-      const response = await apiClient.getAll('/referrals/notifications/?is_read=false');
-      return response?.length || 0;
+      const response = await apiClient.get('/referrals/notifications/unread-count/');
+      return response?.count || 0;
     } catch (error) {
       // Return 0 on error to avoid breaking the UI
       console.error('Failed to fetch unread count:', error);

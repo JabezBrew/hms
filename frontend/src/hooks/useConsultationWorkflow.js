@@ -2,6 +2,19 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 
+// Hoist RegExp patterns to module scope for performance
+const UNDERSCORE_REGEX = /_/g;
+const WORD_START_REGEX = /\b\w/g;
+
+/**
+ * Format a field key to a readable label.
+ * @param {string} field - The field key (e.g., 'chief_complaint')
+ * @returns {string} - Formatted label (e.g., 'Chief Complaint')
+ */
+function formatFieldLabel(field) {
+  return field.replace(UNDERSCORE_REGEX, ' ').replace(WORD_START_REGEX, l => l.toUpperCase());
+}
+
 /**
  * Consultation workflow step definitions
  * 3-step structure for outpatient/clinic consultations
@@ -41,8 +54,7 @@ function validateStep(stepId, data) {
 
   for (const field of step.required) {
     if (!data[field] || (typeof data[field] === 'string' && !data[field].trim())) {
-      const fieldLabel = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      errors[field] = `${fieldLabel} is required`;
+      errors[field] = `${formatFieldLabel(field)} is required`;
     }
   }
 

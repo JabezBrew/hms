@@ -1,3 +1,11 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,17 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Search,
-  Droplet,
-  RefreshCw,
-  AlertTriangle,
-  Clock,
-  User,
-  TestTube2,
-  MapPin,
-} from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+
+import format from "date-fns/format";
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
 import { useAuth } from "@/lib/auth";
 import { useLabOrders } from "@/hooks/useLabQueries";
 import { LabOrderDetailSlideOver, SpecimenCollectionDialog } from "@/components/laboratory";

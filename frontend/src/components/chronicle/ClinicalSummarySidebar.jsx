@@ -1,5 +1,14 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileWarning from 'lucide-react/dist/esm/icons/file-warning.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
+import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import { cn } from "@/lib/utils";
-import { AlertTriangle, ChevronRight, Pill, Activity, FileWarning, Droplet, ArrowDownCircle, ArrowUpCircle, CreditCard } from "lucide-react";
+
 import { useTodayFluidBalance } from "@/hooks/useNursingQueries";
 import { InvoiceChronicleCard } from "@/components/billing";
 

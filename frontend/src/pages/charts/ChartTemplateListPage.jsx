@@ -5,6 +5,17 @@
  * with search, filtering, and management actions.
  */
 
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Copy from 'lucide-react/dist/esm/icons/copy.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -34,19 +45,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  ClipboardList,
-  Plus,
-  Search,
-  Loader2,
-  MoreVertical,
-  Pencil,
-  Copy,
-  Trash2,
-  Eye,
-  EyeOff,
-  Filter,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { ChartTemplateCard } from "@/components/charts";

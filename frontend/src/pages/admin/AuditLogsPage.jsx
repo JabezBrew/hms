@@ -1,3 +1,13 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
 import { useState, useMemo, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
@@ -19,20 +29,9 @@ import {
   useAuditFilters,
   exportAuditLogs,
 } from '@/hooks/useAuditLogs';
-import {
-  Search,
-  Shield,
-  Filter,
-  Download,
-  RefreshCw,
-  X,
-  Calendar,
-  Activity,
-  TrendingUp,
-  Users,
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 
 /**
  * AuditLogsPage - Admin audit logs with Chronicle styling

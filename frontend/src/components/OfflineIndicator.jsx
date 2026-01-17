@@ -1,47 +1,29 @@
-import { useEffect, useState } from 'react';
-import { WifiOff, Wifi } from 'lucide-react';
+import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js';
+import Wifi from 'lucide-react/dist/esm/icons/wifi.js';
+import { useEffect } from 'react';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { useOnlineStatusWithReconnect } from '@/hooks/useOnlineStatus';
 
 /**
  * OfflineIndicator component
  * Displays a notification when the user loses internet connection
  * Critical for hospital environments where connectivity may be intermittent
+ * Uses shared online status listener to avoid duplicate event handlers.
  */
 export function OfflineIndicator() {
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [wasOffline, setWasOffline] = useState(false);
-  const [showReconnected, setShowReconnected] = useState(false);
+  const { isOnline, showReconnected, clearReconnected } = useOnlineStatusWithReconnect();
 
+  // Hide reconnected message after 3 seconds
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOffline(false);
+    if (showReconnected) {
+      const timer = setTimeout(clearReconnected, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showReconnected, clearReconnected]);
 
-      // Show reconnected message if we were offline before
-      if (wasOffline) {
-        setShowReconnected(true);
-        // Hide reconnected message after 3 seconds
-        setTimeout(() => {
-          setShowReconnected(false);
-          setWasOffline(false);
-        }, 3000);
-      }
-    };
-
-    const handleOffline = () => {
-      setIsOffline(true);
-      setWasOffline(true);
-      setShowReconnected(false);
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [wasOffline]);
+  const isOffline = !isOnline;
 
   // Show reconnected message
   if (showReconnected && !isOffline) {

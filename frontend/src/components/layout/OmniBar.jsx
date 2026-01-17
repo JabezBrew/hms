@@ -1,17 +1,15 @@
+import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Smile from 'lucide-react/dist/esm/icons/smile.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import Menu from 'lucide-react/dist/esm/icons/menu.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js';
 import * as React from "react"
-import {
-    Calculator,
-    Calendar,
-    CreditCard,
-    Settings,
-    Smile,
-    User,
-    Search,
-    Bell,
-    Menu,
-    LogOut,
-    UserCircle
-} from "lucide-react"
 
 import {
     CommandDialog,

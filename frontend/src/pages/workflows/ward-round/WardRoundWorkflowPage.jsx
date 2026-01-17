@@ -1,3 +1,8 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -9,7 +14,7 @@ import { usePatient } from '@/hooks/usePatientQueries';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Save } from 'lucide-react';
+
 import { toast } from 'sonner';
 
 /**

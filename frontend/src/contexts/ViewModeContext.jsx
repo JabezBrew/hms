@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { safeStorage } from '@/lib/safe-storage';
 
 const ViewModeContext = createContext(undefined);
 
@@ -10,14 +11,13 @@ export const VIEW_MODES = {
 
 export function ViewModeProvider({ children }) {
   const [viewMode, setViewMode] = useState(() => {
-    // Load from localStorage or default to documentation mode
-    const saved = localStorage.getItem('encounter_view_mode');
-    return saved || VIEW_MODES.DOCUMENTATION;
+    // Load from safe storage or default to documentation mode
+    return safeStorage.get('encounter_view_mode', VIEW_MODES.DOCUMENTATION);
   });
 
-  // Persist to localStorage when mode changes
+  // Persist to safe storage when mode changes
   useEffect(() => {
-    localStorage.setItem('encounter_view_mode', viewMode);
+    safeStorage.set('encounter_view_mode', viewMode);
   }, [viewMode]);
 
   const value = {

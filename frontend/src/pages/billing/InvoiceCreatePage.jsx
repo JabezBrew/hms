@@ -1,3 +1,11 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,16 +24,6 @@ import { useCreateInvoice, useServices } from '@/hooks/useBillingQueries';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
-import {
-  FileText,
-  ArrowLeft,
-  Loader2,
-  Plus,
-  Trash2,
-  User,
-  Calendar,
-  DollarSign,
-} from 'lucide-react';
 
 export default function InvoiceCreatePage() {
   const navigate = useNavigate();

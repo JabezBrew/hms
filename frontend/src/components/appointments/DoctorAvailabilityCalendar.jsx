@@ -1,3 +1,9 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CalendarCheck from 'lucide-react/dist/esm/icons/calendar-check.js';
+import CalendarX from 'lucide-react/dist/esm/icons/calendar-x.js';
 import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
@@ -5,28 +11,19 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  addMonths,
-  subMonths,
-  startOfWeek,
-  endOfWeek,
-  isBefore,
-  startOfDay,
-  isSameDay,
-  parseISO,
-  isWithinInterval
-} from 'date-fns';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Clock,
-  CalendarCheck,
-  CalendarX
-} from 'lucide-react';
+import format from 'date-fns/format';
+import startOfMonth from 'date-fns/startOfMonth';
+import endOfMonth from 'date-fns/endOfMonth';
+import addMonths from 'date-fns/addMonths';
+import subMonths from 'date-fns/subMonths';
+import startOfWeek from 'date-fns/startOfWeek';
+import endOfWeek from 'date-fns/endOfWeek';
+import isBefore from 'date-fns/isBefore';
+import startOfDay from 'date-fns/startOfDay';
+import isSameDay from 'date-fns/isSameDay';
+import parseISO from 'date-fns/parseISO';
+import isWithinInterval from 'date-fns/isWithinInterval';
+
 import {
   useAvailableSlots,
   useRecurringSchedules,

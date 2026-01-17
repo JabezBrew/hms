@@ -1,19 +1,21 @@
-import { useState } from 'react';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  FileText,
-  CheckCircle,
-  XCircle,
-  Calendar,
-  FlaskConical,
-  Clock,
-  AlertCircle,
-  Inbox,
-  RefreshCw,
-} from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow, format, isToday, isYesterday } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import format from 'date-fns/format';
+import isToday from 'date-fns/isToday';
+import isYesterday from 'date-fns/isYesterday';
 import { useAuth } from '@/lib/auth';
 import {
   useReferralNotifications,
@@ -113,67 +115,95 @@ const InboxPage = () => {
 
   // Fetch pending referrals (items requiring action)
   const { data: inboxData, isLoading: inboxLoading, refetch: refetchInbox } = useReferralInbox();
-  const pendingReferrals = inboxData?.referrals?.filter(r =>
-    ['pending', 'accepted', 'scheduled'].includes(r.status)
-  ) || [];
 
-  // Combine into unified items
-  const allItems = [];
+  // Memoize click handlers to avoid recreating functions on every render
+  const handleNotificationClick = useCallback((notification) => {
+    if (!notification.is_read) markAsRead.mutate(notification.id);
+    navigate('/referrals/inbox');
+  }, [markAsRead, navigate]);
 
-  // Add notifications
-  notifications.forEach((n) => {
-    allItems.push({
-      id: `notif-${n.id}`,
-      type: `referral_${n.event}`,
-      category: 'notification',
-      title: notificationConfig[`referral_${n.event}`]?.label || 'Referral Update',
-      subtitle: `#${n.referral_number} - ${n.referred_to_department}`,
-      timestamp: new Date(n.created_at),
-      isRead: n.is_read,
-      urgency: n.urgency,
-      data: n,
-      onClick: () => {
-        if (!n.is_read) markAsRead.mutate(n.id);
-        navigate('/referrals/inbox');
-      },
-    });
-  });
+  const handleReferralClick = useCallback(() => {
+    navigate('/referrals/inbox');
+  }, [navigate]);
 
-  // Add pending referrals as action items
-  pendingReferrals.forEach((r) => {
-    const hasNotification = notifications.some(n => n.referral === r.id);
-    if (!hasNotification) {
-      allItems.push({
-        id: `referral-${r.id}`,
-        type: 'referral_pending',
-        category: 'action',
-        title: `${r.patient_name || 'Patient'} - ${r.referred_to_department}`,
-        subtitle: `#${r.referral_number} - ${r.reason?.substring(0, 50)}${r.reason?.length > 50 ? '...' : ''}`,
-        timestamp: new Date(r.submitted_at || r.created_at),
-        isRead: true,
-        urgency: r.urgency,
-        status: r.status,
-        data: r,
-        onClick: () => navigate('/referrals/inbox'),
+  // Optimized: Compute all items, counts, and filtered results in a single pass
+  const { allItems, unreadCount, actionCount, filteredItems, groupedItems } = useMemo(() => {
+    const items = [];
+
+    // Build a Set for O(1) lookup of referral IDs with notifications
+    const notificationReferralIds = new Set(notifications.map(n => n.referral));
+
+    // Add notifications
+    notifications.forEach((n) => {
+      items.push({
+        id: `notif-${n.id}`,
+        type: `referral_${n.event}`,
+        category: 'notification',
+        title: notificationConfig[`referral_${n.event}`]?.label || 'Referral Update',
+        subtitle: `#${n.referral_number} - ${n.referred_to_department}`,
+        timestamp: new Date(n.created_at),
+        isRead: n.is_read,
+        urgency: n.urgency,
+        data: n,
+        notificationId: n.id,
       });
-    }
-  });
+    });
 
-  // Sort by timestamp
-  allItems.sort((a, b) => b.timestamp - a.timestamp);
+    // Filter and add pending referrals
+    const pendingReferrals = inboxData?.referrals?.filter(r =>
+      ['pending', 'accepted', 'scheduled'].includes(r.status)
+    ) || [];
 
-  // Filter items
-  const filteredItems = activeFilter === 'all'
-    ? allItems
-    : activeFilter === 'unread'
-    ? allItems.filter(item => !item.isRead)
-    : allItems.filter(item => item.category === 'action');
+    pendingReferrals.forEach((r) => {
+      // O(1) lookup instead of O(n) with .some()
+      if (!notificationReferralIds.has(r.id)) {
+        items.push({
+          id: `referral-${r.id}`,
+          type: 'referral_pending',
+          category: 'action',
+          title: `${r.patient_name || 'Patient'} - ${r.referred_to_department}`,
+          subtitle: `#${r.referral_number} - ${r.reason?.substring(0, 50)}${r.reason?.length > 50 ? '...' : ''}`,
+          timestamp: new Date(r.submitted_at || r.created_at),
+          isRead: true,
+          urgency: r.urgency,
+          status: r.status,
+          data: r,
+        });
+      }
+    });
 
-  // Group by date for timeline
-  const groupedItems = groupByDate(filteredItems);
+    // Sort by timestamp (newest first)
+    items.sort((a, b) => b.timestamp - a.timestamp);
 
-  const unreadCount = allItems.filter(item => !item.isRead).length;
-  const actionCount = allItems.filter(item => item.category === 'action').length;
+    // Single pass to compute counts and filtered items
+    let unread = 0;
+    let action = 0;
+    const filtered = [];
+
+    items.forEach((item) => {
+      if (!item.isRead) unread++;
+      if (item.category === 'action') action++;
+
+      // Add to filtered based on activeFilter
+      const includeInFiltered =
+        activeFilter === 'all' ||
+        (activeFilter === 'unread' && !item.isRead) ||
+        (activeFilter === 'action' && item.category === 'action');
+
+      if (includeInFiltered) {
+        filtered.push(item);
+      }
+    });
+
+    return {
+      allItems: items,
+      unreadCount: unread,
+      actionCount: action,
+      filteredItems: filtered,
+      groupedItems: groupByDate(filtered),
+    };
+  }, [notifications, inboxData, activeFilter]);
+
   const isLoading = notificationsLoading || inboxLoading;
 
   const handleRefresh = () => {
@@ -312,10 +342,15 @@ const InboxPage = () => {
                       const config = notificationConfig[item.type] || notificationConfig.referral_pending;
                       const Icon = config.icon;
 
+                      // Use memoized handlers instead of creating new functions
+                      const handleClick = item.notificationId
+                        ? () => handleNotificationClick(item.data)
+                        : handleReferralClick;
+
                       return (
                         <article
                           key={item.id}
-                          onClick={item.onClick}
+                          onClick={handleClick}
                           className={cn(
                             "relative pl-12 cursor-pointer group",
                             "animate-chronicle-enter",

@@ -1,3 +1,9 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { AlertTriangle, Plus, CheckCircle2, XCircle, Shield, Loader2 } from 'lucide-react';
+
 import {
   usePatientAllergies,
   useCreateAllergy,
@@ -23,7 +29,7 @@ import {
   useVerifyAllergy,
 } from '@/hooks/useDrugSafetyQueries';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 
 const ALLERGY_TYPES = [
   { value: 'drug', label: 'Drug' },

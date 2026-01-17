@@ -1,7 +1,8 @@
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronRight } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

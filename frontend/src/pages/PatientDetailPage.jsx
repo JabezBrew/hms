@@ -1,10 +1,13 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Edit2 from 'lucide-react/dist/esm/icons/pen.js';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { usePatient } from '@/hooks/usePatientQueries';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Plus, Edit2 } from 'lucide-react';
+
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';

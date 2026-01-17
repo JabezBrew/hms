@@ -1,3 +1,12 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import CircleDot from 'lucide-react/dist/esm/icons/circle-dot.js';
 import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,18 +21,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  Clock,
-  XCircle,
-  Calendar,
-  ArrowLeft,
-  Pill,
-  CircleDot,
-} from 'lucide-react';
-import { format, addDays, subDays } from 'date-fns';
+
+import format from 'date-fns/format';
+import addDays from 'date-fns/addDays';
+import subDays from 'date-fns/subDays';
 import { toast } from 'sonner';
 import { useMARGrid, useAdministerMedication, useCreateAndAdminister } from '@/hooks/useNursingQueries';
 import { cn } from '@/lib/utils';

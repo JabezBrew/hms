@@ -1,23 +1,22 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  AlertTriangle,
-  Calendar,
-  MapPin,
-  Phone,
-  FileText,
-  Activity,
-  Pill,
-  MoreHorizontal,
-  ClipboardList,
-  Droplets,
-  BarChart3,
-  Shield,
-  Download,
-  Stethoscope,
-  Clock,
-  Users,
-} from "lucide-react";
+
 import { VisitStatusBadge } from "@/components/visits/VisitStatusBadge";
 import {
   DropdownMenu,

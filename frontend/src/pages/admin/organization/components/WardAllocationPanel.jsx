@@ -1,3 +1,7 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import BedDouble from 'lucide-react/dist/esm/icons/bed-double.js';
+import Percent from 'lucide-react/dist/esm/icons/percent.js';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +24,7 @@ import {
   useDeleteWardAllocation,
 } from '@/hooks/useOrganization';
 import { useWardSearch } from '@/hooks/useWardQueries';
-import { Plus, Trash2, BedDouble, Percent } from 'lucide-react';
+
 import { toast } from 'sonner';
 import { normalizeApiResults } from '@/lib/utils';
 

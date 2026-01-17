@@ -1,3 +1,4 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -7,7 +8,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
 
 const StaffDetailPage = () => {
   const { id } = useParams();

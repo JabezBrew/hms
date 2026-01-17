@@ -1,3 +1,12 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,11 +20,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { format, isAfter, isBefore, addHours } from 'date-fns';
-import {
-  Clock, CheckCircle, XCircle, AlertTriangle, Search,
-  Pill, Package, AlertCircle, RefreshCw
-} from 'lucide-react';
+import format from 'date-fns/format';
+import isAfter from 'date-fns/isAfter';
+import isBefore from 'date-fns/isBefore';
+import addHours from 'date-fns/addHours';
+
 import { toast } from 'sonner';
 import {
   usePatientMAR,

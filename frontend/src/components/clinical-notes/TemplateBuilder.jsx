@@ -1,3 +1,19 @@
+import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import MoveUp from 'lucide-react/dist/esm/icons/move-up.js';
+import MoveDown from 'lucide-react/dist/esm/icons/move-down.js';
+import Lock from 'lucide-react/dist/esm/icons/lock.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Globe from 'lucide-react/dist/esm/icons/globe.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Folder from 'lucide-react/dist/esm/icons/folder.js';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/hooks/useClinicalNotesQueries';
 import { Button } from '@/components/ui/button';
@@ -9,10 +25,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import {
-  PlusCircle, Trash2, MoveUp, MoveDown, Lock, Users, Building2, Globe,
-  FileText, ClipboardList, Activity, UserPlus, LogOut, Heart, Stethoscope, Folder
-} from 'lucide-react';
 
 // Visibility options with icons and descriptions
 const VISIBILITY_OPTIONS = [

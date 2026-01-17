@@ -1,23 +1,21 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Ban from 'lucide-react/dist/esm/icons/ban.js';
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
+import CalendarX from 'lucide-react/dist/esm/icons/calendar-x.js';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
-import {
-  Plus,
-  Calendar,
-  Trash2,
-  Edit,
-  Clock,
-  Ban,
-  CalendarDays,
-  RefreshCw,
-  ChevronRight,
-  MoreVertical,
-  Users,
-  CalendarClock,
-  CalendarX
-} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

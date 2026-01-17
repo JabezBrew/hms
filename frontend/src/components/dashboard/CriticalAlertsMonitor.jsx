@@ -1,3 +1,5 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import React, { useEffect, useRef } from 'react';
 import {
   useNurseDashboard,
@@ -5,7 +7,7 @@ import {
   useInpatientDashboard,
 } from '@/hooks/useDashboardQueries';
 import { toast } from 'sonner';
-import { AlertTriangle, Bell } from 'lucide-react';
+
 import { useAuth } from '@/lib/auth';
 
 /**

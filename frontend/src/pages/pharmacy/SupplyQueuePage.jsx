@@ -1,3 +1,8 @@
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,11 +29,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Package, AlertCircle, CheckCircle, XCircle, RefreshCw
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import {
   usePendingSupplyRequests,
   useDispenseSupply,

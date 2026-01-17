@@ -1,19 +1,18 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
+import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  X,
-  TestTube2,
-  Save,
-  Loader2,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import { useBulkCreateLabResults } from "@/hooks/useLabQueries";
 

@@ -1,3 +1,14 @@
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Wrench from 'lucide-react/dist/esm/icons/wrench.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Home from 'lucide-react/dist/esm/icons/house.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import React from 'react';
 import { cn } from '@/lib/utils';
 import {
@@ -7,19 +18,7 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import {
-  Bed,
-  User,
-  Calendar,
-  Clock,
-  Wrench,
-  AlertCircle,
-  ChevronRight,
-  Users,
-  Home,
-  Shield,
-  Sparkles
-} from 'lucide-react';
+
 import { useWardSections } from '@/hooks/useWardQueries';
 
 /**

@@ -1,8 +1,13 @@
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, Clock, User, Sparkles, Loader2 } from 'lucide-react';
+
 import { getShiftOptions } from '@/config/shiftConfig';
 
 /**

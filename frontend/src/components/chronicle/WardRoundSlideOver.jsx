@@ -1,8 +1,14 @@
-import { useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { X, ChevronLeft, ChevronRight, Save, Check, AlertCircle, Stethoscope } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   WorkflowSteps,
@@ -10,17 +16,20 @@ import {
   useWorkflowKeyboard,
 } from "@/components/ui/workflow-steps";
 import { useWardRoundWorkflow } from "@/hooks/useWardRoundWorkflow";
-import {
-  PatientReviewStep,
-  ClinicalAssessmentStep,
-  TreatmentPlanStep,
-  DocumentationStep,
-} from "./ward-round-steps";
+import { PatientReviewStep } from "./ward-round-steps/PatientReviewStep";
+import { TreatmentPlanStep } from "./ward-round-steps/TreatmentPlanStep";
+import { DocumentationStep } from "./ward-round-steps/DocumentationStep";
 import { toast } from "sonner";
 
 /**
  * Step components mapped by ID
  */
+const ClinicalAssessmentStep = lazy(() =>
+  import("./ward-round-steps/ClinicalAssessmentStep").then((module) => ({
+    default: module.ClinicalAssessmentStep,
+  }))
+);
+
 const STEP_COMPONENTS = {
   patient_review: PatientReviewStep,
   clinical_assessment: ClinicalAssessmentStep,
@@ -46,8 +55,6 @@ const WardRoundSlideOver = ({
   admission,
   onComplete,
 }) => {
-  const navigate = useNavigate();
-
   // Get patient and admission IDs
   const patientId = patient?.local_data?.id || patient?.id;
   const admissionId = admission?.id || patient?.local_data?.current_admission_id || patient?.current_admission_id;
@@ -76,7 +83,6 @@ const WardRoundSlideOver = ({
     goToStep,
     completeWorkflow,
     resetWorkflow,
-    setError,
   } = useWardRoundWorkflow(patientId, admissionId);
 
   // Start workflow when slide-over opens
@@ -303,14 +309,22 @@ const WardRoundSlideOver = ({
             </div>
           </div>
         ) : CurrentStepComponent ? (
-          <CurrentStepComponent
-            formData={formData[currentStepConfig.id] || {}}
-            onChange={handleStepDataChange}
-            contextData={contextData}
-            validationErrors={validationErrors}
-            patientId={patientId}
-            allFormData={formData}
-          />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-12">
+                <p className="text-sm text-muted-foreground">Loading step...</p>
+              </div>
+            }
+          >
+            <CurrentStepComponent
+              formData={formData[currentStepConfig.id] || {}}
+              onChange={handleStepDataChange}
+              contextData={contextData}
+              validationErrors={validationErrors}
+              patientId={patientId}
+              allFormData={formData}
+            />
+          </Suspense>
         ) : (
           <div className="text-center py-12">
             <p className="text-muted-foreground">

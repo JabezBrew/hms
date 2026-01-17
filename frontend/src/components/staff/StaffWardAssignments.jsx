@@ -1,3 +1,9 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -33,14 +39,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Plus,
-  Building2,
-  Star,
-  Trash2,
-  Loader2,
-  ExternalLink,
-} from 'lucide-react';
+
 import {
   usePractitionerAssignments,
   useWards,

@@ -1,3 +1,13 @@
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,19 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  TestTube2,
-  AlertTriangle,
-  Check,
-  Clock,
-  User,
-  FileText,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  Package,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { useLabOrder, useLabResults, useVerifyLabResult } from "@/hooks/useLabQueries";
 import { toast } from "sonner";
 

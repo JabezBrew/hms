@@ -1,5 +1,7 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { getAuthValue } from '@/lib/auth-storage';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Clock } from 'lucide-react';
 
 /**
  * SessionTimeoutWarning component
@@ -31,9 +32,9 @@ export function SessionTimeoutWarning() {
   // Activity tracking
   const [lastActivity, setLastActivity] = useState(Date.now());
 
-  // Get session start time from localStorage
+  // Get session start time from local storage
   const getSessionStartTime = () => {
-    const sessionStart = localStorage.getItem("sessionStartTime");
+    const sessionStart = getAuthValue("sessionStartTime");
     return sessionStart ? parseInt(sessionStart, 10) : Date.now();
   };
 
@@ -61,14 +62,18 @@ export function SessionTimeoutWarning() {
     if (!isAuthenticated) return;
 
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    // Events that benefit from passive listeners for better scroll performance
+    const passiveEvents = ['scroll', 'touchstart', 'wheel'];
 
     events.forEach((event) => {
-      window.addEventListener(event, updateActivity);
+      const options = passiveEvents.includes(event) ? { passive: true } : undefined;
+      window.addEventListener(event, updateActivity, options);
     });
 
     return () => {
       events.forEach((event) => {
-        window.removeEventListener(event, updateActivity);
+        const options = passiveEvents.includes(event) ? { passive: true } : undefined;
+        window.removeEventListener(event, updateActivity, options);
       });
     };
   }, [isAuthenticated, updateActivity]);

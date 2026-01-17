@@ -1,3 +1,18 @@
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,25 +41,10 @@ import {
   useDeletePatientInsurance,
 } from '@/hooks/useBillingQueries';
 import { useDebounce } from '@/hooks/use-debounce';
-import { format, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
 import { toast } from 'sonner';
-import {
-  Shield,
-  Search,
-  Plus,
-  ChevronRight,
-  ChevronLeft,
-  AlertTriangle,
-  RefreshCw,
-  Filter,
-  Calendar,
-  User,
-  Building,
-  Edit,
-  Trash2,
-  CheckCircle,
-  XCircle,
-} from 'lucide-react';
+
 import PatientInsuranceFormSlideOver from '@/components/billing/PatientInsuranceFormSlideOver';
 
 const STATUS_OPTIONS = [

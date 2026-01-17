@@ -1,10 +1,20 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format, addMinutes, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import addMinutes from 'date-fns/addMinutes';
+import parseISO from 'date-fns/parseISO';
 import { cn, normalizeApiResults } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -32,17 +42,6 @@ import {
 } from '@/components/ui/select';
 import { SearchBar } from '@/components/ui/search-bar';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
-
-import {
-  ChevronLeft,
-  Calendar,
-  User,
-  Stethoscope,
-  FileText,
-  Clock,
-  CheckCircle,
-  Loader2
-} from 'lucide-react';
 
 import {
   fetchAppointmentTypes,

@@ -1,9 +1,13 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format, addMinutes, parseISO } from 'date-fns';
-import { CalendarIcon, Clock } from 'lucide-react';
+import format from 'date-fns/format';
+import addMinutes from 'date-fns/addMinutes';
+import parseISO from 'date-fns/parseISO';
+
 import { useNavigate } from 'react-router-dom';
 import {toast} from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -475,7 +479,6 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
             )}
           />
         )}
-
 
         {/* Description */}
         <FormField

@@ -1,3 +1,13 @@
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -14,18 +24,7 @@ import { useFacilities } from '@/hooks/useFacilityQueries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import {
-  Users,
-  UserPlus,
-  Bed,
-  Building2,
-  Calendar,
-  Activity,
-  AlertTriangle,
-  RefreshCw,
-  TrendingUp,
-  Settings,
-} from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';

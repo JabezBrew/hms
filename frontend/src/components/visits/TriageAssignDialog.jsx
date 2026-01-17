@@ -1,9 +1,14 @@
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import React, { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { format, addMinutes } from 'date-fns';
+import format from 'date-fns/format';
+import addMinutes from 'date-fns/addMinutes';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +30,6 @@ import { useTriageActions } from '@/hooks/useVisitQueries';
 import { clinicsApi } from '@/lib/api/organization';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
-import { Building2, User, Clock, Calendar } from 'lucide-react';
 
 const assignSchema = z.object({
   clinic_id: z.string().min(1, 'Clinic is required'),

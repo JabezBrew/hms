@@ -1,3 +1,8 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clipboard from 'lucide-react/dist/esm/icons/clipboard.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,9 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
 import { DischargeForm } from '@/components/wards/DischargeForm';
 import { apiClient } from '@/lib/api';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { ChevronLeft, Calendar, Clipboard, FileText, DollarSign } from 'lucide-react';
 
 export default function AdmissionDetailPage() {
   const { admissionId } = useParams();

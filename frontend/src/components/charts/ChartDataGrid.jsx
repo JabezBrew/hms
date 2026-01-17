@@ -5,19 +5,19 @@
  * and time columns. Highlights critical values.
  */
 
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Calendar,
-  Clock,
-} from "lucide-react";
-import { format, parseISO } from "date-fns";
+
+import format from "date-fns/format";
+import parseISO from "date-fns/parseISO";
 import { useChartEntries, useChartAssignment } from "@/hooks/useChartQueries";
 
 const ChartDataGrid = ({

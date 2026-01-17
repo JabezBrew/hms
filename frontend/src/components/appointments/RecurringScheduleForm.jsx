@@ -1,9 +1,14 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format } from 'date-fns';
-import { Plus, Trash2, CalendarIcon, Eye, User } from 'lucide-react';
+import format from 'date-fns/format';
+
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
 

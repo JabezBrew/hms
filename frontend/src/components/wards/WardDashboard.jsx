@@ -1,3 +1,16 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Home from 'lucide-react/dist/esm/icons/house.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -12,21 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Search,
-  Bed,
-  Users,
-  Activity,
-  UserPlus,
-  Filter,
-  LayoutGrid,
-  List,
-  RefreshCw,
-  Building2,
-  Home,
-  Sparkles,
-  Shield
-} from 'lucide-react';
+
 import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 

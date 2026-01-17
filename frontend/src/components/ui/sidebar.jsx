@@ -1,8 +1,8 @@
+import PanelLeftIcon from 'lucide-react/dist/esm/icons/panel-left.js';
 import { useState, useEffect, useMemo, useCallback, useContext, createContext } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Slot } from "@radix-ui/react-slot"
 import { cva } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"

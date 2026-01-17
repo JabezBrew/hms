@@ -1,4 +1,6 @@
-import { Building2, AlertTriangle } from "lucide-react";
+
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { Card, CardContent } from "@/components/ui/card";
 import { FacilitySwitcher } from "@/components/layout/FacilitySwitcher";
 import { cn } from "@/lib/utils";

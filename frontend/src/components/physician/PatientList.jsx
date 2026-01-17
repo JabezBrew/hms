@@ -1,7 +1,11 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { AlertCircle, Clock, FileText, Activity, Pill } from 'lucide-react';
 
 export function PatientList({ patients, onPatientSelect }) {
   // Function to calculate time since admission

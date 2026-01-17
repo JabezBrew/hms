@@ -1,3 +1,9 @@
+import Settings2 from 'lucide-react/dist/esm/icons/settings-2.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
@@ -23,14 +29,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useUnitTypes } from '@/hooks/useOrganization';
-import {
-  Settings2,
-  Search,
-  Building2,
-  ChevronLeft,
-  Check,
-  X,
-} from 'lucide-react';
+
 import { Link } from 'react-router-dom';
 
 /**

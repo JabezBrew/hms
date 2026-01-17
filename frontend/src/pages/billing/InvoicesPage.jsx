@@ -1,3 +1,14 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -14,20 +25,9 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useInvoices } from '@/hooks/useBillingQueries';
 import { useDebounce } from '@/hooks/use-debounce';
-import { format, parseISO } from 'date-fns';
-import {
-  FileText,
-  Search,
-  Plus,
-  ChevronRight,
-  ChevronLeft,
-  AlertTriangle,
-  RefreshCw,
-  Filter,
-  Calendar,
-  User,
-  X,
-} from 'lucide-react';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+
 import { patientsApi } from '@/lib/api/patients';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 
@@ -132,7 +132,6 @@ export default function InvoicesPage() {
       return params;
     });
   };
-
 
   const clearFilters = () => {
     setSearch('');

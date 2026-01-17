@@ -1,3 +1,11 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -22,17 +30,8 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertTriangle,
-  Activity,
-  Pill,
-  ClipboardList,
-  Users,
-  Bed,
-  Clock,
-  RefreshCw,
-} from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 import { useWards } from '@/hooks/useWardQueries';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';

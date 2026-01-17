@@ -1,3 +1,5 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,8 +40,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { Calendar as CalendarIcon, Shield } from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,

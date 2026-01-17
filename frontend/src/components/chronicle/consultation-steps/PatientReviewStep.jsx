@@ -1,14 +1,12 @@
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import MessageCircle from 'lucide-react/dist/esm/icons/message-circle.js';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  User,
-  Calendar,
-  AlertTriangle,
-  Pill,
-  FileText,
-  Send,
-  MessageCircle,
-} from "lucide-react";
 
 /**
  * PatientReviewStep - First step of consultation workflow

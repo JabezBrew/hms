@@ -10,8 +10,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { SessionTimeoutWarning } from '../SessionTimeoutWarning'
+import { setAuthValue } from '@/lib/auth-storage'
 
 // Mock the useAuth hook
 vi.mock('@/lib/auth', () => ({
@@ -49,7 +49,7 @@ describe('SessionTimeoutWarning', () => {
 
     // Set session start time to "now"
     const now = Date.now()
-    localStorageMock.setItem('sessionStartTime', now.toString())
+    setAuthValue('sessionStartTime', now.toString())
   })
 
   afterEach(() => {
@@ -81,7 +81,7 @@ describe('SessionTimeoutWarning', () => {
         isSessionValid: mockIsSessionValid,
       })
 
-      const { container } = render(<SessionTimeoutWarning />)
+      render(<SessionTimeoutWarning />)
 
       // No warning dialog should be visible initially
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
@@ -318,7 +318,7 @@ describe('SessionTimeoutWarning', () => {
     it('shows non-extendable warning approaching 8-hour absolute timeout', async () => {
       // Set session start time to 7 hours 58 minutes ago
       const startTime = Date.now() - (7 * 60 + 58) * 60 * 1000
-      localStorageMock.setItem('sessionStartTime', startTime.toString())
+      setAuthValue('sessionStartTime', startTime.toString())
 
       render(<SessionTimeoutWarning />)
 
@@ -334,7 +334,7 @@ describe('SessionTimeoutWarning', () => {
 
     it('does not show "Continue Session" button for absolute timeout', async () => {
       const startTime = Date.now() - (7 * 60 + 58) * 60 * 1000
-      localStorageMock.setItem('sessionStartTime', startTime.toString())
+      setAuthValue('sessionStartTime', startTime.toString())
 
       render(<SessionTimeoutWarning />)
 
@@ -350,7 +350,7 @@ describe('SessionTimeoutWarning', () => {
 
     it('shows message about re-authentication required', async () => {
       const startTime = Date.now() - (7 * 60 + 58) * 60 * 1000
-      localStorageMock.setItem('sessionStartTime', startTime.toString())
+      setAuthValue('sessionStartTime', startTime.toString())
 
       render(<SessionTimeoutWarning />)
 
@@ -366,7 +366,7 @@ describe('SessionTimeoutWarning', () => {
     it('logs out automatically at absolute timeout', async () => {
       // Set session start exactly at 8 hour limit
       const startTime = Date.now() - 8 * 60 * 60 * 1000
-      localStorageMock.setItem('sessionStartTime', startTime.toString())
+      setAuthValue('sessionStartTime', startTime.toString())
 
       render(<SessionTimeoutWarning />)
 
@@ -382,7 +382,7 @@ describe('SessionTimeoutWarning', () => {
     it('absolute timeout takes precedence over inactivity timeout', async () => {
       // Session started 7:58 ago, but there was activity
       const startTime = Date.now() - (7 * 60 + 58) * 60 * 1000
-      localStorageMock.setItem('sessionStartTime', startTime.toString())
+      setAuthValue('sessionStartTime', startTime.toString())
 
       render(<SessionTimeoutWarning />)
 

@@ -1,3 +1,28 @@
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Home from 'lucide-react/dist/esm/icons/house.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Image from 'lucide-react/dist/esm/icons/image.js';
+import FileImage from 'lucide-react/dist/esm/icons/file-image.js';
+import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import History from 'lucide-react/dist/esm/icons/history.js';
+import BarChart from 'lucide-react/dist/esm/icons/chart-no-axes-column-increasing.js';
+import Layers from 'lucide-react/dist/esm/icons/layers.js';
 import { useState } from "react";
 import { toast } from "sonner";
 import { patientsApi } from "@/lib/api/patients";
@@ -28,34 +53,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { format } from "date-fns";
-import { 
-  User, 
-  Phone, 
-  Mail, 
-  Calendar, 
-  Home, 
-  Activity, 
-  AlertTriangle, 
-  Edit, 
-  Trash2, 
-  ArrowLeft,
-  FileText,
-  Heart,
-  Droplet,
-  Thermometer,
-  Stethoscope,
-  Clock,
-  Building2,
-  Bed,
-  Image,
-  FileImage,
-  Receipt,
-  CreditCard,
-  History,
-  BarChart,
-  Layers
-} from "lucide-react";
+import format from "date-fns/format";
 
 const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
   const [isDeleting, setIsDeleting] = useState(false);

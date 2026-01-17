@@ -1,3 +1,10 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import ClipboardCheck from 'lucide-react/dist/esm/icons/clipboard-check.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -7,16 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import {
-  FileText,
-  Calendar,
-  ClipboardCheck,
-  Pill,
-  FlaskConical,
-  Stethoscope,
-  Info,
-} from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 
 /**
  * OrdersSummary - Display summary of all orders to be placed

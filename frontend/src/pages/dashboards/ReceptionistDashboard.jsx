@@ -1,3 +1,14 @@
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -13,20 +24,8 @@ import { useReceptionistDashboard } from '@/hooks/useDashboardQueries';
 import { useDashboardActions } from '@/hooks/useDashboardActions';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  UserPlus,
-  Users,
-  Calendar,
-  DollarSign,
-  AlertTriangle,
-  Clock,
-  CheckCircle,
-  RefreshCw,
-  Phone,
-  Mail,
-  ClipboardList,
-} from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 

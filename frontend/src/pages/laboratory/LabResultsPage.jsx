@@ -1,3 +1,18 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -27,24 +42,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { StatCard } from "@/components/dashboard";
-import {
-  Search,
-  TestTube2,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  RefreshCw,
-  X,
-  Loader2,
-  User,
-  Stethoscope,
-  Package,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
 import {
   useLabResults,

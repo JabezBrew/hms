@@ -1,3 +1,6 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -14,7 +17,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useTriageActions } from '@/hooks/useVisitQueries';
-import { AlertTriangle, AlertCircle, Clock } from 'lucide-react';
 
 const triageSchema = z.object({
   priority: z.enum(['emergency', 'urgent', 'routine']),

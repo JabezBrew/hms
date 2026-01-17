@@ -1,4 +1,6 @@
-import { AlertTriangle, Clock } from "lucide-react";
+
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";

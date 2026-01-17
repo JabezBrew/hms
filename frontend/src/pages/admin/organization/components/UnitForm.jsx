@@ -1,3 +1,4 @@
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,7 +24,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useUnitTypes } from '@/hooks/useOrganization';
-import { Loader2 } from 'lucide-react';
 
 const unitSchema = z.object({
   code: z.string().min(1, 'Code is required').max(50),

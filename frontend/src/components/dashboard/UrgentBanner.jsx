@@ -1,5 +1,8 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
 import React from 'react';
-import { AlertTriangle, AlertCircle, Info } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

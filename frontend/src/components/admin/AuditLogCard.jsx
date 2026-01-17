@@ -1,3 +1,20 @@
+import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import UserCog from 'lucide-react/dist/esm/icons/user-cog.js';
+import FileEdit from 'lucide-react/dist/esm/icons/file-pen.js';
+import FilePlus from 'lucide-react/dist/esm/icons/file-plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -7,25 +24,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import {
-  LogIn,
-  LogOut,
-  UserPlus,
-  UserCog,
-  FileEdit,
-  FilePlus,
-  Trash2,
-  Eye,
-  Stethoscope,
-  Bed,
-  Calendar,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Shield,
-  Activity,
-  User,
-} from 'lucide-react';
 
 /**
  * AuditLogCard - Chronicle-style audit log entry card

@@ -1,17 +1,16 @@
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import {
-  User,
-  Clock,
-  Heart,
-  ClipboardList,
-  Calendar,
-  FileText,
-  Users,
-  Pill,
-  AlertCircle
-} from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { getShiftLabel } from '@/config/shiftConfig';
 

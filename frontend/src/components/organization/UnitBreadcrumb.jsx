@@ -4,7 +4,9 @@
  * Displays the path from root (facility) to the current unit with
  * clickable links to navigate to parent units.
  */
-import { ChevronRight, Building2 } from 'lucide-react';
+
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { cn } from '@/lib/utils';
 import { useUnitAncestors } from '@/hooks/useOrganization';
 

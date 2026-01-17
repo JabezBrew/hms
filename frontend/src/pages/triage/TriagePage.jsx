@@ -1,3 +1,9 @@
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -17,14 +23,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
-import {
-  RefreshCw,
-  UserPlus,
-  AlertTriangle,
-  AlertCircle,
-  Clock,
-  CheckCircle,
-} from 'lucide-react';
 
 export default function TriagePage() {
   const navigate = useNavigate();

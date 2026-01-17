@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { format, addDays, startOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import format from 'date-fns/format';
+import addDays from 'date-fns/addDays';
+import startOfDay from 'date-fns/startOfDay';
+import startOfMonth from 'date-fns/startOfMonth';
+import endOfMonth from 'date-fns/endOfMonth';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

@@ -1,3 +1,12 @@
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,17 +17,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePatientTimeline, flattenTimelinePages } from '@/hooks/useTimelineQueries';
 import { TimelineEntry } from '@/components/chronicle';
-import {
-  User,
-  Calendar,
-  FileText,
-  Activity,
-  AlertTriangle,
-  ClipboardList,
-  Pill,
-  Stethoscope,
-  Clock,
-} from 'lucide-react';
 
 /**
  * Review Mode Layout

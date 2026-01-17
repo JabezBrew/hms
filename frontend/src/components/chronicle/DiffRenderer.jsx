@@ -1,7 +1,27 @@
-import { useState } from "react";
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Minus from 'lucide-react/dist/esm/icons/minus.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import { useState, useMemo } from "react";
 import { diffWords } from "diff";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Plus, Minus, RefreshCw } from "lucide-react";
+
+// Hoist RegExp patterns to module scope for performance
+const UNDERSCORE_REGEX = /_/g;
+const CAMEL_CASE_REGEX = /([a-z])([A-Z])/g;
+const WORD_START_REGEX = /\b\w/g;
+
+/**
+ * Format a field key into a readable label.
+ * Hoisted regex patterns avoid re-creation on every render.
+ */
+const formatLabel = (str) => {
+  return str
+    .replace(UNDERSCORE_REGEX, " ")
+    .replace(CAMEL_CASE_REGEX, "$1 $2")
+    .replace(WORD_START_REGEX, (c) => c.toUpperCase());
+};
 
 /**
  * DiffRenderer - Renders a field-by-field diff between two note versions
@@ -83,13 +103,6 @@ const DiffRenderer = ({ oldData, newData }) => {
  */
 const FieldDiff = ({ fieldName, oldValue, newValue, status }) => {
   const [isExpanded, setIsExpanded] = useState(status !== "unchanged");
-
-  const formatLabel = (str) => {
-    return str
-      .replace(/_/g, " ")
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  };
 
   const statusConfig = {
     added: {
@@ -264,39 +277,58 @@ const TextDiff = ({ oldText, newText }) => {
 
 /**
  * ArrayDiff - Show added/removed array items
+ * Optimized: Pre-serialize items once and use Set for O(1) lookups
  */
 const ArrayDiff = ({ oldArray, newArray }) => {
-  const oldSet = new Set(oldArray.map((item) => JSON.stringify(item)));
-  const newSet = new Set(newArray.map((item) => JSON.stringify(item)));
+  // Memoize the diff computation to avoid redundant JSON.stringify calls
+  const { added, removed, unchanged } = useMemo(() => {
+    // Pre-serialize items once - each item gets its key computed only once
+    const oldItems = oldArray.map((item) => ({
+      item,
+      key: JSON.stringify(item),
+      display: typeof item === "object" ? JSON.stringify(item) : String(item),
+    }));
+    const newItems = newArray.map((item) => ({
+      item,
+      key: JSON.stringify(item),
+      display: typeof item === "object" ? JSON.stringify(item) : String(item),
+    }));
 
-  const added = newArray.filter((item) => !oldSet.has(JSON.stringify(item)));
-  const removed = oldArray.filter((item) => !newSet.has(JSON.stringify(item)));
-  const unchanged = newArray.filter((item) => oldSet.has(JSON.stringify(item)));
+    // Build Sets for O(1) lookups
+    const oldKeySet = new Set(oldItems.map((i) => i.key));
+    const newKeySet = new Set(newItems.map((i) => i.key));
+
+    return {
+      added: newItems.filter((i) => !oldKeySet.has(i.key)),
+      removed: oldItems.filter((i) => !newKeySet.has(i.key)),
+      unchanged: newItems.filter((i) => oldKeySet.has(i.key)),
+    };
+  }, [oldArray, newArray]);
 
   return (
     <ul className="space-y-1">
-      {removed.map((item, i) => (
+      {removed.map((i, idx) => (
         <li
-          key={`removed-${i}`}
+          key={`removed-${idx}`}
           className="flex items-start gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 px-2 py-1 rounded line-through"
         >
           <Minus className="h-3 w-3 mt-1 flex-shrink-0" />
-          <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
+          <span>{i.display}</span>
         </li>
       ))}
-      {added.map((item, i) => (
+      {added.map((i, idx) => (
         <li
-          key={`added-${i}`}
+          key={`added-${idx}`}
           className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-2 py-1 rounded"
         >
           <Plus className="h-3 w-3 mt-1 flex-shrink-0" />
-          <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
+          <span>{i.display}</span>
         </li>
       ))}
-      {unchanged.map((item, i) => (
-        <li key={`unchanged-${i}`} className="flex items-start gap-2 text-muted-foreground px-2 py-1">
+      {unchanged.map((i, idx) => (
+        <li key={`unchanged-${idx}`} className="flex items-start gap-2 text-muted-foreground px-2 py-1">
           <span className="w-3" />
-          <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
+          <span>{i.display}</span>
         </li>
       ))}
     </ul>

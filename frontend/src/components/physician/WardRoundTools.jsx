@@ -1,3 +1,8 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,8 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api';
-import { format } from 'date-fns';
-import { Activity, FileText, Pill, FlaskConical, CheckCircle2 } from 'lucide-react';
+import format from 'date-fns/format';
 
 export function WardRoundTools({ patient }) {
   const [loading, setLoading] = useState(true);

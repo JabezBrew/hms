@@ -1,5 +1,20 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
@@ -39,23 +54,7 @@ import ReferralForm from "@/components/referrals/ReferralForm";
 import CrossFacilitySharePanel from "@/components/consent/CrossFacilitySharePanel";
 import ReceiveRecordPanel from "@/components/interop/ReceiveRecordPanel";
 import { useChartAssignments } from "@/hooks/useChartQueries";
-import {
-  Clock,
-  FileText,
-  Pill,
-  TestTube,
-  Activity,
-  Filter,
-  RefreshCw,
-  Search,
-  Loader2,
-  Calendar,
-  Building2,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  ClipboardList,
-} from "lucide-react";
+
 import { useDebounce } from "@/hooks/use-debounce";
 
 /**
@@ -71,8 +70,9 @@ import { useDebounce } from "@/hooks/use-debounce";
 const PatientChroniclePage = ({ defaultAction }) => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
@@ -90,6 +90,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
+  const clearQueryParams = useCallback(() => {
+    if (location.search) {
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
   const slideOvers = useMultipleSlideOvers([
@@ -119,17 +124,17 @@ const PatientChroniclePage = ({ defaultAction }) => {
     if (action === 'add_note') {
       slideOvers.open('note');
       // Clear the query params after opening
-      if (actionParam) setSearchParams({}, { replace: true });
+      if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
       slideOvers.open('wardRound');
       // Clear the query params after opening
-      if (actionParam || wardRoundParam) setSearchParams({}, { replace: true });
+      if (actionParam || wardRoundParam) clearQueryParams();
     } else if (action === 'consultation' || consultationParam === 'true') {
       slideOvers.open('consultation');
       // Clear the query params after opening
-      if (actionParam || consultationParam) setSearchParams({}, { replace: true });
+      if (actionParam || consultationParam) clearQueryParams();
     }
-  }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, setSearchParams]);
+  }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, clearQueryParams]);
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -178,20 +183,26 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const problems = chronicleContext?.active_problems || [];
   const admissionStatus = chronicleContext?.admission_status;
 
+  // Get latest vitals from context
+  const latestVitals = chronicleContext?.latest_vitals;
+  // Use primitive values for memoization to avoid object reference issues
+  const vitalsId = latestVitals?.id;
+  const vitalsRecordedAt = latestVitals?.recorded_at;
+
   // Transform latest_vitals from context into labResults format for sidebar
   const labResults = useMemo(() => {
-    const vitals = chronicleContext?.latest_vitals;
-    if (!vitals) return [];
+    // Early return using the primitives we already checked
+    if (!vitalsId || !latestVitals) return [];
 
     const results = [];
-    const timestamp = vitals.recorded_at;
+    const timestamp = vitalsRecordedAt;
 
-    if (vitals.temperature) {
-      const temp = parseFloat(vitals.temperature);
+    if (latestVitals.temperature) {
+      const temp = parseFloat(latestVitals.temperature);
       results.push({
-        id: `temp-${vitals.id}`,
+        id: `temp-${vitalsId}`,
         name: 'Temp',
-        value: vitals.temperature,
+        value: latestVitals.temperature,
         unit: '°C',
         timestamp,
         is_abnormal: temp > 38 || temp < 36,
@@ -199,12 +210,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
     }
 
-    if (vitals.heart_rate) {
-      const hr = parseInt(vitals.heart_rate);
+    if (latestVitals.heart_rate) {
+      const hr = parseInt(latestVitals.heart_rate);
       results.push({
-        id: `hr-${vitals.id}`,
+        id: `hr-${vitalsId}`,
         name: 'HR',
-        value: vitals.heart_rate,
+        value: latestVitals.heart_rate,
         unit: 'bpm',
         timestamp,
         is_abnormal: hr > 100 || hr < 60,
@@ -212,13 +223,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
     }
 
-    if (vitals.blood_pressure) {
-      const parts = vitals.blood_pressure.split('/');
+    if (latestVitals.blood_pressure) {
+      const parts = latestVitals.blood_pressure.split('/');
       const systolic = parts.length > 0 ? Number(parts[0]) : null;
       results.push({
-        id: `bp-${vitals.id}`,
+        id: `bp-${vitalsId}`,
         name: 'BP',
-        value: vitals.blood_pressure,
+        value: latestVitals.blood_pressure,
         unit: 'mmHg',
         timestamp,
         is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
@@ -226,12 +237,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
     }
 
-    if (vitals.oxygen_saturation) {
-      const spo2 = parseInt(vitals.oxygen_saturation);
+    if (latestVitals.oxygen_saturation) {
+      const spo2 = parseInt(latestVitals.oxygen_saturation);
       results.push({
-        id: `spo2-${vitals.id}`,
+        id: `spo2-${vitalsId}`,
         name: 'SpO2',
-        value: vitals.oxygen_saturation,
+        value: latestVitals.oxygen_saturation,
         unit: '%',
         timestamp,
         is_abnormal: spo2 < 95,
@@ -239,12 +250,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
     }
 
-    if (vitals.respiratory_rate) {
-      const rr = parseInt(vitals.respiratory_rate);
+    if (latestVitals.respiratory_rate) {
+      const rr = parseInt(latestVitals.respiratory_rate);
       results.push({
-        id: `rr-${vitals.id}`,
+        id: `rr-${vitalsId}`,
         name: 'RR',
-        value: vitals.respiratory_rate,
+        value: latestVitals.respiratory_rate,
         unit: '/min',
         timestamp,
         is_abnormal: rr > 20 || rr < 12,
@@ -253,7 +264,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
 
     return results;
-  }, [chronicleContext?.latest_vitals]);
+    // Use primitive vitalsId as dependency - will only re-run when vitals actually change
+  }, [vitalsId, vitalsRecordedAt, latestVitals]);
 
   // Fetch active chart assignments for this patient
   const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(

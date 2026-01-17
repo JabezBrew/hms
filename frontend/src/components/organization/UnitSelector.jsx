@@ -7,8 +7,12 @@
  * - Shows unit path for context
  * - Supports single and multiple selection
  */
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { useState, useMemo } from 'react';
-import { Check, ChevronDown, Search, Building2 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import {
   Command,

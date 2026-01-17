@@ -1,3 +1,8 @@
+import Copy from 'lucide-react/dist/esm/icons/copy.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,13 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Copy,
-  Loader2,
-  FileText,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+
 import { useNoteEntrySections } from "@/hooks/useClinicalNotesQueries";
 
 /**

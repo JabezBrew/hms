@@ -1,3 +1,8 @@
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import Hash from 'lucide-react/dist/esm/icons/hash.js';
+import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Building2, Download, Hash, KeyRound, X } from "lucide-react";
+
 import { useAuth } from "@/lib/auth";
 import { useRetrieveRecordExport } from "@/hooks/useInteropQueries";
 

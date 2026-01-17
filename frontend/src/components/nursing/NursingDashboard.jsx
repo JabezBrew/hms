@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import { useState, lazy, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,13 +11,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, AlertCircle, Activity, Droplet, Pill } from 'lucide-react';
+
 import { PatientList } from './PatientList';
-import { VitalSignsRecorder } from './VitalSignsRecorder';
 import { MedicationAdministration } from './MedicationAdministration';
-import { FluidBalanceTracker } from './FluidBalanceTracker';
 import { useWards, useAdmissions } from '@/hooks/useWardQueries';
 import { toast } from 'sonner';
+
+// Lazy load chart-heavy components to reduce initial bundle size (~180KB saved)
+const VitalSignsRecorder = lazy(() => import('./VitalSignsRecorder').then(m => ({ default: m.VitalSignsRecorder })));
+const FluidBalanceTracker = lazy(() => import('./FluidBalanceTracker').then(m => ({ default: m.FluidBalanceTracker })));
+
+// Loading fallback for lazy-loaded chart components
+const ChartLoadingFallback = () => (
+  <div className="space-y-4 p-4">
+    <Skeleton className="h-10 w-full" />
+    <Skeleton className="h-64 w-full" />
+    <Skeleton className="h-32 w-full" />
+  </div>
+);
 
 export function NursingDashboard() {
   const [selectedWard, setSelectedWard] = useState('');
@@ -189,7 +205,9 @@ export function NursingDashboard() {
             </TabsList>
 
             <TabsContent value="vitals" className="mt-4">
-              <VitalSignsRecorder patient={selectedPatient} />
+              <Suspense fallback={<ChartLoadingFallback />}>
+                <VitalSignsRecorder patient={selectedPatient} />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="medications" className="mt-4">
@@ -197,7 +215,9 @@ export function NursingDashboard() {
             </TabsContent>
 
             <TabsContent value="fluids" className="mt-4">
-              <FluidBalanceTracker patient={selectedPatient} />
+              <Suspense fallback={<ChartLoadingFallback />}>
+                <FluidBalanceTracker patient={selectedPatient} />
+              </Suspense>
             </TabsContent>
           </Tabs>
         </div>

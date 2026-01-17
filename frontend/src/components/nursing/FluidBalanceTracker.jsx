@@ -1,3 +1,11 @@
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
+import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,9 +19,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { format, startOfDay, endOfDay, addDays, subDays, isToday as checkIsToday } from 'date-fns';
+import format from 'date-fns/format';
+import startOfDay from 'date-fns/startOfDay';
+import endOfDay from 'date-fns/endOfDay';
+import addDays from 'date-fns/addDays';
+import subDays from 'date-fns/subDays';
+import checkIsToday from 'date-fns/isToday';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Droplet, ArrowDownCircle, ArrowUpCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, CalendarIcon } from 'lucide-react';
+
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {

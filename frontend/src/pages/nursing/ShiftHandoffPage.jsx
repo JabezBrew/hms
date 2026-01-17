@@ -1,23 +1,22 @@
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Circle from 'lucide-react/dist/esm/icons/circle.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import FileCheck from 'lucide-react/dist/esm/icons/file-check.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ArrowRight,
-  ArrowLeft,
-  CheckCircle,
-  Circle,
-  Loader2,
-  User,
-  Heart,
-  ClipboardList,
-  FileCheck,
-  Calendar,
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { cn, normalizeApiResults } from '@/lib/utils';
 
 import {

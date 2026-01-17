@@ -1,3 +1,7 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState } from 'react';
 import {
   AlertDialog,
@@ -14,7 +18,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, AlertCircle, Info, XCircle } from 'lucide-react';
 
 const SEVERITY_CONFIG = {
   critical: {

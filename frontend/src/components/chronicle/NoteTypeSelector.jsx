@@ -1,9 +1,20 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Folder from 'lucide-react/dist/esm/icons/folder.js';
+import Lock from 'lucide-react/dist/esm/icons/lock.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Globe from 'lucide-react/dist/esm/icons/globe.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import {
-  FileText, ClipboardList, Activity, Phone, UserPlus, LogOut,
-  Heart, Stethoscope, Folder, Lock, Users, Building2, Globe, Loader2
-} from "lucide-react";
+
 import { useAvailableNoteTemplates } from "@/hooks/useClinicalNotesQueries";
 
 // Icon mapping for template icons (Lucide icon names to components)

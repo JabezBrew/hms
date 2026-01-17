@@ -1,3 +1,10 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { X, Send, AlertCircle, User, Building2, FileText, Clock } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCreateReferral, useSubmitReferral } from "@/hooks/useReferralQueries";
 import { toast } from "sonner";

@@ -1,5 +1,8 @@
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js';
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Check, RotateCcw } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";

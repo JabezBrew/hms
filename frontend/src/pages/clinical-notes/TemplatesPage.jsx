@@ -1,3 +1,7 @@
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -9,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Pencil, Trash2, Plus, Eye } from 'lucide-react';
+
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
 
 export default function TemplateListPage() {

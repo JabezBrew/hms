@@ -1,5 +1,9 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getAuthJSON } from '@/lib/auth-storage';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { createWard } from '@/lib/api.js';
-import { ChevronLeft, Building2, AlertCircle } from 'lucide-react';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 
@@ -41,13 +45,12 @@ export default function NewWardPage() {
 
   // Check if user is admin
   useEffect(() => {
-    const userJson = localStorage.getItem('user');
-    if (!userJson) {
+    const user = getAuthJSON('user');
+    if (!user) {
       navigate('/login');
       return;
     }
 
-    const user = JSON.parse(userJson);
     if (user.role !== 'admin') {
       navigate('/wards');
       return;

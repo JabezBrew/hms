@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback } from 'react'
+import { getAuthValue, removeAuthValue, setAuthValue } from '@/lib/auth-storage'
 
 import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
@@ -38,7 +39,7 @@ export function AuthProvider({ children }) {
     queryClient.clear()
     if (user) {
       const updatedUser = { ...user, facilityCode: normalized }
-      localStorage.setItem("user", JSON.stringify(updatedUser))
+      setAuthValue("user", JSON.stringify(updatedUser))
       setUser(updatedUser)
     } else if (mfaUser) {
       setMfaUser({ ...mfaUser, facilityCode: normalized })
@@ -58,9 +59,9 @@ export function AuthProvider({ children }) {
       }
 
       // Clear all session data
-      localStorage.removeItem("user")
-      localStorage.removeItem("sessionStartTime")
-      localStorage.removeItem("refreshTokenIssuedAt")
+      removeAuthValue("user")
+      removeAuthValue("sessionStartTime")
+      removeAuthValue("refreshTokenIssuedAt")
       setUser(null)
       setAccessToken(null)
       setFacilityCodeState(null)
@@ -77,9 +78,9 @@ export function AuthProvider({ children }) {
       }
     } catch (_error) {
       // Always proceed with local cleanup even if logout fails
-      localStorage.removeItem("user")
-      localStorage.removeItem("sessionStartTime")
-      localStorage.removeItem("refreshTokenIssuedAt")
+      removeAuthValue("user")
+      removeAuthValue("sessionStartTime")
+      removeAuthValue("refreshTokenIssuedAt")
       setUser(null)
       setAccessToken(null)
       setFacilityCodeState(null)
@@ -93,8 +94,8 @@ export function AuthProvider({ children }) {
 
   // Function to check if session is still valid
   const isSessionValid = useCallback(() => {
-    const refreshTokenIssuedAt = localStorage.getItem("refreshTokenIssuedAt")
-    const sessionStartTime = localStorage.getItem("sessionStartTime")
+    const refreshTokenIssuedAt = getAuthValue("refreshTokenIssuedAt")
+    const sessionStartTime = getAuthValue("sessionStartTime")
 
     if (!refreshTokenIssuedAt || !sessionStartTime) {
       return false
@@ -139,7 +140,7 @@ export function AuthProvider({ children }) {
     if (newToken) {
       // Update refresh token issued time on successful refresh
       // (backend rotates refresh tokens)
-      localStorage.setItem("refreshTokenIssuedAt", Date.now().toString())
+      setAuthValue("refreshTokenIssuedAt", Date.now().toString())
     }
 
     return newToken
@@ -151,7 +152,7 @@ export function AuthProvider({ children }) {
   // Check if user is already logged in on mount
   useEffect(() => {
     const initializeAuth = async () => {
-      const storedUser = localStorage.getItem("user")
+      const storedUser = getAuthValue("user")
       if (storedUser) {
         try {
           const userData = JSON.parse(storedUser)
@@ -159,9 +160,9 @@ export function AuthProvider({ children }) {
           // Validate session before restoring user
           if (!isSessionValid()) {
             // Session expired, clear everything
-            localStorage.removeItem("user")
-            localStorage.removeItem("sessionStartTime")
-            localStorage.removeItem("refreshTokenIssuedAt")
+            removeAuthValue("user")
+            removeAuthValue("sessionStartTime")
+            removeAuthValue("refreshTokenIssuedAt")
             setLoading(false)
             return
           }
@@ -180,13 +181,13 @@ export function AuthProvider({ children }) {
           }
         } catch (_e) {
           // Failed to parse stored user
-          localStorage.removeItem("user")
-          localStorage.removeItem("sessionStartTime")
-          localStorage.removeItem("refreshTokenIssuedAt")
+          removeAuthValue("user")
+          removeAuthValue("sessionStartTime")
+          removeAuthValue("refreshTokenIssuedAt")
         }
       }
-    setLoading(false)
-  }
+      setLoading(false)
+    }
 
     initializeAuth()
   }, [isSessionValid, refreshAccessToken])
@@ -206,8 +207,8 @@ export function AuthProvider({ children }) {
     setAccessToken(response.access)
 
     const now = Date.now().toString()
-    localStorage.setItem("sessionStartTime", now)
-    localStorage.setItem("refreshTokenIssuedAt", now)
+    setAuthValue("sessionStartTime", now)
+    setAuthValue("refreshTokenIssuedAt", now)
 
     const userData = {
       email: response.user.email,
@@ -220,7 +221,7 @@ export function AuthProvider({ children }) {
       facilityCode: response.user.facility_code || defaultFacilityCode,
       accessContext: response.access_context || null,
     }
-    localStorage.setItem("user", JSON.stringify(userData))
+    setAuthValue("user", JSON.stringify(userData))
     setUser(userData)
     setFacilityCodeState(userData.facilityCode || null)
 

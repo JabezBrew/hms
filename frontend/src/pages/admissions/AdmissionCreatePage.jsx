@@ -1,8 +1,11 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { AdmissionForm } from '@/components/wards/AdmissionForm';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus, Building2 } from 'lucide-react';
+
 import { useWard } from '@/hooks/useWardQueries';
 
 /**

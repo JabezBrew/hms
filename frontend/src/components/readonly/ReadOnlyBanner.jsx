@@ -1,5 +1,7 @@
+import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
+import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import { useReadOnlyMode } from '@/contexts/ReadOnlyModeContext';
-import { EyeOff, Lock } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

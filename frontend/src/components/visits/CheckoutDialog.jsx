@@ -1,3 +1,10 @@
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import React from 'react';
 import {
   Dialog,
@@ -10,15 +17,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { useVisitActions } from '@/hooks/useVisitQueries';
 import { useAuth } from '@/lib/auth';
-import {
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Stethoscope,
-  Pill,
-  TestTube,
-  CreditCard,
-} from 'lucide-react';
 
 /**
  * CheckoutDialog - Shows checkout requirements and handles checkout

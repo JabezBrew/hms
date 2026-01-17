@@ -1,3 +1,7 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import UserCog from 'lucide-react/dist/esm/icons/user-cog.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,8 +29,8 @@ import {
   useDeleteLeadershipAssignment,
 } from '@/hooks/useOrganization';
 import { useSearchStaff } from '@/hooks/useStaffQueries';
-import { Plus, Trash2, UserCog, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 import { toast } from 'sonner';
 import { cn, normalizeApiResults } from '@/lib/utils';
 

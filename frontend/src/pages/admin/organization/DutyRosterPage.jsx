@@ -1,3 +1,14 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import ArrowRightLeft from 'lucide-react/dist/esm/icons/arrow-right-left.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
@@ -48,21 +59,18 @@ import {
   useSwapDuty,
 } from '@/hooks/useOrganization';
 import { useClinicalUnitsTree } from '@/hooks/useOrganization';
-import {
-  Calendar as CalendarIcon,
-  Clock,
-  Plus,
-  RefreshCw,
-  Users,
-  ArrowRightLeft,
-  Trash2,
-  Search,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+
 import { toast } from 'sonner';
-import { format, startOfMonth, endOfMonth, addMonths, subMonths, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek } from 'date-fns';
+import format from 'date-fns/format';
+import startOfMonth from 'date-fns/startOfMonth';
+import endOfMonth from 'date-fns/endOfMonth';
+import addMonths from 'date-fns/addMonths';
+import subMonths from 'date-fns/subMonths';
+import eachDayOfInterval from 'date-fns/eachDayOfInterval';
+import isSameMonth from 'date-fns/isSameMonth';
+import isSameDay from 'date-fns/isSameDay';
+import startOfWeek from 'date-fns/startOfWeek';
+import endOfWeek from 'date-fns/endOfWeek';
 
 /**
  * ShiftDefinitionsTab - Manage shift definitions

@@ -1,3 +1,5 @@
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -17,7 +19,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Check, ChevronsUpDown } from "lucide-react";
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 

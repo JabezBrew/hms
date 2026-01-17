@@ -1,3 +1,9 @@
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import React, { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -16,14 +22,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
-import {
-  RefreshCw,
-  Users,
-  Phone,
-  Clock,
-  Stethoscope,
-  AlertTriangle,
-} from 'lucide-react';
 
 export default function ClinicWaitingRoomPage() {
   const { clinicId } = useParams();

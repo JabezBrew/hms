@@ -1,3 +1,9 @@
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { RefreshCw, AlertTriangle, Activity, Users, ShieldAlert, Package } from 'lucide-react';
+
 import { usePatientMonitoring, useActiveAlerts, useLowSupplyEntries } from '@/hooks/useNursingQueries';
 import { useWards } from '@/hooks/useWardQueries';
 import { PatientMonitoringCard } from '@/components/nursing/PatientMonitoringCard';
@@ -32,7 +38,6 @@ export default function NursingDashboardPage() {
   const monitoringData = monitoringResponse?.results || [];
   const totalCount = monitoringResponse?.count || 0;
   const totalPages = monitoringResponse?.total_pages || 1;
-
 
   // Prepare ward options for combobox with search
   const wardOptions = useMemo(() => {

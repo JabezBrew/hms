@@ -1,18 +1,16 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { usePatientInvoices } from '@/hooks/useBillingQueries';
 import { useAuth } from '@/lib/auth';
-import {
-  FileText,
-  CreditCard,
-  ChevronRight,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  DollarSign,
-} from 'lucide-react';
 
 /**
  * InvoiceChronicleCard - Billing summary card for patient chronicle

@@ -1,6 +1,15 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,16 +17,7 @@ import { WardDashboard } from '@/components/wards/WardDashboard';
 import { SectionManagement } from '@/components/wards/SectionManagement';
 import { WardStaffManagement } from '@/components/wards/WardStaffManagement';
 import { useWard, useDeleteWard } from '@/hooks/useWardQueries';
-import {
-  ChevronLeft,
-  Edit,
-  Trash2,
-  Building2,
-  RefreshCw,
-  LayoutGrid,
-  Settings,
-  Users
-} from 'lucide-react';
+
 import { BreadcrumbSetter } from '@/components/layout/PageBreadcrumb';
 import { toast } from 'sonner';
 import {
@@ -57,11 +57,8 @@ export default function WardDetailPage() {
 
   // Check if user is admin
   useEffect(() => {
-    const userJson = localStorage.getItem('user');
-    if (userJson) {
-      const user = JSON.parse(userJson);
-      setIsAdmin(user.role === 'admin');
-    }
+    const user = getAuthJSON('user');
+    setIsAdmin(user?.role === 'admin');
   }, []);
 
   // Show error toast if query fails

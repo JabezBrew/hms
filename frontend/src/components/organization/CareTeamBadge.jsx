@@ -3,9 +3,11 @@
  *
  * Shows primary vs consulting team status with appropriate styling.
  */
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Users, Stethoscope, UserCheck } from 'lucide-react';
 
 const ROLE_CONFIG = {
   primary: {
