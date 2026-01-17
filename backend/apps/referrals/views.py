@@ -7,16 +7,18 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 import logging
 
-from .models import Referral, ReferralStatus
+from .models import Referral, ReferralStatus, ReferralNotification, ReferralNotificationEvent
 from .serializers import (
     ReferralSerializer, ReferralCreateSerializer,
     ReferralSubmitSerializer, ReferralAcceptSerializer,
     ReferralDeclineSerializer, ReferralScheduleSerializer,
     ReferralCompleteSerializer, ReferralResponseSerializer,
-    ReferralSearchSerializer, ReferralListSerializer
+    ReferralSearchSerializer, ReferralListSerializer, ReferralNotificationSerializer
 )
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
+from .notifications import create_referral_notifications
+from .tasks import send_referral_status_update
 from ..encounters.models import Encounter
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
@@ -176,6 +178,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.submitted_at = timezone.now()
         referral.save()
 
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.SUBMITTED,
+                actor=request.user
+            )
+        )
+
         logger.info(
             f"Referral {referral.referral_number} submitted by {request.user.get_full_name()} "
             f"to {referral.referred_to_department}"
@@ -223,6 +233,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         referral.save()
 
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.ACCEPTED,
+                actor=request.user
+            )
+        )
+
         logger.info(
             f"Referral {referral.referral_number} accepted by {request.user.get_full_name()}"
         )
@@ -254,6 +272,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.decline_reason = decline_serializer.validated_data['decline_reason']
         referral.save()
 
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.DECLINED,
+                actor=request.user
+            )
+        )
+
         logger.info(
             f"Referral {referral.referral_number} declined by {request.user.get_full_name()}. "
             f"Reason: {referral.decline_reason}"
@@ -284,6 +310,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.status = ReferralStatus.SCHEDULED
         referral.scheduled_appointment_id = schedule_serializer.validated_data['scheduled_appointment_id']
         referral.save()
+
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.SCHEDULED,
+                actor=request.user
+            )
+        )
 
         logger.info(
             f"Referral {referral.referral_number} scheduled with appointment "
@@ -326,6 +360,20 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.specialist_notes = complete_serializer.validated_data['specialist_notes']
         referral.recommendations = complete_serializer.validated_data.get('recommendations', '')
         referral.save()
+
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.COMPLETED,
+                actor=request.user
+            )
+        )
+        transaction.on_commit(
+            lambda: send_referral_status_update.delay(
+                referral.id,
+                ReferralNotificationEvent.COMPLETED
+            )
+        )
 
         logger.info(
             f"Referral {referral.referral_number} completed by {request.user.get_full_name()}"
@@ -411,6 +459,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
             referral.consultation_workflow = workflow
             referral.status = ReferralStatus.SCHEDULED
             referral.save()
+
+            transaction.on_commit(
+                lambda: create_referral_notifications(
+                    referral,
+                    ReferralNotificationEvent.SCHEDULED,
+                    actor=request.user
+                )
+            )
 
             # Also link workflow back to referral
             workflow.source_referral = referral
@@ -539,3 +595,41 @@ class ReferralViewSet(viewsets.ModelViewSet):
             'count': queryset.count(),
             'referrals': serializer.data
         })
+
+
+class ReferralNotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    In-app notifications for referral workflow events.
+    """
+    serializer_class = ReferralNotificationSerializer
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ReferralNotification.objects.none()
+        return ReferralNotification.objects.select_related('referral').filter(
+            recipient=self.request.user,
+            facility=facility
+        )
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save(update_fields=['is_read', 'updated_at'])
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        queryset = self.get_queryset().filter(is_read=False)
+        return Response({'count': queryset.count()})
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        queryset = self.get_queryset().filter(is_read=False)
+        updated = queryset.update(is_read=True)
+        return Response({'updated': updated})

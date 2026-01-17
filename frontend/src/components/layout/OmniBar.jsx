@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useNavigate } from "react-router-dom"
 
-import AppointmentNotifications from "../appointments/AppointmentNotifications"
+import NotificationCenter from "./NotificationCenter"
 
 export function OmniBar() {
     const [open, setOpen] = React.useState(false)
@@ -80,8 +80,8 @@ export function OmniBar() {
             </div>
 
             <div className="ml-auto flex items-center space-x-4">
-                {/* Only show appointment notifications for roles that have access to appointments */}
-                {user && ['admin', 'doctor', 'nurse', 'receptionist'].includes(user.role) && <AppointmentNotifications />}
+                {/* Unified notification center */}
+                <NotificationCenter />
 
                 <FacilitySwitcher />
 

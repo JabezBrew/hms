@@ -6,8 +6,9 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { AlertWebSocket, VitalsWebSocket } from '@/lib/websocket';
-import { useAuth } from '@/contexts/auth';
+import { AlertWebSocket, VitalsWebSocket, NotificationWebSocket } from '@/lib/websocket';
+import { useAuth } from '@/lib/auth';
+import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Hook for subscribing to real-time nursing alerts.
@@ -213,8 +214,95 @@ export function useWebSocketStatus() {
   };
 }
 
+/**
+ * Hook for subscribing to real-time referral notifications.
+ *
+ * @param {Object} options Configuration options
+ * @param {boolean} options.enabled - Whether to connect (default: true)
+ * @param {Function} options.onNotification - Callback when new notification received
+ *
+ * @returns {Object} WebSocket state and notifications
+ *
+ * @example
+ * const { isConnected, notifications } = useNotificationWebSocket({
+ *   onNotification: (notification) => toast.info('New referral notification')
+ * });
+ */
+export function useNotificationWebSocket(options = {}) {
+  const { enabled = true, onNotification } = options;
+  const { token, isAuthenticated, user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const wsRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [connectionError, setConnectionError] = useState(null);
+
+  // Only enable for doctors
+  const shouldConnect = enabled && isAuthenticated && token && ['doctor', 'inpatient_doctor'].includes(user?.role);
+
+  useEffect(() => {
+    if (!shouldConnect) {
+      return;
+    }
+
+    const ws = new NotificationWebSocket(token);
+    wsRef.current = ws;
+
+    // Connection handlers
+    ws.on('connection.open', () => {
+      setIsConnected(true);
+      setConnectionError(null);
+    });
+
+    ws.on('connection.close', () => {
+      setIsConnected(false);
+    });
+
+    ws.on('connection.error', ({ error }) => {
+      setConnectionError(error);
+    });
+
+    ws.on('connection.failed', () => {
+      setConnectionError(new Error('Max reconnection attempts reached'));
+    });
+
+    // Notification handler
+    ws.on('notification.new', ({ notification }) => {
+      setNotifications((prev) => [notification, ...prev].slice(0, 50)); // Keep last 50
+
+      // Invalidate React Query cache to refresh counts
+      queryClient.invalidateQueries({ queryKey: ['referralNotifications'] });
+      queryClient.invalidateQueries({ queryKey: ['referralNotificationCount'] });
+
+      onNotification?.(notification);
+    });
+
+    // Connect
+    ws.connect();
+
+    // Cleanup on unmount
+    return () => {
+      ws.disconnect();
+      wsRef.current = null;
+    };
+  }, [shouldConnect, token, onNotification, queryClient]);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  return {
+    isConnected,
+    connectionError,
+    notifications,
+    clearNotifications,
+  };
+}
+
 export default {
   useAlertWebSocket,
   useVitalsWebSocket,
   useWebSocketStatus,
+  useNotificationWebSocket,
 };

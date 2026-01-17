@@ -92,6 +92,11 @@ class Staff(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_staff')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_staff')
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['primary_facility', 'department']),
+        ]
+
     def __str__(self):
         return f"{self.employee_id} - {self.user.get_full_name()}"
 
@@ -115,6 +120,11 @@ class PractitionerProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_practitioners')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_practitioners')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['specialization']),
+        ]
 
     def __str__(self):
         return f"Dr. {self.staff.user.get_full_name()} - {self.specialization}"
@@ -444,10 +454,10 @@ class UserSession(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=['refresh_jti']),
-            models.Index(fields=['user', 'revoked_at']),
-            models.Index(fields=['user', 'last_seen_at']),
-            models.Index(fields=['expires_at']),
+            models.Index(fields=['refresh_jti'], name='users_sess_refresh_jti_idx'),
+            models.Index(fields=['user', 'revoked_at'], name='users_sess_user_revoked_idx'),
+            models.Index(fields=['user', 'last_seen_at'], name='users_sess_user_last_seen_idx'),
+            models.Index(fields=['expires_at'], name='users_sess_expires_idx'),
         ]
         verbose_name = 'User Session'
         verbose_name_plural = 'User Sessions'

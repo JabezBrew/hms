@@ -72,9 +72,20 @@ class TestReferralViewSet:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        token['facility_code'] = user.primary_facility.code
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=user.primary_facility.code
+        )
 
         patient = PatientProfileFactory()
+        from apps.encounters.tests.factories import EncounterFactory
+        EncounterFactory(
+            patient=patient,
+            practitioner=practitioner,
+            facility=patient.facility,
+            status='in-progress'
+        )
         data = {
             'patient': str(patient.id),
             'referred_to_department': 'Cardiology',

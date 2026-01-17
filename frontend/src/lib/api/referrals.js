@@ -134,4 +134,34 @@ export const referralsApi = {
       throw new Error(handleApiError(error, 'Failed to fetch pending referrals'));
     }
   },
+
+  // Notification endpoints
+  getNotifications: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/referrals/notifications/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getAll(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral notifications'));
+    }
+  },
+
+  markNotificationRead: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/notifications/${id}/mark-read/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to mark notification as read'));
+    }
+  },
+
+  getUnreadNotificationCount: async () => {
+    try {
+      const response = await apiClient.getAll('/referrals/notifications/?is_read=false');
+      return response?.length || 0;
+    } catch (error) {
+      // Return 0 on error to avoid breaking the UI
+      console.error('Failed to fetch unread count:', error);
+      return 0;
+    }
+  },
 };

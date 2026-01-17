@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
-from .models import Referral, ReferralStatus, ReferralUrgency
+from .models import Referral, ReferralStatus, ReferralUrgency, ReferralNotification
 
 
 class ReferralSerializer(serializers.ModelSerializer):
@@ -245,3 +245,27 @@ class ReferralListSerializer(serializers.ModelSerializer):
         if obj.referred_to_provider:
             return obj.referred_to_provider.staff.user.get_full_name()
         return None
+
+
+class ReferralNotificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for referral in-app notifications.
+    """
+    referral_number = serializers.CharField(source='referral.referral_number', read_only=True)
+    referred_to_department = serializers.CharField(source='referral.referred_to_department', read_only=True)
+    referred_to_specialty = serializers.CharField(source='referral.referred_to_specialty', read_only=True)
+    event_display = serializers.CharField(source='get_event_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    urgency_display = serializers.CharField(source='get_urgency_display', read_only=True)
+
+    class Meta:
+        model = ReferralNotification
+        fields = [
+            'id', 'referral', 'referral_number',
+            'event', 'event_display',
+            'status', 'status_display',
+            'urgency', 'urgency_display',
+            'referred_to_department', 'referred_to_specialty',
+            'is_read', 'created_at'
+        ]
+        read_only_fields = ['__all__']

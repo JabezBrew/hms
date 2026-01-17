@@ -2,7 +2,7 @@ from celery import shared_task
 from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
-from .models import Referral
+from .models import Referral, ReferralStatus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,9 +23,9 @@ def send_referral_submitted_notification(self, referral_id):
             'patient'
         ).get(id=referral_id)
 
-        if referral.status != 'submitted':
-            logger.warning(f"Referral {referral_id} is not in submitted status")
-            return {"status": "skipped", "reason": "not_submitted"}
+        if referral.status != ReferralStatus.PENDING:
+            logger.warning(f"Referral {referral_id} is not in pending status")
+            return {"status": "skipped", "reason": "not_pending"}
 
         # In a real system, you would query for specialists in the department
         # For now, we'll use a department-specific email from settings
@@ -34,10 +34,12 @@ def send_referral_submitted_notification(self, referral_id):
             'DEPARTMENT_EMAILS',
             {}
         )
-        recipient_email = department_emails.get(referral.department)
+        recipient_email = department_emails.get(referral.referred_to_department)
 
         if not recipient_email:
-            logger.warning(f"No email configured for department {referral.department}")
+            logger.warning(
+                f"No email configured for department {referral.referred_to_department}"
+            )
             return {"status": "skipped", "reason": "no_department_email"}
 
         # Determine urgency label
@@ -52,8 +54,8 @@ def send_referral_submitted_notification(self, referral_id):
         context = {
             'referral_number': referral.referral_number,
             'urgency': urgency_label,
-            'department': referral.department.replace('_', ' ').title(),
-            'specialty': referral.specialty or 'General',
+            'department': referral.referred_to_department.replace('_', ' ').title(),
+            'specialty': referral.referred_to_specialty or 'General',
             'patient_name': f"{referral.patient.first_name} {referral.patient.last_name}",
             'patient_mrn': referral.patient.medical_record_number,
             'referring_provider': f"Dr. {referral.referring_provider.first_name} {referral.referring_provider.last_name}",
@@ -64,7 +66,7 @@ def send_referral_submitted_notification(self, referral_id):
         }
 
         # Render email templates
-        subject = f"{urgency_label} Referral - {referral.patient.first_name} {referral.patient.last_name} - {referral.department.replace('_', ' ').title()}"
+        subject = f"{urgency_label} Referral - {referral.patient.first_name} {referral.patient.last_name} - {referral.referred_to_department.replace('_', ' ').title()}"
 
         html_message = render_to_string('referrals/emails/referral_submitted.html', context)
         text_message = render_to_string('referrals/emails/referral_submitted.txt', context)
@@ -119,6 +121,12 @@ def send_referral_status_update(self, referral_id, action):
             logger.error(f"No referring provider email found for referral {referral.id}")
             return {"status": "error", "reason": "no_provider_email"}
 
+        if action != 'completed':
+            logger.info(
+                f"Skipping referral status email for action {action} on {referral.id}"
+            )
+            return {"status": "skipped", "reason": "unsupported_action"}
+
         # Action-specific content
         action_config = {
             'accepted': {
@@ -155,8 +163,8 @@ def send_referral_status_update(self, referral_id, action):
             'patient_name': f"{referral.patient.first_name} {referral.patient.last_name}",
             'patient_mrn': referral.patient.medical_record_number,
             'referral_number': referral.referral_number,
-            'department': referral.department.replace('_', ' ').title(),
-            'specialty': referral.specialty or 'General',
+            'department': referral.referred_to_department.replace('_', ' ').title(),
+            'specialty': referral.referred_to_specialty or 'General',
             'reason': referral.reason,
             'title': config.get('title', 'Referral Update'),
             'message': config.get('message', 'Your referral status has been updated.'),
@@ -216,7 +224,7 @@ def send_referral_reminder(self, referral_id):
             'patient'
         ).get(id=referral_id)
 
-        if referral.status not in ['submitted', 'accepted']:
+        if referral.status not in [ReferralStatus.PENDING, ReferralStatus.ACCEPTED]:
             logger.info(f"Referral {referral_id} is not pending, skipping reminder")
             return {"status": "skipped", "reason": "not_pending"}
 
@@ -226,10 +234,10 @@ def send_referral_reminder(self, referral_id):
             'DEPARTMENT_EMAILS',
             {}
         )
-        recipient_email = department_emails.get(referral.department)
+        recipient_email = department_emails.get(referral.referred_to_department)
 
         if not recipient_email:
-            logger.warning(f"No email configured for department {referral.department}")
+            logger.warning(f"No email configured for department {referral.referred_to_department}")
             return {"status": "skipped", "reason": "no_department_email"}
 
         # Calculate days since submission
@@ -241,8 +249,8 @@ def send_referral_reminder(self, referral_id):
             'referral_number': referral.referral_number,
             'patient_name': f"{referral.patient.first_name} {referral.patient.last_name}",
             'patient_mrn': referral.patient.medical_record_number,
-            'department': referral.department.replace('_', ' ').title(),
-            'specialty': referral.specialty or 'General',
+            'department': referral.referred_to_department.replace('_', ' ').title(),
+            'specialty': referral.referred_to_specialty or 'General',
             'urgency': referral.urgency.upper(),
             'days_pending': days_pending,
             'reason': referral.reason,

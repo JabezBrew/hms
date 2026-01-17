@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/sidebar"
 
 import { useAuth } from "@/lib/auth"
+import { useInboxCount } from "@/hooks/useInboxCount"
 
 // Helper function to check if a user has access to a menu item
 const hasAccess = (userRole, allowedRoles) => {
@@ -45,6 +46,7 @@ const hasAccess = (userRole, allowedRoles) => {
 export function AppSidebar() {
   const { user } = useAuth()
   const userRole = user?.role || ''
+  const { count: inboxCount } = useInboxCount()
 
   // Get role-specific dashboard URL
   // Support staff are redirected to their workflow pages instead of a generic dashboard
@@ -143,7 +145,9 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Inbox" href="/inbox">
                   <Inbox />
                   <span>Inbox</span>
-                  <SidebarMenuBadge>3</SidebarMenuBadge>
+                  {inboxCount > 0 && (
+                    <SidebarMenuBadge>{inboxCount > 99 ? '99+' : inboxCount}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

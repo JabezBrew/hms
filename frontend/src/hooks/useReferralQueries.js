@@ -11,6 +11,8 @@ export const referralKeys = {
   inbox: () => [...referralKeys.all, 'inbox'],
   sent: () => [...referralKeys.all, 'sent'],
   pending: () => [...referralKeys.all, 'pending'],
+  notifications: () => ['referralNotifications'],
+  notificationCount: () => ['referralNotificationCount'],
 };
 
 /**
@@ -209,5 +211,43 @@ export function usePendingReferrals() {
   return useQuery({
     queryKey: referralKeys.pending(),
     queryFn: () => referralsApi.getPendingReferrals(),
+  });
+}
+
+/**
+ * Get referral notifications for current user
+ */
+export function useReferralNotifications(params = {}) {
+  return useQuery({
+    queryKey: [...referralKeys.notifications(), params],
+    queryFn: () => referralsApi.getNotifications(params),
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+/**
+ * Get unread referral notification count
+ */
+export function useReferralNotificationCount() {
+  return useQuery({
+    queryKey: referralKeys.notificationCount(),
+    queryFn: () => referralsApi.getUnreadNotificationCount(),
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 60 * 1000, // Refetch every minute
+  });
+}
+
+/**
+ * Mark a notification as read
+ */
+export function useMarkNotificationRead() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => referralsApi.markNotificationRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: referralKeys.notifications() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.notificationCount() });
+    },
   });
 }

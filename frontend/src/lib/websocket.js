@@ -287,7 +287,24 @@ export class VitalsWebSocket extends BaseWebSocket {
   }
 }
 
+/**
+ * WebSocket client for referral notifications.
+ *
+ * Events:
+ * - notification.new: New referral notification
+ * - connection.open: Connected to server
+ * - connection.close: Disconnected from server
+ * - connection.error: Connection error
+ * - connection.failed: Max reconnect attempts reached
+ */
+export class NotificationWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/notifications/', token, options);
+  }
+}
+
 export default {
   AlertWebSocket,
   VitalsWebSocket,
+  NotificationWebSocket,
 };
