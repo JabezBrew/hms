@@ -274,35 +274,45 @@ const PractitionerAvailabilityPage = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-display font-bold text-foreground">
+              <h1 className="font-display text-3xl sm:text-4xl font-bold text-foreground tracking-tight">
                 {isDoctor ? 'My Availability' : 'Practitioner Availability'}
               </h1>
-              <p className="text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {isDoctor
                   ? 'View your schedule, calendar, and blocked time'
                   : 'Manage schedules, view calendars, and block time off'}
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsCreateBlockedTimeDialogOpen(true)}>
-                <Ban className="h-4 w-4 mr-2" />
+              <Button
+                variant="outline"
+                className="font-mono text-xs"
+                onClick={() => setIsCreateBlockedTimeDialogOpen(true)}
+              >
+                <Ban className="h-3.5 w-3.5 mr-1.5" />
                 Block Time
               </Button>
-              <Button onClick={() => setIsCreateRecurringDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
+              <Button
+                className="bg-amber-600 hover:bg-amber-700 font-mono text-xs"
+                onClick={() => setIsCreateRecurringDialogOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
                 New Schedule
               </Button>
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Stats - Show different cards for doctors vs admins */}
+          <div className={cn(
+            "grid gap-4",
+            isDoctor ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2 md:grid-cols-4"
+          )}>
             <StatCard
               icon={CalendarClock}
               label="Active Schedules"
               value={stats.activeSchedules}
               sublabel={`of ${stats.totalSchedules} total`}
-              color="primary"
+              color="amber"
             />
             <StatCard
               icon={CalendarX}
@@ -311,19 +321,22 @@ const PractitionerAvailabilityPage = () => {
               sublabel={`${stats.totalBlocks} total`}
               color="rose"
             />
-            <StatCard
-              icon={Users}
-              label="Practitioners"
-              value={practitionerOptions.length}
-              sublabel="configured"
-              color="emerald"
-            />
+            {/* Only show practitioners count for admins/receptionists */}
+            {!isDoctor && (
+              <StatCard
+                icon={Users}
+                label="Practitioners"
+                value={practitionerOptions.length}
+                sublabel="configured"
+                color="emerald"
+              />
+            )}
             <StatCard
               icon={CalendarDays}
               label="This Week"
               value="—"
               sublabel="appointments"
-              color="amber"
+              color="sky"
             />
           </div>
         </div>
@@ -336,7 +349,7 @@ const PractitionerAvailabilityPage = () => {
           <div className="lg:col-span-2">
             <div className="bg-card rounded-xl border border-border/50 p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-foreground">
+                <h2 className="font-heading text-base font-semibold text-foreground">
                   {isDoctor ? 'My Availability' : 'Availability Calendar'}
                 </h2>
                 {/* Only show practitioner search for admin/receptionist - doctors see their own */}
@@ -358,13 +371,13 @@ const PractitionerAvailabilityPage = () => {
 
               {!selectedPractitioner ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="p-4 rounded-full bg-primary/10 mb-4">
-                    <CalendarDays className="h-8 w-8 text-primary" />
+                  <div className="p-4 rounded-full bg-amber-100 dark:bg-amber-900/30 mb-4">
+                    <CalendarDays className="h-8 w-8 text-amber-600 dark:text-amber-400" />
                   </div>
-                  <h3 className="text-lg font-medium text-foreground mb-2">
+                  <h3 className="font-display text-lg font-medium text-foreground mb-2">
                     {isDoctor ? 'No Practitioner Profile' : 'Select a Practitioner'}
                   </h3>
-                  <p className="text-muted-foreground text-sm max-w-sm">
+                  <p className="text-xs text-muted-foreground max-w-sm">
                     {isDoctor
                       ? 'Your account is not linked to a practitioner profile. Contact your administrator.'
                       : 'Choose a practitioner from the dropdown above to view their availability calendar'}
@@ -384,13 +397,13 @@ const PractitionerAvailabilityPage = () => {
           {/* Sidebar (1/3 width) */}
           <div className="space-y-6">
             {/* Tab Navigation */}
-            <div className="flex p-1 bg-muted/50 rounded-lg">
+            <div className="flex p-1 bg-muted/30 rounded-lg border border-border/50">
               <button
                 onClick={() => setActiveTab('schedules')}
                 className={cn(
-                  "flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors",
+                  "flex-1 py-2 px-4 font-mono text-xs rounded-md transition-colors",
                   activeTab === 'schedules'
-                    ? "bg-card text-foreground shadow-sm"
+                    ? "bg-card text-foreground shadow-sm font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -399,9 +412,9 @@ const PractitionerAvailabilityPage = () => {
               <button
                 onClick={() => setActiveTab('blocked')}
                 className={cn(
-                  "flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors",
+                  "flex-1 py-2 px-4 font-mono text-xs rounded-md transition-colors",
                   activeTab === 'blocked'
-                    ? "bg-card text-foreground shadow-sm"
+                    ? "bg-card text-foreground shadow-sm font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -413,14 +426,14 @@ const PractitionerAvailabilityPage = () => {
             {activeTab === 'schedules' && (
               <div className="bg-card rounded-xl border border-border/50">
                 <div className="p-4 border-b border-border/50 flex items-center justify-between">
-                  <h3 className="font-semibold text-foreground">Recurring Schedules</h3>
+                  <h3 className="font-heading text-sm font-semibold text-foreground">Recurring Schedules</h3>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => refetchRecurring()}
-                    className="h-8 w-8 p-0"
+                    className="h-7 w-7 p-0"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
                 </div>
                 <ScrollArea className="h-[400px]">
@@ -430,12 +443,14 @@ const PractitionerAvailabilityPage = () => {
                     </div>
                   ) : recurringSchedules.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                      <Clock className="h-10 w-10 text-muted-foreground mb-3" />
-                      <p className="text-sm text-muted-foreground">No schedules configured</p>
+                      <div className="p-3 rounded-full bg-muted/50 mb-3">
+                        <Clock className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">No schedules configured</p>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-3"
+                        className="mt-3 font-mono text-xs"
                         onClick={() => setIsCreateRecurringDialogOpen(true)}
                       >
                         Create Schedule
@@ -467,14 +482,14 @@ const PractitionerAvailabilityPage = () => {
             {activeTab === 'blocked' && (
               <div className="bg-card rounded-xl border border-border/50">
                 <div className="p-4 border-b border-border/50 flex items-center justify-between">
-                  <h3 className="font-semibold text-foreground">Blocked Times</h3>
+                  <h3 className="font-heading text-sm font-semibold text-foreground">Blocked Times</h3>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => refetchBlocked()}
-                    className="h-8 w-8 p-0"
+                    className="h-7 w-7 p-0"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
                 </div>
                 <ScrollArea className="h-[400px]">
@@ -484,12 +499,14 @@ const PractitionerAvailabilityPage = () => {
                     </div>
                   ) : blockedTimes.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                      <Ban className="h-10 w-10 text-muted-foreground mb-3" />
-                      <p className="text-sm text-muted-foreground">No blocked times</p>
+                      <div className="p-3 rounded-full bg-muted/50 mb-3">
+                        <Ban className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">No blocked times</p>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-3"
+                        className="mt-3 font-mono text-xs"
                         onClick={() => setIsCreateBlockedTimeDialogOpen(true)}
                       >
                         Block Time
@@ -522,15 +539,22 @@ const PractitionerAvailabilityPage = () => {
 
       {/* Dialogs */}
       <Dialog open={isCreateRecurringDialogOpen} onOpenChange={setIsCreateRecurringDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Create Recurring Schedule</DialogTitle>
-            <DialogDescription>
-              Set up a new recurring availability schedule for a practitioner.
-            </DialogDescription>
+        <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <DialogTitle className="font-display text-lg">Create Recurring Schedule</DialogTitle>
+                <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {isDoctor ? 'Your availability' : 'Practitioner availability'}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="p-1">
+            <div className="px-6 py-5">
               <RecurringScheduleForm onSuccess={handleCreateRecurringSuccess} />
             </div>
           </ScrollArea>
@@ -538,13 +562,22 @@ const PractitionerAvailabilityPage = () => {
       </Dialog>
 
       <Dialog open={isEditRecurringDialogOpen} onOpenChange={setIsEditRecurringDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Edit Schedule</DialogTitle>
-            <DialogDescription>Update the schedule details.</DialogDescription>
+        <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <DialogTitle className="font-display text-lg">Edit Schedule</DialogTitle>
+                <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Update schedule details
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="p-1">
+            <div className="px-6 py-5">
               {selectedRecurringSchedule && (
                 <RecurringScheduleForm
                   initialData={selectedRecurringSchedule}
@@ -557,15 +590,22 @@ const PractitionerAvailabilityPage = () => {
       </Dialog>
 
       <Dialog open={isCreateBlockedTimeDialogOpen} onOpenChange={setIsCreateBlockedTimeDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Block Time</DialogTitle>
-            <DialogDescription>
-              Mark a period as unavailable (vacation, emergency, etc.).
-            </DialogDescription>
+        <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/30">
+                <CalendarX className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <DialogTitle className="font-display text-lg">Block Time</DialogTitle>
+                <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Mark as unavailable
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="p-1">
+            <div className="px-6 py-5">
               <BlockedTimeForm
                 onSuccess={handleCreateBlockedTimeSuccess}
                 onCancel={() => setIsCreateBlockedTimeDialogOpen(false)}
@@ -576,13 +616,22 @@ const PractitionerAvailabilityPage = () => {
       </Dialog>
 
       <Dialog open={isEditBlockedTimeDialogOpen} onOpenChange={setIsEditBlockedTimeDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Edit Blocked Time</DialogTitle>
-            <DialogDescription>Update the blocked time details.</DialogDescription>
+        <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/30">
+                <CalendarX className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <DialogTitle className="font-display text-lg">Edit Blocked Time</DialogTitle>
+                <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Update blocked time
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="p-1">
+            <div className="px-6 py-5">
               {selectedBlockedTime && (
                 <BlockedTimeForm
                   initialData={selectedBlockedTime}
@@ -655,30 +704,46 @@ const PractitionerAvailabilityPage = () => {
 };
 
 /**
- * StatCard - Stats display card
+ * StatCard - Chronicle-style stats display card
  */
-function StatCard({ icon: Icon, label, value, sublabel, color = 'primary' }) {
+function StatCard({ icon: Icon, label, value, sublabel, color = 'amber' }) {
   const colorClasses = {
-    primary: { bg: 'bg-primary/10', icon: 'text-primary', value: 'text-primary' },
-    emerald: { bg: 'bg-emerald-500/10', icon: 'text-emerald-600', value: 'text-emerald-600' },
-    rose: { bg: 'bg-rose-500/10', icon: 'text-rose-600', value: 'text-rose-600' },
-    amber: { bg: 'bg-amber-500/10', icon: 'text-amber-600', value: 'text-amber-600' },
+    amber: {
+      bg: 'bg-amber-100 dark:bg-amber-900/30',
+      icon: 'text-amber-600 dark:text-amber-400',
+      value: 'text-amber-600 dark:text-amber-400'
+    },
+    emerald: {
+      bg: 'bg-emerald-100 dark:bg-emerald-900/30',
+      icon: 'text-emerald-600 dark:text-emerald-400',
+      value: 'text-emerald-600 dark:text-emerald-400'
+    },
+    rose: {
+      bg: 'bg-rose-100 dark:bg-rose-900/30',
+      icon: 'text-rose-600 dark:text-rose-400',
+      value: 'text-rose-600 dark:text-rose-400'
+    },
+    sky: {
+      bg: 'bg-sky-100 dark:bg-sky-900/30',
+      icon: 'text-sky-600 dark:text-sky-400',
+      value: 'text-sky-600 dark:text-sky-400'
+    },
   };
-  const colors = colorClasses[color];
+  const colors = colorClasses[color] || colorClasses.amber;
 
   return (
-    <div className="bg-background/50 rounded-xl p-4 border border-border/50">
+    <div className="bg-background/50 rounded-xl p-4 border border-border/50 hover:border-border transition-colors">
       <div className="flex items-center gap-3">
-        <div className={cn("p-2 rounded-lg", colors.bg)}>
+        <div className={cn("p-2.5 rounded-lg", colors.bg)}>
           <Icon className={cn("h-5 w-5", colors.icon)} />
         </div>
-        <div>
-          <p className={cn("font-mono text-2xl font-bold", colors.value)}>{value}</p>
-          <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+        <div className="min-w-0">
+          <p className={cn("font-display text-2xl font-bold tabular-nums", colors.value)}>{value}</p>
+          <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider truncate">
             {label}
           </p>
           {sublabel && (
-            <p className="font-mono text-[10px] text-muted-foreground">{sublabel}</p>
+            <p className="font-mono text-[10px] text-muted-foreground/70">{sublabel}</p>
           )}
         </div>
       </div>
@@ -687,54 +752,55 @@ function StatCard({ icon: Icon, label, value, sublabel, color = 'primary' }) {
 }
 
 /**
- * ScheduleCard - Display recurring schedule
+ * ScheduleCard - Chronicle-style recurring schedule display
  */
 function ScheduleCard({ schedule, onEdit, onDelete }) {
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
-    <div className="p-3 rounded-lg border border-border/50 hover:border-border transition-colors mb-2">
+    <div className="p-3 rounded-lg border border-border/50 hover:border-border bg-background/50 transition-colors mb-2">
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="font-medium text-foreground truncate">{schedule.name}</h4>
-            <Badge
-              variant={schedule.is_active ? "default" : "secondary"}
-              className="text-[10px] px-1.5 py-0"
+            <h4 className="font-heading text-sm font-medium text-foreground truncate">{schedule.name}</h4>
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider",
+                schedule.is_active
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  : "bg-muted text-muted-foreground"
+              )}
             >
               {schedule.is_active ? 'Active' : 'Inactive'}
-            </Badge>
+            </span>
           </div>
-          <p className="text-sm text-muted-foreground truncate mt-0.5">
-            {schedule.practitioner_name || 'Unknown practitioner'}
-          </p>
           <div className="flex flex-wrap gap-1 mt-2">
             {schedule.days_of_week.map(day => (
               <span
                 key={day}
-                className="px-1.5 py-0.5 bg-primary/10 text-primary text-[10px] font-mono rounded"
+                className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] font-mono rounded"
               >
                 {dayNames[day]}
               </span>
             ))}
           </div>
-          <p className="font-mono text-xs text-muted-foreground mt-2">
-            {schedule.start_time} - {schedule.end_time} • {schedule.slot_duration}min slots
+          <p className="font-mono text-[10px] text-muted-foreground mt-2">
+            {schedule.start_time} – {schedule.end_time} • {schedule.slot_duration}min slots
           </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreVertical className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+              <MoreVertical className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <Edit className="h-4 w-4 mr-2" />
+          <DropdownMenuContent align="end" className="z-[200]">
+            <DropdownMenuItem onClick={onEdit} className="text-xs">
+              <Edit className="h-3.5 w-3.5 mr-2" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-destructive">
-              <Trash2 className="h-4 w-4 mr-2" />
+            <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -745,7 +811,7 @@ function ScheduleCard({ schedule, onEdit, onDelete }) {
 }
 
 /**
- * BlockedTimeCard - Display blocked time entry
+ * BlockedTimeCard - Chronicle-style blocked time display
  */
 function BlockedTimeCard({ blocked, onEdit, onDelete }) {
   const formatDate = (dateStr) => {
@@ -762,44 +828,43 @@ function BlockedTimeCard({ blocked, onEdit, onDelete }) {
 
   return (
     <div className={cn(
-      "p-3 rounded-lg border border-border/50 hover:border-border transition-colors mb-2",
-      isPast && "opacity-60"
+      "p-3 rounded-lg border border-border/50 hover:border-border bg-background/50 transition-colors mb-2",
+      isPast && "opacity-50"
     )}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Ban className="h-4 w-4 text-rose-500 shrink-0" />
-            <h4 className="font-medium text-foreground truncate">
+            <div className="p-1 rounded bg-rose-100 dark:bg-rose-900/30">
+              <Ban className="h-3 w-3 text-rose-600 dark:text-rose-400" />
+            </div>
+            <h4 className="font-heading text-sm font-medium text-foreground truncate">
               {blocked.reason || 'Blocked'}
             </h4>
           </div>
-          <p className="text-sm text-muted-foreground truncate mt-0.5">
-            {blocked.practitioner_name || 'Unknown'}
-          </p>
-          <p className="font-mono text-xs text-muted-foreground mt-2">
+          <p className="font-mono text-[10px] text-muted-foreground mt-2">
             {isDateRange
-              ? `${formatDate(blocked.start_date)} - ${formatDate(blocked.end_date)}`
+              ? `${formatDate(blocked.start_date)} – ${formatDate(blocked.end_date)}`
               : formatDate(blocked.date || blocked.start_date)
             }
             {blocked.is_all_day
               ? ' • All Day'
-              : ` • ${blocked.start_time} - ${blocked.end_time}`
+              : ` • ${blocked.start_time} – ${blocked.end_time}`
             }
           </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreVertical className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+              <MoreVertical className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <Edit className="h-4 w-4 mr-2" />
+          <DropdownMenuContent align="end" className="z-[200]">
+            <DropdownMenuItem onClick={onEdit} className="text-xs">
+              <Edit className="h-3.5 w-3.5 mr-2" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-destructive">
-              <Trash2 className="h-4 w-4 mr-2" />
+            <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>

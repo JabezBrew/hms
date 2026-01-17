@@ -8,6 +8,7 @@ concern used by clinical_notes, nursing, billing, workflows, and other apps.
 import uuid
 
 from django.db import models
+from django.db.models import Q, Case, When
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
@@ -46,6 +47,20 @@ class Encounter(models.Model):
     )
     practitioner = models.ForeignKey(
         PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='encounters'
+    )
+    clinic = models.ForeignKey(
+        'organization.Clinic',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='encounters'
+    )
+    appointment = models.ForeignKey(
+        'appointments.Appointment',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -147,11 +162,20 @@ class Encounter(models.Model):
             models.Index(fields=['facility', 'status']),
             models.Index(fields=['patient', 'status']),
             models.Index(fields=['practitioner', 'status']),
+            models.Index(fields=['clinic', 'status']),
+            models.Index(fields=['appointment', 'status']),
             models.Index(fields=['status', 'start_time']),
             models.Index(fields=['encounter_type', 'status']),
             models.Index(fields=['fhir_id']),
             models.Index(fields=['fhir_synced']),
             models.Index(fields=['start_time']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['appointment'],
+                condition=Q(appointment__isnull=False),
+                name='unique_encounter_per_appointment'
+            )
         ]
 
     def __str__(self):
@@ -228,3 +252,163 @@ class Encounter(models.Model):
         self.end_time = timezone.now()
         self.fhir_synced = False  # Mark for re-sync
         self.save()
+
+
+class OutpatientVisit(models.Model):
+    """Lifecycle details for outpatient encounters."""
+
+    class VisitStatus(models.TextChoices):
+        CHECKED_IN = 'checked_in', 'Checked In'
+        WAITING = 'waiting', 'Waiting'
+        CALLED = 'called', 'Called'
+        IN_PROGRESS = 'in_progress', 'With Doctor'
+        ON_HOLD = 'on_hold', 'On Hold'
+        READY_CHECKOUT = 'ready_checkout', 'Ready for Checkout'
+        CHECKED_OUT = 'checked_out', 'Checked Out'
+        NO_SHOW = 'no_show', 'No Show'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    appointment = models.OneToOneField(
+        'appointments.Appointment',
+        on_delete=models.CASCADE,
+        related_name='visit'
+    )
+    encounter = models.OneToOneField(
+        Encounter,
+        on_delete=models.CASCADE,
+        related_name='outpatient_visit'
+    )
+    clinic = models.ForeignKey(
+        'organization.Clinic',
+        on_delete=models.PROTECT,
+        related_name='outpatient_visits'
+    )
+    visit_status = models.CharField(
+        max_length=20,
+        choices=VisitStatus.choices,
+        default=VisitStatus.CHECKED_IN
+    )
+    queue_number = models.PositiveIntegerField(null=True, blank=True)
+
+    checked_in_at = models.DateTimeField(auto_now_add=True)
+    checked_in_by = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='outpatient_checkins'
+    )
+    called_at = models.DateTimeField(null=True, blank=True)
+    consultation_started_at = models.DateTimeField(null=True, blank=True)
+    consultation_ended_at = models.DateTimeField(null=True, blank=True)
+    checked_out_at = models.DateTimeField(null=True, blank=True)
+    checked_out_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='outpatient_checkouts'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['clinic', 'visit_status', 'checked_in_at']),
+            models.Index(fields=['queue_number', 'checked_in_at']),
+        ]
+
+    def __str__(self):
+        return f"Visit {self.encounter_id} ({self.visit_status})"
+
+
+class TriageQueue(models.Model):
+    """Queue for walk-in patients awaiting triage and clinic assignment."""
+
+    class Priority(models.TextChoices):
+        EMERGENCY = 'emergency', 'Emergency'
+        URGENT = 'urgent', 'Urgent'
+        ROUTINE = 'routine', 'Routine'
+
+    class Status(models.TextChoices):
+        WAITING = 'waiting', 'Waiting for Triage'
+        TRIAGED = 'triaged', 'Triaged'
+        ASSIGNED = 'assigned', 'Assigned to Clinic'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='triage_queue'
+    )
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='triage_entries'
+    )
+    priority = models.CharField(
+        max_length=20,
+        choices=Priority.choices,
+        default=Priority.ROUTINE
+    )
+    chief_complaint = models.TextField(blank=True)
+    triage_notes = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.WAITING
+    )
+
+    triaged_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='triage_assessments'
+    )
+    triaged_at = models.DateTimeField(null=True, blank=True)
+
+    assigned_clinic = models.ForeignKey(
+        'organization.Clinic',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL
+    )
+    assigned_practitioner = models.ForeignKey(
+        PractitionerProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+
+    appointment = models.OneToOneField(
+        'appointments.Appointment',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='triage_entry'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = [
+            models.Case(
+                models.When(priority='emergency', then=0),
+                models.When(priority='urgent', then=1),
+                models.When(priority='routine', then=2),
+                default=3,
+            ),
+            'created_at'
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'status']),
+            models.Index(fields=['patient', 'created_at']),
+            models.Index(fields=['priority', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"Triage {self.patient_id} ({self.status})"

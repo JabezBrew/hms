@@ -351,6 +351,65 @@ class ClinicalUnit(MPTTModel):
         return 'USD'
 
 
+class Clinic(models.Model):
+    """Outpatient clinic configuration for visit management."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='clinics'
+    )
+    department = models.ForeignKey(
+        ClinicalUnit,
+        on_delete=models.PROTECT,
+        related_name='clinics',
+        help_text='Clinical unit that owns this clinic'
+    )
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+
+    operating_hours_start = models.TimeField(null=True, blank=True)
+    operating_hours_end = models.TimeField(null=True, blank=True)
+    operates_24_hours = models.BooleanField(default=False)
+    accepts_walk_ins = models.BooleanField(default=True)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_clinics'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_clinics'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'code'],
+                name='unique_clinic_code_per_facility'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'is_active']),
+            models.Index(fields=['department', 'is_active']),
+            models.Index(fields=['code']),
+        ]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
 class UnitLeadership(models.Model):
     """
     Tracks leadership positions with effective dates.

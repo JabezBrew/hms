@@ -74,4 +74,10 @@ def build_auth_response(request, user, facility_code=None):
         secure=settings.JWT_AUTH_SECURE,
     )
 
+    try:
+        from apps.users.session_service import record_login_session
+        record_login_session(request, user, tokens['refresh'], facility_code=resolved_facility)
+    except Exception:
+        pass
+
     return response

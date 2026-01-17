@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import get_user_facility
+from apps.users.models import UserSession
 from .models import AuditLog
 from .serializers import AuditLogSerializer, AuditLogStatsSerializer
 from django.conf import settings
@@ -133,6 +134,18 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by('-count')[:5]
         )
 
+        session_queryset = UserSession.objects.filter(revoked_at__isnull=True, expires_at__gt=now)
+        if getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False) and request.user.user_type == 'admin':
+            active_sessions = session_queryset.exclude(facility_code='').values('user_id').distinct().count()
+        else:
+            facility = get_user_facility(request)
+            if not facility:
+                active_sessions = 0
+            else:
+                active_sessions = session_queryset.filter(
+                    facility_code=facility.code,
+                ).values('user_id').distinct().count()
+
         data = {
             'total_logs': total_logs,
             'logs_today': logs_today,
@@ -140,6 +153,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             'category_breakdown': category_breakdown,
             'action_breakdown': action_breakdown,
             'most_active_users': most_active_users,
+            'active_sessions': active_sessions,
         }
 
         serializer = AuditLogStatsSerializer(data)

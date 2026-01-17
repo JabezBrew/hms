@@ -15,7 +15,10 @@ import {
   Shield,
   Download,
   Stethoscope,
+  Clock,
+  Users,
 } from "lucide-react";
+import { VisitStatusBadge } from "@/components/visits/VisitStatusBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +53,7 @@ const PatientIdentityHero = ({
   onManageInsurance,
   insurance = [],
   activeAdmission,
+  activeVisit,
   className
 }) => {
   // ============================================
@@ -291,6 +295,17 @@ const PatientIdentityHero = ({
                 <MapPin className="h-3.5 w-3.5" />
                 {location}
               </span>
+            )}
+
+            {/* Active Visit Status */}
+            {activeVisit && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
+                  <Users className="h-3.5 w-3.5" />
+                  #{activeVisit.queue_number}
+                </span>
+                <VisitStatusBadge status={activeVisit.visit_status} size="sm" />
+              </div>
             )}
 
             {/* Insurance Badge */}

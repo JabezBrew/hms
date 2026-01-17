@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Phone,
   Mail,
+  ClipboardList,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/lib/auth';
@@ -97,6 +98,14 @@ export default function ReceptionistDashboard() {
             >
               <UserPlus className="h-4 w-4 mr-2" />
               Register Patient
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/triage')}
+            >
+              <ClipboardList className="h-4 w-4 mr-2" />
+              Triage Queue
             </Button>
             <Button
               variant="outline"

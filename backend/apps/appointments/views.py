@@ -5,12 +5,17 @@ from rest_framework.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 import datetime
 
+from django.db import transaction
+from django.utils import timezone
+
 from .models import (
+    Appointment,
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
     ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 )
 from .serializers import (
     AppointmentTypeSerializer, AppointmentFHIRMappingSerializer,
+    AppointmentListSerializer, AppointmentSerializer,
     RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer,
     RecurringScheduleSerializer, BlockedTimeSerializer
 )
@@ -24,10 +29,12 @@ from ..users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
+    check_clinical_access,
     check_demographics_access,
     get_user_facility,
 )
-from apps.users.models import PatientProfile
+from apps.users.models import PatientProfile, PractitionerProfile
+from apps.encounters.models import Encounter
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 
 
@@ -104,6 +111,134 @@ def _ensure_appointment_facility_access(appointment, facility, user):
     if patient.facility_id != facility.id:
         raise PermissionDenied("Patient does not belong to the active facility.")
     check_demographics_access(user, patient)
+
+
+class LocalAppointmentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for local appointment records.
+    """
+    queryset = Appointment.objects.all()
+    permission_classes = [
+        permissions.IsAuthenticated,
+        FacilityScopedPermission,
+        (IsAdmin | IsDoctor | IsNurse | IsReceptionist)
+    ]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['patient', 'practitioner', 'clinic', 'status', 'appointment_type']
+    search_fields = ['patient__user__first_name', 'patient__user__last_name']
+    ordering_fields = ['start_time', 'created_at', 'status']
+    ordering = ['start_time']
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Appointment.objects.none()
+
+        queryset = Appointment.objects.select_related(
+            'patient',
+            'patient__user',
+            'practitioner',
+            'practitioner__staff',
+            'practitioner__staff__user',
+            'clinic',
+            'appointment_type',
+        ).filter(facility=facility)
+
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient or patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_demographics_access(self.request.user, patient)
+
+        if self.request.user.user_type in ['doctor', 'nurse']:
+            practitioner = PractitionerProfile.objects.filter(
+                staff__user=self.request.user
+            ).first()
+            if practitioner:
+                queryset = queryset.filter(practitioner=practitioner)
+            else:
+                return Appointment.objects.none()
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return AppointmentListSerializer
+        return AppointmentSerializer
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient = serializer.validated_data.get('patient')
+        if not patient or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_demographics_access(self.request.user, patient)
+
+        clinic = serializer.validated_data.get('clinic')
+        if clinic.facility_id != facility.id:
+            raise PermissionDenied("Clinic does not belong to the active facility.")
+
+        practitioner = serializer.validated_data.get('practitioner')
+        if self.request.user.user_type in ['doctor', 'nurse']:
+            practitioner_profile = PractitionerProfile.objects.filter(
+                staff__user=self.request.user
+            ).first()
+            if practitioner_profile and practitioner != practitioner_profile:
+                raise PermissionDenied("Clinicians can only create appointments for themselves.")
+
+        serializer.save(
+            facility=facility,
+            created_by=self.request.user,
+            updated_by=self.request.user
+        )
+
+    def perform_update(self, serializer):
+        appointment = self.get_object()
+        facility = get_user_facility(self.request)
+        if not facility or appointment.facility_id != facility.id:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def start_visit(self, request, pk=None):
+        appointment = self.get_object()
+        if appointment.status in ['cancelled', 'fulfilled', 'noshow']:
+            return Response(
+                {"error": "Cannot start a visit for a terminal appointment."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        encounter = Encounter.objects.filter(appointment=appointment).first()
+        if encounter:
+            return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_200_OK)
+
+        check_clinical_access(request.user, appointment.patient)
+
+        with transaction.atomic():
+            encounter = Encounter.objects.create(
+                patient=appointment.patient,
+                facility=appointment.facility,
+                practitioner=appointment.practitioner,
+                clinic=appointment.clinic,
+                appointment=appointment,
+                encounter_type='outpatient',
+                status='in-progress',
+                start_time=timezone.now(),
+                reason=appointment.reason,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+
+            from apps.encounters.services import VisitService
+            VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+
+            appointment.status = 'arrived'
+            appointment.updated_by = request.user
+            appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
+
+        return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_201_CREATED)
 
 
 class AppointmentTypeViewSet(viewsets.ModelViewSet):

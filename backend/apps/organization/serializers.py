@@ -10,6 +10,7 @@ from .models import (
     LeadershipRoleConfig,
     StaffAssignmentTypeConfig,
     ClinicalUnit,
+    Clinic,
     UnitLeadership,
     StaffUnitAssignment,
     UnitMemberAssignment,
@@ -219,25 +220,32 @@ class ClinicalUnitCreateSerializer(ClinicalUnitSerializer):
 
         return data
 
-    def create(self, validated_data):
-        request = self.context.get('request')
-        if request and getattr(request, 'user', None) and request.user.is_authenticated:
-            validated_data['created_by'] = request.user
-        return super().create(validated_data)
 
-    def update(self, instance, validated_data):
-        request = self.context.get('request')
-        if request and getattr(request, 'user', None) and request.user.is_authenticated:
-            validated_data['updated_by'] = request.user
-        return super().update(instance, validated_data)
+class ClinicListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for clinic lists."""
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = Clinic
+        fields = [
+            'id', 'code', 'name', 'department', 'department_name',
+            'operates_24_hours', 'accepts_walk_ins', 'is_active'
+        ]
 
 
-# =============================================================================
-# Unit Leadership Serializers
-# =============================================================================
+class ClinicSerializer(serializers.ModelSerializer):
+    """Full serializer for clinic details."""
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    facility_name = serializers.CharField(source='facility.name', read_only=True)
+
+    class Meta:
+        model = Clinic
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class UnitLeadershipListSerializer(serializers.ModelSerializer):
+
     """Lightweight serializer for leadership lists."""
     unit_name = serializers.CharField(source='unit.name', read_only=True)
     role_name = serializers.CharField(source='role.name', read_only=True)

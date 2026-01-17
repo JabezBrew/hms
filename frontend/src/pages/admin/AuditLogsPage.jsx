@@ -189,7 +189,7 @@ const AuditLogsPage = () => {
               <StatCard
                 icon={Users}
                 label="Active Users"
-                value={stats.most_active_users?.length || '0'}
+                value={stats.active_sessions?.toLocaleString() || '0'}
                 color="text-violet-600"
               />
             </div>

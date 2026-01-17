@@ -3,8 +3,48 @@ Encounter serializers for API data transformation.
 """
 from rest_framework import serializers
 
-from .models import Encounter
+from .models import Encounter, OutpatientVisit, TriageQueue
 from apps.users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
+
+
+class OutpatientVisitSerializer(serializers.ModelSerializer):
+    """Serializer for outpatient visit lifecycle data."""
+
+    class Meta:
+        model = OutpatientVisit
+        fields = [
+            'appointment', 'clinic', 'visit_status', 'queue_number',
+            'checked_in_at', 'checked_in_by', 'called_at',
+            'consultation_started_at', 'consultation_ended_at',
+            'checked_out_at', 'checked_out_by',
+        ]
+        read_only_fields = fields
+
+
+class TriageQueueSerializer(serializers.ModelSerializer):
+    """Serializer for triage queue entries."""
+    patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = TriageQueue
+        fields = [
+            'id', 'patient', 'patient_name', 'priority', 'chief_complaint',
+            'triage_notes', 'status', 'triaged_at', 'assigned_clinic',
+            'assigned_practitioner', 'assigned_at', 'appointment',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'status', 'triaged_at', 'assigned_at',
+            'created_at', 'updated_at'
+        ]
+
+
+class TriageQueueCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating triage queue entries."""
+
+    class Meta:
+        model = TriageQueue
+        fields = ['patient', 'priority', 'chief_complaint']
 
 
 class EncounterSerializer(serializers.ModelSerializer):
@@ -13,7 +53,9 @@ class EncounterSerializer(serializers.ModelSerializer):
     """
     patient_name = serializers.ReadOnlyField()
     practitioner_name = serializers.ReadOnlyField()
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
     duration_minutes = serializers.ReadOnlyField()
+    outpatient_visit = OutpatientVisitSerializer(read_only=True)
     patient_details = PatientProfileSerializer(source='patient', read_only=True)
     practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
 
@@ -22,6 +64,7 @@ class EncounterSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'patient', 'patient_details', 'patient_name',
             'practitioner', 'practitioner_details', 'practitioner_name',
+            'clinic', 'clinic_name', 'appointment', 'outpatient_visit',
             'encounter_type', 'status', 'start_time', 'end_time',
             'reason', 'service_type', 'location',
             'admission_source', 'discharge_disposition', 'destination',
@@ -31,7 +74,7 @@ class EncounterSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'patient_name', 'practitioner_name', 'duration_minutes',
-            'fhir_id', 'fhir_synced', 'fhir_last_synced',
+            'outpatient_visit', 'fhir_id', 'fhir_synced', 'fhir_last_synced',
             'created_at', 'updated_at'
         ]
 
@@ -42,14 +85,17 @@ class EncounterListSerializer(serializers.ModelSerializer):
     """
     patient_name = serializers.ReadOnlyField()
     practitioner_name = serializers.ReadOnlyField()
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
     patient_id = serializers.UUIDField(source='patient.id', read_only=True)
     practitioner_id = serializers.UUIDField(source='practitioner.id', read_only=True, allow_null=True)
+    clinic_id = serializers.UUIDField(source='clinic.id', read_only=True, allow_null=True)
 
     class Meta:
         model = Encounter
         fields = [
             'id', 'patient_id', 'patient_name',
             'practitioner_id', 'practitioner_name',
+            'clinic_id', 'clinic_name',
             'encounter_type', 'status', 'start_time', 'end_time',
             'reason', 'service_type', 'location',
             'created_at', 'updated_at'
@@ -62,11 +108,13 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
     """
     patient_id = serializers.UUIDField(write_only=True)
     practitioner_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    clinic_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    appointment_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Encounter
         fields = [
-            'patient_id', 'practitioner_id',
+            'patient_id', 'practitioner_id', 'clinic_id', 'appointment_id',
             'encounter_type', 'status', 'start_time',
             'reason', 'service_type', 'location',
             'admission_source'
@@ -91,12 +139,43 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Practitioner not found.")
         return value
 
+    def validate_clinic_id(self, value):
+        """Validate clinic exists if provided."""
+        if value:
+            from apps.organization.models import Clinic
+            try:
+                Clinic.objects.get(id=value)
+            except Clinic.DoesNotExist:
+                raise serializers.ValidationError("Clinic not found.")
+        return value
+
+    def validate_appointment_id(self, value):
+        """Validate appointment exists if provided."""
+        if value:
+            from apps.appointments.models import Appointment
+            try:
+                Appointment.objects.get(id=value)
+            except Appointment.DoesNotExist:
+                raise serializers.ValidationError("Appointment not found.")
+        return value
+
+    def validate(self, data):
+        encounter_type = data.get('encounter_type', 'outpatient')
+        clinic_id = data.get('clinic_id')
+        if encounter_type == 'outpatient' and not clinic_id:
+            raise serializers.ValidationError({'clinic_id': 'Clinic is required for outpatient encounters.'})
+        return data
+
     def create(self, validated_data):
         """Create encounter with patient and practitioner references."""
         from apps.users.models import PatientProfile, PractitionerProfile
+        from apps.organization.models import Clinic
+        from apps.appointments.models import Appointment
 
         patient_id = validated_data.pop('patient_id')
         practitioner_id = validated_data.pop('practitioner_id', None)
+        clinic_id = validated_data.pop('clinic_id', None)
+        appointment_id = validated_data.pop('appointment_id', None)
         practitioner = validated_data.pop('practitioner', None)
 
         validated_data['patient'] = PatientProfile.objects.get(id=patient_id)
@@ -104,6 +183,10 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
             validated_data['practitioner'] = PractitionerProfile.objects.get(id=practitioner_id)
         elif practitioner:
             validated_data['practitioner'] = practitioner
+        if clinic_id:
+            validated_data['clinic'] = Clinic.objects.get(id=clinic_id)
+        if appointment_id:
+            validated_data['appointment'] = Appointment.objects.get(id=appointment_id)
 
         return super().create(validated_data)
 

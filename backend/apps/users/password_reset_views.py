@@ -134,6 +134,11 @@ class PasswordResetConfirmView(APIView):
         # Invalidate all existing sessions/tokens for this user
         from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
         OutstandingToken.objects.filter(user=user).delete()
+        try:
+            from .session_service import revoke_sessions_for_user
+            revoke_sessions_for_user(user)
+        except Exception:
+            pass
 
         # Audit log
         AuditService.log(
@@ -226,6 +231,11 @@ class AdminForceResetView(APIView):
         # Invalidate all existing sessions/tokens
         from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
         OutstandingToken.objects.filter(user=user).delete()
+        try:
+            from .session_service import revoke_sessions_for_user
+            revoke_sessions_for_user(user, revoked_by=request.user)
+        except Exception:
+            pass
 
         # Send email with temporary password
         send_admin_force_reset_email.delay(

@@ -1,0 +1,271 @@
+/**
+ * React Query hooks for outpatient visit lifecycle and triage queue management.
+ */
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { visitsApi, triageApi } from '@/lib/api/visits';
+import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
+
+// =============================================================================
+// Query Keys
+// =============================================================================
+
+export const visitKeys = {
+  all: ['visits'],
+  waitingRoom: (clinicId) => ['visits', 'waiting-room', clinicId],
+  detail: (encounterId) => ['visits', 'detail', encounterId],
+};
+
+export const triageKeys = {
+  all: ['triage'],
+  list: (filters) => ['triage', 'list', { filters }],
+  detail: (id) => ['triage', 'detail', id],
+};
+
+// =============================================================================
+// Waiting Room Queries
+// =============================================================================
+
+/**
+ * Get waiting room queue for a clinic with real-time polling
+ * @param {string} clinicId - The clinic UUID
+ * @param {Object} options - Query options
+ */
+export function useWaitingRoom(clinicId, options = {}) {
+  const { facilityCode } = useAuth();
+
+  return useQuery({
+    queryKey: visitKeys.waitingRoom(clinicId),
+    queryFn: () => visitsApi.waitingRoom(clinicId),
+    refetchInterval: 10000, // Poll every 10 seconds
+    refetchIntervalInBackground: false,
+    staleTime: 5000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(clinicId),
+  });
+}
+
+/**
+ * Get visit details for an encounter
+ */
+export function useVisit(encounterId, options = {}) {
+  const { facilityCode } = useAuth();
+
+  return useQuery({
+    queryKey: visitKeys.detail(encounterId),
+    queryFn: () => visitsApi.get(encounterId),
+    staleTime: 30000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(encounterId),
+  });
+}
+
+// =============================================================================
+// Visit Action Mutations
+// =============================================================================
+
+/**
+ * Hook providing all visit state transition mutations
+ */
+export function useVisitActions() {
+  const queryClient = useQueryClient();
+
+  const invalidateVisitQueries = () => {
+    queryClient.invalidateQueries({ queryKey: visitKeys.all });
+    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    queryClient.invalidateQueries({ queryKey: ['encounters'] });
+  };
+
+  const addToWaiting = useMutation({
+    mutationFn: (encounterId) => visitsApi.addToWaiting(encounterId),
+    onSuccess: () => {
+      toast.success('Patient added to waiting room');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to add patient to waiting room');
+    },
+  });
+
+  const callPatient = useMutation({
+    mutationFn: (encounterId) => visitsApi.call(encounterId),
+    onSuccess: () => {
+      toast.success('Patient called');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to call patient');
+    },
+  });
+
+  const startConsultation = useMutation({
+    mutationFn: (encounterId) => visitsApi.startConsultation(encounterId),
+    onSuccess: () => {
+      toast.success('Consultation started');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to start consultation');
+    },
+  });
+
+  const putOnHold = useMutation({
+    mutationFn: (encounterId) => visitsApi.hold(encounterId),
+    onSuccess: () => {
+      toast.success('Consultation on hold');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to put on hold');
+    },
+  });
+
+  const endConsultation = useMutation({
+    mutationFn: (encounterId) => visitsApi.endConsultation(encounterId),
+    onSuccess: () => {
+      toast.success('Consultation ended');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to end consultation');
+    },
+  });
+
+  const checkout = useMutation({
+    mutationFn: ({ encounterId, force = false }) => visitsApi.checkout(encounterId, force),
+    onSuccess: () => {
+      toast.success('Patient checked out');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to checkout patient');
+    },
+  });
+
+  const markNoShow = useMutation({
+    mutationFn: (encounterId) => visitsApi.noShow(encounterId),
+    onSuccess: () => {
+      toast.success('Patient marked as no-show');
+      invalidateVisitQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to mark no-show');
+    },
+  });
+
+  return {
+    addToWaiting,
+    callPatient,
+    startConsultation,
+    putOnHold,
+    endConsultation,
+    checkout,
+    markNoShow,
+  };
+}
+
+// =============================================================================
+// Triage Queue Queries
+// =============================================================================
+
+/**
+ * Get triage queue with real-time polling
+ * @param {Object} filters - { status, priority }
+ * @param {Object} options - Query options
+ */
+export function useTriageQueue(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
+
+  return useQuery({
+    queryKey: triageKeys.list(filters),
+    queryFn: () => triageApi.list(filters),
+    refetchInterval: 15000, // Poll every 15 seconds
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+  });
+}
+
+/**
+ * Get single triage entry
+ */
+export function useTriageEntry(id, options = {}) {
+  const { facilityCode } = useAuth();
+
+  return useQuery({
+    queryKey: triageKeys.detail(id),
+    queryFn: () => triageApi.get(id),
+    staleTime: 30000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(id),
+  });
+}
+
+// =============================================================================
+// Triage Action Mutations
+// =============================================================================
+
+/**
+ * Hook providing all triage workflow mutations
+ */
+export function useTriageActions() {
+  const queryClient = useQueryClient();
+
+  const invalidateTriageQueries = () => {
+    queryClient.invalidateQueries({ queryKey: triageKeys.all });
+    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+  };
+
+  const addToQueue = useMutation({
+    mutationFn: (data) => triageApi.create(data),
+    onSuccess: () => {
+      toast.success('Patient added to triage queue');
+      invalidateTriageQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to add patient to queue');
+    },
+  });
+
+  const triagePatient = useMutation({
+    mutationFn: ({ id, priority, notes }) => triageApi.triage(id, { priority, notes }),
+    onSuccess: () => {
+      toast.success('Triage assessment saved');
+      invalidateTriageQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to save triage assessment');
+    },
+  });
+
+  const assignToClinic = useMutation({
+    mutationFn: ({ id, ...data }) => triageApi.assign(id, data),
+    onSuccess: () => {
+      toast.success('Patient assigned to clinic');
+      invalidateTriageQueries();
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to assign patient');
+    },
+  });
+
+  const cancelEntry = useMutation({
+    mutationFn: (id) => triageApi.cancel(id),
+    onSuccess: () => {
+      toast.success('Triage entry cancelled');
+      invalidateTriageQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to cancel entry');
+    },
+  });
+
+  return {
+    addToQueue,
+    triagePatient,
+    assignToClinic,
+    cancelEntry,
+  };
+}

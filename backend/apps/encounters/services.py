@@ -4,11 +4,13 @@ Encounter services for automatic encounter management.
 This module provides utilities for finding or creating active encounters
 for patients, ensuring clinical entries are always properly linked.
 """
+from datetime import timedelta
+
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Max
 
-from .models import Encounter
+from .models import Encounter, OutpatientVisit, TriageQueue
 
 
 def get_or_create_active_encounter(
@@ -19,15 +21,15 @@ def get_or_create_active_encounter(
     created_by=None
 ):
     """
-    Find an active encounter for a patient or create a new one.
+    Find an active encounter for a patient.
 
-    Uses select_for_update to prevent race conditions when creating encounters.
+    Uses select_for_update to prevent race conditions when transitioning encounters.
 
     Logic:
     1. If patient has an active inpatient admission, return that admission's encounter
     2. If patient has a planned encounter today (transition to in-progress), return it
     3. If patient has an active outpatient/emergency encounter today, return it
-    4. Otherwise, create a new encounter
+    4. Otherwise, raise an error (explicit check-in required)
 
     Args:
         patient: PatientProfile instance
@@ -149,21 +151,13 @@ def get_or_create_active_encounter(
         if any_encounter:
             return any_encounter, False
 
-        # Rule 4: Create new encounter
-        encounter = Encounter.objects.create(
-            patient=patient,
-            facility=patient.facility,
-            practitioner=practitioner,
-            encounter_type=effective_type,
-            status='in-progress',
-            start_time=timezone.now(),
-            reason=reason or 'Clinical documentation',
-            created_by=created_by,
+        # Rule 4: Do not auto-create encounters (explicit check-in required)
+        raise ValueError(
+            "No active encounter found for patient. Start a visit/check-in before creating clinical entries."
         )
-        return encounter, True
 
 
-def get_active_encounter_for_patient(patient):
+def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     """
     Get the currently active encounter for a patient, if any exists.
 
@@ -171,6 +165,8 @@ def get_active_encounter_for_patient(patient):
 
     Args:
         patient: PatientProfile instance
+        encounter_type: Optional encounter type filter
+        clinic: Optional clinic filter
 
     Returns:
         Encounter instance or None
@@ -187,15 +183,23 @@ def get_active_encounter_for_patient(patient):
     ).select_related('encounter').order_by('-admission_date').first()
 
     if active_admission and hasattr(active_admission, 'encounter') and active_admission.encounter:
-        return active_admission.encounter
+        if encounter_type in [None, 'inpatient']:
+            return active_admission.encounter
 
-    # Check for active outpatient encounter today (in-progress or planned)
-    return Encounter.objects.filter(
-        patient=patient,
-        status__in=['in-progress', 'planned'],
-        start_time__date=today,
-        encounter_type__in=['outpatient', 'emergency'],
-    ).first()
+    type_filter = ['outpatient', 'emergency']
+    if encounter_type:
+        type_filter = [encounter_type]
+
+    filters = {
+        'patient': patient,
+        'status__in': ['in-progress', 'planned'],
+        'start_time__date': today,
+        'encounter_type__in': type_filter,
+    }
+    if clinic:
+        filters['clinic'] = clinic
+
+    return Encounter.objects.filter(**filters).first()
 
 
 def ensure_encounter_for_entry(
@@ -210,6 +214,7 @@ def ensure_encounter_for_entry(
     Ensure an entry has an encounter to link to.
 
     This is the main function to use when creating clinical entries (notes, vitals, prescriptions).
+    Explicit check-in is required for outpatient encounters.
 
     Args:
         patient: PatientProfile instance
@@ -255,3 +260,292 @@ def ensure_encounter_for_entry(
         reason=reason,
         created_by=created_by,
     )
+
+
+class VisitService:
+    """Service for managing outpatient visit lifecycle."""
+
+    @staticmethod
+    def _next_queue_number(clinic, date=None):
+        date = date or timezone.now().date()
+        latest = (
+            OutpatientVisit.objects
+            .select_for_update()
+            .filter(clinic=clinic, checked_in_at__date=date)
+            .aggregate(max_queue=Max('queue_number'))
+        )
+        current = latest.get('max_queue') or 0
+        return current + 1
+
+    @staticmethod
+    @transaction.atomic
+    def create_visit(encounter, appointment, checked_in_by=None):
+        if encounter.encounter_type != 'outpatient':
+            raise ValueError("Outpatient visit can only be created for outpatient encounters.")
+        if appointment.id != encounter.appointment_id:
+            raise ValueError("Encounter must reference the appointment.")
+        if hasattr(encounter, 'outpatient_visit'):
+            return encounter.outpatient_visit
+
+        queue_number = VisitService._next_queue_number(encounter.clinic)
+        return OutpatientVisit.objects.create(
+            appointment=appointment,
+            encounter=encounter,
+            clinic=encounter.clinic,
+            queue_number=queue_number,
+            checked_in_by=checked_in_by,
+        )
+
+    @staticmethod
+    def add_to_waiting(visit):
+        if visit.visit_status != OutpatientVisit.VisitStatus.CHECKED_IN:
+            raise ValueError(f"Cannot move to waiting from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.WAITING
+        visit.save(update_fields=['visit_status', 'updated_at'])
+        return visit
+
+    @staticmethod
+    def call_patient(visit):
+        if visit.visit_status != OutpatientVisit.VisitStatus.WAITING:
+            raise ValueError(f"Cannot call patient from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.CALLED
+        visit.called_at = timezone.now()
+        visit.save(update_fields=['visit_status', 'called_at', 'updated_at'])
+        return visit
+
+    @staticmethod
+    def start_consultation(visit):
+        allowed = {
+            OutpatientVisit.VisitStatus.CALLED,
+            OutpatientVisit.VisitStatus.CHECKED_IN,
+            OutpatientVisit.VisitStatus.ON_HOLD,
+        }
+        if visit.visit_status not in allowed:
+            raise ValueError(f"Cannot start consultation from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.IN_PROGRESS
+        if not visit.consultation_started_at:
+            visit.consultation_started_at = timezone.now()
+        visit.save(update_fields=['visit_status', 'consultation_started_at', 'updated_at'])
+        return visit
+
+    @staticmethod
+    def put_on_hold(visit):
+        if visit.visit_status != OutpatientVisit.VisitStatus.IN_PROGRESS:
+            raise ValueError(f"Cannot put on hold from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.ON_HOLD
+        visit.save(update_fields=['visit_status', 'updated_at'])
+        return visit
+
+    @staticmethod
+    def end_consultation(visit):
+        if visit.visit_status != OutpatientVisit.VisitStatus.IN_PROGRESS:
+            raise ValueError(f"Cannot end consultation from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.READY_CHECKOUT
+        visit.consultation_ended_at = timezone.now()
+        visit.save(update_fields=['visit_status', 'consultation_ended_at', 'updated_at'])
+
+        if visit.encounter.appointment_id:
+            visit.encounter.appointment.status = 'fulfilled'
+            visit.encounter.appointment.save(update_fields=['status', 'updated_at'])
+
+        return visit
+
+    @staticmethod
+    def get_checkout_requirements(encounter):
+        requirements = {
+            'consultation_completed': encounter.outpatient_visit.consultation_ended_at is not None,
+        }
+
+        if hasattr(encounter, 'prescriptions'):
+            requirements['prescriptions_handled'] = not encounter.prescriptions.filter(
+                status='pending'
+            ).exists()
+
+        if hasattr(encounter, 'lab_orders'):
+            requirements['lab_orders_cleared'] = not encounter.lab_orders.filter(
+                status='pending'
+            ).exists()
+
+        if hasattr(encounter, 'invoices'):
+            requirements['billing_cleared'] = not encounter.invoices.filter(
+                status='pending'
+            ).exists()
+
+        return requirements
+
+    @staticmethod
+    @transaction.atomic
+    def checkout(visit, checked_out_by=None, force=False):
+        allowed = {
+            OutpatientVisit.VisitStatus.READY_CHECKOUT,
+            OutpatientVisit.VisitStatus.IN_PROGRESS,
+        }
+        if visit.visit_status not in allowed:
+            raise ValueError(f"Cannot checkout from {visit.visit_status}")
+
+        if not force:
+            requirements = VisitService.get_checkout_requirements(visit.encounter)
+            failed = [name for name, ok in requirements.items() if ok is False]
+            if failed:
+                raise ValueError(f"Checkout requirements not met: {', '.join(failed)}")
+
+        visit.visit_status = OutpatientVisit.VisitStatus.CHECKED_OUT
+        visit.checked_out_at = timezone.now()
+        visit.checked_out_by = checked_out_by
+        if not visit.consultation_ended_at:
+            visit.consultation_ended_at = timezone.now()
+        visit.save(update_fields=[
+            'visit_status', 'checked_out_at', 'checked_out_by',
+            'consultation_ended_at', 'updated_at'
+        ])
+
+        visit.encounter.status = 'finished'
+        visit.encounter.end_time = timezone.now()
+        visit.encounter.save(update_fields=['status', 'end_time', 'updated_at'])
+
+        if visit.encounter.appointment_id:
+            visit.encounter.appointment.status = 'fulfilled'
+            visit.encounter.appointment.save(update_fields=['status', 'updated_at'])
+
+        return visit
+
+    @staticmethod
+    def mark_no_show(visit):
+        allowed = {
+            OutpatientVisit.VisitStatus.WAITING,
+            OutpatientVisit.VisitStatus.CHECKED_IN,
+        }
+        if visit.visit_status not in allowed:
+            raise ValueError(f"Cannot mark no-show from {visit.visit_status}")
+        visit.visit_status = OutpatientVisit.VisitStatus.NO_SHOW
+        visit.save(update_fields=['visit_status', 'updated_at'])
+
+        if visit.encounter.appointment_id:
+            visit.encounter.appointment.status = 'noshow'
+            visit.encounter.appointment.save(update_fields=['status', 'updated_at'])
+
+        return visit
+
+    @staticmethod
+    def get_waiting_room(clinic, date=None):
+        date = date or timezone.now().date()
+        return OutpatientVisit.objects.filter(
+            clinic=clinic,
+            visit_status__in=[
+                OutpatientVisit.VisitStatus.WAITING,
+                OutpatientVisit.VisitStatus.CALLED,
+            ],
+            checked_in_at__date=date,
+        ).select_related('encounter__patient__user').order_by('queue_number')
+
+
+class TriageService:
+    """Service for managing the walk-in triage workflow."""
+
+    @staticmethod
+    def add_to_queue(patient, facility, chief_complaint='', priority='routine', added_by=None):
+        existing = TriageQueue.objects.filter(
+            patient=patient,
+            facility=facility,
+            status__in=[TriageQueue.Status.WAITING, TriageQueue.Status.TRIAGED],
+            created_at__date=timezone.now().date(),
+        ).first()
+        if existing:
+            raise ValueError("Patient already in triage queue")
+
+        return TriageQueue.objects.create(
+            patient=patient,
+            facility=facility,
+            chief_complaint=chief_complaint,
+            priority=priority,
+            status=TriageQueue.Status.WAITING,
+        )
+
+    @staticmethod
+    def triage_patient(entry, priority, notes='', triaged_by=None):
+        if entry.status != TriageQueue.Status.WAITING:
+            raise ValueError(f"Cannot triage from status {entry.status}")
+
+        entry.priority = priority
+        entry.triage_notes = notes
+        entry.triaged_by = triaged_by
+        entry.triaged_at = timezone.now()
+        entry.status = TriageQueue.Status.TRIAGED
+        entry.save(update_fields=['priority', 'triage_notes', 'triaged_by', 'triaged_at', 'status', 'updated_at'])
+        return entry
+
+    @staticmethod
+    @transaction.atomic
+    def assign_to_clinic(entry, clinic, appointment_type, start_time, practitioner=None, assigned_by=None):
+        if entry.status != TriageQueue.Status.TRIAGED:
+            raise ValueError(f"Cannot assign from status {entry.status}")
+
+        from apps.appointments.services import ConflictPreventionService, AvailabilityService
+        from apps.appointments.models import Appointment
+
+        end_time = start_time + timedelta(minutes=appointment_type.duration_minutes)
+
+        if practitioner:
+            if not AvailabilityService.is_slot_available(practitioner, start_time, end_time, facility=entry.facility):
+                raise ValueError("Practitioner is not available for that time.")
+            if not ConflictPreventionService.check_practitioner_availability(
+                practitioner.id, start_time, end_time
+            ):
+                raise ValueError("Practitioner already has an appointment during this time.")
+
+        if not ConflictPreventionService.check_patient_availability(
+            entry.patient.id, start_time, end_time
+        ):
+            raise ValueError("Patient already has an appointment during this time.")
+
+        appointment = Appointment.objects.create(
+            facility=entry.facility,
+            patient=entry.patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=appointment_type,
+            status='booked',
+            source='walk_in',
+            start_time=start_time,
+            end_time=end_time,
+            reason=entry.chief_complaint or 'Walk-in visit',
+            created_by=assigned_by,
+            updated_by=assigned_by,
+        )
+
+        entry.assigned_clinic = clinic
+        entry.assigned_practitioner = practitioner
+        entry.assigned_at = timezone.now()
+        entry.status = TriageQueue.Status.ASSIGNED
+        entry.appointment = appointment
+        entry.save(update_fields=[
+            'assigned_clinic', 'assigned_practitioner', 'assigned_at',
+            'status', 'appointment', 'updated_at'
+        ])
+
+        return appointment
+
+    @staticmethod
+    def cancel(entry):
+        if entry.status == TriageQueue.Status.ASSIGNED:
+            raise ValueError("Cannot cancel assigned entry")
+        entry.status = TriageQueue.Status.CANCELLED
+        entry.save(update_fields=['status', 'updated_at'])
+        return entry
+
+    @staticmethod
+    def get_queue(facility, status=None, priority=None):
+        queryset = TriageQueue.objects.filter(
+            facility=facility,
+            created_at__date=timezone.now().date(),
+        ).select_related('patient__user', 'assigned_clinic')
+
+        if status:
+            queryset = queryset.filter(status=status)
+        else:
+            queryset = queryset.exclude(status=TriageQueue.Status.CANCELLED)
+
+        if priority:
+            queryset = queryset.filter(priority=priority)
+
+        return queryset

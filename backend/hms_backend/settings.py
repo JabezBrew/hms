@@ -534,6 +534,10 @@ JWT_AUTH_SECURE = env.bool('JWT_AUTH_SECURE', default=False if DEBUG else True) 
 JWT_AUTH_HTTPONLY = True  # Use HttpOnly cookie for refresh token
 JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='None' if not DEBUG else 'Lax')  # Cross-origin requires 'None'; local dev uses 'Lax'
 
+# Session tracking hash salt (defaults to SECRET_KEY)
+SESSION_HASH_SALT = env('SESSION_HASH_SALT', default=SECRET_KEY)
+USER_SESSION_RETENTION_DAYS = env.int('USER_SESSION_RETENTION_DAYS', default=90)
+
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -652,6 +656,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     'cleanup-expired-password-tokens-daily': {
         'task': 'apps.users.tasks.cleanup_expired_tokens',
+        'schedule': timedelta(days=1),  # Run once a day
+    },
+    'cleanup-user-sessions-daily': {
+        'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
     },
 }

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from ..fhir_client.client import fhir_client
 from apps.core.security import get_user_facility
 from ..fhir_client.utils import (
@@ -1010,3 +1010,43 @@ class UserPatientListCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+
+class UserSessionListSerializer(serializers.ModelSerializer):
+    is_current = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = [
+            'id',
+            'device_label',
+            'created_at',
+            'last_seen_at',
+            'expires_at',
+            'revoked_at',
+            'is_active',
+            'is_current',
+        ]
+        read_only_fields = fields
+
+    def get_is_current(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from rest_framework_simplejwt.exceptions import TokenError
+        from django.conf import settings
+
+        refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
+        if not refresh_token:
+            return False
+        try:
+            token = RefreshToken(refresh_token)
+            token_jti = str(token['jti'])
+        except (TokenError, KeyError, TypeError):
+            return False
+        return token_jti == obj.refresh_jti
+
+    def get_is_active(self, obj):
+        return obj.is_active

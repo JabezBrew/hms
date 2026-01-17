@@ -81,9 +81,15 @@ export async function performTokenRefresh() {
 
   refreshPromise = (async () => {
     try {
+      const refreshHeaders = { 'Content-Type': 'application/json' };
+      const facilityCode = getFacilityCode();
+      if (facilityCode) {
+        refreshHeaders['X-Facility-Code'] = facilityCode;
+      }
+
       const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: refreshHeaders,
         credentials: 'include', // Include cookies for refresh token
       });
 

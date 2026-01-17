@@ -13,6 +13,7 @@ from .jwt_serializers import resolve_user_facility_code
 from .tenancy import facility_context, set_current_facility_code
 from .auth_utils import build_auth_response, get_access_context
 from apps.core.security import get_user_facility_codes, normalize_facility_code
+from apps.core.models import Facility
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction
 from apps.users.mfa_service import (
@@ -55,6 +56,45 @@ class CookieTokenRefreshView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
+        header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
+        header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
+        requested_facility = normalize_facility_code(request.META.get(header_key))
+
+        token_facility = None
+        token_user_id = None
+        try:
+            token = RefreshToken(refresh_token)
+            token_facility = normalize_facility_code(token.get('facility_code'))
+            token_user_id = str(token.get('user_id')) if token.get('user_id') else None
+        except TokenError:
+            token_facility = None
+
+        facility_code = requested_facility or token_facility
+        if not facility_code and settings.FACILITY_CONTEXT_REQUIRED and not settings.DEFAULT_FACILITY_CODE:
+            if getattr(settings, 'MULTI_FACILITY_MODE', False) and token_user_id:
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+                user = User.objects.filter(id=token_user_id).first()
+                allowed_codes = get_user_facility_codes(user) if user else set()
+                if len(allowed_codes) > 1:
+                    return Response(
+                        {'detail': 'Facility code is required.', 'code': 'facility_required'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                if len(allowed_codes) == 1:
+                    facility_code = next(iter(allowed_codes))
+            if not facility_code:
+                return Response(
+                    {'detail': 'Facility code is required.', 'code': 'facility_required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        if facility_code:
+            set_current_facility_code(facility_code)
+            request.facility_code = facility_code
+            request.facility = Facility.get_by_code(facility_code)
+
         # Use the serializer directly with the refresh token
         serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
 
@@ -76,6 +116,20 @@ class CookieTokenRefreshView(APIView):
                     samesite=settings.JWT_AUTH_SAMESITE,
                     secure=settings.JWT_AUTH_SECURE
                 )
+
+            try:
+                from apps.users.session_service import rotate_session, touch_session
+                if 'refresh' in response_data:
+                    rotate_session(
+                        request,
+                        refresh_token,
+                        response_data['refresh'],
+                        facility_code=getattr(request, 'facility_code', None),
+                    )
+                else:
+                    touch_session(request, refresh_token)
+            except Exception:
+                pass
 
             return response
 
@@ -111,6 +165,15 @@ class LogoutView(APIView):
                     token.blacklist()
                 except (InvalidToken, TokenError):
                     # Token already invalid/expired, that's fine - proceed with logout
+                    pass
+
+                try:
+                    from apps.users.session_service import revoke_session_by_refresh_token
+                    revoke_session_by_refresh_token(
+                        refresh_token,
+                        revoked_by=user if user and user.is_authenticated else None,
+                    )
+                except Exception:
                     pass
         except Exception:
             # If blacklisting fails, still proceed with logout
@@ -194,6 +257,9 @@ class LoginView(APIView):
             facility_code = resolve_user_facility_code(user, requested_facility)
             if facility_code:
                 set_current_facility_code(facility_code)
+                # Also set on request so audit logging can access it
+                request.facility_code = facility_code
+                request.facility = Facility.get_by_code(facility_code)
 
             if is_mfa_required(user):
                 with facility_context(facility_code):

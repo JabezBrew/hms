@@ -7,7 +7,8 @@ from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
 from django.db.models import Q
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
+from django.utils import timezone
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from .serializers import (
     UserSerializer, UserListSerializer, UserCreateSerializer,
     UserWithAccessContextSerializer,
@@ -17,9 +18,11 @@ from .serializers import (
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
     PractitionerFHIRMappingSerializer,
-    UserPatientListSerializer, UserPatientListCreateSerializer
+    UserPatientListSerializer, UserPatientListCreateSerializer,
+    UserSessionListSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
+from .session_service import get_refresh_jti_from_request, revoke_session, revoke_sessions_for_user
 from .rbac import (
     IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsLabTechnician,
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
@@ -120,6 +123,73 @@ class UserViewSet(viewsets.ModelViewSet):
         user.set_password(new_password)
         user.save()
         return Response({'detail': 'Password changed successfully.'})
+
+
+class UserSessionViewSet(viewsets.GenericViewSet):
+    """
+    API endpoint for managing user sessions.
+    """
+    serializer_class = UserSessionListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        include_revoked = str(self.request.query_params.get('include_revoked', '')).lower() == 'true'
+        base_qs = UserSession.objects.select_related('user', 'revoked_by').order_by('-last_seen_at')
+
+        if user.user_type == 'admin':
+            user_id = self.request.query_params.get('user_id')
+            if self.action == 'list' and not user_id:
+                return base_qs.filter(user=user)
+            if user_id:
+                base_qs = base_qs.filter(user_id=user_id)
+        else:
+            base_qs = base_qs.filter(user=user)
+
+        if not include_revoked:
+            base_qs = base_qs.filter(revoked_at__isnull=True, expires_at__gt=timezone.now())
+
+        return base_qs
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def revoke(self, request, pk=None):
+        session = self.get_object()
+        if request.user.user_type != 'admin' and session.user_id != request.user.id:
+            raise PermissionDenied("Not authorized to revoke this session.")
+        revoke_session(session, revoked_by=request.user if request.user.user_type == 'admin' else None)
+        return Response({'detail': 'Session revoked.'})
+
+    @action(detail=False, methods=['post'])
+    def revoke_all(self, request):
+        target_user = request.user
+        if request.user.user_type == 'admin':
+            user_id = request.data.get('user_id')
+            if user_id:
+                target_user = User.objects.filter(id=user_id).first()
+                if not target_user:
+                    return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        elif request.data.get('user_id'):
+            raise PermissionDenied("Not authorized to revoke other users' sessions.")
+
+        exclude_current = bool(request.data.get('exclude_current', True))
+        exclude_jti = get_refresh_jti_from_request(request) if exclude_current else None
+        revoked_count = revoke_sessions_for_user(
+            target_user,
+            revoked_by=request.user if request.user.user_type == 'admin' else None,
+            exclude_jti=exclude_jti,
+        )
+        return Response({'detail': 'Sessions revoked.', 'revoked_count': revoked_count})
 
 
 class StaffViewSet(viewsets.ModelViewSet):

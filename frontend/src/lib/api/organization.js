@@ -209,6 +209,21 @@ export const dutyRosterApi = {
   onDuty: (params) => apiClient.get('/organization/duty-roster/on-duty/', { params }),
 };
 
+// =============================================================================
+// Clinics Endpoints
+// =============================================================================
+
+/**
+ * Clinics API
+ */
+export const clinicsApi = {
+  list: (params = {}) => apiClient.get('/organization/clinics/', { params }),
+  get: (id) => apiClient.get(`/organization/clinics/${id}/`),
+  create: (data) => apiClient.post('/organization/clinics/', data),
+  update: (id, data) => apiClient.patch(`/organization/clinics/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/clinics/${id}/`),
+};
+
 export default {
   unitTypes: unitTypesApi,
   leadershipRoles: leadershipRolesApi,
@@ -222,4 +237,5 @@ export default {
   shiftDefinitions: shiftDefinitionsApi,
   dutyRosterTemplates: dutyRosterTemplatesApi,
   dutyRoster: dutyRosterApi,
+  clinics: clinicsApi,
 };

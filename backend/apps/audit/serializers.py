@@ -81,3 +81,4 @@ class AuditLogStatsSerializer(serializers.Serializer):
     category_breakdown = serializers.DictField()
     action_breakdown = serializers.DictField()
     most_active_users = serializers.ListField()
+    active_sessions = serializers.IntegerField()

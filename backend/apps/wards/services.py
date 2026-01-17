@@ -13,12 +13,12 @@ from .models import Admission
 
 def get_or_create_active_encounter(patient, practitioner=None, encounter_type=None, reason=None):
     """
-    Find an active encounter for a patient or create a new one.
+    Find an active encounter for a patient.
 
     Logic:
     1. If patient has an active inpatient admission, return that admission's encounter
     2. If patient has an active outpatient encounter today (same practitioner if provided), return it
-    3. Otherwise, create a new encounter
+    3. Otherwise, raise an error (explicit check-in required)
 
     Args:
         patient: PatientProfile instance
@@ -81,18 +81,10 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     if any_encounter:
         return any_encounter, False
 
-    # Rule 3: Create new encounter
-    with transaction.atomic():
-        encounter = Encounter.objects.create(
-            patient=patient,
-            facility=patient.facility,
-            practitioner=practitioner,
-            encounter_type=encounter_type or 'outpatient',
-            status='in-progress',
-            start_time=timezone.now(),
-            reason=reason or 'Clinical documentation',
-        )
-        return encounter, True
+    # Rule 3: Do not auto-create encounters
+    raise ValueError(
+        "No active encounter found for patient. Start a visit/check-in before creating clinical entries."
+    )
 
 
 def get_active_encounter_for_patient(patient):
@@ -132,6 +124,7 @@ def ensure_encounter_for_entry(patient, practitioner=None, encounter_id=None, re
     Ensure an entry has an encounter to link to.
 
     This is the main function to use when creating clinical entries (notes, vitals, prescriptions).
+    Explicit check-in is required for outpatient encounters.
 
     Args:
         patient: PatientProfile instance

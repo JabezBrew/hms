@@ -8,23 +8,61 @@ Tests cover:
 
 Note: FHIR-dependent endpoints are mocked.
 """
+import datetime
 import pytest
 from datetime import time, date, timedelta
+from django.utils import timezone
 from unittest.mock import patch, MagicMock
 from rest_framework import status
 
 from apps.appointments.models import (
-    AppointmentType, RecurringSchedule, BlockedTime
+    Appointment, AppointmentType, RecurringSchedule, BlockedTime
 )
 from .factories import (
     AppointmentTypeFactory, RecurringScheduleFactory, BlockedTimeFactory
 )
 from apps.users.tests.factories import PractitionerProfileFactory, PatientProfileFactory
 from apps.core.tests.factories import DefaultFacilityFactory
+from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
 
 
 # Base URL prefix for appointments app
 BASE_URL = '/api/appointments'
+
+
+def create_clinic(facility):
+    facility_type = UnitTypeConfig.objects.create(
+        code=f"facility-{facility.id}",
+        name='Facility',
+        can_be_root=True,
+        depth_level=0,
+    )
+    department_type = UnitTypeConfig.objects.create(
+        code=f"department-{facility.id}",
+        name='Department',
+        depth_level=1,
+    )
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=facility.code,
+        name=facility.name,
+        is_active=True,
+    )
+    department = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='OPD',
+        name='Outpatient Department',
+        is_active=True,
+    )
+    return Clinic.objects.create(
+        facility=facility,
+        department=department,
+        code='OPD-GEN',
+        name='General OPD',
+        is_active=True,
+    )
 
 
 @pytest.mark.tier1
@@ -277,96 +315,103 @@ class TestBlockedTimeViewSet:
 
 
 @pytest.mark.tier2
-class TestAppointmentViewSetWithMocks:
-    """Tests for AppointmentViewSet with FHIR mocks."""
+class TestAppointmentViewSet:
+    """Tests for local AppointmentViewSet."""
 
-    @patch('apps.appointments.views.AppointmentProxy')
-    def test_list_appointments(self, mock_proxy, admin_client, db):
-        """Test listing appointments with mocked FHIR proxy."""
-        mock_proxy.search.return_value = [
-            {'id': 'apt-1', 'status': 'booked'},
-            {'id': 'apt-2', 'status': 'booked'}
-        ]
+    def test_list_appointments(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+        now = timezone.now()
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=now,
+            end_time=now + timedelta(minutes=30),
+        )
 
         response = admin_client.get(f'{BASE_URL}/appointments/')
         assert response.status_code == status.HTTP_200_OK
-        mock_proxy.search.assert_called_once()
+        assert response.data['count'] >= 1
+        assert any(str(appointment.id) == item['id'] for item in response.data['results'])
 
-    @patch('apps.appointments.views.AppointmentProxy')
-    def test_retrieve_appointment(self, mock_proxy, admin_client, db):
-        """Test retrieving a single appointment with mocked FHIR proxy."""
+    def test_create_appointment(self, admin_client, db):
         facility = DefaultFacilityFactory()
-        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
-        mock_proxy.get.return_value = {
-            'id': 'apt-123',
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+
+        RecurringScheduleFactory(
+            practitioner=practitioner,
+            facility=facility,
+            days_of_week=[date.today().weekday()],
+            start_time=time(9, 0),
+            end_time=time(17, 0),
+            slot_duration=30,
+            active_from=date.today(),
+        )
+
+        start_time = timezone.make_aware(datetime.datetime.combine(date.today(), time(10, 0)))
+        end_time = timezone.make_aware(datetime.datetime.combine(date.today(), time(10, 30)))
+
+        data = {
+            'patient': str(patient.id),
+            'practitioner': str(practitioner.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
             'status': 'booked',
-            'start': '2024-06-15T10:00:00Z',
-            'participant': [
-                {'actor': {'reference': 'Patient/patient-123'}}
-            ]
+            'source': 'scheduled',
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
         }
 
-        response = admin_client.get(f'{BASE_URL}/appointments/apt-123/')
-        assert response.status_code == status.HTTP_200_OK
-        mock_proxy.get.assert_called_once_with('apt-123')
-
-    @patch('apps.appointments.views.ConflictPreventionService')
-    def test_create_appointment(self, mock_service, admin_client, db):
-        """Test creating an appointment with mocked conflict service."""
-        mock_service.book_appointment.return_value = (
-            True,
-            {'id': 'new-apt', 'status': 'booked'}
-        )
-
-        facility = DefaultFacilityFactory()
-        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
-        apt_type = AppointmentTypeFactory()
-        data = {
-            'patient_id': 'patient-123',
-            'practitioner_id': 'practitioner-456',
-            'start_time': '2024-06-15T10:00:00Z',
-            'end_time': '2024-06-15T10:30:00Z',
-            'appointment_type_id': str(apt_type.id)
-        }
-
-        response = admin_client.post(
-            f'{BASE_URL}/appointments/',
-            data,
-            format='json'
-        )
+        response = admin_client.post(f'{BASE_URL}/appointments/', data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
+        assert Appointment.objects.filter(id=response.data['id']).exists()
 
-    @patch('apps.appointments.views.ConflictPreventionService')
-    def test_create_appointment_conflict(self, mock_service, admin_client, db):
-        """Test appointment creation with conflict."""
-        mock_service.book_appointment.return_value = (
-            False,
-            {'error': 'Time slot already booked'}
-        )
-
+    def test_start_visit_creates_encounter(self, admin_client, db):
         facility = DefaultFacilityFactory()
-        PatientProfileFactory(facility=facility, fhir_patient_id='patient-123')
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory()
-        data = {
-            'patient_id': 'patient-123',
-            'practitioner_id': 'practitioner-456',
-            'start_time': '2024-06-15T10:00:00Z',
-            'end_time': '2024-06-15T10:30:00Z',
-            'appointment_type_id': str(apt_type.id)
-        }
 
-        response = admin_client.post(
-            f'{BASE_URL}/appointments/',
-            data,
-            format='json'
+        RecurringScheduleFactory(
+            practitioner=practitioner,
+            facility=facility,
+            days_of_week=[date.today().weekday()],
+            start_time=time(9, 0),
+            end_time=time(17, 0),
+            slot_duration=30,
+            active_from=date.today(),
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 0))),
+            end_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 30))),
+        )
+
+        response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_201_CREATED
+        appointment.refresh_from_db()
+        assert appointment.status == 'arrived'
 
     def test_create_appointment_missing_fields(self, admin_client, db):
-        """Test appointment creation with missing required fields."""
         data = {
-            'patient_id': 'patient-123',
-            # Missing practitioner_id, times, and appointment_type_id
+            'patient': 'missing',
         }
 
         response = admin_client.post(
@@ -375,7 +420,6 @@ class TestAppointmentViewSetWithMocks:
             format='json'
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert 'error' in response.data
 
 
 @pytest.mark.tier2

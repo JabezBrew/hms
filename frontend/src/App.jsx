@@ -84,6 +84,10 @@ const DutyRosterPage = lazy(() => import('./pages/admin/organization/DutyRosterP
 const ReferralInbox = lazy(() => import('./components/referrals/ReferralInbox'))
 const ReferralSent = lazy(() => import('./components/referrals/ReferralSent'))
 
+// Clinic/Visit Pages
+const ClinicWaitingRoomPage = lazy(() => import('./pages/clinics/ClinicWaitingRoomPage'))
+const TriagePage = lazy(() => import('./pages/triage/TriagePage'))
+
 // Pharmacy Pages
 const PharmacyDispensingPage = lazy(() => import('./pages/pharmacy/PharmacyDispensingPage'))
 
@@ -710,6 +714,20 @@ function AppContent() {
               <Layout>
                 <DutyRosterPage />
               </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Clinic Waiting Room */}
+          <Route path="/clinics/:clinicId/waiting-room" element={
+            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+              <ClinicWaitingRoomPage />
+            </RoleBasedRoute>
+          } />
+
+          {/* Triage Queue */}
+          <Route path="/triage" element={
+            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner']}>
+              <TriagePage />
             </RoleBasedRoute>
           } />
 

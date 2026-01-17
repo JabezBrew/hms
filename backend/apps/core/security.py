@@ -72,6 +72,16 @@ def resolve_object_facility(obj):
     if obj is None:
         return None
 
+    # Special handling for ClinicalUnit - its 'facility' property returns root_unit (another ClinicalUnit)
+    # We need to map the root_unit's code to an actual Facility
+    from apps.organization.models import ClinicalUnit
+    if isinstance(obj, ClinicalUnit):
+        root = obj.root_unit
+        if root:
+            from apps.core.models import Facility
+            return Facility.get_by_code(root.code)
+        return None
+
     direct = getattr(obj, 'facility', None)
     if direct is not None:
         return direct

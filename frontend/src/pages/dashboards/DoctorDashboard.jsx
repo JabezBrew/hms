@@ -16,13 +16,17 @@ import {
   AlertTriangle,
   Stethoscope,
   Send,
-  Inbox
+  Inbox,
+  Users,
+  Phone,
 } from 'lucide-react';
+import { useVisitActions } from '@/hooks/useVisitQueries';
 
 export default function DoctorDashboard() {
   const { facilityCode } = useAuth();
   const { data, loading, error, refetch } = useDoctorDashboard();
   const navigate = useNavigate();
+  const { callPatient, startConsultation } = useVisitActions();
 
   if (!facilityCode) {
     return (
@@ -220,6 +224,34 @@ export default function DoctorDashboard() {
           </article>
         )}
 
+        {/* Waiting Room - Patients ready for consultation */}
+        {data.waiting_room && data.waiting_room.length > 0 && (
+          <section>
+            <header className="flex items-center gap-3 mb-4">
+              <Users className="h-5 w-5 text-amber-400" />
+              <h2 className="font-display text-2xl text-foreground">Waiting Room</h2>
+              <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                {data.waiting_room.length}
+              </span>
+            </header>
+
+            <div className="space-y-3">
+              {data.waiting_room.map((visit, index) => (
+                <WaitingPatientCard
+                  key={visit.encounter_id}
+                  visit={visit}
+                  index={index}
+                  onCall={() => callPatient.mutate(visit.encounter_id)}
+                  onStart={() => startConsultation.mutate(visit.encounter_id)}
+                  onViewPatient={() => handleViewPatient(visit.patient_id || visit.encounter_id)}
+                  isCallingPending={callPatient.isPending}
+                  isStartingPending={startConsultation.isPending}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Upcoming Appointments */}
         <section>
           <header className="flex items-center gap-3 mb-4">
@@ -370,6 +402,89 @@ function CompletedCard({ appointment, index, onViewPatient }) {
           </div>
         </div>
         <span className="badge-chronicle-emerald">Completed</span>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * WaitingPatientCard - Patient waiting in queue for consultation
+ */
+function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCallingPending, isStartingPending }) {
+  const isWaiting = visit.visit_status === 'waiting';
+  const isCalled = visit.visit_status === 'called';
+
+  return (
+    <article
+      className={cn(
+        "group relative bg-card border rounded-xl p-5",
+        isCalled
+          ? "border-amber-500/50 shadow-[0_0_20px_-8px_var(--chronicle-amber)]"
+          : "border-border hover:border-primary/30",
+        "transition-all duration-300",
+        "animate-chronicle-enter"
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm text-muted-foreground">
+              #{visit.queue_number}
+            </span>
+            <h3
+              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors"
+              onClick={onViewPatient}
+            >
+              {visit.patient_name}
+            </h3>
+            <span className={cn(
+              "text-xs font-mono px-2 py-0.5 rounded",
+              isCalled
+                ? "bg-amber-500/10 text-amber-400 animate-pulse"
+                : "bg-sky-500/10 text-sky-400"
+            )}>
+              {isCalled ? 'Called' : 'Waiting'}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-mono text-xs">
+              <Clock className="h-3 w-3" />
+              Checked in {visit.checked_in_at ? new Date(visit.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+            </span>
+            {isCalled && visit.called_at && (
+              <span className="flex items-center gap-1.5 font-mono text-xs text-amber-400">
+                <Phone className="h-3 w-3" />
+                Called {new Date(visit.called_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isWaiting && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCall}
+              disabled={isCallingPending}
+              className="font-mono text-xs"
+            >
+              <Phone className="h-3 w-3 mr-1" />
+              Call
+            </Button>
+          )}
+          {isCalled && (
+            <Button
+              size="sm"
+              onClick={onStart}
+              disabled={isStartingPending}
+              className="font-mono text-xs"
+            >
+              Start Consultation
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          )}
+        </div>
       </div>
     </article>
   );

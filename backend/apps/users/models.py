@@ -416,3 +416,45 @@ class MFASession(models.Model):
 
     def __str__(self):
         return f"MFA Session for {self.user.email}"
+
+
+class UserSession(models.Model):
+    """
+    Tracks active refresh-token sessions per device.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sessions')
+    refresh_jti = models.CharField(max_length=64, unique=True)
+    device_label = models.CharField(max_length=120, blank=True)
+    ip_hash = models.CharField(max_length=64, blank=True)
+    user_agent_hash = models.CharField(max_length=64, blank=True)
+    facility_code = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='revoked_sessions',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['refresh_jti']),
+            models.Index(fields=['user', 'revoked_at']),
+            models.Index(fields=['user', 'last_seen_at']),
+            models.Index(fields=['expires_at']),
+        ]
+        verbose_name = 'User Session'
+        verbose_name_plural = 'User Sessions'
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None and self.expires_at > timezone.now()
+
+    def __str__(self):
+        return f"Session for {self.user.email}"

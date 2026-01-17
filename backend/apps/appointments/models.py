@@ -1,8 +1,11 @@
 import uuid
+import uuid
+
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
-from ..users.models import PractitionerProfile
+from ..users.models import PractitionerProfile, PatientProfile
+from ..organization.models import Clinic
 
 User = get_user_model()
 
@@ -37,6 +40,80 @@ class AppointmentType(models.Model):
         return self.name
 
 
+class Appointment(models.Model):
+    """Local appointment record (source of truth)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='appointments'
+    )
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='appointments'
+    )
+    practitioner = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='appointments'
+    )
+    clinic = models.ForeignKey(
+        Clinic,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='appointments'
+    )
+    appointment_type = models.ForeignKey(
+        AppointmentType,
+        on_delete=models.PROTECT,
+        related_name='appointments'
+    )
+
+    STATUS_CHOICES = (
+        ('proposed', 'Proposed'),
+        ('pending', 'Pending'),
+        ('booked', 'Booked'),
+        ('arrived', 'Arrived'),
+        ('fulfilled', 'Fulfilled'),
+        ('cancelled', 'Cancelled'),
+        ('noshow', 'No Show'),
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='booked')
+
+    SOURCE_CHOICES = (
+        ('scheduled', 'Scheduled'),
+        ('walk_in', 'Walk-In'),
+    )
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='scheduled')
+
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    reason = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    slot_reference = models.CharField(max_length=100, blank=True, null=True)
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_appointments')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_appointments')
+
+    class Meta:
+        ordering = ['start_time']
+        indexes = [
+            models.Index(fields=['facility', 'status']),
+            models.Index(fields=['patient', 'status']),
+            models.Index(fields=['practitioner', 'status']),
+            models.Index(fields=['clinic', 'status']),
+            models.Index(fields=['start_time']),
+        ]
+
+    def __str__(self):
+        return f"{self.patient} @ {self.start_time.strftime('%Y-%m-%d %H:%M')}"
 
 
 class AppointmentFHIRMapping(models.Model):
@@ -44,6 +121,13 @@ class AppointmentFHIRMapping(models.Model):
     Mapping between local appointment data and FHIR resources.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appointment = models.OneToOneField(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='fhir_mapping',
+        null=True,
+        blank=True
+    )
     appointment_type = models.ForeignKey(AppointmentType, on_delete=models.CASCADE, related_name='fhir_mappings')
 
     # FHIR resource references

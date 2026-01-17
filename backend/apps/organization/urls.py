@@ -9,6 +9,7 @@ from .views import (
     LeadershipRoleConfigViewSet,
     StaffAssignmentTypeConfigViewSet,
     ClinicalUnitViewSet,
+    ClinicViewSet,
     UnitLeadershipViewSet,
     StaffUnitAssignmentViewSet,
     UnitMemberAssignmentViewSet,
@@ -28,6 +29,7 @@ router.register(r'assignment-types', StaffAssignmentTypeConfigViewSet, basename=
 
 # Core organization endpoints
 router.register(r'units', ClinicalUnitViewSet, basename='clinical-unit')
+router.register(r'clinics', ClinicViewSet, basename='clinic')
 router.register(r'leadership', UnitLeadershipViewSet, basename='leadership')
 router.register(r'staff-assignments', StaffUnitAssignmentViewSet, basename='staff-assignment')
 router.register(r'unit-members', UnitMemberAssignmentViewSet, basename='unit-member')

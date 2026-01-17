@@ -177,3 +177,24 @@ def cleanup_expired_tokens():
 
     logger.info(f"Cleaned up {deleted_count} expired password reset tokens")
     return {"deleted": deleted_count}
+
+
+@shared_task
+def cleanup_user_sessions():
+    """
+    Periodic task to clean up expired and revoked user sessions.
+    Run daily via Celery Beat.
+    """
+    from django.conf import settings
+    from .models import UserSession
+
+    retention_days = getattr(settings, 'USER_SESSION_RETENTION_DAYS', 90)
+    cutoff = timezone.now() - timezone.timedelta(days=retention_days)
+
+    deleted_count, _ = UserSession.objects.filter(
+        models.Q(expires_at__lt=cutoff) |
+        models.Q(revoked_at__isnull=False, revoked_at__lt=cutoff)
+    ).delete()
+
+    logger.info(f"Cleaned up {deleted_count} expired/revoked user sessions")
+    return {"deleted": deleted_count}
