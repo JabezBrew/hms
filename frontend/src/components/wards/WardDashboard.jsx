@@ -16,6 +16,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -309,8 +310,10 @@ export function WardDashboard() {
         <div className="flex flex-wrap gap-3 items-center flex-1">
           {/* Search */}
           <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Label htmlFor="bed-search" className="sr-only">Search beds</Label>
             <Input
+              id="bed-search"
               placeholder="Search beds..."
               className="pl-10 font-mono text-sm w-full sm:w-48"
               value={filters.searchTerm}
@@ -351,22 +354,26 @@ export function WardDashboard() {
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+        <div role="group" aria-label="View mode" className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
           <Button
             variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('grid')}
             className="h-8 w-8 p-0"
+            aria-label="Grid view"
+            aria-pressed={viewMode === 'grid'}
           >
-            <LayoutGrid className="h-4 w-4" />
+            <LayoutGrid className="h-4 w-4" aria-hidden="true" />
           </Button>
           <Button
             variant={viewMode === 'list' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('list')}
             className="h-8 w-8 p-0"
+            aria-label="List view"
+            aria-pressed={viewMode === 'list'}
           >
-            <List className="h-4 w-4" />
+            <List className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -448,19 +455,31 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
 
   const colors = colorClasses[color];
 
+  const handleKeyDown = (e) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      aria-pressed={onClick ? active : undefined}
+      aria-label={onClick ? `Filter by ${label}: ${value}` : undefined}
       className={cn(
         "rounded-xl p-4 border border-border/50 transition-all",
-        onClick && "cursor-pointer hover:border-border hover:shadow-sm",
+        onClick && "cursor-pointer hover:border-border hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         active && colors.active
       )}
     >
       <div className="flex items-center gap-3">
         {Icon && (
           <div className={cn("p-2 rounded-lg", colors.bg)}>
-            <Icon className={cn("h-4 w-4", colors.icon)} />
+            <Icon className={cn("h-4 w-4", colors.icon)} aria-hidden="true" />
           </div>
         )}
         <div>

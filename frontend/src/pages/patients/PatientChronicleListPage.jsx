@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PatientChronicleCard } from "@/components/chronicle";
 import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
 import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
@@ -201,8 +202,10 @@ const PatientChronicleListPage = () => {
         {/* Search Bar */}
         <div className="flex flex-col gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
             <Input
+              id="patient-search"
               placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
               value={searchQuery}
               onChange={handleSearchChange}
@@ -211,9 +214,10 @@ const PatientChronicleListPage = () => {
             {hasSearchQuery && (
               <button
                 onClick={handleClearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -228,28 +232,32 @@ const PatientChronicleListPage = () => {
 
             <div className="flex items-center gap-2">
               {/* View Mode Toggle */}
-              <div className="flex bg-muted rounded-lg p-0.5">
+              <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
                 <button
                   onClick={() => setViewMode('grid')}
+                  aria-label="Grid view"
+                  aria-pressed={viewMode === 'grid'}
                   className={cn(
-                    "p-1.5 rounded-md transition-colors",
+                    "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     viewMode === 'grid'
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <LayoutGrid className="h-4 w-4" />
+                  <LayoutGrid className="h-4 w-4" aria-hidden="true" />
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
+                  aria-label="List view"
+                  aria-pressed={viewMode === 'list'}
                   className={cn(
-                    "p-1.5 rounded-md transition-colors",
+                    "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     viewMode === 'list'
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <List className="h-4 w-4" />
+                  <List className="h-4 w-4" aria-hidden="true" />
                 </button>
               </div>
 
@@ -259,8 +267,9 @@ const PatientChronicleListPage = () => {
                 size="icon"
                 onClick={handleRefresh}
                 className="shrink-0 h-9 w-9"
+                aria-label="Refresh patient list"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
           </div>

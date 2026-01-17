@@ -53,6 +53,13 @@ export default function ActionCard({
 
   const config = status ? statusConfig[status] : null;
 
+  const handleKeyDown = (e) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <article
       className={cn(
@@ -61,11 +68,15 @@ export default function ActionCard({
         config ? config.border : 'border-border',
         'hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10',
         'transition-all duration-200',
-        onClick && 'cursor-pointer',
+        onClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'animate-chronicle-enter',
         className
       )}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      aria-label={onClick ? title : undefined}
     >
       {/* Status ribbon */}
       {status && (
@@ -77,7 +88,7 @@ export default function ActionCard({
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {Icon && (
             <div className="shrink-0 mt-1">
-              <Icon className="h-5 w-5 text-muted-foreground" />
+              <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
             </div>
           )}
           <div className="flex-1 min-w-0">
@@ -123,7 +134,7 @@ export default function ActionCard({
           {metadata.map((item, index) => (
             <div key={index} className="space-y-1">
               <div className="flex items-center gap-1.5">
-                {item.icon && <item.icon className="h-3 w-3 text-muted-foreground" />}
+                {item.icon && <item.icon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />}
                 <span className="font-mono text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wide">
                   {item.label}
                 </span>
@@ -158,7 +169,7 @@ export default function ActionCard({
 
       {/* Click indicator */}
       {onClick && (
-        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
+        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" aria-hidden="true" />
       )}
     </article>
   );

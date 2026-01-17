@@ -13,6 +13,7 @@ import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -206,8 +207,10 @@ const AuditLogsPage = () => {
           <div className="flex flex-col gap-3">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <Label htmlFor="audit-search" className="sr-only">Search logs by description, user, or resource</Label>
               <Input
+                id="audit-search"
                 placeholder="Search logs by description, user, or resource..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -266,8 +269,9 @@ const AuditLogsPage = () => {
                 size="icon"
                 onClick={() => refetch()}
                 className="shrink-0 h-9 w-9"
+                aria-label="Refresh audit logs"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
               </Button>
 
               {/* Clear Filters */}
@@ -342,7 +346,7 @@ const AuditLogsPage = () => {
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-card/50 border border-border rounded-lg p-3">
     <div className="flex items-center gap-2 mb-1">
-      <Icon className={cn("h-4 w-4", color)} />
+      <Icon className={cn("h-4 w-4", color)} aria-hidden="true" />
       <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>

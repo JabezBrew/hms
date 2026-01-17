@@ -196,6 +196,9 @@ const LabResultEntrySlideOver = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="result-entry-title"
       className={cn(
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-2/3 xl:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
@@ -207,10 +210,10 @@ const LabResultEntrySlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="font-display text-xl text-foreground">
+            <h2 id="result-entry-title" className="font-display text-xl text-foreground">
               Enter Lab Results
             </h2>
             {order && (
@@ -227,7 +230,7 @@ const LabResultEntrySlideOver = ({
           onClick={onClose}
           className="font-mono text-xs"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="h-4 w-4 mr-1.5" aria-hidden="true" />
           Close
         </Button>
       </header>
@@ -252,7 +255,7 @@ const LabResultEntrySlideOver = ({
       <div className="flex-1 overflow-y-auto chronicle-scrollbar">
         {results.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-            <CheckCircle2 className="h-12 w-12 mb-4 text-emerald-500" />
+            <CheckCircle2 className="h-12 w-12 mb-4 text-emerald-500" aria-hidden="true" />
             <p className="font-medium">All results already entered</p>
             <p className="text-sm">No pending tests for this order</p>
           </div>
@@ -302,6 +305,7 @@ const LabResultEntrySlideOver = ({
                         ref={(el) => (inputRefs.current[index] = el)}
                         type="text"
                         inputMode="decimal"
+                        aria-label={`Result value for ${result.test_name}`}
                         value={result.value}
                         onChange={(e) => handleValueChange(index, e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, index)}

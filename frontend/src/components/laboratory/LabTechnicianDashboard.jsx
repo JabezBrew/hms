@@ -197,7 +197,7 @@ const LabTechnicianDashboard = () => {
         <div className="relative flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div className="p-3 rounded-xl bg-[oklch(0.70_0.15_230)]/10 border border-[oklch(0.70_0.15_230)]/20">
-              <FlaskConical className="h-8 w-8 text-[oklch(0.70_0.15_230)]" />
+              <FlaskConical className="h-8 w-8 text-[oklch(0.70_0.15_230)]" aria-hidden="true" />
             </div>
             <div>
               <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight">
@@ -225,8 +225,10 @@ const LabTechnicianDashboard = () => {
 
       {/* Search with Chronicle styling */}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        <Label htmlFor="lab-search" className="sr-only">Search by patient name, MRN, or order number</Label>
         <Input
+          id="lab-search"
           placeholder="Search by patient name, MRN, or order number..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -235,8 +237,12 @@ const LabTechnicianDashboard = () => {
       </div>
 
       {/* Chronicle-styled Tabs */}
-      <div className="flex gap-2 border-b border-border pb-0">
+      <div role="tablist" aria-label="Lab order status" className="flex gap-2 border-b border-border pb-0">
         <button
+          role="tab"
+          id="tab-collected"
+          aria-selected={activeTab === "collected"}
+          aria-controls="tabpanel-collected"
           onClick={() => setActiveTab("collected")}
           className={cn(
             "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
@@ -254,10 +260,14 @@ const LabTechnicianDashboard = () => {
             )}
           </span>
           {activeTab === "collected" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" aria-hidden="true" />
           )}
         </button>
         <button
+          role="tab"
+          id="tab-processing"
+          aria-selected={activeTab === "processing"}
+          aria-controls="tabpanel-processing"
           onClick={() => setActiveTab("processing")}
           className={cn(
             "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
@@ -275,18 +285,23 @@ const LabTechnicianDashboard = () => {
             )}
           </span>
           {activeTab === "processing" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[oklch(0.70_0.15_230)]" />
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[oklch(0.70_0.15_230)]" aria-hidden="true" />
           )}
         </button>
       </div>
 
       {/* Tab Content with Chronicle cards */}
-      <div className="space-y-4">
+      <div
+        role="tabpanel"
+        id={`tabpanel-${activeTab}`}
+        aria-labelledby={`tab-${activeTab}`}
+        className="space-y-4"
+      >
         {filteredOrders.length === 0 ? (
           <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
             <div className="text-center">
               <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                <TestTube2 className="h-8 w-8 text-muted-foreground" />
+                <TestTube2 className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
               </div>
               <p className="font-display text-xl text-foreground mb-2">No orders in this category</p>
               <p className="font-mono text-xs text-muted-foreground">

@@ -179,8 +179,12 @@ export default function DoctorDashboard() {
             <div className="flex items-center justify-between">
               <div className="space-y-3">
                 <h2
-                  className="font-display text-3xl text-foreground cursor-pointer hover:text-primary transition-colors"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View patient ${data.current_patient.patient_name}`}
+                  className="font-display text-3xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
                   onClick={() => handleViewPatient(data.current_patient.patient_id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPatient(data.current_patient.patient_id); } }}
                 >
                   {data.current_patient.patient_name}
                 </h2>
@@ -340,8 +344,12 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <h3
-              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors"
+              tabIndex={0}
+              role="button"
+              aria-label={`View patient ${appointment.patient_name}`}
+              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
               onClick={onViewPatient}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } }}
             >
               {appointment.patient_name}
             </h3>
@@ -432,8 +440,12 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
               #{visit.queue_number}
             </span>
             <h3
-              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors"
+              tabIndex={0}
+              role="button"
+              aria-label={`View patient ${visit.patient_name}`}
+              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
               onClick={onViewPatient}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } }}
             >
               {visit.patient_name}
             </h3>

@@ -51,7 +51,7 @@ export function LoginForm() {
       {/* Header */}
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <LogIn className="h-7 w-7" />
+          <LogIn className="h-7 w-7" aria-hidden="true" />
         </div>
         <div className="space-y-1">
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
@@ -91,7 +91,7 @@ export function LoginForm() {
                 Facility Code
               </Label>
               <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="facility-code"
                   placeholder="MAIN"
@@ -137,13 +137,13 @@ export function LoginForm() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {showPassword ? (
-                  <EyeOff className="h-4 w-4" />
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <Eye className="h-4 w-4" />
+                  <Eye className="h-4 w-4" aria-hidden="true" />
                 )}
               </button>
             </div>

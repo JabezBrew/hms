@@ -67,7 +67,7 @@ export default function AdminDashboard() {
       <Layout>
         <div className="p-6">
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
+            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
             <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
               Failed to load dashboard
             </h3>
@@ -112,8 +112,9 @@ export default function AdminDashboard() {
               size="icon"
               onClick={() => refetch()}
               disabled={isFetching}
+              aria-label="Refresh dashboard"
             >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
             </Button>
           </>
         }
@@ -136,6 +137,7 @@ export default function AdminDashboard() {
                   'h-6 w-6 mt-1',
                   systemHealth === 'critical' ? 'text-rose-400' : 'text-amber-400'
                 )}
+                aria-hidden="true"
               />
               <div className="flex-1">
                 <h3
@@ -254,14 +256,14 @@ export default function AdminDashboard() {
             </DashboardGrid>
           ) : facilitiesError ? (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-              <AlertTriangle className="h-5 w-5 text-rose-400 mb-2" />
+              <AlertTriangle className="h-5 w-5 text-rose-400 mb-2" aria-hidden="true" />
               <p className="text-sm text-muted-foreground">
                 {facilitiesError.message || 'Failed to load facilities.'}
               </p>
             </div>
           ) : facilities.length === 0 ? (
             <div className="text-center py-10 rounded-xl border border-border bg-card/50">
-              <Building2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <Building2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
               <p className="text-muted-foreground">No facilities configured</p>
             </div>
           ) : (
@@ -335,7 +337,7 @@ export default function AdminDashboard() {
             </div>
           ) : wards.length === 0 ? (
             <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
               <p className="text-muted-foreground">No wards configured</p>
             </div>
           ) : (
@@ -364,7 +366,11 @@ export default function AdminDashboard() {
                 return (
                   <div
                     key={ward.id}
-                    className="rounded-xl border border-border bg-card p-4 sm:p-6 hover:border-primary/30 transition-colors cursor-pointer"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View ${ward.name} ward details`}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/wards/${ward.id}`); } }}
+                    className="rounded-xl border border-border bg-card p-4 sm:p-6 hover:border-primary/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     onClick={() => navigate(`/wards/${ward.id}`)}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">

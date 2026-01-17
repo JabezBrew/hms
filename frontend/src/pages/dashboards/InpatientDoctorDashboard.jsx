@@ -64,7 +64,7 @@ export default function InpatientDoctorDashboard() {
       <Layout>
         <div className="p-6">
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
+            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
             <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
               Failed to load dashboard
             </h3>
@@ -121,8 +121,9 @@ export default function InpatientDoctorDashboard() {
               size="icon"
               onClick={() => refetch()}
               disabled={isFetching}
+              aria-label="Refresh dashboard"
             >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
             </Button>
           </>
         }

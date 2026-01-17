@@ -161,7 +161,7 @@ export function MFAChallenge() {
       {/* Header */}
       <div className="text-center space-y-3">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <Shield className="h-7 w-7" />
+          <Shield className="h-7 w-7" aria-hidden="true" />
         </div>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
@@ -220,16 +220,17 @@ export function MFAChallenge() {
               <button
                 type="button"
                 onClick={handleCopySecret}
-                className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 transition-colors"
+                aria-label={copiedSecret ? "Copied to clipboard" : "Copy secret key"}
+                className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 transition-colors py-2 px-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {copiedSecret ? (
                   <>
-                    <Check className="h-3 w-3" />
+                    <Check className="h-3 w-3" aria-hidden="true" />
                     Copied
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3 w-3" />
+                    <Copy className="h-3 w-3" aria-hidden="true" />
                     Copy
                   </>
                 )}
@@ -325,6 +326,7 @@ export function MFAChallenge() {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="recovery-code" className="sr-only">Recovery Code</Label>
             <Input
               id="recovery-code"
               placeholder="Enter recovery code"

@@ -64,7 +64,7 @@ export default function ReceptionistDashboard() {
       <Layout>
         <div className="p-6">
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
+            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
             <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
               Failed to load dashboard
             </h3>
@@ -111,8 +111,9 @@ export default function ReceptionistDashboard() {
               size="icon"
               onClick={() => refetch()}
               disabled={isFetching}
+              aria-label="Refresh dashboard"
             >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
             </Button>
           </>
         }
@@ -262,7 +263,11 @@ export default function ReceptionistDashboard() {
               {todaysAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
-                  className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View appointment for ${appointment.patient_name}`}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/appointments/${appointment.id}`); } }}
+                  className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   onClick={() => navigate(`/appointments/${appointment.id}`)}
                 >
                   <div className="flex items-start justify-between mb-2">

@@ -277,8 +277,8 @@ export function Header() {
           {isAuthenticated && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <UserIcon className="h-4 w-4" />
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full" aria-label="User menu">
+                  <UserIcon className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>

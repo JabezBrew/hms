@@ -268,15 +268,27 @@ const PatientChronicleCard = ({
   // Render
   // ============================================
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleViewRecord();
+    }
+  };
+
   return (
     <article
       onClick={handleViewRecord}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="button"
+      aria-label={`View patient ${displayName}, ${mrn}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
         "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
         "hover:border-primary/30 transition-all duration-500",
         "hover:shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
         "animate-chronicle-enter",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
       style={{ animationDelay: `${index * 50}ms` }}
@@ -304,7 +316,7 @@ const PatientChronicleCard = ({
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2 shrink-0">
           {status === 'critical' && (
             <span className="badge-chronicle-rose flex items-center gap-1 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-              <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
               <span className="hidden sm:inline">CRITICAL</span>
             </span>
           )}
@@ -395,19 +407,19 @@ const PatientChronicleCard = ({
           {/* Pinned indicator for My Patients */}
           {isPinned && (
             <span className="flex items-center gap-1 text-primary">
-              <Star className="h-3 w-3 fill-current" />
+              <Star className="h-3 w-3 fill-current" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
             </span>
           )}
           {!isPinned && pendingOrders > 0 && (
             <>
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
             </>
           )}
           {!isPinned && pendingOrders === 0 && (
             <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-3 w-3" aria-hidden="true" />
               No pending items
             </span>
           )}

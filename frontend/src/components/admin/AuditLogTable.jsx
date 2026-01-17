@@ -50,24 +50,36 @@ const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
     }
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   return (
     <TableHead
       className={cn(
-        "font-mono text-xs cursor-pointer select-none hover:bg-muted/50 transition-colors",
+        "font-mono text-xs cursor-pointer select-none hover:bg-muted/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="button"
+      aria-sort={isActive ? (isDesc ? 'descending' : 'ascending') : 'none'}
+      aria-label={`Sort by ${label}`}
     >
       <div className="flex items-center gap-1">
         {label}
         {isActive ? (
           isDesc ? (
-            <ArrowDown className="h-3 w-3" />
+            <ArrowDown className="h-3 w-3" aria-hidden="true" />
           ) : (
-            <ArrowUp className="h-3 w-3" />
+            <ArrowUp className="h-3 w-3" aria-hidden="true" />
           )
         ) : (
-          <ArrowUpDown className="h-3 w-3 text-muted-foreground/50" />
+          <ArrowUpDown className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
         )}
       </div>
     </TableHead>
@@ -166,11 +178,16 @@ const AuditLogRow = ({ log, isExpanded, onToggle }) => {
     <Fragment>
       <TableRow
         className={cn(
-          "group cursor-pointer transition-colors",
+          "group cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
           rowHighlight,
           isExpanded && "bg-muted/30"
         )}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={isExpanded}
+        aria-label={`${log.description}, click to ${isExpanded ? 'collapse' : 'expand'} details`}
       >
         {/* Expand indicator */}
         <TableCell className="w-[40px] px-2">
@@ -179,6 +196,7 @@ const AuditLogRow = ({ log, isExpanded, onToggle }) => {
               "h-4 w-4 text-muted-foreground transition-transform",
               isExpanded && "rotate-90"
             )}
+            aria-hidden="true"
           />
         </TableCell>
 
@@ -206,7 +224,7 @@ const AuditLogRow = ({ log, isExpanded, onToggle }) => {
         {/* Action */}
         <TableCell>
           <div className="flex items-center gap-1.5">
-            <ActionIcon className={cn("h-3.5 w-3.5", actionColorClass)} />
+            <ActionIcon className={cn("h-3.5 w-3.5", actionColorClass)} aria-hidden="true" />
             <span className={cn("text-xs font-medium", actionColorClass)}>
               {log.action_display || formatAction(log.action)}
             </span>
