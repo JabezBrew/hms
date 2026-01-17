@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { AuditLogTable } from '@/components/admin/AuditLogTable';
 import {
   useAuditLogs,
@@ -98,9 +99,10 @@ const AuditLogsPage = () => {
   }, [logsData]);
 
   // Pagination info
-  const hasNextPage = logsData?.next;
-  const hasPrevPage = logsData?.previous;
+  const hasNextPage = !!logsData?.next;
+  const hasPrevPage = !!logsData?.previous;
   const totalCount = logsData?.count || allLogs.length;
+  const pageSize = 35;
 
   // Reset page when filters change
   useEffect(() => {
@@ -307,31 +309,16 @@ const AuditLogsPage = () => {
               />
 
               {/* Pagination */}
-              {(hasNextPage || hasPrevPage) && (
-                <div className="flex items-center justify-between py-4 border-t border-border mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {allLogs.length} of {totalCount} logs
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => p - 1)}
-                      disabled={!hasPrevPage}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => p + 1)}
-                      disabled={!hasNextPage}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <TablePagination
+                currentPage={currentPage}
+                totalCount={totalCount}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                hasNextPage={hasNextPage}
+                hasPrevPage={hasPrevPage}
+                itemLabel="logs"
+                className="mt-4"
+              />
             </div>
           )}
         </main>

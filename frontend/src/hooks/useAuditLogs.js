@@ -4,7 +4,7 @@ import { apiClient } from '@/lib/api-client';
 /**
  * Fetch audit logs with pagination and filters
  */
-const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 20) => {
+const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35) => {
   const params = new URLSearchParams();
   params.append('page', page);
   params.append('page_size', pageSize);
@@ -40,7 +40,7 @@ const fetchFilterOptions = async () => {
 /**
  * Hook for fetching audit logs with pagination
  */
-export function useAuditLogs(filters = {}, page = 1, pageSize = 20) {
+export function useAuditLogs(filters = {}, page = 1, pageSize = 35) {
   return useQuery({
     queryKey: ['audit-logs', filters, page, pageSize],
     queryFn: () => fetchAuditLogs(filters, page, pageSize),

@@ -105,7 +105,7 @@ const AuditLogTable = ({ logs, className, sortBy, onSortChange }) => {
   };
 
   return (
-    <div className={cn("rounded-lg overflow-hidden max-h-[calc(100vh-350px)] overflow-y-auto", className)}>
+    <div className={cn("rounded-lg overflow-hidden", className)}>
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow className="bg-muted/50 hover:bg-muted/50">
