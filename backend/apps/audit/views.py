@@ -40,7 +40,21 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Return filtered audit logs based on query parameters.
         """
-        queryset = self._facility_queryset().order_by('-timestamp')
+        queryset = self._facility_queryset()
+
+        # Handle ordering
+        ordering = self.request.query_params.get('ordering', '-timestamp')
+        allowed_orderings = {
+            'timestamp', '-timestamp',
+            'user_email', '-user_email',
+            'action', '-action',
+            'category', '-category',
+            'ip_address', '-ip_address',
+        }
+        if ordering in allowed_orderings:
+            queryset = queryset.order_by(ordering)
+        else:
+            queryset = queryset.order_by('-timestamp')
 
         # Filter by user
         user_id = self.request.query_params.get('user_id')
@@ -83,13 +97,15 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 ) + timedelta(days=1)
                 queryset = queryset.filter(timestamp__lt=end_dt)
 
-        # Search in description and resource_name
+        # Search in description, resource_name, user_email, and user name
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(description__icontains=search) |
                 Q(resource_name__icontains=search) |
-                Q(user_email__icontains=search)
+                Q(user_email__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search)
             )
 
         return queryset

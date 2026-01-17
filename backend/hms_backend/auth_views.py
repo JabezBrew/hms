@@ -5,6 +5,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, SimpleRateThrottle
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -151,37 +152,68 @@ class LogoutView(APIView):
     authentication_classes = []  # Don't require authentication
 
     def post(self, request, *args, **kwargs):
-        # Try to get user from request for audit logging
-        user = getattr(request, 'user', None) if hasattr(request, 'user') and request.user.is_authenticated else None
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
 
+        user = None
+        email = None
+        token_facility_code = None
+        refresh = None
+        refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
+
+        jwt_auth = JWTAuthentication()
         try:
-            # Get refresh token from cookie
-            refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
-
-            if refresh_token:
-                try:
-                    # Blacklist the refresh token
-                    token = RefreshToken(refresh_token)
-                    token.blacklist()
-                except (InvalidToken, TokenError):
-                    # Token already invalid/expired, that's fine - proceed with logout
-                    pass
-
-                try:
-                    from apps.users.session_service import revoke_session_by_refresh_token
-                    revoke_session_by_refresh_token(
-                        refresh_token,
-                        revoked_by=user if user and user.is_authenticated else None,
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            # If blacklisting fails, still proceed with logout
+            header = jwt_auth.get_header(request)
+            if header is not None:
+                raw_token = jwt_auth.get_raw_token(header)
+                if raw_token is not None:
+                    validated_token = jwt_auth.get_validated_token(raw_token)
+                    token_user_id = validated_token.get('user_id')
+                    token_facility_code = normalize_facility_code(validated_token.get('facility_code'))
+                    email = validated_token.get('email') or email
+                    user = jwt_auth.get_user(validated_token)
+                    if not user and token_user_id:
+                        user = User.objects.filter(id=token_user_id).first()
+        except (InvalidToken, TokenError, AttributeError, KeyError, TypeError):
             pass
 
-        # Log the logout action
+        if refresh_token:
+            try:
+                refresh = RefreshToken(refresh_token)
+                token_user_id = refresh.get('user_id')
+                token_facility_code = token_facility_code or normalize_facility_code(refresh.get('facility_code'))
+                email = email or refresh.get('email')
+                if token_user_id and not user:
+                    user = User.objects.filter(id=token_user_id).first()
+            except (InvalidToken, TokenError):
+                refresh = None
+
+        if not getattr(request, 'facility_code', None) and token_facility_code:
+            set_current_facility_code(token_facility_code)
+            request.facility_code = token_facility_code
+            request.facility = Facility.get_by_code(token_facility_code)
+
+        # Now blacklist the token
+        if refresh_token:
+            try:
+                refresh = refresh or RefreshToken(refresh_token)
+                refresh.blacklist()
+            except (InvalidToken, TokenError):
+                # Token already invalid/expired, that's fine - proceed with logout
+                pass
+
+            try:
+                from apps.users.session_service import revoke_session_by_refresh_token
+                revoke_session_by_refresh_token(
+                    refresh_token,
+                    revoked_by=user,
+                )
+            except Exception:
+                pass
+
+        # Log the logout action with the best identity we have
         try:
-            AuditService.log_authentication(request, action=AuditAction.LOGOUT, user=user)
+            AuditService.log_authentication(request, action=AuditAction.LOGOUT, user=user, email=email)
         except Exception:
             pass  # Don't let audit logging break logout
 

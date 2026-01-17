@@ -17,6 +17,7 @@ const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 20) => {
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
   if (filters.search) params.append('search', filters.search);
+  if (filters.ordering) params.append('ordering', filters.ordering);
 
   // Use getWithPagination to get full response including count, next, previous
   return apiClient.getWithPagination(`/admin/audit-logs/?${params.toString()}`);

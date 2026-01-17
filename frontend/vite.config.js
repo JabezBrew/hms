@@ -14,6 +14,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['lucide-react', 'lucide-react/dist/esm/icons'],
+  },
   server: {
     proxy: {
       '/api': {

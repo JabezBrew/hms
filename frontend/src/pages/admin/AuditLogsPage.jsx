@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { AuditLogCard } from '@/components/admin/AuditLogCard';
+import { AuditLogTable } from '@/components/admin/AuditLogTable';
 import {
   useAuditLogs,
   useAuditStats,
@@ -44,6 +44,7 @@ const AuditLogsPage = () => {
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sortBy, setSortBy] = useState('-timestamp');
 
   // Debounce search
   useEffect(() => {
@@ -67,8 +68,9 @@ const AuditLogsPage = () => {
     if (debouncedSearch) f.search = debouncedSearch;
     if (dateFrom) f.start_date = format(dateFrom, 'yyyy-MM-dd');
     if (dateTo) f.end_date = format(dateTo, 'yyyy-MM-dd');
+    if (sortBy) f.ordering = sortBy;
     return f;
-  }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo]);
+  }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo, sortBy]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,6 +113,12 @@ const AuditLogsPage = () => {
     setSelectedAction('all');
     setDateFrom(null);
     setDateTo(null);
+    setSortBy('-timestamp');
+    setCurrentPage(1);
+  };
+
+  const handleSortChange = (newSort) => {
+    setSortBy(newSort);
     setCurrentPage(1);
   };
 
@@ -288,13 +296,11 @@ const AuditLogsPage = () => {
             <EmptyState hasFilters={hasActiveFilters} onClear={handleClearFilters} />
           ) : (
             <div className="space-y-4">
-              {allLogs.map((log, index) => (
-                <AuditLogCard
-                  key={log.id}
-                  log={log}
-                  index={index}
-                />
-              ))}
+              <AuditLogTable
+                logs={allLogs}
+                sortBy={sortBy}
+                onSortChange={handleSortChange}
+              />
 
               {/* Pagination */}
               {(hasNextPage || hasPrevPage) && (
