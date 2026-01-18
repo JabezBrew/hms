@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 
 from hms_backend.throttling import MFARecoveryThrottle
 
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 from hms_backend.auth_utils import build_auth_response
 from hms_backend.tenancy import set_current_facility_code
@@ -118,6 +118,28 @@ def _log_mfa_failure(request, user=None, session=None, details=None, email=None)
             user=resolved_user,
             email=resolved_email,
             details=details,
+            facility=facility,
+        )
+    except Exception:
+        pass
+
+
+def _log_mfa_event(request, user, action, description, session=None):
+    """Log MFA enrollment/management events."""
+    try:
+        facility = None
+        if session and session.facility_code:
+            from apps.core.models import Facility
+            facility = Facility.get_by_code(session.facility_code)
+        AuditService.log(
+            request=request,
+            action=action,
+            category=AuditCategory.AUTHENTICATION,
+            resource_type='User',
+            resource_id=str(user.id),
+            resource_name=user.email,
+            description=description,
+            user=user,
             facility=facility,
         )
     except Exception:
@@ -255,6 +277,12 @@ class MFATOTPConfirmView(APIView):
         profile.totp_last_used_at = timezone.now()
         profile.save(update_fields=['totp_confirmed_at', 'totp_last_used_at', 'updated_at'])
 
+        _log_mfa_event(
+            request, user, AuditAction.MFA_TOTP_ENROLL,
+            f"User {user.email} enrolled TOTP authenticator",
+            session=session,
+        )
+
         if session:
             session.totp_verified = True
             session.webauthn_verified = True  # TOTP alone is sufficient
@@ -276,6 +304,11 @@ class MFARecoveryGenerateView(APIView):
         profile.recovery_codes = hashed
         profile.recovery_codes_generated_at = timezone.now()
         profile.save(update_fields=['recovery_codes', 'recovery_codes_generated_at', 'updated_at'])
+
+        _log_mfa_event(
+            request, user, AuditAction.MFA_RECOVERY_GENERATE,
+            f"User {user.email} generated new MFA recovery codes",
+        )
 
         return Response({'codes': raw_codes})
 
@@ -303,6 +336,13 @@ class MFARecoveryVerifyView(APIView):
 
         profile.recovery_codes = [c for c in profile.recovery_codes if c != hashed]
         profile.save(update_fields=['recovery_codes', 'updated_at'])
+
+        remaining = len(profile.recovery_codes)
+        _log_mfa_event(
+            request, session.user, AuditAction.MFA_RECOVERY_USED,
+            f"User {session.user.email} used MFA recovery code ({remaining} remaining)",
+            session=session,
+        )
 
         session.totp_verified = True
         session.webauthn_verified = True
@@ -434,6 +474,12 @@ class MFAWebAuthnRegistrationVerifyView(APIView):
             transports=transports or [],
             is_resident_key=True,
             is_active=True,
+        )
+
+        _log_mfa_event(
+            request, session.user, AuditAction.MFA_WEBAUTHN_ENROLL,
+            f"User {session.user.email} enrolled WebAuthn passkey",
+            session=session,
         )
 
         session.webauthn_verified = True

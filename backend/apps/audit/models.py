@@ -51,6 +51,13 @@ class AuditAction:
     PASSWORD_CHANGE = 'PASSWORD_CHANGE'
     OFFSITE_ACCESS = 'OFFSITE_ACCESS'
 
+    # MFA
+    MFA_TOTP_ENROLL = 'MFA_TOTP_ENROLL'
+    MFA_WEBAUTHN_ENROLL = 'MFA_WEBAUTHN_ENROLL'
+    MFA_RECOVERY_GENERATE = 'MFA_RECOVERY_GENERATE'
+    MFA_RECOVERY_USED = 'MFA_RECOVERY_USED'
+    MFA_DEVICE_REMOVE = 'MFA_DEVICE_REMOVE'
+
     # CRUD
     CREATE = 'CREATE'
     READ = 'READ'
@@ -147,6 +154,12 @@ class AuditAction:
         (LOGIN_FAILED, 'Login Failed'),
         (PASSWORD_CHANGE, 'Password Change'),
         (OFFSITE_ACCESS, 'Off-Site Access'),
+        # MFA
+        (MFA_TOTP_ENROLL, 'MFA TOTP Enrolled'),
+        (MFA_WEBAUTHN_ENROLL, 'MFA WebAuthn Enrolled'),
+        (MFA_RECOVERY_GENERATE, 'MFA Recovery Codes Generated'),
+        (MFA_RECOVERY_USED, 'MFA Recovery Code Used'),
+        (MFA_DEVICE_REMOVE, 'MFA Device Removed'),
         (CREATE, 'Create'),
         (READ, 'Read'),
         (UPDATE, 'Update'),
