@@ -64,6 +64,25 @@ class TestUserSessions:
         assert len(results) == 1
         assert results[0]['is_current'] is True
 
+    def test_logout_revokes_session(self, api_client, db):
+        user = UserFactory(email='logout@test.com', password='testpass123')
+
+        login_response = api_client.post(
+            '/api/auth/login/',
+            {'email': 'logout@test.com', 'password': 'testpass123'},
+            format='json',
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+
+        access_token = login_response.data['access']
+        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        logout_response = api_client.post('/api/auth/logout/', format='json')
+        assert logout_response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+
+        session = UserSession.objects.get(user=user)
+        assert session.revoked_at is not None
+
     def test_admin_revoke_all_sessions_for_user(self, db):
         user = UserFactory(email='revoke@test.com', password='testpass123')
         admin = AdminUserFactory(email='admin@test.com')
@@ -86,3 +105,30 @@ class TestUserSessions:
 
         assert response.status_code == status.HTTP_200_OK
         assert UserSession.objects.filter(user=user, revoked_at__isnull=True).count() == 0
+
+    def test_refresh_rotates_session_in_place(self, api_client, db):
+        from django.conf import settings
+        user = UserFactory(email='refresh@test.com', password='testpass123')
+
+        login_response = api_client.post(
+            '/api/auth/login/',
+            {'email': 'refresh@test.com', 'password': 'testpass123'},
+            format='json',
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+
+        session = UserSession.objects.get(user=user)
+        old_session_id = session.id
+        old_jti = session.refresh_jti
+
+        refresh_cookie = login_response.cookies.get(settings.JWT_AUTH_REFRESH_COOKIE)
+        if refresh_cookie:
+            api_client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = refresh_cookie.value
+
+        refresh_response = api_client.post('/api/auth/token/refresh/', format='json')
+        assert refresh_response.status_code == status.HTTP_200_OK
+
+        assert UserSession.objects.filter(user=user).count() == 1
+        session.refresh_from_db()
+        assert session.id == old_session_id
+        assert session.refresh_jti != old_jti

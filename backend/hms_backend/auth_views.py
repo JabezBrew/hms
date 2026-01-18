@@ -193,8 +193,18 @@ class LogoutView(APIView):
             request.facility_code = token_facility_code
             request.facility = Facility.get_by_code(token_facility_code)
 
-        # Now blacklist the token
+        revoked_session = None
         if refresh_token:
+            try:
+                from apps.users.session_service import revoke_session_by_refresh_token
+                revoked_session = revoke_session_by_refresh_token(
+                    refresh_token,
+                    revoked_by=user,
+                    request=request,
+                )
+            except Exception:
+                pass
+
             try:
                 refresh = refresh or RefreshToken(refresh_token)
                 refresh.blacklist()
@@ -202,12 +212,14 @@ class LogoutView(APIView):
                 # Token already invalid/expired, that's fine - proceed with logout
                 pass
 
+        if not revoked_session and user:
             try:
-                from apps.users.session_service import revoke_session_by_refresh_token
-                revoke_session_by_refresh_token(
-                    refresh_token,
-                    revoked_by=user,
-                )
+                if not getattr(request, 'user', None) or not request.user.is_authenticated:
+                    request.user = user
+                from apps.users.session_service import get_current_session_from_request, revoke_session
+                current_session = get_current_session_from_request(request)
+                if current_session:
+                    revoke_session(current_session, revoked_by=user)
             except Exception:
                 pass
 

@@ -114,6 +114,12 @@ const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'))
 const ClaimsPage = lazy(() => import('./pages/billing/ClaimsPage'))
 const InsuranceManagementPage = lazy(() => import('./pages/billing/InsuranceManagementPage'))
 
+// Settings Pages
+const SettingsHubPage = lazy(() => import('./pages/settings/SettingsHubPage'))
+const ProfileSettingsPage = lazy(() => import('./pages/settings/ProfileSettingsPage'))
+const SecuritySettingsPage = lazy(() => import('./pages/settings/SecuritySettingsPage'))
+const PreferencesSettingsPage = lazy(() => import('./pages/settings/PreferencesSettingsPage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -763,6 +769,12 @@ function AppContent() {
               <ChartBuilderPage />
             </RoleBasedRoute>
           } />
+
+          {/* Settings Routes - all authenticated users */}
+          <Route path="/settings" element={<Layout><SettingsHubPage /></Layout>} />
+          <Route path="/settings/profile" element={<Layout><ProfileSettingsPage /></Layout>} />
+          <Route path="/settings/security" element={<Layout><SecuritySettingsPage /></Layout>} />
+          <Route path="/settings/preferences" element={<Layout><PreferencesSettingsPage /></Layout>} />
 
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

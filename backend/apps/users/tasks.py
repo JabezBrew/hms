@@ -161,6 +161,33 @@ def send_welcome_credentials_email(self, user_email, user_name, password, employ
 
 
 @shared_task
+def update_session_geolocation(session_id, ip_address):
+    """
+    Populate session location fields from GeoIP without blocking auth requests.
+    """
+    if not session_id or not ip_address:
+        return {"status": "skipped"}
+
+    from .models import UserSession
+    from .geolocation import get_location_from_ip
+
+    session = UserSession.objects.filter(id=session_id, ip_address=ip_address).first()
+    if not session:
+        return {"status": "missing"}
+    if session.location_city or session.location_country:
+        return {"status": "already_set"}
+
+    location = get_location_from_ip(ip_address)
+    if not location:
+        return {"status": "no_location"}
+
+    session.location_city = location.city or ''
+    session.location_country = location.country or ''
+    session.save(update_fields=['location_city', 'location_country', 'updated_at'])
+    return {"status": "updated"}
+
+
+@shared_task
 def cleanup_expired_tokens():
     """
     Periodic task to clean up expired and used tokens.

@@ -22,7 +22,7 @@ from .serializers import (
     UserSessionListSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
-from .session_service import get_refresh_jti_from_request, revoke_session, revoke_sessions_for_user
+from .session_service import get_current_session_from_request, revoke_session, revoke_sessions_for_user
 from .rbac import (
     IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsLabTechnician,
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
@@ -138,15 +138,18 @@ class UserSessionViewSet(viewsets.GenericViewSet):
         include_revoked = str(self.request.query_params.get('include_revoked', '')).lower() == 'true'
         base_qs = UserSession.objects.select_related('user', 'revoked_by').order_by('-last_seen_at')
 
+        # Filter by user
         if user.user_type == 'admin':
             user_id = self.request.query_params.get('user_id')
-            if self.action == 'list' and not user_id:
-                return base_qs.filter(user=user)
             if user_id:
                 base_qs = base_qs.filter(user_id=user_id)
+            elif self.action == 'list':
+                # Admin viewing their own sessions (no user_id specified)
+                base_qs = base_qs.filter(user=user)
         else:
             base_qs = base_qs.filter(user=user)
 
+        # Filter out revoked/expired sessions unless explicitly requested
         if not include_revoked:
             base_qs = base_qs.filter(revoked_at__isnull=True, expires_at__gt=timezone.now())
 
@@ -154,12 +157,15 @@ class UserSessionViewSet(viewsets.GenericViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+        current_session = get_current_session_from_request(request)
+        current_session_id = current_session.id if current_session else None
+        serializer_context = {'request': request, 'current_session_id': current_session_id}
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = self.get_serializer(page, many=True, context={'request': request})
+            serializer = self.get_serializer(page, many=True, context=serializer_context)
             return self.get_paginated_response(serializer.data)
 
-        serializer = self.get_serializer(queryset, many=True, context={'request': request})
+        serializer = self.get_serializer(queryset, many=True, context=serializer_context)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
@@ -183,11 +189,17 @@ class UserSessionViewSet(viewsets.GenericViewSet):
             raise PermissionDenied("Not authorized to revoke other users' sessions.")
 
         exclude_current = bool(request.data.get('exclude_current', True))
-        exclude_jti = get_refresh_jti_from_request(request) if exclude_current else None
+        exclude_session_id = None
+        if exclude_current and target_user == request.user:
+            # Use the improved session lookup that handles stale JTIs
+            current_session = get_current_session_from_request(request)
+            if current_session:
+                exclude_session_id = current_session.id
+
         revoked_count = revoke_sessions_for_user(
             target_user,
             revoked_by=request.user if request.user.user_type == 'admin' else None,
-            exclude_jti=exclude_jti,
+            exclude_session_id=exclude_session_id,
         )
         return Response({'detail': 'Sessions revoked.', 'revoked_count': revoked_count})
 

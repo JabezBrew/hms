@@ -1015,12 +1015,15 @@ class UserPatientListCreateSerializer(serializers.ModelSerializer):
 class UserSessionListSerializer(serializers.ModelSerializer):
     is_current = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
 
     class Meta:
         model = UserSession
         fields = [
             'id',
             'device_label',
+            'ip_address',
+            'location',
             'created_at',
             'last_seen_at',
             'expires_at',
@@ -1030,23 +1033,33 @@ class UserSessionListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_is_current(self, obj):
-        request = self.context.get('request')
-        if not request:
-            return False
-        from rest_framework_simplejwt.tokens import RefreshToken
-        from rest_framework_simplejwt.exceptions import TokenError
-        from django.conf import settings
+    def get_location(self, obj):
+        """Return formatted location string."""
+        parts = []
+        if obj.location_city:
+            parts.append(obj.location_city)
+        if obj.location_country:
+            parts.append(obj.location_country)
+        return ', '.join(parts) if parts else None
 
-        refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
-        if not refresh_token:
-            return False
-        try:
-            token = RefreshToken(refresh_token)
-            token_jti = str(token['jti'])
-        except (TokenError, KeyError, TypeError):
-            return False
-        return token_jti == obj.refresh_jti
+    def get_is_current(self, obj):
+        current_session_id = self._get_current_session_id()
+        return bool(current_session_id and current_session_id == obj.id)
 
     def get_is_active(self, obj):
         return obj.is_active
+
+    def _get_current_session_id(self):
+        if 'current_session_id' in self.context:
+            return self.context.get('current_session_id')
+
+        request = self.context.get('request')
+        if not request:
+            self.context['current_session_id'] = None
+            return None
+
+        from .session_service import get_current_session_from_request
+        current_session = get_current_session_from_request(request)
+        current_session_id = current_session.id if current_session else None
+        self.context['current_session_id'] = current_session_id
+        return current_session_id
