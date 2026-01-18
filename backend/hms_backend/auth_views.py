@@ -220,6 +220,18 @@ class LogoutView(APIView):
                 current_session = get_current_session_from_request(request)
                 if current_session:
                     revoke_session(current_session, revoked_by=user)
+                else:
+                    from apps.users.models import UserSession
+                    facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
+                    fallback_qs = UserSession.objects.filter(
+                        user=user,
+                        revoked_at__isnull=True,
+                    )
+                    if facility_code:
+                        fallback_qs = fallback_qs.filter(facility_code=facility_code)
+                    fallback_session = fallback_qs.order_by('-last_seen_at').first()
+                    if fallback_session:
+                        revoke_session(fallback_session, revoked_by=user)
             except Exception:
                 pass
 

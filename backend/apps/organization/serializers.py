@@ -11,6 +11,7 @@ from .models import (
     StaffAssignmentTypeConfig,
     ClinicalUnit,
     Clinic,
+    ClinicSchedule,
     UnitLeadership,
     StaffUnitAssignment,
     UnitMemberAssignment,
@@ -242,6 +243,54 @@ class ClinicSerializer(serializers.ModelSerializer):
         model = Clinic
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class ClinicScheduleListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for clinic schedule lists."""
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+
+    class Meta:
+        model = ClinicSchedule
+        fields = [
+            'id', 'department', 'department_name',
+            'clinic', 'clinic_name',
+            'day_of_week', 'start_time', 'end_time',
+            'is_active',
+        ]
+
+
+class ClinicScheduleSerializer(serializers.ModelSerializer):
+    """Full serializer for clinic schedule details."""
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+    facility_name = serializers.CharField(source='facility.name', read_only=True)
+
+    class Meta:
+        model = ClinicSchedule
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
+        end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+        if start_time and end_time and start_time >= end_time:
+            raise serializers.ValidationError({
+                'end_time': 'End time must be after start time.'
+            })
+
+        department = data.get('department') or (self.instance.department if self.instance else None)
+        clinic = data.get('clinic') or (self.instance.clinic if self.instance else None)
+        if department and getattr(department.unit_type, 'code', None) != 'department':
+            raise serializers.ValidationError({
+                'department': 'Clinic schedules must reference a department unit.'
+            })
+        if department and clinic and clinic.department_id != department.id:
+            raise serializers.ValidationError({
+                'clinic': 'Clinic must belong to the selected department.'
+            })
+
+        return data
 
 
 class UnitLeadershipListSerializer(serializers.ModelSerializer):

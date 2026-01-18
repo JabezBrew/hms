@@ -12,6 +12,8 @@ import pytest
 from decimal import Decimal
 from django.utils import timezone
 from datetime import timedelta
+from rest_framework.test import APIRequestFactory
+from rest_framework.request import Request
 
 from apps.wards.serializers import (
     WardSerializer, WardListSerializer,
@@ -22,7 +24,7 @@ from apps.wards.serializers import (
 )
 from .factories import (
     WardFactory, BedFactory, AdmissionFactory, WardSectionFactory,
-    BedAmenityFactory
+    BedAmenityFactory, EncounterFactory
 )
 from apps.users.tests.factories import PatientProfileFactory
 
@@ -179,6 +181,50 @@ class TestAdmissionSerializer:
             'admission_type': 'elective'
         }
         serializer = AdmissionCreateSerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    def test_emergency_admission_requires_ed_encounter(self, db):
+        """Test emergency admission requires an active ED encounter."""
+        patient = PatientProfileFactory()
+        bed = BedFactory(status='available', ward__department__facility=patient.facility)
+        factory = APIRequestFactory()
+        request = factory.post('/api/wards/admissions/')
+        drf_request = Request(request)
+        drf_request.facility = patient.facility
+        drf_request.facility_code = patient.facility.code
+
+        data = {
+            'patient': str(patient.id),
+            'bed': str(bed.id),
+            'admission_type': 'emergency'
+        }
+        serializer = AdmissionCreateSerializer(data=data, context={'request': drf_request})
+        assert not serializer.is_valid()
+        assert 'ed_encounter_id' in serializer.errors
+
+    def test_emergency_admission_accepts_ed_encounter(self, db):
+        """Test emergency admission accepts provided ED encounter."""
+        patient = PatientProfileFactory()
+        bed = BedFactory(status='available', ward__department__facility=patient.facility)
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=patient.facility,
+            encounter_type='emergency',
+            status='in-progress'
+        )
+        factory = APIRequestFactory()
+        request = factory.post('/api/wards/admissions/')
+        drf_request = Request(request)
+        drf_request.facility = patient.facility
+        drf_request.facility_code = patient.facility.code
+
+        data = {
+            'patient': str(patient.id),
+            'bed': str(bed.id),
+            'admission_type': 'emergency',
+            'ed_encounter_id': str(encounter.id)
+        }
+        serializer = AdmissionCreateSerializer(data=data, context={'request': drf_request})
         assert serializer.is_valid(), serializer.errors
 
 

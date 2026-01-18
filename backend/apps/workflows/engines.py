@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 from typing import Dict, Any, Optional, List
 import logging
+from apps.organization.services import UnitHierarchyService
 
 def _extract_string_value(value, preferred_keys=None) -> str:
     """
@@ -1023,10 +1024,18 @@ class AdmissionEngine(BaseWorkflowEngine):
             ['admission_reason', 'reason', 'chief_complaint']
         )
 
+        department_unit = None
+        if admission.bed and admission.bed.ward and admission.bed.ward.department:
+            department_unit = UnitHierarchyService.get_department_unit_for_core_department(
+                admission.bed.ward.department,
+                facility=workflow.patient.facility
+            )
+
         encounter = Encounter.objects.create(
             patient=workflow.patient,
             facility=workflow.patient.facility,
             practitioner=admitting_practitioner,
+            department=department_unit,
             encounter_type='inpatient',
             status='in-progress',
             start_time=timezone.now(),

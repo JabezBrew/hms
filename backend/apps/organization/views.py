@@ -29,6 +29,7 @@ from .models import (
     StaffAssignmentTypeConfig,
     ClinicalUnit,
     Clinic,
+    ClinicSchedule,
     UnitLeadership,
     StaffUnitAssignment,
     UnitMemberAssignment,
@@ -50,6 +51,8 @@ from .serializers import (
     ClinicalUnitCreateSerializer,
     ClinicListSerializer,
     ClinicSerializer,
+    ClinicScheduleListSerializer,
+    ClinicScheduleSerializer,
     UnitLeadershipListSerializer,
     UnitLeadershipSerializer,
     StaffUnitAssignmentListSerializer,
@@ -755,6 +758,67 @@ class ClinicViewSet(viewsets.ModelViewSet):
         department = serializer.validated_data.get('department')
         if department and department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
+        serializer.save(updated_by=self.request.user)
+
+
+# =============================================================================
+# Clinic Schedule ViewSet
+# =============================================================================
+
+
+class ClinicScheduleViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing clinic schedules."""
+    queryset = ClinicSchedule.objects.all()
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['department', 'clinic', 'day_of_week', 'is_active']
+    search_fields = ['clinic__code', 'clinic__name', 'department__name']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdmin(), FacilityScopedPermission()]
+        return super().get_permissions()
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ClinicScheduleListSerializer
+        return ClinicScheduleSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related('facility', 'department', 'clinic')
+        facility = get_user_facility(self.request)
+        if not facility:
+            return queryset.none()
+        return queryset.filter(facility=facility)
+
+    def _validate_facility_relations(self, facility, department, clinic):
+        if department and department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+        if clinic and clinic.facility_id != facility.id:
+            raise PermissionDenied("Clinic does not belong to the active facility.")
+        if department and clinic and clinic.department_id != department.id:
+            raise PermissionDenied("Clinic does not belong to the selected department.")
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        department = serializer.validated_data.get('department')
+        clinic = serializer.validated_data.get('clinic')
+        self._validate_facility_relations(facility, department, clinic)
+        serializer.save(
+            facility=facility,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        department = serializer.validated_data.get('department') or serializer.instance.department
+        clinic = serializer.validated_data.get('clinic') or serializer.instance.clinic
+        self._validate_facility_relations(facility, department, clinic)
         serializer.save(updated_by=self.request.user)
 
 

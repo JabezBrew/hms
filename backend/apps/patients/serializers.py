@@ -2,6 +2,7 @@ from rest_framework import serializers
 import random
 import string
 import datetime
+from zoneinfo import ZoneInfo
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
     PatientRegistrationValidation, PatientNote
@@ -11,8 +12,10 @@ from ..users.serializers import PatientProfileSerializer, UserSerializer, genera
 from ..fhir_client.client import fhir_client
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
 from hms_backend.tenancy import get_current_facility_code
-from apps.core.security import get_user_facility
+from apps.core.security import get_user_facility, resolve_object_facility
 from apps.core.models import Facility
+from django.utils import timezone
+from django.db import transaction
 from ..fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
     create_address, generate_fhir_id
@@ -205,8 +208,65 @@ class PatientRegistrationSerializer(serializers.Serializer):
     postal_code = serializers.CharField(required=False, allow_blank=True)
     country = serializers.CharField(required=False, allow_blank=True)
 
-    # Admission fields (optional, for registration with admission)
-    admission_details = serializers.DictField(required=False, write_only=True)
+    # Admission/encounter fields (required to attach registration to care context)
+    admission_details = serializers.DictField(write_only=True)
+
+    def _get_department_timezone(self, department, facility):
+        tz_name = None
+        if department:
+            tz_name = department.get_effective_timezone()
+        if not tz_name and facility:
+            tz_name = facility.timezone
+        if tz_name:
+            try:
+                return ZoneInfo(tz_name)
+            except Exception:
+                pass
+        return timezone.get_current_timezone()
+
+    def _resolve_outpatient_clinic(self, facility, department, clinic_id=None):
+        from apps.organization.models import Clinic, ClinicSchedule
+
+        now = timezone.now()
+        tz = self._get_department_timezone(department, facility)
+        local_now = timezone.localtime(now, tz)
+        day_of_week = local_now.weekday()
+        current_time = local_now.time()
+
+        schedules = ClinicSchedule.objects.filter(
+            facility=facility,
+            department=department,
+            day_of_week=day_of_week,
+            is_active=True,
+            clinic__is_active=True,
+            start_time__lte=current_time,
+            end_time__gt=current_time,
+        )
+        clinic_ids = list(schedules.values_list('clinic_id', flat=True).distinct())
+
+        if clinic_id:
+            clinic = Clinic.objects.filter(id=clinic_id, is_active=True).first()
+            if not clinic:
+                raise serializers.ValidationError({"admission_details": "Selected clinic does not exist."})
+            if clinic.facility_id != facility.id:
+                raise serializers.ValidationError({"admission_details": "Clinic does not belong to the active facility."})
+            if clinic.department_id != department.id:
+                raise serializers.ValidationError({"admission_details": "Clinic does not belong to the selected department."})
+            if clinic.id not in clinic_ids:
+                raise serializers.ValidationError({"admission_details": "Clinic is not scheduled at this time."})
+            return clinic
+
+        if len(clinic_ids) == 1:
+            return Clinic.objects.get(id=clinic_ids[0])
+
+        if len(clinic_ids) == 0:
+            raise serializers.ValidationError({
+                "admission_details": "No active clinic schedule found for this department."
+            })
+
+        raise serializers.ValidationError({
+            "admission_details": "Multiple clinics are scheduled now; clinic_id is required."
+        })
 
     def validate(self, data):
         """
@@ -231,21 +291,119 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     if not re.match(rule.validation_regex, str(data[field_name])):
                         raise serializers.ValidationError({field_name: rule.validation_message})
         
-        # Validate admission details if present
-        if 'admission_details' in data:
-            admission = data['admission_details']
-            if admission.get('type') == 'inpatient':
-                # If bed_id is provided, validate it
-                if admission.get('bed_id'):
-                    # Check if bed exists and is available
-                    from ..wards.models import Bed
-                    try:
-                        bed = Bed.objects.get(id=admission['bed_id'])
-                        if bed.status != 'available':
-                             raise serializers.ValidationError({"admission_details": f"Bed {bed.bed_number} is not available."})
-                    except Bed.DoesNotExist:
-                        raise serializers.ValidationError({"admission_details": "Selected bed does not exist."})
-                # If no bed_id, it's a waiting list admission (valid)
+        admission = data.get('admission_details')
+        if not admission:
+            raise serializers.ValidationError({
+                "admission_details": "Registration must include encounter context."
+            })
+
+        encounter_type = admission.get('type')
+        if encounter_type not in ['outpatient', 'inpatient', 'emergency']:
+            raise serializers.ValidationError({
+                "admission_details": "Encounter type must be outpatient, inpatient, or emergency."
+            })
+
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
+        department_id = admission.get('department_id')
+        if not department_id:
+            raise serializers.ValidationError({
+                "admission_details": "department_id is required for registration."
+            })
+
+        from apps.organization.models import ClinicalUnit
+        department = ClinicalUnit.objects.select_related(
+            'unit_type', 'root_unit', 'core_department'
+        ).filter(id=department_id, is_active=True).first()
+        if not department:
+            from apps.core.models import Department as CoreDepartment
+            from apps.organization.services import UnitHierarchyService
+            core_department = CoreDepartment.objects.filter(
+                id=department_id,
+                is_active=True
+            ).first()
+            if core_department:
+                department = UnitHierarchyService.get_department_unit_for_core_department(
+                    core_department=core_department,
+                    facility=facility,
+                )
+        if not department:
+            raise serializers.ValidationError({
+                "admission_details": "Selected department does not exist."
+            })
+        if getattr(department.unit_type, 'code', None) != 'department' and not department.core_department_id:
+            raise serializers.ValidationError({
+                "admission_details": "Selected unit is not a department."
+            })
+        department_facility = resolve_object_facility(department)
+        if not department_facility or department_facility.id != facility.id:
+            raise serializers.ValidationError({
+                "admission_details": "Department does not belong to the active facility."
+            })
+        if not department.core_department:
+            raise serializers.ValidationError({
+                "admission_details": "Department must be linked to a facility department."
+            })
+
+        self._resolved_department = department
+
+        if encounter_type == 'outpatient':
+            if department.core_department.department_type == 'emergency':
+                raise serializers.ValidationError({
+                    "admission_details": "Emergency departments cannot register outpatient visits."
+                })
+            clinic_id = admission.get('clinic_id')
+            self._resolved_clinic = self._resolve_outpatient_clinic(
+                facility=facility,
+                department=department,
+                clinic_id=clinic_id,
+            )
+
+        if encounter_type == 'emergency':
+            if department.core_department.department_type != 'emergency':
+                raise serializers.ValidationError({
+                    "admission_details": "Emergency registration requires an emergency department."
+                })
+            if admission.get('clinic_id'):
+                raise serializers.ValidationError({
+                    "admission_details": "Clinic is not allowed for emergency registration."
+                })
+
+        if encounter_type == 'inpatient':
+            if department.core_department.department_type == 'emergency':
+                raise serializers.ValidationError({
+                    "admission_details": "Inpatient registrations must use a non-emergency department."
+                })
+            from ..wards.models import Bed, Ward
+            bed_id = admission.get('bed_id')
+            ward_id = admission.get('ward_id')
+            admission_type = admission.get('admission_type')
+            if admission_type == 'emergency':
+                raise serializers.ValidationError({
+                    "admission_details": "Emergency admissions must originate from an ED encounter."
+                })
+            if bed_id:
+                try:
+                    bed = Bed.objects.select_related('ward', 'ward__department').get(id=bed_id)
+                    if bed.status != 'available':
+                        raise serializers.ValidationError({"admission_details": f"Bed {bed.bed_number} is not available."})
+                    if bed.ward and bed.ward.department and bed.ward.department.facility_id != facility.id:
+                        raise serializers.ValidationError({"admission_details": "Selected bed does not belong to the active facility."})
+                    if bed.ward and bed.ward.department and bed.ward.department_id != department.core_department_id:
+                        raise serializers.ValidationError({"admission_details": "Bed does not belong to the selected department."})
+                except Bed.DoesNotExist:
+                    raise serializers.ValidationError({"admission_details": "Selected bed does not exist."})
+            elif ward_id:
+                ward = Ward.objects.select_related('department').filter(id=ward_id).first()
+                if not ward:
+                    raise serializers.ValidationError({"admission_details": "Selected ward does not exist."})
+                if ward.department and ward.department.facility_id != facility.id:
+                    raise serializers.ValidationError({"admission_details": "Selected ward does not belong to the active facility."})
+                if ward.department_id and ward.department_id != department.core_department_id:
+                    raise serializers.ValidationError({"admission_details": "Ward does not belong to the selected department."})
 
         return data
 
@@ -402,68 +560,134 @@ class PatientRegistrationSerializer(serializers.Serializer):
             patient_profile.fhir_patient_id = fhir_patient["id"]
             patient_profile.save()
             
-            # Handle Admission if details provided
-            if admission_details and admission_details.get('type') == 'inpatient':
-                from ..wards.models import Bed, Ward, Admission
-                from ..wards.proxies import EncounterProxy
-
-                bed_id = admission_details.get('bed_id')
-                ward_id = admission_details.get('ward_id')
+            if admission_details:
+                encounter_type = admission_details.get('type')
                 admission_notes = admission_details.get('notes', '')
+                from apps.encounters.models import Encounter
 
-                bed = None
-                location_display = "Waiting List"
-                admission_status = 'waiting'
-                daily_rate = 0.00
+                department = getattr(self, '_resolved_department', None)
 
-                if bed_id:
-                    # Specific bed was selected
-                    bed = Bed.objects.get(id=bed_id)
-                    location_display = bed.ward.name
-                    admission_status = 'admitted'
-                    daily_rate = bed.total_rate
-                elif ward_id:
-                    # Ward selected but no specific bed - auto-assign first available bed
-                    ward = Ward.objects.get(id=ward_id)
-                    available_bed = Bed.objects.filter(
-                        ward=ward,
-                        status='available'
-                    ).first()
+                if encounter_type == 'outpatient':
+                    clinic = getattr(self, '_resolved_clinic', None)
+                    if not clinic and admission_details.get('clinic_id'):
+                        from apps.organization.models import Clinic
+                        clinic = Clinic.objects.get(id=admission_details.get('clinic_id'))
+                    encounter = Encounter.objects.create(
+                        patient=patient_profile,
+                        facility=patient_profile.facility,
+                        clinic=clinic,
+                        department=department,
+                        encounter_type='outpatient',
+                        status='in-progress',
+                        start_time=timezone.now(),
+                        reason=admission_notes,
+                        service_type=clinic.name,
+                        location=clinic.name,
+                        created_by=self.context['request'].user,
+                        updated_by=self.context['request'].user
+                    )
+                    try:
+                        from apps.wards.tasks import sync_encounter_to_fhir
+                        transaction.on_commit(
+                            lambda: sync_encounter_to_fhir.delay(str(encounter.id))
+                        )
+                    except Exception:
+                        pass
 
-                    if available_bed:
-                        bed = available_bed
-                        location_display = ward.name
+                if encounter_type == 'emergency':
+                    encounter = Encounter.objects.create(
+                        patient=patient_profile,
+                        facility=patient_profile.facility,
+                        department=department,
+                        encounter_type='emergency',
+                        status='in-progress',
+                        start_time=timezone.now(),
+                        reason=admission_notes,
+                        service_type=department.name if department else 'Emergency',
+                        location=department.name if department else 'Emergency',
+                        created_by=self.context['request'].user,
+                        updated_by=self.context['request'].user
+                    )
+                    try:
+                        from apps.wards.tasks import sync_encounter_to_fhir
+                        transaction.on_commit(
+                            lambda: sync_encounter_to_fhir.delay(str(encounter.id))
+                        )
+                    except Exception:
+                        pass
+
+                if encounter_type == 'inpatient':
+                    from ..wards.models import Bed, Ward, Admission
+
+                    bed_id = admission_details.get('bed_id')
+                    ward_id = admission_details.get('ward_id')
+                    admission_type = admission_details.get('admission_type') or 'elective'
+
+                    bed = None
+                    location_display = "Waiting List"
+                    admission_status = 'waiting'
+                    daily_rate = 0.00
+
+                    if bed_id:
+                        bed = Bed.objects.get(id=bed_id)
+                        location_display = bed.ward.name
                         admission_status = 'admitted'
                         daily_rate = bed.total_rate
-                    else:
-                        # No beds available in ward - put on waiting list for this ward
-                        location_display = f"{ward.name} (Waiting List)"
-                
-                # Create Encounter first
-                encounter = EncounterProxy.create(
-                    patient_id=fhir_patient["id"],
-                    encounter_type='inpatient',
-                    status='in-progress' if bed else 'planned',
-                    reason=admission_notes,
-                    location=location_display
-                )
-                
-                # Create Admission
-                Admission.objects.create(
-                    patient=patient_profile,
-                    bed=bed,
-                    facility=patient_profile.facility,
-                    fhir_encounter_id=encounter['id'],
-                    admission_type='emergency', # Defaulting to emergency for now or could be passed
-                    status=admission_status,
-                    admission_notes=admission_notes,
-                    daily_rate=daily_rate,
-                    admitting_doctor=None, # Could be passed if needed
-                    created_by=self.context['request'].user,
-                    updated_by=self.context['request'].user
-                )
-                
-                # Bed status is automatically updated to 'occupied' by Admission.save() if bed is present
+                    elif ward_id:
+                        ward = Ward.objects.get(id=ward_id)
+                        available_bed = Bed.objects.filter(
+                            ward=ward,
+                            status='available'
+                        ).first()
+
+                        if available_bed:
+                            bed = available_bed
+                            location_display = ward.name
+                            admission_status = 'admitted'
+                            daily_rate = bed.total_rate
+                        else:
+                            location_display = f"{ward.name} (Waiting List)"
+
+                    admission = Admission.objects.create(
+                        patient=patient_profile,
+                        bed=bed,
+                        facility=patient_profile.facility,
+                        admission_type=admission_type,
+                        status=admission_status,
+                        admission_notes=admission_notes,
+                        daily_rate=daily_rate,
+                        admitting_doctor=None,
+                        primary_team=department,
+                        created_by=self.context['request'].user,
+                        updated_by=self.context['request'].user
+                    )
+
+                    encounter = Encounter.objects.create(
+                        patient=patient_profile,
+                        facility=patient_profile.facility,
+                        practitioner=None,
+                        encounter_type='inpatient',
+                        status='in-progress' if bed else 'planned',
+                        start_time=admission.admission_date,
+                        reason=admission_notes,
+                        service_type=f"Admission to {location_display}",
+                        location=location_display,
+                        admission=admission,
+                        department=department,
+                        created_by=self.context['request'].user,
+                        updated_by=self.context['request'].user
+                    )
+
+                    admission.fhir_encounter_id = str(encounter.id)
+                    admission.save(update_fields=['fhir_encounter_id'])
+
+                    try:
+                        from apps.wards.tasks import sync_encounter_to_fhir
+                        transaction.on_commit(
+                            lambda: sync_encounter_to_fhir.delay(str(encounter.id))
+                        )
+                    except Exception:
+                        pass
 
         except Exception as e:
             # If FHIR creation fails, delete the local resources and raise the error

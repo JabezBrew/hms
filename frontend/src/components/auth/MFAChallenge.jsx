@@ -15,7 +15,12 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '@/lib/auth.jsx'
 
 export function MFAChallenge() {
-  const { mfaSession, mfaEnrollmentRequired, completeMfa } = useAuth()
+  const {
+    mfaSession,
+    mfaEnrollmentRequired,
+    mfaAvailableMethods,
+    completeMfa,
+  } = useAuth()
   const [activeSession, setActiveSession] = useState(mfaSession)
   const [totpSecret, setTotpSecret] = useState(null)
   const [totpCode, setTotpCode] = useState('')
@@ -32,6 +37,12 @@ export function MFAChallenge() {
   const webauthnAvailable = useMemo(() => {
     return Boolean(window.PublicKeyCredential && navigator.credentials)
   }, [])
+
+  const hasConfiguredTotp = Boolean(mfaAvailableMethods?.totp)
+  const hasConfiguredWebauthn = Boolean(mfaAvailableMethods?.webauthn)
+  const shouldShowTotp = mfaEnrollmentRequired || hasConfiguredTotp
+  const shouldShowWebauthn = mfaEnrollmentRequired || hasConfiguredWebauthn
+  const shouldShowRecovery = !mfaEnrollmentRequired && (hasConfiguredTotp || hasConfiguredWebauthn)
 
   const handleCopySecret = async () => {
     if (totpSecret) {
@@ -176,142 +187,146 @@ export function MFAChallenge() {
       </div>
 
       {/* TOTP Section */}
-      <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-            totpConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-sky-500/10 text-sky-600'
-          }`}>
-            {totpConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
+      {shouldShowTotp && (
+        <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              totpConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-sky-500/10 text-sky-600'
+            }`}>
+              {totpConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-heading font-medium text-foreground">Authenticator App</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {mfaEnrollmentRequired
+                  ? 'Use Google Authenticator, Authy, or similar app'
+                  : 'Enter the 6-digit code from your authenticator'}
+              </p>
+            </div>
+            {totpConfirmed && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                <CheckCircle2 className="h-3 w-3" />
+                Done
+              </span>
+            )}
           </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-heading font-medium text-foreground">Authenticator App</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {mfaEnrollmentRequired
-                ? 'Use Google Authenticator, Authy, or similar app'
-                : 'Enter the 6-digit code from your authenticator'}
-            </p>
+
+          {mfaEnrollmentRequired && !totpSecret && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleTotpStart}
+              disabled={isBusy}
+            >
+              Generate Secret Key
+            </Button>
+          )}
+
+          {totpSecret && (
+            <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-amber-700">
+                  Secret Key
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopySecret}
+                  aria-label={copiedSecret ? "Copied to clipboard" : "Copy secret key"}
+                  className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 transition-colors py-2 px-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {copiedSecret ? (
+                    <>
+                      <Check className="h-3 w-3" aria-hidden="true" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" aria-hidden="true" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="font-mono text-sm break-all text-foreground select-all">
+                {totpSecret}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="totp-code" className="text-sm font-medium">
+              Verification Code
+            </Label>
+            <Input
+              id="totp-code"
+              inputMode="numeric"
+              placeholder="000000"
+              maxLength={6}
+              value={totpCode}
+              onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))}
+              disabled={isBusy || totpConfirmed}
+              className="font-mono text-center text-lg tracking-[0.5em]"
+            />
           </div>
-          {totpConfirmed && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
-              <CheckCircle2 className="h-3 w-3" />
-              Done
-            </span>
+
+          {!totpConfirmed && (
+            <Button
+              type="button"
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={mfaEnrollmentRequired ? handleTotpConfirm : handleTotpVerify}
+              disabled={isBusy || !totpCode || totpCode.length < 6}
+            >
+              {mfaEnrollmentRequired ? 'Confirm & Enable' : 'Verify Code'}
+            </Button>
           )}
         </div>
-
-        {mfaEnrollmentRequired && !totpSecret && (
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleTotpStart}
-            disabled={isBusy}
-          >
-            Generate Secret Key
-          </Button>
-        )}
-
-        {totpSecret && (
-          <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium uppercase tracking-wider text-amber-700">
-                Secret Key
-              </span>
-              <button
-                type="button"
-                onClick={handleCopySecret}
-                aria-label={copiedSecret ? "Copied to clipboard" : "Copy secret key"}
-                className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 transition-colors py-2 px-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {copiedSecret ? (
-                  <>
-                    <Check className="h-3 w-3" aria-hidden="true" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" aria-hidden="true" />
-                    Copy
-                  </>
-                )}
-              </button>
-            </div>
-            <div className="font-mono text-sm break-all text-foreground select-all">
-              {totpSecret}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <Label htmlFor="totp-code" className="text-sm font-medium">
-            Verification Code
-          </Label>
-          <Input
-            id="totp-code"
-            inputMode="numeric"
-            placeholder="000000"
-            maxLength={6}
-            value={totpCode}
-            onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))}
-            disabled={isBusy || totpConfirmed}
-            className="font-mono text-center text-lg tracking-[0.5em]"
-          />
-        </div>
-
-        {!totpConfirmed && (
-          <Button
-            type="button"
-            className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-            onClick={mfaEnrollmentRequired ? handleTotpConfirm : handleTotpVerify}
-            disabled={isBusy || !totpCode || totpCode.length < 6}
-          >
-            {mfaEnrollmentRequired ? 'Confirm & Enable' : 'Verify Code'}
-          </Button>
-        )}
-      </div>
+      )}
 
       {/* WebAuthn Section */}
-      <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-            webauthnConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-violet-500/10 text-violet-600'
-          }`}>
-            {webauthnConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Key className="h-5 w-5" />}
+      {shouldShowWebauthn && (
+        <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              webauthnConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-violet-500/10 text-violet-600'
+            }`}>
+              {webauthnConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Key className="h-5 w-5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-heading font-medium text-foreground">Security Key / Passkey</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Use Face ID, Touch ID, Windows Hello, or a hardware key
+              </p>
+            </div>
+            {webauthnConfirmed && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                <CheckCircle2 className="h-3 w-3" />
+                Done
+              </span>
+            )}
           </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-heading font-medium text-foreground">Security Key / Passkey</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Use Face ID, Touch ID, Windows Hello, or a hardware key
-            </p>
-          </div>
-          {webauthnConfirmed && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
-              <CheckCircle2 className="h-3 w-3" />
-              Done
-            </span>
+
+          {!webauthnAvailable ? (
+            <div className="flex items-center gap-2 rounded-md bg-rose-500/5 border border-rose-500/20 px-3 py-2 text-xs text-rose-600">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>WebAuthn is not supported on this device or browser</span>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={mfaEnrollmentRequired ? handleWebAuthnRegister : handleWebAuthnVerify}
+              disabled={isBusy || webauthnConfirmed}
+            >
+              {mfaEnrollmentRequired ? 'Register Security Key' : 'Verify with Security Key'}
+            </Button>
           )}
         </div>
-
-        {!webauthnAvailable ? (
-          <div className="flex items-center gap-2 rounded-md bg-rose-500/5 border border-rose-500/20 px-3 py-2 text-xs text-rose-600">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>WebAuthn is not supported on this device or browser</span>
-          </div>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={mfaEnrollmentRequired ? handleWebAuthnRegister : handleWebAuthnVerify}
-            disabled={isBusy || webauthnConfirmed}
-          >
-            {mfaEnrollmentRequired ? 'Register Security Key' : 'Verify with Security Key'}
-          </Button>
-        )}
-      </div>
+      )}
 
       {/* Recovery Code Section (verify mode only) */}
-      {!mfaEnrollmentRequired && (
+      {shouldShowRecovery && (
         <div className="rounded-lg border border-border/40 bg-muted/30 p-5 space-y-4">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">

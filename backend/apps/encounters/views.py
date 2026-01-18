@@ -5,6 +5,8 @@ This module provides the Encounter API endpoints.
 """
 import logging
 import uuid as uuid_module
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
@@ -14,7 +16,7 @@ from django.db import transaction
 from django.db.models import Q, Count
 from django.conf import settings
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_datetime, parse_date
 
 from .models import Encounter, OutpatientVisit, TriageQueue
 from .serializers import (
@@ -32,9 +34,10 @@ from apps.core.security import (
     check_clinical_access,
     get_accessible_patients_for_clinician,
     get_user_facility,
+    resolve_object_facility,
 )
 from apps.users.models import PatientProfile
-from apps.organization.models import Clinic
+from apps.organization.models import Clinic, ClinicalUnit
 from apps.appointments.models import AppointmentType
 from .services import VisitService, TriageService
 
@@ -69,6 +72,8 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - patient_id: Filter by patient UUID
         - practitioner_id: Filter by practitioner UUID
         - date: Filter by encounter date (YYYY-MM-DD)
+        - department_id: Filter by department UUID
+        - clinic_id: Filter by clinic UUID
         - status: Filter by status (planned, in-progress, finished, cancelled)
         - encounter_type: Filter by type (inpatient, outpatient, emergency)
         - search: Search patient name, reason, or location
@@ -82,6 +87,14 @@ class EncounterViewSet(viewsets.ModelViewSet):
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
     ordering_fields = ['start_time', 'created_at', 'status']
     ordering = ['-start_time']
+
+    def _get_facility_timezone(self, facility):
+        if facility and facility.timezone:
+            try:
+                return ZoneInfo(facility.timezone)
+            except Exception:
+                pass
+        return timezone.get_current_timezone()
 
     def get_queryset(self):
         """
@@ -99,6 +112,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff__user',
             'admission',
             'clinic',
+            'department',
             'appointment',
         ).filter(facility=facility)
 
@@ -147,9 +161,24 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 )
 
         # Filter by date (start_time date)
-        date = self.request.query_params.get('date')
-        if date:
-            queryset = queryset.filter(start_time__date=date)
+        date_value = self.request.query_params.get('date')
+        if date_value:
+            parsed_date = parse_date(date_value)
+            if parsed_date:
+                tz = self._get_facility_timezone(facility)
+                start = timezone.make_aware(datetime.combine(parsed_date, time.min), tz)
+                end = start + timedelta(days=1)
+                queryset = queryset.filter(start_time__gte=start, start_time__lt=end)
+
+        # Filter by department
+        department_id = self.request.query_params.get('department_id')
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+
+        # Filter by clinic
+        clinic_id = self.request.query_params.get('clinic_id')
+        if clinic_id:
+            queryset = queryset.filter(clinic_id=clinic_id)
 
         # Filter by status (planned, in-progress, finished, cancelled)
         encounter_status = self.request.query_params.get('status')
@@ -217,10 +246,16 @@ class EncounterViewSet(viewsets.ModelViewSet):
 
         clinic_id = serializer.validated_data.get('clinic_id')
         if clinic_id:
-            from apps.organization.models import Clinic
             clinic = Clinic.objects.get(id=clinic_id)
             if clinic.facility_id != facility.id:
                 raise PermissionDenied("Clinic does not belong to the active facility.")
+
+        department_id = serializer.validated_data.get('department_id')
+        if department_id:
+            department = ClinicalUnit.objects.get(id=department_id)
+            department_facility = resolve_object_facility(department)
+            if not department_facility or department_facility.id != facility.id:
+                raise PermissionDenied("Department does not belong to the active facility.")
 
         appointment_id = serializer.validated_data.get('appointment_id')
         if appointment_id:

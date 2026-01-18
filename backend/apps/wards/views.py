@@ -31,6 +31,7 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrOwner
 from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.organization.services import UnitHierarchyService
 from ..users.models import PatientProfile
 
 
@@ -748,37 +749,72 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 facility=facility
             )
 
-            # Create local Encounter (syncs to FHIR in background)
-            try:
-                encounter = Encounter.objects.create(
-                    patient=admission.patient,
-                    facility=facility,
-                    practitioner=admission.admitting_doctor,
-                    encounter_type='inpatient',
-                    status='in-progress',
-                    start_time=admission.admission_date,
-                    service_type=f"Admission to {admission.bed.ward.name}",
-                    location=admission.bed.ward.name,
-                    admission=admission,
-                    created_by=self.request.user,
+            department_unit = None
+            if admission.bed and admission.bed.ward and admission.bed.ward.department:
+                department_unit = UnitHierarchyService.get_department_unit_for_core_department(
+                    admission.bed.ward.department,
+                    facility=facility
                 )
 
-                # Update the admission with the encounter reference (for backwards compatibility)
-                admission.fhir_encounter_id = str(encounter.id)
+            ed_encounter = getattr(serializer, '_ed_encounter', None)
+            if ed_encounter:
+                location = admission.bed.ward.name if admission.bed else "Waiting List"
+                encounter_updates = {
+                    'encounter_type': 'inpatient',
+                    'status': 'in-progress' if admission.bed else 'planned',
+                    'admission': admission,
+                    'location': location,
+                    'service_type': f"Admission to {location}",
+                    'admission_source': 'emergency',
+                    'updated_by': self.request.user,
+                }
+                if department_unit:
+                    encounter_updates['department'] = department_unit
+                for field, value in encounter_updates.items():
+                    setattr(ed_encounter, field, value)
+                ed_encounter.save(update_fields=list(encounter_updates.keys()) + ['updated_at'])
+
+                admission.fhir_encounter_id = str(ed_encounter.id)
                 admission.save(update_fields=['fhir_encounter_id'])
 
-                # Queue FHIR sync in background
                 try:
                     from .tasks import sync_encounter_to_fhir
-                    sync_encounter_to_fhir.delay(str(encounter.id))
+                    sync_encounter_to_fhir.delay(str(ed_encounter.id))
                 except Exception:
-                    pass  # Celery not available, will sync later
+                    pass
+            else:
+                # Create local Encounter (syncs to FHIR in background)
+                try:
+                    encounter = Encounter.objects.create(
+                        patient=admission.patient,
+                        facility=facility,
+                        practitioner=admission.admitting_doctor,
+                        department=department_unit,
+                        encounter_type='inpatient',
+                        status='in-progress',
+                        start_time=admission.admission_date,
+                        service_type=f"Admission to {admission.bed.ward.name}",
+                        location=admission.bed.ward.name,
+                        admission=admission,
+                        created_by=self.request.user,
+                    )
 
-            except Exception as e:
-                # Log the error but continue (we don't want to roll back the admission)
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
+                    # Update the admission with the encounter reference (for backwards compatibility)
+                    admission.fhir_encounter_id = str(encounter.id)
+                    admission.save(update_fields=['fhir_encounter_id'])
+
+                    # Queue FHIR sync in background
+                    try:
+                        from .tasks import sync_encounter_to_fhir
+                        sync_encounter_to_fhir.delay(str(encounter.id))
+                    except Exception:
+                        pass  # Celery not available, will sync later
+
+                except Exception as e:
+                    # Log the error but continue (we don't want to roll back the admission)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
 
             # Store the previous bed status before updating
             previous_status = bed.status

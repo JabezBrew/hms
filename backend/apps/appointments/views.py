@@ -222,6 +222,7 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 facility=appointment.facility,
                 practitioner=appointment.practitioner,
                 clinic=appointment.clinic,
+                department=appointment.clinic.department if appointment.clinic else None,
                 appointment=appointment,
                 encounter_type='outpatient',
                 status='in-progress',

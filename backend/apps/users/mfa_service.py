@@ -16,6 +16,9 @@ from hms_backend.tenancy import facility_context
 
 
 def is_mfa_required(user) -> bool:
+    require_all = bool(getattr(settings, 'MFA_REQUIRED_FOR_ALL', False))
+    if require_all:
+        return True
     return bool(getattr(settings, 'MFA_REQUIRED_FOR_ADMIN', True)) and user.user_type == 'admin'
 
 

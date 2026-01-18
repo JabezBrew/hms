@@ -294,6 +294,33 @@ class UnitHierarchyService:
 
         return queryset.select_related('unit_type', 'parent')
 
+    @classmethod
+    def get_department_unit_for_core_department(cls, core_department, facility=None):
+        """
+        Resolve the ClinicalUnit department mapped to a core Department.
+
+        Args:
+            core_department: core.Department instance
+            facility: Optional core.Facility to scope the lookup
+
+        Returns:
+            ClinicalUnit or None
+        """
+        if not core_department:
+            return None
+
+        from .models import ClinicalUnit
+
+        queryset = ClinicalUnit.objects.filter(
+            core_department=core_department,
+            unit_type__code='department',
+            is_active=True
+        )
+        if facility:
+            queryset = queryset.filter(root_unit__code=facility.code)
+
+        return queryset.select_related('unit_type', 'root_unit').first()
+
 
 # =============================================================================
 # Duty Roster Services

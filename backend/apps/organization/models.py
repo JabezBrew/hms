@@ -204,6 +204,14 @@ class ClinicalUnit(MPTTModel):
         on_delete=models.PROTECT,
         related_name='units'
     )
+    core_department = models.ForeignKey(
+        'core.Department',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='clinical_units',
+        help_text='Mapped facility department for registration and reporting'
+    )
 
     # DENORMALIZED for performance (updated via signals)
     root_unit = models.ForeignKey(
@@ -309,6 +317,7 @@ class ClinicalUnit(MPTTModel):
             models.Index(fields=['unit_type', 'is_active']),
             models.Index(fields=['parent', 'is_active']),
             models.Index(fields=['root_unit', 'is_active']),
+            models.Index(fields=['core_department', 'is_active']),
         ]
         ordering = ['tree_id', 'lft']
         verbose_name = 'Clinical Unit'
@@ -408,6 +417,67 @@ class Clinic(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+
+class ClinicSchedule(models.Model):
+    """Defines day/time schedules for clinics within a department."""
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 0, 'Monday'
+        TUESDAY = 1, 'Tuesday'
+        WEDNESDAY = 2, 'Wednesday'
+        THURSDAY = 3, 'Thursday'
+        FRIDAY = 4, 'Friday'
+        SATURDAY = 5, 'Saturday'
+        SUNDAY = 6, 'Sunday'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='clinic_schedules'
+    )
+    department = models.ForeignKey(
+        ClinicalUnit,
+        on_delete=models.PROTECT,
+        related_name='clinic_schedules'
+    )
+    clinic = models.ForeignKey(
+        Clinic,
+        on_delete=models.PROTECT,
+        related_name='schedules'
+    )
+    day_of_week = models.PositiveSmallIntegerField(choices=DayOfWeek.choices)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_clinic_schedules'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_clinic_schedules'
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility', 'day_of_week', 'is_active']),
+            models.Index(fields=['department', 'day_of_week', 'is_active']),
+            models.Index(fields=['clinic', 'day_of_week', 'is_active']),
+        ]
+        ordering = ['day_of_week', 'start_time']
+
+    def __str__(self):
+        return f"{self.clinic.name} ({self.get_day_of_week_display()} {self.start_time}-{self.end_time})"
 
 
 class UnitLeadership(models.Model):

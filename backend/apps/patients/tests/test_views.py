@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.conf import settings
-from datetime import timedelta
+from datetime import timedelta, time
 
 from apps.patients.models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -24,13 +24,14 @@ from apps.patients.models import (
 )
 from apps.users.models import PatientProfile
 from apps.core.models import BreakGlassEvent
-from apps.core.tests.factories import DefaultFacilityFactory
+from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory
 from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
     NurseUserFactory, PatientUserFactory, PatientProfileFactory,
     UserPatientListFactory
 )
+from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig, ClinicSchedule
 from .factories import (
     PatientFHIRMappingFactory, PatientSearchFactory,
     RecentPatientFactory, PatientRegistrationValidationFactory,
@@ -49,6 +50,65 @@ def get_authenticated_client(user, facility=None):
         HTTP_X_FACILITY_CODE=facility.code
     )
     return client
+
+
+def create_clinic(facility):
+    core_department = DepartmentFactory(facility=facility)
+    facility_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='facility',
+        defaults={
+            'name': 'Facility',
+            'can_be_root': True,
+            'depth_level': 0,
+        },
+    )
+    if not facility_type.can_be_root or facility_type.depth_level != 0:
+        facility_type.can_be_root = True
+        facility_type.depth_level = 0
+        facility_type.save(update_fields=['can_be_root', 'depth_level'])
+    department_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='department',
+        defaults={
+            'name': 'Department',
+            'depth_level': 1,
+        },
+    )
+    if department_type.depth_level != 1:
+        department_type.depth_level = 1
+        department_type.save(update_fields=['depth_level'])
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=facility.code,
+        name=facility.name,
+        is_active=True,
+    )
+    department = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='OPD',
+        name='Outpatient Department',
+        is_active=True,
+        core_department=core_department,
+    )
+    clinic = Clinic.objects.create(
+        facility=facility,
+        department=department,
+        code='OPD-GEN',
+        name='General OPD',
+        is_active=True,
+    )
+    today = timezone.localtime(timezone.now()).weekday()
+    ClinicSchedule.objects.create(
+        facility=facility,
+        department=department,
+        clinic=clinic,
+        day_of_week=today,
+        start_time=time(0, 0),
+        end_time=time(23, 59),
+        is_active=True,
+    )
+    return clinic
 
 
 # =============================================================================
@@ -362,7 +422,9 @@ class TestPatientViewSet:
         }
 
         admin = AdminUserFactory()
-        client = get_authenticated_client(admin)
+        facility = admin.primary_facility
+        clinic = create_clinic(facility)
+        client = get_authenticated_client(admin, facility=facility)
 
         response = client.post('/api/patients/register/', {
             'email': 'newpatient@test.com',
@@ -370,7 +432,12 @@ class TestPatientViewSet:
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
             'phone_number': '1234567890',
-            'blood_group': 'A+'
+            'blood_group': 'A+',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            }
         }, format='json')
 
         assert response.status_code == status.HTTP_201_CREATED
@@ -384,12 +451,19 @@ class TestPatientViewSet:
         UserFactory(email='existing@test.com')
         admin = AdminUserFactory()
 
-        client = get_authenticated_client(admin)
+        facility = admin.primary_facility
+        clinic = create_clinic(facility)
+        client = get_authenticated_client(admin, facility=facility)
         response = client.post('/api/patients/register/', {
             'email': 'existing@test.com',
             'first_name': 'New',
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            }
         }, format='json')
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -406,7 +480,9 @@ class TestPatientViewSet:
         }
 
         receptionist = ReceptionistUserFactory()
-        client = get_authenticated_client(receptionist)
+        facility = receptionist.primary_facility
+        clinic = create_clinic(facility)
+        client = get_authenticated_client(receptionist, facility=facility)
 
         response = client.post('/api/patients/register/', {
             'email': 'receptionist-patient@test.com',
@@ -414,6 +490,11 @@ class TestPatientViewSet:
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
             'phone_number': '1234567890',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }, format='json')
 
         assert response.status_code == status.HTTP_201_CREATED

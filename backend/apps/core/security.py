@@ -61,8 +61,22 @@ def get_user_facility(request):
         return facility
 
     facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
+    if not facility_code and request:
+        header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
+        header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
+        facility_code = normalize_facility_code(request.META.get(header_key))
+    if not facility_code:
+        from hms_backend.tenancy import get_current_facility_code
+        facility_code = get_current_facility_code()
     if not facility_code:
         return None
+
+    if request and getattr(request, 'user', None) and request.user.is_authenticated:
+        allowed_codes = get_user_facility_codes(request.user)
+        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        is_admin = bool(getattr(request.user, 'user_type', None) == 'admin')
+        if allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+            return None
 
     from apps.core.models import Facility
     return Facility.get_by_code(facility_code)

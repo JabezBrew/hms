@@ -1,5 +1,7 @@
 import pytest
+import pytest
 import pyotp
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -13,6 +15,27 @@ def test_admin_login_requires_mfa():
         email='admin@example.com',
         password='StrongPass123!',
         user_type='admin',
+    )
+
+    client = APIClient()
+    response = client.post('/api/auth/login/', {
+        'email': user.email,
+        'password': 'StrongPass123!',
+    }, format='json')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data.get('mfa_required') is True
+    assert response.data.get('mfa_session')
+
+
+@pytest.mark.django_db
+@override_settings(MFA_REQUIRED_FOR_ADMIN=False, MFA_REQUIRED_FOR_ALL=True)
+def test_all_users_login_requires_mfa():
+    user = User.objects.create_user(
+        username='doctor',
+        email='doctor@example.com',
+        password='StrongPass123!',
+        user_type='doctor',
     )
 
     client = APIClient()

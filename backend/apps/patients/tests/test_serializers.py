@@ -10,9 +10,10 @@ Tests for:
 - PatientRegistrationSerializer
 """
 import pytest
-from datetime import date
+from datetime import date, time
 from unittest.mock import patch, MagicMock
 
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
@@ -32,6 +33,67 @@ from .factories import (
     RecentPatientFactory, PatientRegistrationValidationFactory,
     PatientNoteFactory
 )
+from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig, ClinicSchedule
+from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory
+
+
+def create_clinic(facility):
+    core_department = DepartmentFactory(facility=facility)
+    facility_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='facility',
+        defaults={
+            'name': 'Facility',
+            'can_be_root': True,
+            'depth_level': 0,
+        },
+    )
+    if not facility_type.can_be_root or facility_type.depth_level != 0:
+        facility_type.can_be_root = True
+        facility_type.depth_level = 0
+        facility_type.save(update_fields=['can_be_root', 'depth_level'])
+    department_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='department',
+        defaults={
+            'name': 'Department',
+            'depth_level': 1,
+        },
+    )
+    if department_type.depth_level != 1:
+        department_type.depth_level = 1
+        department_type.save(update_fields=['depth_level'])
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=facility.code,
+        name=facility.name,
+        is_active=True,
+    )
+    department = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='OPD',
+        name='Outpatient Department',
+        is_active=True,
+        core_department=core_department,
+    )
+    clinic = Clinic.objects.create(
+        facility=facility,
+        department=department,
+        code='OPD-GEN',
+        name='General OPD',
+        is_active=True,
+    )
+    today = timezone.localtime(timezone.now()).weekday()
+    ClinicSchedule.objects.create(
+        facility=facility,
+        department=department,
+        clinic=clinic,
+        day_of_week=today,
+        start_time=time(0, 0),
+        end_time=time(23, 59),
+        is_active=True,
+    )
+    return clinic
 
 
 # =============================================================================
@@ -224,16 +286,26 @@ class TestPatientRegistrationSerializer:
         drf_request = Request(request)
         # Manually set user since force_authenticate only works in view context
         drf_request._user = admin
+        facility = admin.primary_facility or DefaultFacilityFactory()
+        drf_request.facility = facility
+        drf_request.facility_code = facility.code
         return {'request': drf_request}
 
     def test_valid_registration_data(self, db, request_context):
         """Test validation of valid registration data."""
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
         data = {
             'email': 'newpatient@test.com',
             'first_name': 'New',
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
             'phone_number': '1234567890',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(
@@ -246,12 +318,19 @@ class TestPatientRegistrationSerializer:
     def test_duplicate_email_rejected(self, db, request_context):
         """Test that duplicate email is rejected."""
         UserFactory(email='existing@test.com')
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
 
         data = {
             'email': 'existing@test.com',
             'first_name': 'New',
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(
@@ -264,9 +343,16 @@ class TestPatientRegistrationSerializer:
 
     def test_required_fields(self, db, request_context):
         """Test that required fields are validated."""
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
         data = {
             'email': 'test@test.com',
             # Missing first_name, last_name, date_of_birth
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(
@@ -279,6 +365,8 @@ class TestPatientRegistrationSerializer:
 
     def test_optional_fields(self, db, request_context):
         """Test that optional fields are accepted."""
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
         data = {
             'email': 'optional@test.com',
             'first_name': 'Optional',
@@ -295,7 +383,12 @@ class TestPatientRegistrationSerializer:
             'city': 'Test City',
             'state': 'TS',
             'postal_code': '12345',
-            'country': 'Testland'
+            'country': 'Testland',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(
@@ -317,6 +410,8 @@ class TestPatientRegistrationSerializer:
             created_by=request_context['request'].user,
             updated_by=request_context['request'].user
         )
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
 
         # Test with invalid phone number
         data = {
@@ -325,6 +420,11 @@ class TestPatientRegistrationSerializer:
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
             'phone_number': '123',  # Too short
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(
@@ -343,6 +443,8 @@ class TestPatientRegistrationSerializer:
             "id": "fhir-patient-123",
             "meta": {"versionId": "1"}
         }
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
 
         data = {
             'email': 'fhirpatient@test.com',
@@ -350,6 +452,11 @@ class TestPatientRegistrationSerializer:
             'last_name': 'Patient',
             'date_of_birth': '1990-01-15',
             'phone_number': '1234567890',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'clinic_id': str(clinic.id),
+            },
         }
 
         serializer = PatientRegistrationSerializer(

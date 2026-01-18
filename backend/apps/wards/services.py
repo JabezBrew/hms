@@ -4,10 +4,12 @@ Encounter services for automatic encounter management.
 This module provides utilities for finding or creating active encounters
 for patients, ensuring clinical entries are always properly linked.
 """
+from datetime import datetime, time, timedelta
 from django.utils import timezone
 from django.db import transaction
 
 from apps.encounters.models import Encounter
+from apps.organization.services import UnitHierarchyService
 from .models import Admission
 
 
@@ -29,7 +31,9 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     Returns:
         tuple: (Encounter instance, bool created)
     """
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
 
     # Rule 1: Check for active inpatient admission
     # If patient is admitted, ALL entries should go to the admission's encounter
@@ -49,6 +53,10 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
                 patient=patient,
                 facility=patient.facility,
                 practitioner=active_admission.admitting_doctor,
+                department=UnitHierarchyService.get_department_unit_for_core_department(
+                    active_admission.bed.ward.department if active_admission.bed else None,
+                    facility=patient.facility
+                ),
                 encounter_type='inpatient',
                 status='in-progress',
                 start_time=active_admission.admission_date,
@@ -63,7 +71,8 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     filters = {
         'patient': patient,
         'status': 'in-progress',
-        'start_time__date': today,
+        'start_time__gte': start_of_day,
+        'start_time__lt': end_of_day,
         'encounter_type__in': ['outpatient', 'emergency'],
     }
 
@@ -99,7 +108,9 @@ def get_active_encounter_for_patient(patient):
     Returns:
         Encounter instance or None
     """
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
 
     # Check for active inpatient admission first
     active_admission = Admission.objects.filter(
@@ -114,7 +125,8 @@ def get_active_encounter_for_patient(patient):
     return Encounter.objects.filter(
         patient=patient,
         status='in-progress',
-        start_time__date=today,
+        start_time__gte=start_of_day,
+        start_time__lt=end_of_day,
         encounter_type__in=['outpatient', 'emergency'],
     ).first()
 

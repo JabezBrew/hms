@@ -22,6 +22,8 @@ from apps.users.tests.factories import (
     PractitionerProfileFactory,
 )
 from apps.wards.tests.factories import AdmissionFactory, BedFactory
+from apps.organization.models import ClinicalUnit, Clinic, UnitTypeConfig
+from apps.core.tests.factories import DepartmentFactory
 
 
 @pytest.fixture
@@ -30,6 +32,8 @@ def api_client():
     user = UserFactory(user_type='admin')
     client = APIClient()
     client.force_authenticate(user=user)
+    if user.primary_facility:
+        client.credentials(HTTP_X_FACILITY_CODE=user.primary_facility.code)
     return client
 
 
@@ -37,6 +41,55 @@ def api_client():
 def unauthenticated_client():
     """Return an unauthenticated API client."""
     return APIClient()
+
+
+def create_department_and_clinic(facility):
+    core_department = DepartmentFactory(facility=facility)
+    facility_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='facility',
+        defaults={
+            'name': 'Facility',
+            'can_be_root': True,
+            'depth_level': 0,
+        },
+    )
+    if not facility_type.can_be_root or facility_type.depth_level != 0:
+        facility_type.can_be_root = True
+        facility_type.depth_level = 0
+        facility_type.save(update_fields=['can_be_root', 'depth_level'])
+    department_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='department',
+        defaults={
+            'name': 'Department',
+            'depth_level': 1,
+        },
+    )
+    if department_type.depth_level != 1:
+        department_type.depth_level = 1
+        department_type.save(update_fields=['depth_level'])
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=facility.code,
+        name=facility.name,
+        is_active=True,
+    )
+    department_unit = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='OPD',
+        name='Outpatient Department',
+        is_active=True,
+        core_department=core_department,
+    )
+    clinic = Clinic.objects.create(
+        facility=facility,
+        department=department_unit,
+        code='OPD-GEN',
+        name='General OPD',
+        is_active=True,
+    )
+    return department_unit, clinic
 
 
 @pytest.mark.django_db
@@ -103,6 +156,29 @@ class TestEncounterListView:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data['results']) == 1
+
+    def test_filter_by_department_and_clinic(self, api_client):
+        """Test filtering by department and clinic."""
+        patient = PatientProfileFactory()
+        department, clinic = create_department_and_clinic(patient.facility)
+        target = EncounterFactory(
+            patient=patient,
+            clinic=clinic,
+            department=department,
+        )
+        EncounterFactory()  # Different encounter
+
+        response = api_client.get(f'/api/encounters/?department_id={department.id}')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 1
+        assert response.data['results'][0]['id'] == str(target.id)
+
+        response = api_client.get(f'/api/encounters/?clinic_id={clinic.id}')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 1
+        assert response.data['results'][0]['id'] == str(target.id)
 
     def test_filter_by_status(self, api_client):
         """Test filtering by encounter status."""
@@ -182,10 +258,13 @@ class TestEncounterCreateView:
         """Test creating a new encounter."""
         patient = PatientProfileFactory()
         practitioner = PractitionerProfileFactory()
+        department, clinic = create_department_and_clinic(patient.facility)
 
         data = {
             'patient_id': str(patient.id),
             'practitioner_id': str(practitioner.id),
+            'department_id': str(department.id),
+            'clinic_id': str(clinic.id),
             'encounter_type': 'outpatient',
             'status': 'in-progress',
             'reason': 'Check-up',
@@ -200,10 +279,13 @@ class TestEncounterCreateView:
         """Test created encounter has created_by set to current user."""
         patient = PatientProfileFactory()
         practitioner = PractitionerProfileFactory()
+        department, clinic = create_department_and_clinic(patient.facility)
 
         data = {
             'patient_id': str(patient.id),
             'practitioner_id': str(practitioner.id),
+            'department_id': str(department.id),
+            'clinic_id': str(clinic.id),
             'encounter_type': 'outpatient',
             'status': 'in-progress',
         }

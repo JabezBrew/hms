@@ -534,9 +534,13 @@ class OffSiteAccessSettings(models.Model):
         """Get settings with caching."""
         cache_key = facility_cache_key('offsite_settings')
         settings = cache.get(cache_key)
+        if settings is not None:
+            return settings
+
+        settings = cls.objects.filter(pk=1).first()
         if settings is None:
-            settings, _ = cls.objects.get_or_create(pk=1)
-            cache.set(cache_key, settings, 300)  # Cache for 5 minutes
+            settings = cls()
+        cache.set(cache_key, settings, 300)  # Cache for 5 minutes
         return settings
 
 

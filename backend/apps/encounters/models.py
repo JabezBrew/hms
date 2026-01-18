@@ -59,6 +59,14 @@ class Encounter(models.Model):
         blank=True,
         related_name='encounters'
     )
+    department = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='encounters',
+        help_text="Owning department for this encounter"
+    )
     appointment = models.ForeignKey(
         'appointments.Appointment',
         on_delete=models.SET_NULL,
@@ -165,6 +173,7 @@ class Encounter(models.Model):
             models.Index(fields=['clinic', 'status']),
             models.Index(fields=['appointment', 'status']),
             models.Index(fields=['status', 'start_time']),
+            models.Index(fields=['department', 'start_time']),
             models.Index(fields=['encounter_type', 'status']),
             models.Index(fields=['fhir_id']),
             models.Index(fields=['fhir_synced']),

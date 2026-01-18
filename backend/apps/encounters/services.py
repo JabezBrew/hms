@@ -4,13 +4,14 @@ Encounter services for automatic encounter management.
 This module provides utilities for finding or creating active encounters
 for patients, ensuring clinical entries are always properly linked.
 """
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Max
 
 from .models import Encounter, OutpatientVisit, TriageQueue
+from apps.organization.services import UnitHierarchyService
 
 
 def get_or_create_active_encounter(
@@ -44,7 +45,9 @@ def get_or_create_active_encounter(
     # Import here to avoid circular imports
     from apps.wards.models import Admission
 
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
     effective_type = encounter_type or 'outpatient'
 
     # Use transaction with select_for_update to prevent race conditions
@@ -67,6 +70,10 @@ def get_or_create_active_encounter(
                 patient=patient,
                 facility=patient.facility,
                 practitioner=active_admission.admitting_doctor,
+                department=UnitHierarchyService.get_department_unit_for_core_department(
+                    active_admission.bed.ward.department if active_admission.bed else None,
+                    facility=patient.facility
+                ),
                 encounter_type='inpatient',
                 status='in-progress',
                 start_time=active_admission.admission_date,
@@ -88,7 +95,8 @@ def get_or_create_active_encounter(
         planned_filters = {
             'patient': patient,
             'status': 'planned',
-            'start_time__date': today,
+            'start_time__gte': start_of_day,
+            'start_time__lt': end_of_day,
             'encounter_type__in': type_filter,
         }
 
@@ -126,7 +134,8 @@ def get_or_create_active_encounter(
         active_filters = {
             'patient': patient,
             'status': 'in-progress',
-            'start_time__date': today,
+            'start_time__gte': start_of_day,
+            'start_time__lt': end_of_day,
             'encounter_type__in': type_filter,
         }
 
@@ -173,7 +182,9 @@ def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     """
     from apps.wards.models import Admission
 
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
 
     # Check for active inpatient admission first
     # Order by admission_date desc to get most recent
@@ -193,7 +204,8 @@ def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     filters = {
         'patient': patient,
         'status__in': ['in-progress', 'planned'],
-        'start_time__date': today,
+        'start_time__gte': start_of_day,
+        'start_time__lt': end_of_day,
         'encounter_type__in': type_filter,
     }
     if clinic:
