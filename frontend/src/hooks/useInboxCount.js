@@ -1,45 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { referralsApi } from '@/lib/api/referrals';
-import { referralKeys } from '@/hooks/useReferralQueries';
+import { useInboxItems } from '@/hooks/useInboxQueries';
 
 /**
  * Hook to get the total inbox count for the sidebar badge
- * Combines unread referral notifications + pending action items
  */
 export function useInboxCount() {
   const { user } = useAuth();
-  const isDoctor = user && ['doctor', 'inpatient_doctor'].includes(user.role);
+  const enabled = Boolean(user);
 
-  // Unread referral notifications count
-  const { data: unreadCount = 0 } = useQuery({
-    queryKey: referralKeys.notificationCount(),
-    queryFn: () => referralsApi.getUnreadNotificationCount(),
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    enabled: isDoctor,
-  });
+  const { data: totalData } = useInboxItems({ page_size: 1 }, { enabled });
+  const { data: unreadData } = useInboxItems({ status: 'unread', page_size: 1 }, { enabled });
+  const { data: actionData } = useInboxItems({ action_required: true, page_size: 1 }, { enabled });
 
-  // Pending referrals count (items requiring action)
-  const { data: pendingCount = 0 } = useQuery({
-    queryKey: referralKeys.inboxCount(),
-    queryFn: () => referralsApi.getReferralInboxCount(),
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    enabled: isDoctor,
-  });
-
-  // For doctors: unread notifications + pending referrals
-  // For others: 0 (could extend later for other notification types)
-  const totalCount = isDoctor ? unreadCount + pendingCount : 0;
+  const unreadCount = unreadData?.count ?? 0;
+  const pendingCount = actionData?.count ?? 0;
+  const totalCount = totalData?.count ?? 0;
 
   return {
-    count: totalCount,
+    count: Math.max(totalCount, unreadCount + pendingCount),
     unreadCount,
     pendingCount,
-    isDoctor,
   };
 }
 

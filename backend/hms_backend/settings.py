@@ -129,6 +129,7 @@ INSTALLED_APPS = [
     'apps.pharmacy.apps.PharmacyConfig',
     'apps.organization.apps.OrganizationConfig',  # Flexible organizational hierarchy
     'apps.interop.apps.InteropConfig',  # Cross-facility record exchange
+    'apps.notifications.apps.NotificationsConfig',
 ]
 
 MIDDLEWARE = [

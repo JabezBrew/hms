@@ -133,6 +133,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
       slideOvers.open('consultation');
       // Clear the query params after opening
       if (actionParam || consultationParam) clearQueryParams();
+    } else if (action === 'add_prescription') {
+      slideOvers.open('prescription');
+      if (actionParam) clearQueryParams();
     }
   }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, clearQueryParams]);
 

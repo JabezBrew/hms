@@ -94,9 +94,13 @@ export function OmniBar() {
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                         <DropdownMenuLabel className="font-normal">
                             <div className="flex flex-col space-y-1">
-                                <p className="text-sm font-medium leading-none">{user?.name || "User"}</p>
-                                <p className="text-xs leading-none text-muted-foreground">
-                                    {user?.email || ""}
+                                <p className="font-display text-sm leading-none">
+                                    {user?.firstName && user?.lastName
+                                        ? `${user.firstName} ${user.lastName}`
+                                        : user?.firstName || user?.lastName || "User"}
+                                </p>
+                                <p className="font-mono text-[10px] leading-none text-muted-foreground uppercase tracking-wide">
+                                    {user?.role || ""}
                                 </p>
                             </div>
                         </DropdownMenuLabel>

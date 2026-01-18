@@ -1,6 +1,4 @@
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
-import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
@@ -12,62 +10,50 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import format from 'date-fns/format';
 import isToday from 'date-fns/isToday';
 import isYesterday from 'date-fns/isYesterday';
-import { useAuth } from '@/lib/auth';
-import {
-  useReferralNotifications,
-  useMarkNotificationRead,
-  useReferralInbox,
-} from '@/hooks/useReferralQueries';
+import { useInboxItems } from '@/hooks/useInboxQueries';
 
 /**
  * Notification type configurations - Chronicle color palette
  */
 const notificationConfig = {
-  referral_submitted: {
-    label: 'New Referral',
+  referral: {
+    label: 'Referral Update',
     icon: FileText,
     nodeClass: 'timeline-node-amber',
     iconClass: 'text-amber-500',
   },
-  referral_accepted: {
-    label: 'Referral Accepted',
-    icon: CheckCircle,
-    nodeClass: 'timeline-node-emerald',
-    iconClass: 'text-emerald-500',
-  },
-  referral_declined: {
-    label: 'Referral Declined',
-    icon: XCircle,
+  nursing_alert: {
+    label: 'Nursing Alert',
+    icon: AlertCircle,
     nodeClass: 'timeline-node-rose',
     iconClass: 'text-rose-500',
   },
-  referral_scheduled: {
-    label: 'Referral Scheduled',
-    icon: Calendar,
-    nodeClass: 'timeline-node-sky',
-    iconClass: 'text-sky-500',
-  },
-  referral_completed: {
-    label: 'Referral Completed',
-    icon: CheckCircle,
-    nodeClass: 'timeline-node-emerald',
-    iconClass: 'text-emerald-500',
-  },
-  referral_pending: {
-    label: 'Pending Referral',
+  nursing_task: {
+    label: 'Nursing Task',
     icon: Clock,
     nodeClass: 'timeline-node-amber',
     iconClass: 'text-amber-500',
   },
+  drug_safety: {
+    label: 'Drug Safety',
+    icon: FlaskConical,
+    nodeClass: 'timeline-node-rose',
+    iconClass: 'text-rose-500',
+  },
   lab_result: {
     label: 'Lab Result',
-    icon: FlaskConical,
+    icon: Calendar,
     nodeClass: 'timeline-node-sky',
     iconClass: 'text-sky-500',
+  },
+  default: {
+    label: 'Inbox Item',
+    icon: Inbox,
+    nodeClass: 'timeline-node-amber',
+    iconClass: 'text-amber-500',
   },
 };
 
@@ -104,115 +90,67 @@ const groupByDate = (items) => {
  */
 const InboxPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const isDoctor = user && ['doctor', 'inpatient_doctor'].includes(user.role);
+  const inboxParams = useMemo(() => {
+    if (activeFilter === 'unread') {
+      return { status: 'unread' };
+    }
+    if (activeFilter === 'action') {
+      return { action_required: true };
+    }
+    return {};
+  }, [activeFilter]);
 
-  // Fetch referral notifications
-  const { data: notifications = [], isLoading: notificationsLoading, refetch: refetchNotifications } = useReferralNotifications();
-  const markAsRead = useMarkNotificationRead();
+  const { data: inboxData, isLoading, refetch: refetchInbox } = useInboxItems(inboxParams);
+  const { data: inboxCountData } = useInboxItems({ page_size: 1 });
+  const { data: unreadCountData } = useInboxItems({ status: 'unread', page_size: 1 });
+  const { data: actionCountData } = useInboxItems({ action_required: true, page_size: 1 });
 
-  // Fetch pending referrals (items requiring action)
-  const { data: inboxData, isLoading: inboxLoading, refetch: refetchInbox } = useReferralInbox();
+  const inboxItems = inboxData?.results || [];
 
-  // Memoize click handlers to avoid recreating functions on every render
-  const handleNotificationClick = useCallback((notification) => {
-    if (!notification.is_read) markAsRead.mutate(notification.id);
-    navigate('/referrals/inbox');
-  }, [markAsRead, navigate]);
-
-  const handleReferralClick = useCallback(() => {
-    navigate('/referrals/inbox');
+  const handleInboxItemClick = useCallback((item) => {
+    if (item.action_url) {
+      navigate(item.action_url);
+    }
   }, [navigate]);
 
-  // Optimized: Compute all items, counts, and filtered results in a single pass
-  const { allItems, unreadCount, actionCount, filteredItems, groupedItems } = useMemo(() => {
-    const items = [];
+  const allItems = useMemo(() => inboxItems.map((item) => ({
+    id: item.id,
+    type: item.source_type,
+    category: item.is_action_required ? 'action' : 'notification',
+    title: item.title,
+    subtitle: item.summary,
+    timestamp: new Date(item.occurred_at),
+    isRead: item.is_read || item.status === 'read' || item.status === 'done' || item.status === 'acknowledged',
+    urgency: item.priority,
+    data: item,
+  })), [inboxItems]);
 
-    // Build a Set for O(1) lookup of referral IDs with notifications
-    const notificationReferralIds = new Set(notifications.map(n => n.referral));
+  const unreadCount = unreadCountData?.count ?? 0;
+  const actionCount = actionCountData?.count ?? 0;
+  const totalCount = inboxCountData?.count ?? allItems.length;
 
-    // Add notifications
-    notifications.forEach((n) => {
-      items.push({
-        id: `notif-${n.id}`,
-        type: `referral_${n.event}`,
-        category: 'notification',
-        title: notificationConfig[`referral_${n.event}`]?.label || 'Referral Update',
-        subtitle: `#${n.referral_number} - ${n.referred_to_department}`,
-        timestamp: new Date(n.created_at),
-        isRead: n.is_read,
-        urgency: n.urgency,
-        data: n,
-        notificationId: n.id,
-      });
-    });
+  const resolvedTotalCount = Math.max(totalCount, unreadCount + actionCount);
 
-    // Filter and add pending referrals
-    const pendingReferrals = inboxData?.referrals?.filter(r =>
-      ['pending', 'accepted', 'scheduled'].includes(r.status)
-    ) || [];
+  const filteredItems = useMemo(() => {
+    if (activeFilter === 'unread') {
+      return allItems.filter((item) => !item.isRead);
+    }
+    if (activeFilter === 'action') {
+      return allItems.filter((item) => item.category === 'action');
+    }
+    return allItems;
+  }, [activeFilter, allItems]);
 
-    pendingReferrals.forEach((r) => {
-      // O(1) lookup instead of O(n) with .some()
-      if (!notificationReferralIds.has(r.id)) {
-        items.push({
-          id: `referral-${r.id}`,
-          type: 'referral_pending',
-          category: 'action',
-          title: `${r.patient_name || 'Patient'} - ${r.referred_to_department}`,
-          subtitle: `#${r.referral_number} - ${r.reason?.substring(0, 50)}${r.reason?.length > 50 ? '...' : ''}`,
-          timestamp: new Date(r.submitted_at || r.created_at),
-          isRead: true,
-          urgency: r.urgency,
-          status: r.status,
-          data: r,
-        });
-      }
-    });
-
-    // Sort by timestamp (newest first)
-    items.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Single pass to compute counts and filtered items
-    let unread = 0;
-    let action = 0;
-    const filtered = [];
-
-    items.forEach((item) => {
-      if (!item.isRead) unread++;
-      if (item.category === 'action') action++;
-
-      // Add to filtered based on activeFilter
-      const includeInFiltered =
-        activeFilter === 'all' ||
-        (activeFilter === 'unread' && !item.isRead) ||
-        (activeFilter === 'action' && item.category === 'action');
-
-      if (includeInFiltered) {
-        filtered.push(item);
-      }
-    });
-
-    return {
-      allItems: items,
-      unreadCount: unread,
-      actionCount: action,
-      filteredItems: filtered,
-      groupedItems: groupByDate(filtered),
-    };
-  }, [notifications, inboxData, activeFilter]);
-
-  const isLoading = notificationsLoading || inboxLoading;
+  const groupedItems = useMemo(() => groupByDate(filteredItems), [filteredItems]);
 
   const handleRefresh = () => {
-    refetchNotifications();
     refetchInbox();
   };
 
   const filters = [
-    { id: 'all', label: 'All', count: allItems.length },
+    { id: 'all', label: 'All', count: resolvedTotalCount },
     { id: 'unread', label: 'Unread', count: unreadCount },
     { id: 'action', label: 'Action Required', count: actionCount },
   ];
@@ -339,13 +277,28 @@ const InboxPage = () => {
 
                   <div className="space-y-3">
                     {items.map((item, index) => {
-                      const config = notificationConfig[item.type] || notificationConfig.referral_pending;
+                      const config = notificationConfig[item.type] || notificationConfig.default;
                       const Icon = config.icon;
 
-                      // Use memoized handlers instead of creating new functions
-                      const handleClick = item.notificationId
-                        ? () => handleNotificationClick(item.data)
-                        : handleReferralClick;
+                      const handleClick = () => handleInboxItemClick(item.data);
+                      const badgeClass = item.urgency === 'emergency'
+                        ? 'badge-chronicle-rose'
+                        : item.urgency === 'urgent'
+                        ? 'badge-chronicle-amber'
+                        : item.urgency === 'normal'
+                        ? 'badge-chronicle-sky'
+                        : 'badge-chronicle-emerald';
+                      const indicatorClass = item.urgency === 'emergency'
+                        ? 'bg-rose-500'
+                        : item.urgency === 'urgent'
+                        ? 'bg-amber-500'
+                        : item.urgency === 'normal'
+                        ? 'bg-sky-500'
+                        : item.urgency === 'routine'
+                        ? 'bg-emerald-500'
+                        : !item.isRead
+                        ? 'bg-primary'
+                        : 'bg-muted-foreground/50';
 
                       return (
                         <article
@@ -368,9 +321,7 @@ const InboxPage = () => {
                           >
                             <div className={cn(
                               "w-2 h-2 rounded-full",
-                              item.urgency === 'emergency' ? 'bg-rose-500' :
-                              item.urgency === 'urgent' ? 'bg-amber-500' :
-                              !item.isRead ? 'bg-primary' : 'bg-muted-foreground/50'
+                              indicatorClass
                             )} />
                           </div>
 
@@ -418,29 +369,12 @@ const InboxPage = () => {
 
                                 {/* Badges */}
                                 <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                  {item.urgency === 'emergency' && (
-                                    <span className="badge-chronicle-rose text-[10px] px-2 py-0.5 rounded-full">
-                                      EMERGENCY
-                                    </span>
-                                  )}
-                                  {item.urgency === 'urgent' && (
-                                    <span className="badge-chronicle-amber text-[10px] px-2 py-0.5 rounded-full">
-                                      URGENT
-                                    </span>
-                                  )}
-                                  {item.status === 'pending' && (
-                                    <span className="badge-chronicle-amber text-[10px] px-2 py-0.5 rounded-full">
-                                      PENDING
-                                    </span>
-                                  )}
-                                  {item.status === 'accepted' && (
-                                    <span className="badge-chronicle-emerald text-[10px] px-2 py-0.5 rounded-full">
-                                      ACCEPTED
-                                    </span>
-                                  )}
-                                  {item.status === 'scheduled' && (
-                                    <span className="badge-chronicle-sky text-[10px] px-2 py-0.5 rounded-full">
-                                      SCHEDULED
+                                  {item.urgency && (
+                                    <span className={cn(
+                                      badgeClass,
+                                      "text-[10px] px-2 py-0.5 rounded-full uppercase"
+                                    )}>
+                                      {item.urgency.replace('_', ' ')}
                                     </span>
                                   )}
                                   {item.category === 'action' && (
