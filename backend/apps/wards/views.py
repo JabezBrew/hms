@@ -774,6 +774,13 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                     setattr(ed_encounter, field, value)
                 ed_encounter.save(update_fields=list(encounter_updates.keys()) + ['updated_at'])
 
+                if admission.bed:
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=ed_encounter,
+                        bed=admission.bed
+                    )
+
                 admission.fhir_encounter_id = str(ed_encounter.id)
                 admission.save(update_fields=['fhir_encounter_id'])
 
@@ -798,6 +805,13 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                         admission=admission,
                         created_by=self.request.user,
                     )
+
+                    if admission.bed:
+                        from apps.organization.services import TeamAssignmentService
+                        TeamAssignmentService.reassign_team_on_bed_assignment(
+                            encounter=encounter,
+                            bed=admission.bed
+                        )
 
                     # Update the admission with the encounter reference (for backwards compatibility)
                     admission.fhir_encounter_id = str(encounter.id)
@@ -1027,6 +1041,13 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     created_by=request.user,
                     facility=facility
                 )
+
+                if getattr(from_admission, 'encounter', None):
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=from_admission.encounter,
+                        bed=to_bed
+                    )
 
                 # Update bed statuses
                 source_bed = from_admission.bed

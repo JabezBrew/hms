@@ -19,3 +19,4 @@ export { default as PatientInsuranceSlideOver } from './PatientInsuranceSlideOve
 export { default as BreakGlassDialog } from './BreakGlassDialog';
 export { default as WardRoundSlideOver } from './WardRoundSlideOver';
 export { default as ConsultationSlideOver } from './ConsultationSlideOver';
+export { PatientCareTeamCard, PatientCareTeamCompact } from './PatientCareTeamCard';

@@ -224,6 +224,14 @@ export const clinicsApi = {
   delete: (id) => apiClient.delete(`/organization/clinics/${id}/`),
 };
 
+/**
+ * Clinic Schedules API
+ */
+export const clinicSchedulesApi = {
+  list: (params = {}) => apiClient.get('/organization/clinic-schedules/', { params }),
+  get: (id) => apiClient.get(`/organization/clinic-schedules/${id}/`),
+};
+
 export default {
   unitTypes: unitTypesApi,
   leadershipRoles: leadershipRolesApi,
@@ -238,4 +246,5 @@ export default {
   dutyRosterTemplates: dutyRosterTemplatesApi,
   dutyRoster: dutyRosterApi,
   clinics: clinicsApi,
+  clinicSchedules: clinicSchedulesApi,
 };

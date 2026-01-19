@@ -9,6 +9,7 @@ from django.core.cache import cache
 
 from apps.core.cache_utils import facility_cache_key
 from django.db.models import Q
+from django.db.models import F
 from django.utils import timezone
 
 CLINICAL_STAFFING_MODES = ('clinical_only', 'mixed')
@@ -337,6 +338,8 @@ class DutyRosterService:
     - Handling duty swaps
     """
 
+    TEAM_CACHE_TTL = 60
+
     # Seniority ordering for primary practitioner selection
     SENIORITY_ORDER = ['attending', 'fellow', 'resident', 'intern']
 
@@ -477,6 +480,7 @@ class DutyRosterService:
         role=None,
         context=None,
         include_descendants=False,
+        include_practitioner=True,
     ):
         """
         Get all practitioners currently on duty for a unit.
@@ -500,26 +504,45 @@ class DutyRosterService:
         check_time = at_datetime.time()
         previous_date = check_date - timedelta(days=1)
 
+        cache_key = facility_cache_key(
+            f'duty_roster:{unit.id}:{check_date}:{check_time.strftime("%H%M")}:{role or "any"}:{context or "any"}:desc={include_descendants}:practitioner={include_practitioner}'
+        )
+        cached_ids = cache.get(cache_key)
+        if cached_ids is not None:
+            queryset = DutyRoster.objects.filter(id__in=cached_ids)
+            if include_practitioner:
+                queryset = queryset.select_related(
+                    'practitioner',
+                    'practitioner__staff',
+                    'practitioner__staff__user',
+                    'unit'
+                )
+            else:
+                queryset = queryset.select_related('unit')
+            return queryset.order_by('-is_primary', 'seniority_level')
+
         # Build unit filter
         if include_descendants:
             unit_ids = list(unit.get_descendants(include_self=True).values_list('id', flat=True))
         else:
             unit_ids = [unit.id]
 
-        # Base query
-        from django.db.models import F
-
         queryset = DutyRoster.objects.filter(
             unit_id__in=unit_ids,
             is_active=True,
         ).filter(
             Q(date=check_date) | Q(date=previous_date, start_time__gt=F('end_time'))
-        ).select_related(
-            'practitioner',
-            'practitioner__staff',
-            'practitioner__staff__user',
-            'unit'
         )
+
+        if include_practitioner:
+            queryset = queryset.select_related(
+                'practitioner',
+                'practitioner__staff',
+                'practitioner__staff__user',
+                'unit'
+            )
+        else:
+            queryset = queryset.select_related('unit')
 
         # Time filtering - handle shifts crossing midnight
         # For normal shifts: start <= time < end (where start < end)
@@ -550,7 +573,45 @@ class DutyRosterService:
         if context:
             queryset = queryset.filter(Q(context=context) | Q(context='all'))
 
-        return queryset.order_by('-is_primary', 'seniority_level')
+        queryset = queryset.order_by('-is_primary', 'seniority_level')
+        cache.set(cache_key, list(queryset.values_list('id', flat=True)), 60)
+        return queryset
+
+    @classmethod
+    def get_on_duty_team(
+        cls,
+        department,
+        at_datetime=None,
+        role='admitting',
+        context='inpatient',
+    ):
+        """Return the on-duty team for a department."""
+        if not department:
+            return None
+
+        check_time = (at_datetime or timezone.now()).strftime("%Y%m%d%H%M")
+        cache_key = facility_cache_key(
+            f'on_duty_team:{department.id}:{role}:{context}:{check_time}'
+        )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            if cached == 'none':
+                return None
+            from apps.organization.models import ClinicalUnit
+            return ClinicalUnit.objects.filter(id=cached).first()
+
+        on_duty = cls.get_on_duty(
+            unit=department,
+            at_datetime=at_datetime,
+            role=role,
+            context=context,
+            include_descendants=True,
+            include_practitioner=False,
+        )
+        entry = on_duty.filter(is_primary=True).first() or on_duty.first()
+        team = entry.unit if entry else None
+        cache.set(cache_key, str(team.id) if team else 'none', cls.TEAM_CACHE_TTL)
+        return team
 
     @classmethod
     def get_admitting_practitioner(cls, unit, at_datetime=None):
@@ -570,6 +631,7 @@ class DutyRosterService:
             at_datetime=at_datetime,
             role='admitting',
             context='inpatient',
+            include_practitioner=True,
         )
 
         # Get primary first, then most senior
@@ -673,7 +735,127 @@ class DutyRosterService:
 class TeamAssignmentService:
     """
     Service for automatic team/practitioner assignment using duty roster.
+
+    Primary team now lives on Encounter, not Admission. This service
+    updates Encounter.primary_team as the source of truth, and keeps
+    Admission.primary_team in sync for backward compatibility.
     """
+
+    @classmethod
+    def assign_initial_team(
+        cls,
+        encounter,
+        team=None,
+        use_duty_roster=True,
+        context=None,
+        at_datetime=None,
+    ):
+        """
+        Assign the initial care team to an encounter.
+
+        Sets both primary_team and admitted_by_team once. Subsequent calls are rejected.
+        """
+        from apps.organization.models import ClinicalUnit
+
+        if encounter.admitted_by_team_id:
+            raise ValueError("Encounter already has an admitted_by_team assigned")
+
+        assigned_team = None
+        if team:
+            assigned_team = team
+        elif use_duty_roster and encounter.department:
+            if context is None:
+                context = {
+                    'inpatient': 'inpatient',
+                    'outpatient': 'outpatient',
+                    'emergency': 'emergency',
+                }.get(encounter.encounter_type, 'inpatient')
+            assigned_team = DutyRosterService.get_on_duty_team(
+                department=encounter.department,
+                at_datetime=at_datetime or encounter.start_time,
+                role='admitting',
+                context=context
+            )
+        if not assigned_team:
+            assigned_team = encounter.department
+
+        if not assigned_team and not encounter.department and not team:
+            return None
+
+        requires_admission = (context or encounter.encounter_type) == 'inpatient'
+
+        if requires_admission and assigned_team and not getattr(assigned_team.unit_type, 'can_admit_patients', True):
+            raise ValueError("Assigned team cannot admit patients")
+
+        if assigned_team and getattr(assigned_team, 'is_active', True) is False:
+            raise ValueError("Assigned team is inactive")
+
+        if requires_admission and assigned_team and encounter.department and assigned_team.id != encounter.department.id:
+            if not ClinicalUnit.objects.filter(
+                id=assigned_team.id,
+                parent_id=encounter.department.id,
+                unit_type__can_admit_patients=True,
+                is_active=True
+            ).exists():
+                raise ValueError("Assigned team is not valid for this department")
+
+        if requires_admission and assigned_team and encounter.department and assigned_team.id == encounter.department.id:
+            if getattr(encounter.department.unit_type, 'can_admit_patients', True) is False:
+                raise ValueError("Department cannot admit patients")
+
+        if not assigned_team and requires_admission:
+            raise ValueError("Cannot determine care team for encounter")
+
+        encounter.primary_team = assigned_team
+        encounter.admitted_by_team = assigned_team
+        encounter.save(update_fields=['primary_team', 'admitted_by_team', 'updated_at'])
+
+        admission = getattr(encounter, 'admission', None)
+        if admission and admission.primary_team_id != assigned_team.id:
+            admission.primary_team = assigned_team
+            admission.save(update_fields=['primary_team', 'updated_at'])
+
+        return assigned_team
+
+    @classmethod
+    def reassign_team_on_bed_assignment(cls, encounter, bed):
+        """Reassign primary_team when ward policy is strict."""
+        if not encounter or not encounter.department_id:
+            return None
+
+        department = encounter.department
+        policy = getattr(department, 'ward_assignment_policy', 'flexible')
+        if policy == 'flexible':
+            return None
+
+        ward = bed.ward if bed else None
+        if not ward:
+            return None
+
+        ward_owning_team = cls._get_ward_owning_team(ward)
+        if ward_owning_team and ward_owning_team.id != encounter.primary_team_id:
+            encounter.primary_team = ward_owning_team
+            encounter.save(update_fields=['primary_team', 'updated_at'])
+
+            admission = getattr(encounter, 'admission', None)
+            if admission and admission.primary_team_id != ward_owning_team.id:
+                admission.primary_team = ward_owning_team
+                admission.save(update_fields=['primary_team', 'updated_at'])
+
+            return ward_owning_team
+        return None
+
+    @classmethod
+    def _get_ward_owning_team(cls, ward):
+        from apps.organization.models import UnitWardAllocation
+
+        allocation = UnitWardAllocation.objects.filter(
+            ward=ward,
+            allocation_type='dedicated',
+            is_active=True
+        ).select_related('unit').first()
+
+        return allocation.unit if allocation else None
 
     @classmethod
     def assign_admission(
@@ -684,6 +866,9 @@ class TeamAssignmentService:
     ):
         """
         Assign admitting doctor and primary team for an admission based on duty roster.
+
+        This sets primary_team on both the Encounter (source of truth) and
+        Admission (backward compatibility).
 
         Args:
             admission: Admission instance
@@ -699,8 +884,14 @@ class TeamAssignmentService:
         if practitioner:
             admission.admitting_doctor = practitioner
 
+        # Set primary_team on admission (backward compatibility)
         admission.primary_team = target_unit
         admission.save(update_fields=['admitting_doctor', 'primary_team', 'updated_at'])
+
+        # Set primary_team on encounter (source of truth)
+        if hasattr(admission, 'encounter') and admission.encounter:
+            admission.encounter.primary_team = target_unit
+            admission.encounter.save(update_fields=['primary_team', 'updated_at'])
 
     @classmethod
     def assign_encounter(
@@ -710,19 +901,31 @@ class TeamAssignmentService:
         at_datetime=None
     ):
         """
-        Assign practitioner to an encounter based on duty roster.
+        Assign practitioner and primary team to an encounter based on duty roster.
+
+        Args:
+            encounter: Encounter instance
+            unit: Target clinical unit
+            at_datetime: Time to check roster (defaults to now)
         """
-        if encounter.practitioner:
-            return  # Already assigned
+        update_fields = ['updated_at']
 
-        practitioner = DutyRosterService.get_admitting_practitioner(
-            unit=unit,
-            at_datetime=at_datetime,
-        )
+        if not encounter.practitioner:
+            practitioner = DutyRosterService.get_admitting_practitioner(
+                unit=unit,
+                at_datetime=at_datetime,
+            )
+            if practitioner:
+                encounter.practitioner = practitioner
+                update_fields.append('practitioner')
 
-        if practitioner:
-            encounter.practitioner = practitioner
-            encounter.save(update_fields=['practitioner', 'updated_at'])
+        # Set primary_team on encounter
+        if unit and encounter.primary_team_id != unit.id:
+            encounter.primary_team = unit
+            update_fields.append('primary_team')
+
+        if len(update_fields) > 1:  # More than just 'updated_at'
+            encounter.save(update_fields=update_fields)
 
     @classmethod
     def reassign_on_transfer(
@@ -732,7 +935,9 @@ class TeamAssignmentService:
         at_datetime=None
     ):
         """
-        Optionally reassign practitioner when patient transfers to new unit.
+        Reassign practitioner and primary team when patient transfers to new unit.
+
+        Updates both Encounter (source of truth) and Admission (backward compat).
         """
         # Get the on-duty practitioner at the receiving unit
         practitioner = DutyRosterService.get_admitting_practitioner(
@@ -743,5 +948,11 @@ class TeamAssignmentService:
         if practitioner:
             admission.admitting_doctor = practitioner
 
+        # Update primary_team on admission (backward compatibility)
         admission.primary_team = receiving_unit
         admission.save(update_fields=['admitting_doctor', 'primary_team', 'updated_at'])
+
+        # Update primary_team on encounter (source of truth) - in-place per user preference
+        if hasattr(admission, 'encounter') and admission.encounter:
+            admission.encounter.primary_team = receiving_unit
+            admission.encounter.save(update_fields=['primary_team', 'updated_at'])

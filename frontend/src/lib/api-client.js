@@ -340,9 +340,38 @@ async function fetchAllPages(endpoint, options = {}) {
 /**
  * API client with methods for different request types
  */
+function appendQueryParams(endpoint, params) {
+  if (!params || typeof params !== 'object') {
+    return endpoint;
+  }
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null && item !== '') {
+          searchParams.append(key, String(item));
+        }
+      });
+      return;
+    }
+    searchParams.append(key, String(value));
+  });
+  const queryString = searchParams.toString();
+  if (!queryString) {
+    return endpoint;
+  }
+  const separator = endpoint.includes('?') ? '&' : '?';
+  return `${endpoint}${separator}${queryString}`;
+}
+
 export const apiClient = {
   get: async (endpoint, options = {}) => {
-    const response = await fetchWithAuth(endpoint, { ...options, method: 'GET' });
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    const response = await fetchWithAuth(url, { ...rest, method: 'GET' });
     return handlePaginatedResponse(response);
   },
 
@@ -350,8 +379,11 @@ export const apiClient = {
    * Get all pages of a paginated response
    * Use this when you need all results from a paginated endpoint
    */
-  getAll: (endpoint, options = {}) => 
-    fetchAllPages(endpoint, options),
+  getAll: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchAllPages(url, rest);
+  },
 
   post: (endpoint, data, options = {}) => 
     fetchWithAuth(endpoint, { 
@@ -381,8 +413,11 @@ export const apiClient = {
    * Get the full response including pagination metadata
    * Use this when you need access to pagination info (count, next, previous)
    */
-  getWithPagination: (endpoint, options = {}) =>
-    fetchWithAuth(endpoint, { ...options, method: 'GET' }),
+  getWithPagination: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchWithAuth(url, { ...rest, method: 'GET' });
+  },
 };
 
 /**

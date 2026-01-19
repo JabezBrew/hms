@@ -16,6 +16,8 @@ import {
   shiftDefinitionsApi,
   dutyRosterTemplatesApi,
   dutyRosterApi,
+  clinicsApi,
+  clinicSchedulesApi,
 } from '@/lib/api/organization';
 import { usePaginatedQuery } from './usePaginatedQuery';
 
@@ -94,6 +96,14 @@ export const organizationKeys = {
   dutyRosterList: (params) => [...organizationKeys.dutyRoster(), 'list', params],
   dutyRosterEntry: (id) => [...organizationKeys.dutyRoster(), id],
   onDuty: (params) => [...organizationKeys.dutyRoster(), 'on-duty', params],
+
+  // Clinics
+  clinics: () => [...organizationKeys.all, 'clinics'],
+  clinicsList: (params) => [...organizationKeys.clinics(), 'list', params],
+
+  // Clinic Schedules
+  clinicSchedules: () => [...organizationKeys.all, 'clinic-schedules'],
+  clinicSchedulesList: (params) => [...organizationKeys.clinicSchedules(), 'list', params],
 };
 
 function getTreeNodes(treeQueryData) {
@@ -982,10 +992,11 @@ export function useDutyRosterEntry(id) {
 }
 
 export function useOnDuty(params) {
+  const unitId = params?.unit_id;
   return useQuery({
-    queryKey: organizationKeys.onDuty(params),
+    queryKey: organizationKeys.onDuty(params || {}),
     queryFn: () => dutyRosterApi.onDuty(params),
-    enabled: !!params?.unit_id,
+    enabled: !!unitId,
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -1044,4 +1055,33 @@ export function useDeleteDutyRosterEntry() {
       queryClient.invalidateQueries({ queryKey: organizationKeys.dutyRoster() });
     },
   });
+}
+
+// =============================================================================
+// Clinics Hooks
+// =============================================================================
+
+export function useClinics(params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.clinicsList(params),
+    queryFn: () => clinicsApi.list(params),
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useClinicSchedules(params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.clinicSchedulesList(params),
+    queryFn: () => clinicSchedulesApi.list(params),
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+/**
+ * Convenience hook to fetch departments (units with unit_type code 'department')
+ */
+export function useDepartments(options = {}) {
+  return useClinicalUnits({ is_active: true }, options);
 }

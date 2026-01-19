@@ -298,6 +298,11 @@ class PatientRegistrationSerializer(serializers.Serializer):
             })
 
         encounter_type = admission.get('type')
+        primary_team_id = admission.get('primary_team_id')
+        if primary_team_id is not None and not primary_team_id:
+            raise serializers.ValidationError({
+                "admission_details": "primary_team_id cannot be empty."
+            })
         if encounter_type not in ['outpatient', 'inpatient', 'emergency']:
             raise serializers.ValidationError({
                 "admission_details": "Encounter type must be outpatient, inpatient, or emergency."
@@ -349,6 +354,20 @@ class PatientRegistrationSerializer(serializers.Serializer):
             })
 
         self._resolved_department = department
+
+        if primary_team_id:
+            from apps.organization.models import ClinicalUnit
+            team = ClinicalUnit.objects.filter(
+                id=primary_team_id,
+                is_active=True,
+                parent_id=department.id,
+                unit_type__can_admit_patients=True
+            ).first()
+            if not team:
+                raise serializers.ValidationError({
+                    "admission_details": "Primary team must belong to the selected department."
+                })
+            self._resolved_primary_team = team
 
         if encounter_type == 'outpatient':
             if department.core_department.department_type == 'emergency':
@@ -586,6 +605,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         created_by=self.context['request'].user,
                         updated_by=self.context['request'].user
                     )
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.assign_initial_team(
+                        encounter=encounter,
+                        team=getattr(self, '_resolved_primary_team', None),
+                        use_duty_roster=True,
+                        context='outpatient',
+                        at_datetime=encounter.start_time,
+                    )
                     try:
                         from apps.wards.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
@@ -607,6 +634,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         location=department.name if department else 'Emergency',
                         created_by=self.context['request'].user,
                         updated_by=self.context['request'].user
+                    )
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.assign_initial_team(
+                        encounter=encounter,
+                        team=getattr(self, '_resolved_primary_team', None),
+                        use_duty_roster=True,
+                        context='emergency',
+                        at_datetime=encounter.start_time,
                     )
                     try:
                         from apps.wards.tasks import sync_encounter_to_fhir
@@ -677,6 +712,19 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         created_by=self.context['request'].user,
                         updated_by=self.context['request'].user
                     )
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.assign_initial_team(
+                        encounter=encounter,
+                        team=getattr(self, '_resolved_primary_team', None),
+                        use_duty_roster=True,
+                        context='inpatient',
+                        at_datetime=encounter.start_time,
+                    )
+                    if bed:
+                        TeamAssignmentService.reassign_team_on_bed_assignment(
+                            encounter=encounter,
+                            bed=bed
+                        )
 
                     admission.fhir_encounter_id = str(encounter.id)
                     admission.save(update_fields=['fhir_encounter_id'])

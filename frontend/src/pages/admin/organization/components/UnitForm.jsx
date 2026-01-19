@@ -32,6 +32,7 @@ const unitSchema = z.object({
   description: z.string().optional(),
   unit_type: z.string().min(1, 'Unit type is required'),
   staffing_mode: z.enum(['clinical_only', 'mixed', 'ops_only']),
+  ward_assignment_policy: z.enum(['flexible', 'strict']).optional(),
   location: z.string().optional(),
   floor: z.string().optional(),
   building: z.string().optional(),
@@ -67,6 +68,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
       description: unit?.description || '',
       unit_type: unit?.unit_type?.toString() || '',
       staffing_mode: unit?.staffing_mode || 'clinical_only',
+      ward_assignment_policy: unit?.ward_assignment_policy || 'flexible',
       location: unit?.location || '',
       floor: unit?.floor || '',
       building: unit?.building || '',
@@ -165,6 +167,31 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
                 </Select>
                 <FormDescription className="text-[10px] text-muted-foreground">
                   Defaults to mixed for facility/department/division; not inherited from parent units
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="ward_assignment_policy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="font-mono text-sm">
+                      <SelectValue placeholder="Select policy" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent className="z-[200]">
+                    <SelectItem value="flexible">Flexible - Patient stays with admitting team</SelectItem>
+                    <SelectItem value="strict">Strict - Patient transfers to ward&apos;s team</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription className="text-[10px] text-muted-foreground">
+                  Controls team handoff when patient is placed in a ward owned by a different team
                 </FormDescription>
                 <FormMessage />
               </FormItem>

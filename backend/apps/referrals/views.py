@@ -438,6 +438,12 @@ class ReferralViewSet(viewsets.ModelViewSet):
                     status='in-progress',
                     reason=f"Specialist consultation: {referral.reason[:200] if referral.reason else 'Referral consultation'}",
                 )
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    use_duty_roster=True,
+                    context='outpatient'
+                )
                 encounter_id = str(encounter.id)
                 referral.consultation_encounter = encounter
                 logger.info(f"Created outpatient encounter {encounter_id} for referral {referral.referral_number}")

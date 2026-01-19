@@ -1042,6 +1042,18 @@ class AdmissionEngine(BaseWorkflowEngine):
             reason=reason,
             admission=admission,
         )
+        from apps.organization.services import TeamAssignmentService
+        TeamAssignmentService.assign_initial_team(
+            encounter=encounter,
+            team=primary_team,
+            use_duty_roster=True,
+            context='inpatient'
+        )
+        if admission.bed:
+            TeamAssignmentService.reassign_team_on_bed_assignment(
+                encounter=encounter,
+                bed=admission.bed
+            )
 
         workflow.encounter_id = str(encounter.id)
 

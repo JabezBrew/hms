@@ -232,6 +232,13 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 updated_by=request.user,
             )
 
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(
+                encounter=encounter,
+                use_duty_roster=True,
+                context='outpatient'
+            )
+
             from apps.encounters.services import VisitService
             VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
 

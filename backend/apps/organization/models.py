@@ -265,6 +265,16 @@ class ClinicalUnit(MPTTModel):
     # Clinical
     accepts_referrals = models.BooleanField(default=True)
     accepts_admissions = models.BooleanField(default=True)
+    WARD_ASSIGNMENT_POLICY_CHOICES = [
+        ('flexible', 'Flexible - Patient stays with admitting team'),
+        ('strict', 'Strict - Patient transfers to ward\'s team'),
+    ]
+    ward_assignment_policy = models.CharField(
+        max_length=20,
+        choices=WARD_ASSIGNMENT_POLICY_CHOICES,
+        default='flexible',
+        help_text='Policy when patient is placed in a ward owned by another team'
+    )
     STAFFING_MODE_CHOICES = (
         ('clinical_only', 'Clinical (Practitioner Only)'),
         ('mixed', 'Mixed (Clinical + Operations)'),
@@ -318,6 +328,7 @@ class ClinicalUnit(MPTTModel):
             models.Index(fields=['parent', 'is_active']),
             models.Index(fields=['root_unit', 'is_active']),
             models.Index(fields=['core_department', 'is_active']),
+            models.Index(fields=['ward_assignment_policy', 'is_active']),
         ]
         ordering = ['tree_id', 'lft']
         verbose_name = 'Clinical Unit'
@@ -1213,6 +1224,7 @@ class DutyRoster(models.Model):
             models.Index(fields=['unit', 'date', 'role', 'context', 'is_active']),
             # Primary on-duty lookup
             models.Index(fields=['unit', 'date', 'is_primary', 'is_active']),
+            models.Index(fields=['unit', 'date', 'role', 'context', 'is_primary', 'is_active', 'start_time', 'end_time']),
         ]
         ordering = ['date', 'start_time', 'seniority_level']
         verbose_name = 'Duty Roster Entry'

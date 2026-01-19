@@ -64,6 +64,13 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
                 reason=reason or f"Inpatient admission",
                 location=active_admission.bed.ward.name if active_admission.bed else None,
             )
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(encounter=encounter, use_duty_roster=True, context='inpatient')
+            if active_admission.bed:
+                TeamAssignmentService.reassign_team_on_bed_assignment(
+                    encounter=encounter,
+                    bed=active_admission.bed
+                )
             return encounter, True
 
     # Rule 2: Check for active outpatient/emergency encounter today

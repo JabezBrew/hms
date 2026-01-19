@@ -67,6 +67,22 @@ class Encounter(models.Model):
         related_name='encounters',
         help_text="Owning department for this encounter"
     )
+    primary_team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='primary_encounters',
+        help_text='Primary clinical team responsible for this encounter'
+    )
+    admitted_by_team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='admitted_encounters',
+        help_text='Team that originally admitted the patient'
+    )
     appointment = models.ForeignKey(
         'appointments.Appointment',
         on_delete=models.SET_NULL,
@@ -124,6 +140,14 @@ class Encounter(models.Model):
         related_name='encounter'
     )
 
+    # M2M to consulting teams via through model
+    consulting_teams = models.ManyToManyField(
+        'organization.ClinicalUnit',
+        through='EncounterCareTeam',
+        related_name='consulting_encounters',
+        blank=True
+    )
+
     # FHIR synchronization
     fhir_id = models.CharField(
         max_length=100,
@@ -175,6 +199,9 @@ class Encounter(models.Model):
             models.Index(fields=['status', 'start_time']),
             models.Index(fields=['department', 'start_time']),
             models.Index(fields=['encounter_type', 'status']),
+            models.Index(fields=['primary_team', 'status']),
+            models.Index(fields=['patient', 'primary_team', 'status']),
+            models.Index(fields=['admitted_by_team', 'status']),
             models.Index(fields=['fhir_id']),
             models.Index(fields=['fhir_synced']),
             models.Index(fields=['start_time']),
@@ -421,3 +448,65 @@ class TriageQueue(models.Model):
 
     def __str__(self):
         return f"Triage {self.patient_id} ({self.status})"
+
+
+class EncounterCareTeam(models.Model):
+    """
+    Consulting/co-managing teams for an encounter.
+    Primary team is stored on Encounter.primary_team (not here).
+    """
+    ROLE_CHOICES = [
+        ('consulting', 'Consulting'),
+        ('co_managing', 'Co-Managing'),
+        ('procedure', 'Procedure Team'),
+    ]
+
+    STATUS_CHOICES = [
+        ('requested', 'Requested'),
+        ('accepted', 'Accepted'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('declined', 'Declined'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    encounter = models.ForeignKey(
+        Encounter,
+        on_delete=models.CASCADE,
+        related_name='care_team_assignments'
+    )
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        related_name='encounter_consulting_assignments'
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='consulting')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
+
+    # Consult workflow
+    consult_reason = models.TextField(blank=True, null=True)
+    consult_requested_at = models.DateTimeField(null=True, blank=True)
+    consult_accepted_at = models.DateTimeField(null=True, blank=True)
+    consult_completed_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='created_encounter_care_teams'
+    )
+
+    class Meta:
+        db_table = 'encounters_encountercareTeam'
+        unique_together = [('encounter', 'team')]
+        indexes = [
+            models.Index(fields=['encounter', 'status', 'is_active']),
+            models.Index(fields=['team', 'status', 'is_active']),
+        ]
+        verbose_name = 'Encounter Care Team'
+        verbose_name_plural = 'Encounter Care Teams'
+
+    def __str__(self):
+        return f'{self.team.name} ({self.get_role_display()}) for {self.encounter}'

@@ -3,8 +3,31 @@ Encounter serializers for API data transformation.
 """
 from rest_framework import serializers
 
-from .models import Encounter, OutpatientVisit, TriageQueue
+from .models import Encounter, OutpatientVisit, TriageQueue, EncounterCareTeam
 from apps.users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
+
+
+class EncounterCareTeamSerializer(serializers.ModelSerializer):
+    """Serializer for consulting/co-managing teams assigned to an encounter."""
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    class Meta:
+        model = EncounterCareTeam
+        fields = [
+            'id', 'encounter', 'team', 'team_name', 'role', 'status',
+            'consult_reason', 'consult_requested_at', 'consult_accepted_at',
+            'consult_completed_at', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class EncounterCareTeamListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for listing care team assignments."""
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    class Meta:
+        model = EncounterCareTeam
+        fields = ['id', 'team', 'team_name', 'role', 'status', 'is_active']
 
 
 class OutpatientVisitSerializer(serializers.ModelSerializer):
@@ -55,10 +78,14 @@ class EncounterSerializer(serializers.ModelSerializer):
     practitioner_name = serializers.ReadOnlyField()
     clinic_name = serializers.CharField(source='clinic.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    primary_team_name = serializers.CharField(source='primary_team.name', read_only=True)
+    admitted_by_team_name = serializers.CharField(source='admitted_by_team.name', read_only=True)
+    admitted_by_team_id = serializers.UUIDField(source='admitted_by_team.id', read_only=True, allow_null=True)
     duration_minutes = serializers.ReadOnlyField()
     outpatient_visit = OutpatientVisitSerializer(read_only=True)
     patient_details = PatientProfileSerializer(source='patient', read_only=True)
     practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
+    care_team_assignments = EncounterCareTeamListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Encounter
@@ -66,6 +93,7 @@ class EncounterSerializer(serializers.ModelSerializer):
             'id', 'patient', 'patient_details', 'patient_name',
             'practitioner', 'practitioner_details', 'practitioner_name',
             'clinic', 'clinic_name', 'department', 'department_name',
+            'primary_team', 'primary_team_name', 'admitted_by_team', 'admitted_by_team_name', 'admitted_by_team_id', 'care_team_assignments',
             'appointment', 'outpatient_visit',
             'encounter_type', 'status', 'start_time', 'end_time',
             'reason', 'service_type', 'location',
@@ -89,10 +117,13 @@ class EncounterListSerializer(serializers.ModelSerializer):
     practitioner_name = serializers.ReadOnlyField()
     clinic_name = serializers.CharField(source='clinic.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    primary_team_name = serializers.CharField(source='primary_team.name', read_only=True)
     patient_id = serializers.UUIDField(source='patient.id', read_only=True)
     practitioner_id = serializers.UUIDField(source='practitioner.id', read_only=True, allow_null=True)
     clinic_id = serializers.UUIDField(source='clinic.id', read_only=True, allow_null=True)
     department_id = serializers.UUIDField(source='department.id', read_only=True, allow_null=True)
+    primary_team_id = serializers.UUIDField(source='primary_team.id', read_only=True, allow_null=True)
+    admitted_by_team_id = serializers.UUIDField(source='admitted_by_team.id', read_only=True, allow_null=True)
 
     class Meta:
         model = Encounter
@@ -101,6 +132,7 @@ class EncounterListSerializer(serializers.ModelSerializer):
             'practitioner_id', 'practitioner_name',
             'clinic_id', 'clinic_name',
             'department_id', 'department_name',
+            'primary_team_id', 'primary_team_name', 'admitted_by_team_id',
             'encounter_type', 'status', 'start_time', 'end_time',
             'reason', 'service_type', 'location',
             'created_at', 'updated_at'
@@ -115,12 +147,14 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
     practitioner_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     clinic_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     department_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    primary_team_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     appointment_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Encounter
         fields = [
-            'patient_id', 'practitioner_id', 'clinic_id', 'department_id', 'appointment_id',
+            'patient_id', 'practitioner_id', 'clinic_id', 'department_id',
+            'primary_team_id', 'appointment_id',
             'encounter_type', 'status', 'start_time',
             'reason', 'service_type', 'location',
             'admission_source'
@@ -200,6 +234,7 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
         practitioner_id = validated_data.pop('practitioner_id', None)
         clinic_id = validated_data.pop('clinic_id', None)
         department_id = validated_data.pop('department_id', None)
+        primary_team_id = validated_data.pop('primary_team_id', None)
         appointment_id = validated_data.pop('appointment_id', None)
         practitioner = validated_data.pop('practitioner', None)
 
@@ -210,6 +245,9 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
             validated_data['practitioner'] = practitioner
         if department_id:
             validated_data['department'] = ClinicalUnit.objects.get(id=department_id)
+        if primary_team_id:
+            validated_data['primary_team'] = ClinicalUnit.objects.get(id=primary_team_id)
+            validated_data['admitted_by_team'] = validated_data['primary_team']
         if clinic_id:
             clinic = Clinic.objects.get(id=clinic_id)
             validated_data['clinic'] = clinic
@@ -222,6 +260,14 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
                 validated_data['clinic'] = appointment.clinic
                 if not department_id:
                     validated_data['department'] = appointment.clinic.department
+
+        # Default primary_team to department if not set
+        if not validated_data.get('primary_team') and validated_data.get('department'):
+            validated_data['primary_team'] = validated_data['department']
+
+        # Set admitted_by_team on create if missing
+        if not validated_data.get('admitted_by_team') and validated_data.get('primary_team'):
+            validated_data['admitted_by_team'] = validated_data['primary_team']
 
         return super().create(validated_data)
 

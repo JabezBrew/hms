@@ -119,6 +119,18 @@ class Command(BaseCommand):
                     reason=reason,
                     location=admission.bed.ward.name if admission.bed else None,
                 )
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    team=admission.primary_team,
+                    use_duty_roster=False,
+                    context='inpatient'
+                )
+                if admission.bed:
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=encounter,
+                        bed=admission.bed
+                    )
                 return encounter, True, 'created_for_admission'
             return None, True, 'would_create_for_admission'
 
@@ -156,6 +168,12 @@ class Command(BaseCommand):
                 start_time=start_time,
                 end_time=start_time,  # Same day
                 reason=reason,
+            )
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(
+                encounter=encounter,
+                use_duty_roster=False,
+                context='outpatient'
             )
             return encounter, True, 'created_new_outpatient'
 

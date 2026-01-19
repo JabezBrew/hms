@@ -447,7 +447,8 @@ function RosterTab() {
  * OnDutyWidget - Shows who's currently on duty (for embedding elsewhere)
  */
 export function OnDutyWidget({ unitId }) {
-  const { data, isLoading } = useOnDuty({ unit_id: unitId });
+  const hasUnit = !!unitId;
+  const { data, isLoading } = useOnDuty(hasUnit ? { unit_id: unitId } : null);
   const onDuty = data?.data?.results || data?.results || [];
 
   if (isLoading) {

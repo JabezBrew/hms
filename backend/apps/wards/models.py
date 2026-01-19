@@ -440,20 +440,22 @@ class Admission(models.Model):
     )
 
     # Clinical Unit (Team) - for flexible organizational hierarchy
+    # DEPRECATED: Use encounter.primary_team instead. Kept for backward compatibility.
     primary_team = models.ForeignKey(
         'organization.ClinicalUnit',
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name='primary_admissions',
-        help_text='Primary clinical team responsible for this admission'
+        help_text='DEPRECATED: Use encounter.primary_team instead. Kept for backward compatibility.'
     )
+    # DEPRECATED: Use encounter.consulting_teams / EncounterCareTeam instead.
     consulting_teams = models.ManyToManyField(
         'organization.ClinicalUnit',
         through='CareTeamAssignment',
         related_name='consulting_admissions',
         blank=True,
-        help_text='Consulting teams involved in care'
+        help_text='DEPRECATED: Use encounter.consulting_teams instead.'
     )
 
     # Audit fields
@@ -531,6 +533,19 @@ class Admission(models.Model):
                 self.bed.save()
 
         super().save(*args, **kwargs)
+
+    @property
+    def effective_primary_team(self):
+        """
+        Get primary team from encounter (preferred) or admission (fallback).
+
+        The source of truth for primary_team is now Encounter.primary_team.
+        This property provides backward compatibility by checking the linked
+        encounter first, then falling back to the admission's own primary_team.
+        """
+        if hasattr(self, 'encounter') and self.encounter and self.encounter.primary_team:
+            return self.encounter.primary_team
+        return self.primary_team
 
     @property
     def length_of_stay(self):

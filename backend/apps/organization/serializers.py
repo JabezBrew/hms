@@ -826,3 +826,4 @@ class OnDutyQuerySerializer(serializers.Serializer):
         required=False
     )
     include_descendants = serializers.BooleanField(default=False)
+    include_practitioner = serializers.BooleanField(default=True)

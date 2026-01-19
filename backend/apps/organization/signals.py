@@ -300,6 +300,10 @@ def invalidate_coverage_cache(sender, instance, **kwargs):
 def invalidate_duty_roster_cache(unit_id, date):
     """Invalidate the duty roster cache for a specific unit and date."""
     cache.delete(facility_cache_key(f'duty_roster:{unit_id}:{date}'))
+    if hasattr(cache, 'delete_pattern'):
+        cache.delete_pattern(facility_cache_key(f'on_duty_team:{unit_id}:*'))
+    else:
+        cache.delete(facility_cache_key(f'on_duty_team:{unit_id}:*'))
 
 
 @receiver(post_save, sender=DutyRoster)

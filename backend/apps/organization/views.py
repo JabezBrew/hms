@@ -1294,7 +1294,7 @@ class DutyRosterViewSet(viewsets.ModelViewSet):
             'new_entry': DutyRosterSerializer(new_entry).data,
         })
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='on-duty')
     def on_duty(self, request):
         """
         Get practitioners currently on duty.
@@ -1321,9 +1321,31 @@ class DutyRosterViewSet(viewsets.ModelViewSet):
             role=data.get('role'),
             context=data.get('context'),
             include_descendants=data.get('include_descendants', False),
+            include_practitioner=data.get('include_practitioner', True),
         )
 
+        if not data.get('include_practitioner', True):
+            results = list(on_duty)
+            return Response({
+                'results': [
+                    {
+                        'id': str(entry.id),
+                        'unit': str(entry.unit_id),
+                        'unit_name': entry.unit.name,
+                        'date': entry.date,
+                        'start_time': entry.start_time,
+                        'end_time': entry.end_time,
+                        'role': entry.role,
+                        'context': entry.context,
+                        'is_primary': entry.is_primary,
+                    }
+                    for entry in results
+                ],
+                'count': len(results),
+            })
+
+        results = list(on_duty)
         return Response({
-            'results': DutyRosterListSerializer(on_duty, many=True).data,
-            'count': on_duty.count(),
+            'results': DutyRosterListSerializer(results, many=True).data,
+            'count': len(results),
         })
