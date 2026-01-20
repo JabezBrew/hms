@@ -170,6 +170,78 @@ export const wardAllocationsApi = {
 };
 
 // =============================================================================
+// Department Roster Endpoints
+// =============================================================================
+
+export const departmentDutyTypesApi = {
+  list: (params = {}) => apiClient.get('/organization/department-duty-types/', { params }),
+  get: (id) => apiClient.get(`/organization/department-duty-types/${id}/`),
+  create: (data) => apiClient.post('/organization/department-duty-types/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-duty-types/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-duty-types/${id}/`),
+};
+
+export const departmentStationsApi = {
+  list: (params = {}) => apiClient.get('/organization/department-stations/', { params }),
+  get: (id) => apiClient.get(`/organization/department-stations/${id}/`),
+  create: (data) => apiClient.post('/organization/department-stations/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-stations/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-stations/${id}/`),
+};
+
+export const departmentRosterPlansApi = {
+  list: (params = {}) => apiClient.get('/organization/department-roster-plans/', { params }),
+  get: (id) => apiClient.get(`/organization/department-roster-plans/${id}/`),
+  create: (data) => apiClient.post('/organization/department-roster-plans/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-roster-plans/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-roster-plans/${id}/`),
+  importPreview: (data) => apiClient.post('/organization/department-roster-plans/import/preview/', data),
+  importApply: (data) => apiClient.post('/organization/department-roster-plans/import/apply/', data),
+};
+
+export const departmentRosterPatternsApi = {
+  list: (params = {}) => apiClient.get('/organization/department-roster-patterns/', { params }),
+  get: (id) => apiClient.get(`/organization/department-roster-patterns/${id}/`),
+  create: (data) => apiClient.post('/organization/department-roster-patterns/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-roster-patterns/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-roster-patterns/${id}/`),
+};
+
+export const rosterPatternSlotsApi = {
+  list: (params = {}) => apiClient.get('/organization/department-roster-slots/', { params }),
+  get: (id) => apiClient.get(`/organization/department-roster-slots/${id}/`),
+  create: (data) => apiClient.post('/organization/department-roster-slots/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-roster-slots/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-roster-slots/${id}/`),
+};
+
+export const rosterOverridesApi = {
+  list: (params = {}) => apiClient.get('/organization/department-roster-overrides/', { params }),
+  get: (id) => apiClient.get(`/organization/department-roster-overrides/${id}/`),
+  create: (data) => apiClient.post('/organization/department-roster-overrides/', data),
+  update: (id, data) => apiClient.patch(`/organization/department-roster-overrides/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/department-roster-overrides/${id}/`),
+};
+
+export const teamRosterPlansApi = {
+  list: (params = {}) => apiClient.get('/organization/team-roster-plans/', { params }),
+  get: (id) => apiClient.get(`/organization/team-roster-plans/${id}/`),
+  create: (data) => apiClient.post('/organization/team-roster-plans/', data),
+  update: (id, data) => apiClient.patch(`/organization/team-roster-plans/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/team-roster-plans/${id}/`),
+};
+
+export const teamRosterEntriesApi = {
+  list: (params = {}) => apiClient.get('/organization/team-roster-entries/', { params }),
+  get: (id) => apiClient.get(`/organization/team-roster-entries/${id}/`),
+  create: (data) => apiClient.post('/organization/team-roster-entries/', data),
+  update: (id, data) => apiClient.patch(`/organization/team-roster-entries/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/team-roster-entries/${id}/`),
+  importPreview: (data) => apiClient.post('/organization/team-roster-entries/import/preview/', data),
+  importApply: (data) => apiClient.post('/organization/team-roster-entries/import/apply/', data),
+};
+
+// =============================================================================
 // Duty Roster Endpoints
 // =============================================================================
 
@@ -245,6 +317,13 @@ export default {
   shiftDefinitions: shiftDefinitionsApi,
   dutyRosterTemplates: dutyRosterTemplatesApi,
   dutyRoster: dutyRosterApi,
+  departmentDutyTypes: departmentDutyTypesApi,
+  departmentStations: departmentStationsApi,
+  departmentRosterPlans: departmentRosterPlansApi,
+  rosterPatternSlots: rosterPatternSlotsApi,
+  rosterOverrides: rosterOverridesApi,
+  teamRosterPlans: teamRosterPlansApi,
+  teamRosterEntries: teamRosterEntriesApi,
   clinics: clinicsApi,
   clinicSchedules: clinicSchedulesApi,
 };

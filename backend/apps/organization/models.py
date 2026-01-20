@@ -15,6 +15,29 @@ from django.utils import timezone
 from mptt.models import MPTTModel, TreeForeignKey
 
 
+DUTY_ROSTER_ROLE_CHOICES = [
+    ('admitting', 'Admitting'),
+    ('covering', 'Covering'),
+    ('consulting', 'Consulting'),
+    ('clinic', 'Clinic'),
+    ('on_call', 'On Call'),
+]
+
+DUTY_ROSTER_CONTEXT_CHOICES = [
+    ('inpatient', 'Inpatient'),
+    ('outpatient', 'Outpatient'),
+    ('emergency', 'Emergency'),
+    ('all', 'All Contexts'),
+]
+
+DUTY_ROSTER_SENIORITY_CHOICES = [
+    ('attending', 'Attending'),
+    ('fellow', 'Fellow'),
+    ('resident', 'Resident'),
+    ('intern', 'Intern'),
+]
+
+
 # =============================================================================
 # Configuration Models
 # =============================================================================
@@ -177,6 +200,98 @@ class StaffAssignmentTypeConfig(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class DepartmentDutyType(models.Model):
+    """Configurable duty types per department."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    department = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='duty_types',
+        help_text='Department this duty type belongs to'
+    )
+    name = models.CharField(max_length=120)
+    code = models.CharField(max_length=40)
+    default_context = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_CONTEXT_CHOICES,
+        default='inpatient'
+    )
+    default_role = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_ROLE_CHOICES,
+        default='admitting'
+    )
+    default_role_label = models.CharField(max_length=80, blank=True)
+    default_context_label = models.CharField(max_length=80, blank=True)
+    requires_time_range = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['department', 'code'],
+                name='unique_duty_type_code_per_department'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['department', 'is_active']),
+            models.Index(fields=['department', 'display_order']),
+        ]
+        ordering = ['display_order', 'name']
+        verbose_name = 'Department Duty Type'
+        verbose_name_plural = 'Department Duty Types'
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if getattr(self.department.unit_type, 'code', None) != 'department':
+            raise ValidationError({'department': 'Duty types must belong to a department unit.'})
+
+
+class DepartmentStation(models.Model):
+    """Controlled list of stations/locations per department."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    department = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='stations',
+        help_text='Department this station belongs to'
+    )
+    name = models.CharField(max_length=120)
+    code = models.CharField(max_length=40)
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['department', 'code'],
+                name='unique_station_code_per_department'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['department', 'is_active']),
+        ]
+        ordering = ['display_order', 'name']
+        verbose_name = 'Department Station'
+        verbose_name_plural = 'Department Stations'
+
+    def __str__(self):
+        return f'{self.code} - {self.name}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if getattr(self.department.unit_type, 'code', None) != 'department':
+            raise ValidationError({'department': 'Stations must belong to a department unit.'})
 
 
 # =============================================================================
@@ -911,6 +1026,352 @@ class UnitWardAllocation(models.Model):
 
 
 # =============================================================================
+# Department Roster Models
+# =============================================================================
+
+
+class DepartmentRosterPattern(models.Model):
+    """Named pattern grouping within a department roster plan."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(
+        'organization.DepartmentRosterPlan',
+        on_delete=models.CASCADE,
+        related_name='patterns'
+    )
+    name = models.CharField(max_length=160)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['plan', 'name'],
+                name='unique_roster_pattern_per_plan'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['plan', 'is_active']),
+            models.Index(fields=['plan', 'display_order']),
+        ]
+        ordering = ['display_order', 'name']
+        verbose_name = 'Department Roster Pattern'
+        verbose_name_plural = 'Department Roster Patterns'
+
+    def __str__(self):
+        return f'{self.plan.name} - {self.name}'
+
+
+class DepartmentRosterPlan(models.Model):
+    """Versioned department roster plan with cycle-based slots."""
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('active', 'Active'),
+        ('archived', 'Archived'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    department = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='roster_plans',
+        help_text='Department this roster plan applies to'
+    )
+    name = models.CharField(max_length=160)
+    cycle_length_days = models.PositiveSmallIntegerField(default=7)
+    effective_from = models.DateField()
+    effective_until = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    version = models.PositiveSmallIntegerField(default=1)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_department_roster_plans'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_department_roster_plans'
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(cycle_length_days__gte=1),
+                name='department_roster_cycle_length_positive'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['department', 'status']),
+            models.Index(fields=['department', 'effective_from', 'effective_until']),
+        ]
+        ordering = ['-effective_from', '-version']
+        verbose_name = 'Department Roster Plan'
+        verbose_name_plural = 'Department Roster Plans'
+
+    def __str__(self):
+        return f'{self.department.name} - {self.name} (v{self.version})'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if getattr(self.department.unit_type, 'code', None) != 'department':
+            raise ValidationError({'department': 'Roster plans must belong to a department unit.'})
+        if self.effective_until and self.effective_from and self.effective_until < self.effective_from:
+            raise ValidationError({'effective_until': 'Effective until must be on or after effective from.'})
+        if self.cycle_length_days < 1:
+            raise ValidationError({'cycle_length_days': 'Cycle length must be at least 1 day.'})
+
+    @property
+    def is_active(self):
+        today = timezone.now().date()
+        if self.status != 'active':
+            return False
+        if self.effective_from and self.effective_from > today:
+            return False
+        if self.effective_until and self.effective_until < today:
+            return False
+        return True
+
+
+class RosterPatternSlot(models.Model):
+    """Defines team duty assignments within a roster cycle."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(
+        'organization.DepartmentRosterPlan',
+        on_delete=models.CASCADE,
+        related_name='pattern_slots'
+    )
+    pattern = models.ForeignKey(
+        'organization.DepartmentRosterPattern',
+        on_delete=models.CASCADE,
+        related_name='slots',
+        null=True,
+        blank=True
+    )
+    day_offset = models.PositiveSmallIntegerField(help_text='0-based day index in the cycle')
+    duty_type = models.ForeignKey(
+        'organization.DepartmentDutyType',
+        on_delete=models.CASCADE,
+        related_name='pattern_slots'
+    )
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='roster_pattern_slots'
+    )
+    context_override = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_CONTEXT_CHOICES,
+        null=True, blank=True
+    )
+    role_override = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_ROLE_CHOICES,
+        null=True, blank=True
+    )
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['plan', 'pattern', 'day_offset', 'duty_type'],
+                name='unique_roster_slot_per_pattern_day'
+            ),
+            models.CheckConstraint(
+                check=models.Q(day_offset__gte=0),
+                name='roster_slot_day_offset_nonnegative'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['plan', 'pattern', 'day_offset']),
+            models.Index(fields=['plan', 'pattern', 'duty_type']),
+            models.Index(fields=['team', 'day_offset']),
+        ]
+        ordering = ['day_offset', 'duty_type__display_order']
+        verbose_name = 'Roster Pattern Slot'
+        verbose_name_plural = 'Roster Pattern Slots'
+
+
+class RosterOverride(models.Model):
+    """Per-date override of roster plan slots."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(
+        'organization.DepartmentRosterPlan',
+        on_delete=models.CASCADE,
+        related_name='overrides'
+    )
+    date = models.DateField()
+    duty_type = models.ForeignKey(
+        'organization.DepartmentDutyType',
+        on_delete=models.CASCADE,
+        related_name='overrides'
+    )
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='roster_overrides'
+    )
+    context_override = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_CONTEXT_CHOICES,
+        null=True, blank=True
+    )
+    role_override = models.CharField(
+        max_length=20,
+        choices=DUTY_ROSTER_ROLE_CHOICES,
+        null=True, blank=True
+    )
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    reason = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_roster_overrides'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_roster_overrides'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['plan', 'date', 'duty_type'],
+                name='unique_roster_override_per_date'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['plan', 'date']),
+            models.Index(fields=['plan', 'duty_type']),
+        ]
+        ordering = ['date', 'duty_type__display_order']
+        verbose_name = 'Roster Override'
+        verbose_name_plural = 'Roster Overrides'
+
+
+class TeamRosterPlan(models.Model):
+    """Optional detailed roster for teams linked to department plans."""
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('active', 'Active'),
+        ('archived', 'Archived'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='team_roster_plans'
+    )
+    department_plan = models.ForeignKey(
+        'organization.DepartmentRosterPlan',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='team_roster_plans'
+    )
+    name = models.CharField(max_length=160)
+    effective_from = models.DateField()
+    effective_until = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    version = models.PositiveSmallIntegerField(default=1)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_team_roster_plans'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_team_roster_plans'
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(version__gte=1),
+                name='team_roster_version_positive'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['team', 'status']),
+            models.Index(fields=['team', 'effective_from', 'effective_until']),
+        ]
+        ordering = ['-effective_from', '-version']
+        verbose_name = 'Team Roster Plan'
+        verbose_name_plural = 'Team Roster Plans'
+
+
+class TeamRosterEntry(models.Model):
+    """Granular team roster entries with station assignment."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.CASCADE,
+        related_name='team_roster_entries'
+    )
+    date = models.DateField()
+    duty_type = models.ForeignKey(
+        'organization.DepartmentDutyType',
+        on_delete=models.CASCADE,
+        related_name='team_roster_entries'
+    )
+    station = models.ForeignKey(
+        'organization.DepartmentStation',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='team_roster_entries'
+    )
+    practitioner = models.ForeignKey(
+        'users.PractitionerProfile',
+        on_delete=models.CASCADE,
+        related_name='team_roster_entries'
+    )
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_team_roster_entries'
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['team', 'date']),
+            models.Index(fields=['team', 'duty_type', 'date']),
+            models.Index(fields=['practitioner', 'date']),
+        ]
+        ordering = ['date']
+        verbose_name = 'Team Roster Entry'
+        verbose_name_plural = 'Team Roster Entries'
+
+
+# =============================================================================
 # Duty Roster Models
 # =============================================================================
 
@@ -987,27 +1448,9 @@ class DutyRosterTemplate(models.Model):
     Recurring duty patterns for automatic roster generation.
     Templates define which practitioner works which shift on which days of the week.
     """
-    ROLE_CHOICES = [
-        ('admitting', 'Admitting'),
-        ('covering', 'Covering'),
-        ('consulting', 'Consulting'),
-        ('clinic', 'Clinic'),
-        ('on_call', 'On Call'),
-    ]
-
-    CONTEXT_CHOICES = [
-        ('inpatient', 'Inpatient'),
-        ('outpatient', 'Outpatient'),
-        ('emergency', 'Emergency'),
-        ('all', 'All Contexts'),
-    ]
-
-    SENIORITY_CHOICES = [
-        ('attending', 'Attending'),
-        ('fellow', 'Fellow'),
-        ('resident', 'Resident'),
-        ('intern', 'Intern'),
-    ]
+    ROLE_CHOICES = DUTY_ROSTER_ROLE_CHOICES
+    CONTEXT_CHOICES = DUTY_ROSTER_CONTEXT_CHOICES
+    SENIORITY_CHOICES = DUTY_ROSTER_SENIORITY_CHOICES
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -1017,7 +1460,7 @@ class DutyRosterTemplate(models.Model):
         related_name='duty_roster_templates',
     )
     unit = models.ForeignKey(
-        ClinicalUnit,
+        'organization.ClinicalUnit',
         on_delete=models.CASCADE,
         related_name='duty_roster_templates',
         help_text='Clinical unit this template applies to'
@@ -1033,7 +1476,7 @@ class DutyRosterTemplate(models.Model):
         help_text='0=Monday, 6=Sunday'
     )
     shift = models.ForeignKey(
-        ShiftDefinition,
+        'organization.ShiftDefinition',
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name='templates',
@@ -1136,7 +1579,7 @@ class DutyRoster(models.Model):
         related_name='duty_roster_entries',
     )
     unit = models.ForeignKey(
-        ClinicalUnit,
+        'organization.ClinicalUnit',
         on_delete=models.CASCADE,
         related_name='duty_roster_entries',
     )
@@ -1149,7 +1592,7 @@ class DutyRoster(models.Model):
     # Schedule
     date = models.DateField()
     shift = models.ForeignKey(
-        ShiftDefinition,
+        'organization.ShiftDefinition',
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name='roster_entries',
@@ -1160,17 +1603,17 @@ class DutyRoster(models.Model):
     # Role and context (copied from template or set manually)
     role = models.CharField(
         max_length=20,
-        choices=DutyRosterTemplate.ROLE_CHOICES,
+        choices=DUTY_ROSTER_ROLE_CHOICES,
         default='admitting'
     )
     context = models.CharField(
         max_length=20,
-        choices=DutyRosterTemplate.CONTEXT_CHOICES,
+        choices=DUTY_ROSTER_CONTEXT_CHOICES,
         default='inpatient'
     )
     seniority_level = models.CharField(
         max_length=20,
-        choices=DutyRosterTemplate.SENIORITY_CHOICES,
+        choices=DUTY_ROSTER_SENIORITY_CHOICES,
         default='attending'
     )
     is_primary = models.BooleanField(default=False)
@@ -1178,7 +1621,7 @@ class DutyRoster(models.Model):
     # Tracking
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
     template = models.ForeignKey(
-        DutyRosterTemplate,
+        'organization.DutyRosterTemplate',
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name='generated_entries',

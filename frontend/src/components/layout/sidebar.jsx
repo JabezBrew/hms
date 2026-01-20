@@ -19,6 +19,7 @@ import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
+import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import {
   SidebarContent,
   SidebarGroup,
@@ -101,6 +102,7 @@ export function AppSidebar() {
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
       organization: ['admin'],
+      dutyRoster: ['admin'],
       auditLogs: ['admin'],
     }
   }
@@ -300,6 +302,15 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Organization" href="/admin/organization">
                   <FolderTree />
                   <span>Organization</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.dutyRoster) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Duty Roster" href="/admin/organization/duty-roster">
+                  <CalendarClock />
+                  <span>Duty Roster</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

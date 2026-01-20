@@ -16,6 +16,14 @@ import {
   shiftDefinitionsApi,
   dutyRosterTemplatesApi,
   dutyRosterApi,
+  departmentDutyTypesApi,
+  departmentStationsApi,
+  departmentRosterPlansApi,
+  departmentRosterPatternsApi,
+  rosterPatternSlotsApi,
+  rosterOverridesApi,
+  teamRosterPlansApi,
+  teamRosterEntriesApi,
   clinicsApi,
   clinicSchedulesApi,
 } from '@/lib/api/organization';
@@ -96,9 +104,32 @@ export const organizationKeys = {
   dutyRosterList: (params) => [...organizationKeys.dutyRoster(), 'list', params],
   dutyRosterEntry: (id) => [...organizationKeys.dutyRoster(), id],
   onDuty: (params) => [...organizationKeys.dutyRoster(), 'on-duty', params],
-
-  // Clinics
+  departmentDutyTypes: () => [...organizationKeys.all, 'department-duty-types'],
+  departmentDutyTypesList: (params) => [...organizationKeys.departmentDutyTypes(), 'list', params],
+  departmentDutyType: (id) => [...organizationKeys.departmentDutyTypes(), id],
+  departmentStations: () => [...organizationKeys.all, 'department-stations'],
+  departmentStationsList: (params) => [...organizationKeys.departmentStations(), 'list', params],
+  departmentStation: (id) => [...organizationKeys.departmentStations(), id],
+  departmentRosterPlans: () => [...organizationKeys.all, 'department-roster-plans'],
+  departmentRosterPlansList: (params) => [...organizationKeys.departmentRosterPlans(), 'list', params],
+  departmentRosterPlan: (id) => [...organizationKeys.departmentRosterPlans(), id],
+  departmentRosterPatterns: () => [...organizationKeys.all, 'department-roster-patterns'],
+  departmentRosterPatternsList: (params) => [...organizationKeys.departmentRosterPatterns(), 'list', params],
+  departmentRosterPattern: (id) => [...organizationKeys.departmentRosterPatterns(), id],
+  rosterPatternSlots: () => [...organizationKeys.all, 'department-roster-slots'],
+  rosterPatternSlotsList: (params) => [...organizationKeys.rosterPatternSlots(), 'list', params],
+  rosterPatternSlot: (id) => [...organizationKeys.rosterPatternSlots(), id],
+  rosterOverrides: () => [...organizationKeys.all, 'department-roster-overrides'],
+  rosterOverridesList: (params) => [...organizationKeys.rosterOverrides(), 'list', params],
+  rosterOverride: (id) => [...organizationKeys.rosterOverrides(), id],
+  teamRosterPlans: () => [...organizationKeys.all, 'team-roster-plans'],
+  teamRosterPlansList: (params) => [...organizationKeys.teamRosterPlans(), 'list', params],
+  teamRosterPlan: (id) => [...organizationKeys.teamRosterPlans(), id],
+  teamRosterEntries: () => [...organizationKeys.all, 'team-roster-entries'],
+  teamRosterEntriesList: (params) => [...organizationKeys.teamRosterEntries(), 'list', params],
+  teamRosterEntry: (id) => [...organizationKeys.teamRosterEntries(), id],
   clinics: () => [...organizationKeys.all, 'clinics'],
+
   clinicsList: (params) => [...organizationKeys.clinics(), 'list', params],
 
   // Clinic Schedules
@@ -974,6 +1005,387 @@ export function useDeleteDutyRosterTemplate() {
 // =============================================================================
 // Duty Roster Hooks & Mutations
 // =============================================================================
+
+export function useDepartmentDutyTypes(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.departmentDutyTypesList(params),
+    queryFn: () => departmentDutyTypesApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateDepartmentDutyType() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentDutyTypesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentDutyTypes() });
+    },
+  });
+}
+
+export function useUpdateDepartmentDutyType() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => departmentDutyTypesApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentDutyTypes() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentDutyType(id) });
+    },
+  });
+}
+
+export function useDeleteDepartmentDutyType() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => departmentDutyTypesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentDutyTypes() });
+    },
+  });
+}
+
+export function useDepartmentStations(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.departmentStationsList(params),
+    queryFn: () => departmentStationsApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateDepartmentStation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentStationsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentStations() });
+    },
+  });
+}
+
+export function useUpdateDepartmentStation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => departmentStationsApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentStations() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentStation(id) });
+    },
+  });
+}
+
+export function useDeleteDepartmentStation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => departmentStationsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentStations() });
+    },
+  });
+}
+
+export function useDepartmentRosterPlans(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.departmentRosterPlansList(params),
+    queryFn: () => departmentRosterPlansApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateDepartmentRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentRosterPlansApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlans() });
+    },
+  });
+}
+
+export function useUpdateDepartmentRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => departmentRosterPlansApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlans() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlan(id) });
+    },
+  });
+}
+
+export function useDeleteDepartmentRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => departmentRosterPlansApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlans() });
+    },
+  });
+}
+
+export function useDepartmentRosterPatterns(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.departmentRosterPatternsList(params),
+    queryFn: () => departmentRosterPatternsApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateDepartmentRosterPattern() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentRosterPatternsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPatterns() });
+    },
+  });
+}
+
+export function useUpdateDepartmentRosterPattern() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => departmentRosterPatternsApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPatterns() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPattern(id) });
+    },
+  });
+}
+
+export function useDeleteDepartmentRosterPattern() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => departmentRosterPatternsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPatterns() });
+    },
+  });
+}
+
+export function useRosterPatternSlots(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterPatternSlotsList(params),
+    queryFn: () => rosterPatternSlotsApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateRosterPatternSlot() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => rosterPatternSlotsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterPatternSlots() });
+    },
+  });
+}
+
+export function useUpdateRosterPatternSlot() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => rosterPatternSlotsApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterPatternSlots() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterPatternSlot(id) });
+    },
+  });
+}
+
+export function useDeleteRosterPatternSlot() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => rosterPatternSlotsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterPatternSlots() });
+    },
+  });
+}
+
+export function useRosterOverrides(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterOverridesList(params),
+    queryFn: () => rosterOverridesApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateRosterOverride() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => rosterOverridesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterOverrides() });
+    },
+  });
+}
+
+export function useUpdateRosterOverride() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => rosterOverridesApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterOverrides() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterOverride(id) });
+    },
+  });
+}
+
+export function useDeleteRosterOverride() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => rosterOverridesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterOverrides() });
+    },
+  });
+}
+
+export function useTeamRosterPlans(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.teamRosterPlansList(params),
+    queryFn: () => teamRosterPlansApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateTeamRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => teamRosterPlansApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterPlans() });
+    },
+  });
+}
+
+export function useUpdateTeamRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => teamRosterPlansApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterPlans() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterPlan(id) });
+    },
+  });
+}
+
+export function useDeleteTeamRosterPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => teamRosterPlansApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterPlans() });
+    },
+  });
+}
+
+export function useTeamRosterEntries(params = {}) {
+  return useQuery({
+    queryKey: organizationKeys.teamRosterEntriesList(params),
+    queryFn: () => teamRosterEntriesApi.list(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateTeamRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => teamRosterEntriesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntries() });
+    },
+  });
+}
+
+export function useUpdateTeamRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => teamRosterEntriesApi.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntries() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntry(id) });
+    },
+  });
+}
+
+export function useDeleteTeamRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => teamRosterEntriesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntries() });
+    },
+  });
+}
+
+export function useDepartmentRosterImportPreview() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentRosterPlansApi.importPreview(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlans() });
+    },
+  });
+}
+
+export function useDepartmentRosterImportApply() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => departmentRosterPlansApi.importApply(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.departmentRosterPlans() });
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterPatternSlots() });
+    },
+  });
+}
+
+export function useTeamRosterImportPreview() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => teamRosterEntriesApi.importPreview(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntries() });
+    },
+  });
+}
+
+export function useTeamRosterImportApply() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => teamRosterEntriesApi.importApply(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.teamRosterEntries() });
+    },
+  });
+}
 
 export function useDutyRoster(params = {}) {
   return useQuery({

@@ -16,6 +16,14 @@ from .views import (
     UnitMemberAssignmentViewSet,
     CrossCoverageScheduleViewSet,
     UnitWardAllocationViewSet,
+    DepartmentDutyTypeViewSet,
+    DepartmentStationViewSet,
+    DepartmentRosterPlanViewSet,
+    DepartmentRosterPatternViewSet,
+    RosterPatternSlotViewSet,
+    RosterOverrideViewSet,
+    TeamRosterPlanViewSet,
+    TeamRosterEntryViewSet,
     ShiftDefinitionViewSet,
     DutyRosterTemplateViewSet,
     DutyRosterViewSet,
@@ -37,6 +45,16 @@ router.register(r'staff-assignments', StaffUnitAssignmentViewSet, basename='staf
 router.register(r'unit-members', UnitMemberAssignmentViewSet, basename='unit-member')
 router.register(r'cross-coverage', CrossCoverageScheduleViewSet, basename='cross-coverage')
 router.register(r'ward-allocations', UnitWardAllocationViewSet, basename='ward-allocation')
+
+# Department roster endpoints
+router.register(r'department-duty-types', DepartmentDutyTypeViewSet, basename='department-duty-type')
+router.register(r'department-stations', DepartmentStationViewSet, basename='department-station')
+router.register(r'department-roster-plans', DepartmentRosterPlanViewSet, basename='department-roster-plan')
+router.register(r'department-roster-patterns', DepartmentRosterPatternViewSet, basename='department-roster-pattern')
+router.register(r'department-roster-slots', RosterPatternSlotViewSet, basename='department-roster-slot')
+router.register(r'department-roster-overrides', RosterOverrideViewSet, basename='department-roster-override')
+router.register(r'team-roster-plans', TeamRosterPlanViewSet, basename='team-roster-plan')
+router.register(r'team-roster-entries', TeamRosterEntryViewSet, basename='team-roster-entry')
 
 # Duty roster endpoints
 router.register(r'shift-definitions', ShiftDefinitionViewSet, basename='shift-definition')

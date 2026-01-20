@@ -3,7 +3,9 @@ Services for the organization app.
 
 Contains business logic for unit access, permissions, and other operations.
 """
-from datetime import timedelta
+import csv
+from datetime import datetime, timedelta
+from io import StringIO
 
 from django.core.cache import cache
 
@@ -326,6 +328,499 @@ class UnitHierarchyService:
 # =============================================================================
 # Duty Roster Services
 # =============================================================================
+
+
+class DepartmentRosterService:
+    """
+    Department roster coverage utilities.
+    """
+
+    COVERAGE_CACHE_TTL = 60
+
+    @staticmethod
+    def _normalize_time(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return datetime.strptime(value, '%H:%M').time()
+        return value
+
+    @classmethod
+    def get_on_duty_coverage(
+        cls,
+        department,
+        at_datetime=None,
+        role=None,
+        context=None,
+        include_descendants=False,
+        include_team_details=False,
+    ):
+        from .models import RosterPatternSlot, RosterOverride
+
+        if at_datetime is None:
+            at_datetime = timezone.now()
+        check_date = at_datetime.date()
+        check_time = at_datetime.time()
+
+        cache_key = facility_cache_key(
+            f'department_roster:coverage:{department.id}:{check_date}:{check_time.strftime("%H%M")}:{role or "any"}:{context or "any"}:desc={int(include_descendants)}:teams={int(include_team_details)}'
+        )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        plan = department.roster_plans.filter(
+            status='active',
+            effective_from__lte=check_date
+        ).filter(
+            Q(effective_until__isnull=True) | Q(effective_until__gte=check_date)
+        ).order_by('-effective_from', '-version').first()
+
+        if not plan:
+            cache.set(cache_key, [], cls.COVERAGE_CACHE_TTL)
+            return []
+
+        override_qs = RosterOverride.objects.filter(
+            plan=plan,
+            date=check_date
+        ).select_related('duty_type', 'team')
+
+        overrides = []
+        for override in override_qs:
+            overrides.append({
+                'id': override.id,
+                'source': 'override',
+                'plan_id': plan.id,
+                'department_id': department.id,
+                'date': check_date.isoformat(),
+                'duty_type_id': override.duty_type_id,
+                'duty_type_name': override.duty_type.name,
+                'team_id': override.team_id,
+                'team_name': override.team.name,
+                'role': override.role_override or override.duty_type.default_role,
+                'context': override.context_override or override.duty_type.default_context,
+                'start_time': cls._normalize_time(override.start_time),
+                'end_time': cls._normalize_time(override.end_time),
+            })
+
+        if overrides:
+            results = cls._filter_coverage(overrides, check_time, role, context, include_descendants, department)
+            if include_team_details:
+                results = cls._attach_team_details(results, check_date, check_time)
+            cache.set(cache_key, results, cls.COVERAGE_CACHE_TTL)
+            return results
+
+        slots = RosterPatternSlot.objects.filter(
+            plan=plan,
+            is_active=True
+        ).select_related('pattern', 'duty_type', 'team').filter(
+            Q(pattern__isnull=True) | Q(pattern__is_active=True)
+        )
+
+        day_offset = (check_date - plan.effective_from).days % plan.cycle_length_days
+        slots = slots.filter(day_offset=day_offset)
+
+        results = []
+        for slot in slots:
+            results.append({
+                'id': slot.id,
+                'source': 'pattern',
+                'plan_id': plan.id,
+                'department_id': department.id,
+                'date': check_date.isoformat(),
+                'duty_type_id': slot.duty_type_id,
+                'duty_type_name': slot.duty_type.name,
+                'team_id': slot.team_id,
+                'team_name': slot.team.name,
+                'role': slot.role_override or slot.duty_type.default_role,
+                'context': slot.context_override or slot.duty_type.default_context,
+                'start_time': cls._normalize_time(slot.start_time),
+                'end_time': cls._normalize_time(slot.end_time),
+            })
+
+        results = cls._filter_coverage(results, check_time, role, context, include_descendants, department)
+        if include_team_details:
+            results = cls._attach_team_details(results, check_date, check_time)
+        cache.set(cache_key, results, cls.COVERAGE_CACHE_TTL)
+        return results
+
+    @classmethod
+    def _filter_coverage(cls, entries, check_time, role, context, include_descendants, department):
+        allowed_team_ids = None
+        if include_descendants:
+            allowed_team_ids = set(
+                department.get_descendants(include_self=True).values_list('id', flat=True)
+            )
+
+        filtered = []
+        for entry in entries:
+            if role and entry['role'] != role:
+                continue
+            if context and entry['context'] not in (context, 'all'):
+                continue
+            if allowed_team_ids is not None and entry['team_id'] not in allowed_team_ids:
+                continue
+            if not cls._time_matches(entry['start_time'], entry['end_time'], check_time):
+                continue
+            filtered.append(entry)
+        return filtered
+
+    @classmethod
+    def _time_matches(cls, start_time, end_time, check_time):
+        if start_time is None or end_time is None:
+            return True
+        if start_time <= end_time:
+            return start_time <= check_time < end_time
+        return check_time >= start_time or check_time < end_time
+
+    @classmethod
+    def _attach_team_details(cls, coverage, check_date, check_time):
+        if not coverage:
+            return coverage
+        from .models import TeamRosterEntry
+
+        team_ids = {entry['team_id'] for entry in coverage}
+        duty_type_ids = {entry['duty_type_id'] for entry in coverage}
+
+        entries = TeamRosterEntry.objects.filter(
+            date=check_date,
+            team_id__in=team_ids,
+            duty_type_id__in=duty_type_ids
+        ).select_related('practitioner', 'practitioner__staff', 'practitioner__staff__user', 'station')
+
+        grouped = {}
+        for entry in entries:
+            if not cls._time_matches(entry.start_time, entry.end_time, check_time):
+                continue
+            key = (entry.team_id, entry.duty_type_id)
+            grouped.setdefault(key, []).append({
+                'id': entry.id,
+                'team_id': entry.team_id,
+                'duty_type_id': entry.duty_type_id,
+                'practitioner_id': entry.practitioner_id,
+                'practitioner_name': entry.practitioner.staff.user.get_full_name() if entry.practitioner and entry.practitioner.staff else None,
+                'station_id': entry.station_id,
+                'station_name': entry.station.name if entry.station else None,
+                'start_time': cls._normalize_time(entry.start_time),
+                'end_time': cls._normalize_time(entry.end_time),
+            })
+
+        for entry in coverage:
+            entry['team_entries'] = grouped.get((entry['team_id'], entry['duty_type_id']), [])
+
+        return coverage
+
+
+class RosterImportService:
+    """
+    CSV import validation and apply logic for department/team rosters.
+    """
+
+    @staticmethod
+    def _normalize_time(value):
+        if value in (None, ''):
+            return None
+        if isinstance(value, str):
+            return datetime.strptime(value, '%H:%M').time()
+        return value
+
+    @classmethod
+    def _parse_csv(cls, content):
+        reader = csv.DictReader(StringIO(content))
+        rows = []
+        for index, row in enumerate(reader, start=2):
+            rows.append((index, {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()}))
+        return rows
+
+    @classmethod
+    def validate_department_roster_csv(cls, content, facility):
+        required = ['department_code', 'plan_name', 'cycle_day', 'duty_type_code', 'team_code']
+        rows = cls._parse_csv(content)
+        errors = []
+        resolved_rows = []
+        conflicts = []
+
+        from .models import ClinicalUnit, DepartmentRosterPlan, DepartmentDutyType, DepartmentRosterPattern
+
+        for line_number, row in rows:
+            missing = [col for col in required if not row.get(col)]
+            if missing:
+                errors.append({'line': line_number, 'field': ','.join(missing), 'message': 'Missing required fields'})
+                continue
+
+            department = ClinicalUnit.objects.filter(
+                code=row['department_code'],
+                unit_type__code='department',
+                root_unit__code=facility.code
+            ).first()
+            if not department:
+                errors.append({'line': line_number, 'field': 'department_code', 'message': 'Department not found'})
+                continue
+
+            team = ClinicalUnit.objects.filter(
+                code=row['team_code'],
+                root_unit__code=facility.code
+            ).first()
+            if not team:
+                errors.append({'line': line_number, 'field': 'team_code', 'message': 'Team not found'})
+                continue
+
+            duty_type = DepartmentDutyType.objects.filter(
+                department=department,
+                code=row['duty_type_code']
+            ).first()
+            if not duty_type:
+                errors.append({'line': line_number, 'field': 'duty_type_code', 'message': 'Duty type not found'})
+                continue
+
+            try:
+                cycle_day = int(row['cycle_day'])
+            except ValueError:
+                errors.append({'line': line_number, 'field': 'cycle_day', 'message': 'cycle_day must be an integer'})
+                continue
+
+            plan = DepartmentRosterPlan.objects.filter(
+                department=department,
+                name=row['plan_name']
+            ).order_by('-version').first()
+            if not plan:
+                errors.append({'line': line_number, 'field': 'plan_name', 'message': 'Plan not found'})
+                continue
+
+            pattern_name = (row.get('pattern_name') or 'Default').strip()
+            pattern = DepartmentRosterPattern.objects.filter(plan=plan, name=pattern_name).first()
+
+            start_time = cls._normalize_time(row.get('start_time') or None)
+            end_time = cls._normalize_time(row.get('end_time') or None)
+            if (start_time is None) ^ (end_time is None):
+                errors.append({'line': line_number, 'field': 'start_time', 'message': 'Both start_time and end_time required'})
+                continue
+
+            if start_time and end_time and start_time == end_time:
+                errors.append({'line': line_number, 'field': 'start_time', 'message': 'start_time and end_time cannot match'})
+                continue
+
+            if cycle_day < 0 or cycle_day >= plan.cycle_length_days:
+                errors.append({'line': line_number, 'field': 'cycle_day', 'message': 'cycle_day out of range for plan'})
+                continue
+
+            existing = None
+            if pattern:
+                existing = plan.pattern_slots.filter(
+                    pattern=pattern,
+                    day_offset=cycle_day,
+                    duty_type=duty_type
+                ).first()
+            if existing:
+                conflicts.append({
+                    'line': line_number,
+                    'plan_id': str(plan.id),
+                    'slot_id': str(existing.id),
+                    'message': 'Pattern slot already exists for day and duty type'
+                })
+
+            resolved_rows.append({
+                'line': line_number,
+                'plan': plan,
+                'pattern_name': pattern_name,
+                'day_offset': cycle_day,
+                'duty_type': duty_type,
+                'team': team,
+                'context_override': row.get('context') or None,
+                'role_override': row.get('role') or None,
+                'start_time': start_time,
+                'end_time': end_time,
+            })
+
+        return {
+            'errors': errors,
+            'conflicts': conflicts,
+            'rows': resolved_rows,
+        }
+
+    @classmethod
+    def apply_department_roster_csv(cls, rows, user, conflict_strategy='skip'):
+        from django.db import transaction
+        from .models import RosterPatternSlot, DepartmentRosterPattern
+
+        created = 0
+        with transaction.atomic():
+            for row in rows:
+                pattern_name = row.get('pattern_name') or 'Default'
+                pattern = DepartmentRosterPattern.objects.get_or_create(
+                    plan=row['plan'],
+                    name=pattern_name,
+                    defaults={'display_order': 0, 'is_active': True}
+                )[0]
+                existing = RosterPatternSlot.objects.filter(
+                    plan=row['plan'],
+                    pattern=pattern,
+                    day_offset=row['day_offset'],
+                    duty_type=row['duty_type']
+                ).first()
+                if existing and conflict_strategy == 'skip':
+                    continue
+                if existing:
+                    for field, value in {
+                        'team': row['team'],
+                        'context_override': row['context_override'],
+                        'role_override': row['role_override'],
+                        'start_time': row['start_time'],
+                        'end_time': row['end_time'],
+                        'is_active': True,
+                    }.items():
+                        setattr(existing, field, value)
+                    existing.save()
+                    continue
+                RosterPatternSlot.objects.create(
+                    plan=row['plan'],
+                    pattern=pattern,
+                    day_offset=row['day_offset'],
+                    duty_type=row['duty_type'],
+                    team=row['team'],
+                    context_override=row['context_override'],
+                    role_override=row['role_override'],
+                    start_time=row['start_time'],
+                    end_time=row['end_time'],
+                    is_active=True,
+                )
+                created += 1
+        return created
+
+    @classmethod
+    def validate_team_roster_csv(cls, content, facility):
+        required = ['team_code', 'date', 'duty_type_code', 'practitioner_id']
+        rows = cls._parse_csv(content)
+        errors = []
+        resolved_rows = []
+        conflicts = []
+
+        from .models import ClinicalUnit, DepartmentDutyType, TeamRosterEntry, DepartmentStation
+        from apps.users.models import PractitionerProfile
+
+        for line_number, row in rows:
+            missing = [col for col in required if not row.get(col)]
+            if missing:
+                errors.append({'line': line_number, 'field': ','.join(missing), 'message': 'Missing required fields'})
+                continue
+
+            team = ClinicalUnit.objects.filter(
+                code=row['team_code'],
+                root_unit__code=facility.code
+            ).first()
+            if not team:
+                errors.append({'line': line_number, 'field': 'team_code', 'message': 'Team not found'})
+                continue
+
+            try:
+                date_value = datetime.strptime(row['date'], '%Y-%m-%d').date()
+            except ValueError:
+                errors.append({'line': line_number, 'field': 'date', 'message': 'Invalid date format (YYYY-MM-DD)'})
+                continue
+
+            duty_type = DepartmentDutyType.objects.filter(
+                department__root_unit__code=facility.code,
+                code=row['duty_type_code']
+            ).first()
+            if not duty_type:
+                errors.append({'line': line_number, 'field': 'duty_type_code', 'message': 'Duty type not found'})
+                continue
+
+            practitioner = PractitionerProfile.objects.filter(id=row['practitioner_id']).first()
+            if not practitioner:
+                errors.append({'line': line_number, 'field': 'practitioner_id', 'message': 'Practitioner not found'})
+                continue
+
+            station = None
+            station_code = row.get('station_code')
+            if station_code:
+                station = DepartmentStation.objects.filter(
+                    department__root_unit__code=facility.code,
+                    code=station_code
+                ).first()
+                if not station:
+                    errors.append({'line': line_number, 'field': 'station_code', 'message': 'Station not found'})
+                    continue
+
+            start_time = cls._normalize_time(row.get('start_time') or None)
+            end_time = cls._normalize_time(row.get('end_time') or None)
+            if (start_time is None) ^ (end_time is None):
+                errors.append({'line': line_number, 'field': 'start_time', 'message': 'Both start_time and end_time required'})
+                continue
+
+            if start_time and end_time and start_time == end_time:
+                errors.append({'line': line_number, 'field': 'start_time', 'message': 'start_time and end_time cannot match'})
+                continue
+
+            existing = TeamRosterEntry.objects.filter(
+                team=team,
+                date=date_value,
+                duty_type=duty_type,
+                practitioner=practitioner
+            ).first()
+            if existing:
+                conflicts.append({
+                    'line': line_number,
+                    'entry_id': str(existing.id),
+                    'message': 'Team roster entry already exists'}
+                )
+
+            resolved_rows.append({
+                'line': line_number,
+                'team': team,
+                'date': date_value,
+                'duty_type': duty_type,
+                'station': station,
+                'practitioner': practitioner,
+                'start_time': start_time,
+                'end_time': end_time,
+                'notes': row.get('notes') or ''
+            })
+
+        return {
+            'errors': errors,
+            'conflicts': conflicts,
+            'rows': resolved_rows,
+        }
+
+    @classmethod
+    def apply_team_roster_csv(cls, rows, user, conflict_strategy='skip'):
+        from django.db import transaction
+        from .models import TeamRosterEntry
+
+        created = 0
+        with transaction.atomic():
+            for row in rows:
+                existing = TeamRosterEntry.objects.filter(
+                    team=row['team'],
+                    date=row['date'],
+                    duty_type=row['duty_type'],
+                    practitioner=row['practitioner']
+                ).first()
+                if existing and conflict_strategy == 'skip':
+                    continue
+                if existing:
+                    for field, value in {
+                        'station': row['station'],
+                        'start_time': row['start_time'],
+                        'end_time': row['end_time'],
+                        'notes': row['notes'],
+                    }.items():
+                        setattr(existing, field, value)
+                    existing.save()
+                    continue
+                TeamRosterEntry.objects.create(
+                    team=row['team'],
+                    date=row['date'],
+                    duty_type=row['duty_type'],
+                    practitioner=row['practitioner'],
+                    station=row['station'],
+                    start_time=row['start_time'],
+                    end_time=row['end_time'],
+                    notes=row['notes'],
+                )
+                created += 1
+        return created
 
 
 class DutyRosterService:

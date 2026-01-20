@@ -38,15 +38,14 @@ function useOnDutyTeam(departmentId, context, options = {}) {
         unit_id: departmentId,
         context,
         role: 'admitting',
-        include_practitioner: false,
       });
       const payload = response?.data?.results || response?.results || response?.data || response;
       const results = Array.isArray(payload) ? payload : [];
       if (results.length > 0) {
         const entry = results[0];
         return {
-          id: entry.unit,
-          name: entry.unit_name,
+          id: entry.team_id,
+          name: entry.team_name,
           roster_entry: {
             id: entry.id,
             date: entry.date,

@@ -17,9 +17,19 @@ from .models import (
     UnitMemberAssignment,
     CrossCoverageSchedule,
     UnitWardAllocation,
+    DepartmentDutyType,
+    DepartmentStation,
+    DepartmentRosterPlan,
+    DepartmentRosterPattern,
+    RosterPatternSlot,
+    RosterOverride,
+    TeamRosterPlan,
+    TeamRosterEntry,
     ShiftDefinition,
     DutyRosterTemplate,
     DutyRoster,
+    DUTY_ROSTER_ROLE_CHOICES,
+    DUTY_ROSTER_CONTEXT_CHOICES,
 )
 
 MIXED_DEFAULT_UNIT_TYPES = {'facility', 'department', 'division'}
@@ -600,6 +610,180 @@ class UnitWardAllocationSerializer(serializers.ModelSerializer):
 
 
 # =============================================================================
+# Department Roster Serializers
+# =============================================================================
+
+
+class DepartmentDutyTypeListSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentDutyType
+        fields = [
+            'id', 'department', 'department_name', 'code', 'name',
+            'default_context', 'default_role', 'requires_time_range',
+            'default_context_label', 'default_role_label',
+            'display_order', 'is_active'
+        ]
+
+
+class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentDutyType
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class DepartmentStationListSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentStation
+        fields = ['id', 'department', 'department_name', 'code', 'name', 'display_order', 'is_active']
+
+
+class DepartmentStationSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentStation
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class DepartmentRosterPlanListSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentRosterPlan
+        fields = [
+            'id', 'department', 'department_name', 'name', 'cycle_length_days',
+            'effective_from', 'effective_until', 'status', 'version'
+        ]
+
+
+class DepartmentRosterPlanSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = DepartmentRosterPlan
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class DepartmentRosterPatternListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DepartmentRosterPattern
+        fields = ['id', 'plan', 'name', 'display_order', 'is_active']
+
+
+class DepartmentRosterPatternSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DepartmentRosterPattern
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class RosterPatternSlotListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RosterPatternSlot
+        fields = [
+            'id', 'pattern', 'day_offset',
+            'duty_type', 'team', 'start_time', 'end_time', 'is_active'
+        ]
+
+
+class RosterPatternSlotSerializer(serializers.ModelSerializer):
+    pattern = serializers.PrimaryKeyRelatedField(
+        queryset=DepartmentRosterPattern.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    duty_type_name = serializers.CharField(source='duty_type.name', read_only=True)
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    def validate(self, attrs):
+        plan = attrs.get('plan') or getattr(self.instance, 'plan', None)
+        pattern = attrs.get('pattern') or getattr(self.instance, 'pattern', None)
+        if plan and pattern and pattern.plan_id != plan.id:
+            raise serializers.ValidationError("Pattern does not belong to the roster plan.")
+        return attrs
+
+    class Meta:
+        model = RosterPatternSlot
+        fields = '__all__'
+        read_only_fields = ['id']
+
+
+class RosterOverrideListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RosterOverride
+        fields = [
+            'id', 'plan', 'date', 'duty_type',
+            'team', 'start_time', 'end_time', 'reason'
+        ]
+
+
+class RosterOverrideSerializer(serializers.ModelSerializer):
+    duty_type_name = serializers.CharField(source='duty_type.name', read_only=True)
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    class Meta:
+        model = RosterOverride
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class TeamRosterPlanListSerializer(serializers.ModelSerializer):
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    class Meta:
+        model = TeamRosterPlan
+        fields = [
+            'id', 'team', 'team_name', 'name', 'effective_from',
+            'effective_until', 'status', 'version'
+        ]
+
+
+class TeamRosterPlanSerializer(serializers.ModelSerializer):
+    team_name = serializers.CharField(source='team.name', read_only=True)
+
+    class Meta:
+        model = TeamRosterPlan
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class TeamRosterEntryListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TeamRosterEntry
+        fields = [
+            'id', 'team', 'date', 'duty_type',
+            'station', 'practitioner', 'start_time', 'end_time'
+        ]
+
+
+class TeamRosterEntrySerializer(serializers.ModelSerializer):
+    team_name = serializers.CharField(source='team.name', read_only=True)
+    duty_type_name = serializers.CharField(source='duty_type.name', read_only=True)
+    station_name = serializers.CharField(source='station.name', read_only=True)
+    practitioner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamRosterEntry
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_practitioner_name(self, obj):
+        try:
+            return obj.practitioner.staff.user.get_full_name()
+        except Exception:
+            return str(obj.practitioner_id)
+
+
+# =============================================================================
 # Duty Roster Serializers
 # =============================================================================
 
@@ -818,12 +1002,36 @@ class OnDutyQuerySerializer(serializers.Serializer):
     unit_id = serializers.UUIDField()
     at_datetime = serializers.DateTimeField(required=False)
     role = serializers.ChoiceField(
-        choices=DutyRosterTemplate.ROLE_CHOICES,
+        choices=DUTY_ROSTER_ROLE_CHOICES,
         required=False
     )
     context = serializers.ChoiceField(
-        choices=DutyRosterTemplate.CONTEXT_CHOICES,
+        choices=DUTY_ROSTER_CONTEXT_CHOICES,
         required=False
     )
     include_descendants = serializers.BooleanField(default=False)
-    include_practitioner = serializers.BooleanField(default=True)
+    include_team_details = serializers.BooleanField(default=False)
+
+
+class DepartmentRosterImportSerializer(serializers.Serializer):
+    """Serializer for department roster CSV import."""
+    csv = serializers.CharField()
+
+
+class TeamRosterImportSerializer(serializers.Serializer):
+    """Serializer for team roster CSV import."""
+    csv = serializers.CharField()
+
+
+class RosterImportApplySerializer(serializers.Serializer):
+    """Serializer for applying a validated roster import."""
+    rows = serializers.ListField()
+    conflict_strategy = serializers.ChoiceField(
+        choices=[('skip', 'Skip conflicts'), ('overwrite', 'Overwrite conflicts')],
+        default='skip'
+    )
+
+    def validate_rows(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Rows must be a list.")
+        return value
