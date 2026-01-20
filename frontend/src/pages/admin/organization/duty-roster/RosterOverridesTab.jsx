@@ -63,7 +63,7 @@ export function RosterOverridesTab() {
   const plans = toList(plansData);
 
   const { data: dutyTypesData } = useDepartmentDutyTypes({
-    department: selectedDepartment || undefined,
+    department: departmentFilter,
     include_inactive: 'true',
   });
   const dutyTypes = toList(dutyTypesData);

@@ -6,6 +6,8 @@ Follows the pattern of lightweight list serializers and full detail serializers.
 from rest_framework import serializers
 
 from .models import (
+    DUTY_ROSTER_ROLE_CHOICES,
+    DUTY_ROSTER_CONTEXT_CHOICES,
     UnitTypeConfig,
     LeadershipRoleConfig,
     StaffAssignmentTypeConfig,
@@ -629,11 +631,33 @@ class DepartmentDutyTypeListSerializer(serializers.ModelSerializer):
 
 class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
+    default_role_label = serializers.CharField(read_only=True)
+    default_context_label = serializers.CharField(read_only=True)
 
     class Meta:
         model = DepartmentDutyType
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'default_role_label', 'default_context_label']
+
+    def create(self, validated_data):
+        # Auto-populate labels from choices
+        role = validated_data.get('default_role', 'admitting')
+        context = validated_data.get('default_context', 'inpatient')
+        role_labels = dict(DUTY_ROSTER_ROLE_CHOICES)
+        context_labels = dict(DUTY_ROSTER_CONTEXT_CHOICES)
+        validated_data['default_role_label'] = role_labels.get(role, role)
+        validated_data['default_context_label'] = context_labels.get(context, context)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Auto-populate labels from choices if role/context changed
+        role = validated_data.get('default_role', instance.default_role)
+        context = validated_data.get('default_context', instance.default_context)
+        role_labels = dict(DUTY_ROSTER_ROLE_CHOICES)
+        context_labels = dict(DUTY_ROSTER_CONTEXT_CHOICES)
+        validated_data['default_role_label'] = role_labels.get(role, role)
+        validated_data['default_context_label'] = context_labels.get(context, context)
+        return super().update(instance, validated_data)
 
 
 class DepartmentStationListSerializer(serializers.ModelSerializer):

@@ -102,7 +102,7 @@ export function AppSidebar() {
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
       organization: ['admin'],
-      dutyRoster: ['admin'],
+      dutyRoster: ['admin', 'head_nurse'],
       auditLogs: ['admin'],
     }
   }

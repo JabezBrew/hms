@@ -79,6 +79,7 @@ const OrganizationPage = lazy(() => import('./pages/admin/organization/Organizat
 const UnitTypesPage = lazy(() => import('./pages/admin/organization/UnitTypesPage'))
 const LeadershipRolesPage = lazy(() => import('./pages/admin/organization/LeadershipRolesPage'))
 const DutyRosterPage = lazy(() => import('./pages/admin/organization/DutyRosterPage'))
+const RosterSettingsPage = lazy(() => import('./pages/admin/organization/RosterSettingsPage'))
 
 // Referral Pages
 const ReferralInbox = lazy(() => import('./components/referrals/ReferralInbox'))
@@ -731,6 +732,14 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
               <Layout>
                 <DutyRosterPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/admin/organization/roster-settings" element={
+            <RoleBasedRoute allowedRoles={['admin']}>
+              <Layout>
+                <RosterSettingsPage />
               </Layout>
             </RoleBasedRoute>
           } />

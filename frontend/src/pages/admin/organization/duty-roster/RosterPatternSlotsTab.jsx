@@ -75,7 +75,7 @@ export function RosterPatternSlotsTab() {
   const patternById = useMemo(() => new Map(patterns.map((p) => [p.id, p])), [patterns]);
 
   const { data: dutyTypesData } = useDepartmentDutyTypes({
-    department: selectedDepartment || undefined,
+    department: departmentFilter,
     include_inactive: 'true',
   });
   const dutyTypes = toList(dutyTypesData);
