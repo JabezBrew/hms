@@ -83,7 +83,7 @@ def get_or_create_active_encounter(
                 created_by=created_by,
             )
             from apps.organization.services import TeamAssignmentService
-            TeamAssignmentService.assign_initial_team(encounter=encounter, use_duty_roster=True, context='inpatient')
+            TeamAssignmentService.assign_initial_team(encounter=encounter, use_roster=True, context='inpatient')
             if active_admission.bed:
                 TeamAssignmentService.reassign_team_on_bed_assignment(
                     encounter=encounter,

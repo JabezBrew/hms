@@ -17,7 +17,7 @@ from django.contrib.auth import get_user_model
 from apps.core.models import Facility, Department
 from apps.organization.models import (
     UnitTypeConfig, LeadershipRoleConfig, StaffAssignmentTypeConfig,
-    ClinicalUnit, Clinic, ShiftDefinition
+    ClinicalUnit, Clinic
 )
 from apps.users.models import Staff, PractitionerProfile
 from apps.users.tasks import send_welcome_credentials_email
@@ -174,25 +174,6 @@ def create_facility():
     print(f"  Created: {facility.name} ({facility.code})")
 
     return facility
-
-
-def create_shift_definitions(facility):
-    """Create shift definitions for the facility."""
-    print("Creating shift definitions...")
-
-    shifts = [
-        {"code": "DAY", "name": "Day Shift", "start_time": time(7, 0), "end_time": time(15, 0), "display_order": 1},
-        {"code": "EVE", "name": "Evening Shift", "start_time": time(15, 0), "end_time": time(23, 0), "display_order": 2},
-        {"code": "NIGHT", "name": "Night Shift", "start_time": time(23, 0), "end_time": time(7, 0), "display_order": 3},
-    ]
-
-    created = {}
-    for data in shifts:
-        shift = ShiftDefinition.objects.create(facility=facility, **data)
-        created[data["code"]] = shift
-        print(f"  Created shift: {shift.name}")
-
-    return created
 
 
 def create_core_departments(facility):
@@ -543,10 +524,6 @@ def main():
 
     # Create facility
     facility = create_facility()
-    print()
-
-    # Create shift definitions
-    shifts = create_shift_definitions(facility)
     print()
 
     # Create core departments (for wards)

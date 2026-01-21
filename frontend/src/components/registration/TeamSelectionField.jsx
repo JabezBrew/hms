@@ -21,27 +21,26 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { dutyRosterApi, clinicalUnitsApi } from '@/lib/api/organization';
+import { rosterEntriesApi, clinicalUnitsApi } from '@/lib/api/organization';
 import { cn } from '@/lib/utils';
 
 /**
- * Fetch on-duty team for a department.
+ * Fetch on-duty team for a department using the new roster system.
  */
 function useOnDutyTeam(departmentId, context, options = {}) {
   return useQuery({
-    queryKey: ['duty-roster', 'on-duty-team', departmentId, context],
+    queryKey: ['roster', 'on-duty-team', departmentId, context],
     queryFn: async () => {
       if (!departmentId) {
         return null;
       }
-      const response = await dutyRosterApi.onDuty({
-        unit_id: departmentId,
-        context,
-        role: 'admitting',
-      });
-      const payload = response?.data?.results || response?.results || response?.data || response;
-      const results = Array.isArray(payload) ? payload : [];
+      // Use the new on-duty endpoint for the department
+      const response = await rosterEntriesApi.onDutyDepartment(departmentId);
+      // apiClient.get returns results array directly (unwrapped)
+      const results = Array.isArray(response) ? response : (response?.results || []);
+
       if (results.length > 0) {
+        // Return the first on-duty entry (usually the primary duty type)
         const entry = results[0];
         return {
           id: entry.team_id,
@@ -257,13 +256,11 @@ export function TeamSelectionField({
         </Select>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        {onDutyTeam
-          ? 'Showing on-duty team from duty roster. Select a different team if needed.'
-          : hasTeams
-            ? 'No duty roster entry found. Please select a team manually.'
-            : 'No eligible teams found for this department.'}
-      </p>
+      {!onDutyTeam && hasTeams && (
+        <p className="text-xs text-muted-foreground">
+          No duty roster entry found. Please select a team manually.
+        </p>
+      )}
     </div>
   );
 }

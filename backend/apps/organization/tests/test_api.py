@@ -50,9 +50,10 @@ def staff_user(db, django_user_model):
 
 
 @pytest.fixture
-def authenticated_client(api_client, admin_user):
+def authenticated_client(api_client, admin_user, default_facility):
     """Create an authenticated API client."""
     api_client.force_authenticate(user=admin_user)
+    api_client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)
     return api_client
 
 
@@ -82,10 +83,10 @@ def assignment_types(seed_organization_data):
 
 
 @pytest.fixture
-def facility(unit_types):
+def facility(unit_types, default_facility):
     """Create a facility."""
     return ClinicalUnit.objects.create(
-        code='MAIN',
+        code=default_facility.code,
         name='Main Hospital',
         unit_type=unit_types['facility']
     )
@@ -235,7 +236,7 @@ class TestClinicalUnitAPI:
         response = authenticated_client.get('/api/organization/units/?roots_only=true')
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data['results']) == 1
-        assert response.data['results'][0]['code'] == 'MAIN'
+        assert response.data['results'][0]['code'] == facility.code
 
     def test_list_units_by_facility(self, authenticated_client, facility, department, team):
         """Test filtering units by facility."""
@@ -244,15 +245,15 @@ class TestClinicalUnitAPI:
         # All 3 units belong to this facility
         assert len(response.data['results']) == 3
 
-    def test_create_clinical_unit(self, authenticated_client, unit_types):
+    def test_create_clinical_unit(self, authenticated_client, unit_types, default_facility):
         """Test creating a clinical unit."""
         response = authenticated_client.post('/api/organization/units/', {
-            'code': 'NEW',
+            'code': default_facility.code,
             'name': 'New Facility',
             'unit_type': unit_types['facility'].id,
         })
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data['code'] == 'NEW'
+        assert response.data['code'] == default_facility.code
         assert response.data['name'] == 'New Facility'
 
     def test_create_unit_under_parent(self, authenticated_client, unit_types, facility):
@@ -315,7 +316,7 @@ class TestClinicalUnitAPI:
         response = authenticated_client.get('/api/organization/units/tree/')
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1  # One root
-        assert response.data[0]['code'] == 'MAIN'
+        assert response.data[0]['code'] == facility.code
         assert len(response.data[0]['children']) == 1  # Department
         assert len(response.data[0]['children'][0]['children']) == 1  # Team
         assert response['ETag']
@@ -359,7 +360,7 @@ class TestClinicalUnitAPI:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2  # facility and department
         codes = [a['code'] for a in response.data]
-        assert 'MAIN' in codes
+        assert facility.code in codes
         assert 'SURG' in codes
 
     def test_descendants_endpoint(self, authenticated_client, facility, department, team):
@@ -573,16 +574,13 @@ class TestClinicalUnitStaffEndpoints:
         assert response.data[str(team.id)] == 2
         assert str(facility.id) not in response.data
 
-    def test_members_counts_include_descendants(self, authenticated_client, unit_types, assignment_types, django_user_model):
+    def test_members_counts_include_descendants(self, authenticated_client, facility, unit_types, assignment_types, django_user_model):
         from datetime import date
         from apps.users.models import Staff
 
-        ops_facility = ClinicalUnit.objects.create(
-            code='OPS',
-            name='Ops Facility',
-            unit_type=unit_types['facility'],
-            staffing_mode='mixed'
-        )
+        ops_facility = facility
+        ops_facility.staffing_mode = 'mixed'
+        ops_facility.save(update_fields=['staffing_mode'])
         ops_department = ClinicalUnit.objects.create(
             code='ADM',
             name='Administration',

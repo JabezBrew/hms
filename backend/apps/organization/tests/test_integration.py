@@ -34,9 +34,11 @@ def clear_cache():
 
 
 @pytest.fixture
-def api_client():
+def api_client(default_facility):
     """Create an API client."""
-    return APIClient()
+    client = APIClient()
+    client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)
+    return client
 
 
 @pytest.fixture
@@ -65,10 +67,10 @@ def assignment_types(seed_organization_data):
 
 
 @pytest.fixture
-def hospital_structure(unit_types):
+def hospital_structure(unit_types, default_facility):
     """Create a complete hospital structure for integration testing."""
     facility = ClinicalUnit.objects.create(
-        code='MAIN',
+        code=default_facility.code,
         name='Main Hospital',
         unit_type=unit_types['facility']
     )
@@ -188,13 +190,13 @@ def doctor_practitioner(db, doctor_user):
 class TestOrganizationalHierarchyWorkflow:
     """Tests for complete organizational hierarchy workflows."""
 
-    def test_complete_hospital_setup_workflow(self, api_client, admin_user, unit_types):
+    def test_complete_hospital_setup_workflow(self, api_client, admin_user, unit_types, default_facility):
         """Test the complete workflow of setting up a hospital organization."""
         api_client.force_authenticate(user=admin_user)
 
         # Step 1: Create facility
         response = api_client.post('/api/organization/units/', {
-            'code': 'HOSP1',
+            'code': default_facility.code,
             'name': 'City General Hospital',
             'unit_type': unit_types['facility'].id,
             'description': 'Main city hospital',

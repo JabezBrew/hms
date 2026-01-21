@@ -17,16 +17,8 @@ from .views import (
     CrossCoverageScheduleViewSet,
     UnitWardAllocationViewSet,
     DepartmentDutyTypeViewSet,
-    DepartmentStationViewSet,
-    DepartmentRosterPlanViewSet,
-    DepartmentRosterPatternViewSet,
-    RosterPatternSlotViewSet,
-    RosterOverrideViewSet,
-    TeamRosterPlanViewSet,
-    TeamRosterEntryViewSet,
-    ShiftDefinitionViewSet,
-    DutyRosterTemplateViewSet,
-    DutyRosterViewSet,
+    RotationRuleViewSet,
+    RosterEntryViewSet,
 )
 
 router = DefaultRouter()
@@ -48,18 +40,6 @@ router.register(r'ward-allocations', UnitWardAllocationViewSet, basename='ward-a
 
 # Department roster endpoints
 router.register(r'department-duty-types', DepartmentDutyTypeViewSet, basename='department-duty-type')
-router.register(r'department-stations', DepartmentStationViewSet, basename='department-station')
-router.register(r'department-roster-plans', DepartmentRosterPlanViewSet, basename='department-roster-plan')
-router.register(r'department-roster-patterns', DepartmentRosterPatternViewSet, basename='department-roster-pattern')
-router.register(r'department-roster-slots', RosterPatternSlotViewSet, basename='department-roster-slot')
-router.register(r'department-roster-overrides', RosterOverrideViewSet, basename='department-roster-override')
-router.register(r'team-roster-plans', TeamRosterPlanViewSet, basename='team-roster-plan')
-router.register(r'team-roster-entries', TeamRosterEntryViewSet, basename='team-roster-entry')
-
-# Duty roster endpoints
-router.register(r'shift-definitions', ShiftDefinitionViewSet, basename='shift-definition')
-router.register(r'duty-roster-templates', DutyRosterTemplateViewSet, basename='duty-roster-template')
-router.register(r'duty-roster', DutyRosterViewSet, basename='duty-roster')
 
 unit_staff_counts = ClinicalUnitViewSet.as_view({'get': 'staff_counts'})
 unit_member_counts = ClinicalUnitViewSet.as_view({'get': 'members_counts'})
@@ -67,5 +47,70 @@ unit_member_counts = ClinicalUnitViewSet.as_view({'get': 'members_counts'})
 urlpatterns = [
     path('units/<uuid:pk>/staff/counts/', unit_staff_counts, name='clinical-unit-staff-counts'),
     path('units/<uuid:pk>/members/counts/', unit_member_counts, name='clinical-unit-members-counts'),
+    path(
+        'departments/<uuid:department_id>/rotation-rules/',
+        RotationRuleViewSet.as_view({'get': 'list', 'post': 'create'}),
+        name='department-rotation-rules'
+    ),
+    path(
+        'rotation-rules/<uuid:pk>/',
+        RotationRuleViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'}),
+        name='rotation-rule-detail'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/',
+        RosterEntryViewSet.as_view({'get': 'list', 'post': 'create'}),
+        name='department-roster'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/generate/',
+        RosterEntryViewSet.as_view({'post': 'generate'}),
+        name='department-roster-generate'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/bulk/',
+        RosterEntryViewSet.as_view({'post': 'bulk'}),
+        name='department-roster-bulk'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/import/',
+        RosterEntryViewSet.as_view({'post': 'import_csv'}),
+        name='department-roster-import'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/publish/',
+        RosterEntryViewSet.as_view({'post': 'publish'}),
+        name='department-roster-publish'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/clear/',
+        RosterEntryViewSet.as_view({'post': 'clear'}),
+        name='department-roster-clear'
+    ),
+    path(
+        'departments/<uuid:department_id>/roster/print/',
+        RosterEntryViewSet.as_view({'get': 'print_roster'}),
+        name='department-roster-print'
+    ),
+    path(
+        'roster/<uuid:pk>/',
+        RosterEntryViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'}),
+        name='roster-entry-detail'
+    ),
+    path(
+        'roster/<uuid:pk>/override/',
+        RosterEntryViewSet.as_view({'post': 'override'}),
+        name='roster-entry-override'
+    ),
+    path(
+        'departments/<uuid:department_id>/on-duty/',
+        RosterEntryViewSet.as_view({'get': 'on_duty_department'}),
+        name='department-on-duty'
+    ),
+    path(
+        'on-duty/',
+        RosterEntryViewSet.as_view({'get': 'on_duty'}),
+        name='on-duty'
+    ),
     path('', include(router.urls)),
 ]

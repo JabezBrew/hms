@@ -79,7 +79,8 @@ const OrganizationPage = lazy(() => import('./pages/admin/organization/Organizat
 const UnitTypesPage = lazy(() => import('./pages/admin/organization/UnitTypesPage'))
 const LeadershipRolesPage = lazy(() => import('./pages/admin/organization/LeadershipRolesPage'))
 const DutyRosterPage = lazy(() => import('./pages/admin/organization/DutyRosterPage'))
-const RosterSettingsPage = lazy(() => import('./pages/admin/organization/RosterSettingsPage'))
+const RosterSetupPage = lazy(() => import('./pages/admin/organization/RosterSetupPage'))
+const RosterBuilderPage = lazy(() => import('./pages/admin/organization/RosterBuilderPage'))
 
 // Referral Pages
 const ReferralInbox = lazy(() => import('./components/referrals/ReferralInbox'))
@@ -736,10 +737,18 @@ function AppContent() {
             </RoleBasedRoute>
           } />
 
-          <Route path="/admin/organization/roster-settings" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
+          <Route path="/admin/organization/roster-setup" element={
+            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
               <Layout>
-                <RosterSettingsPage />
+                <RosterSetupPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          <Route path="/admin/organization/roster-builder" element={
+            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
+              <Layout>
+                <RosterBuilderPage />
               </Layout>
             </RoleBasedRoute>
           } />

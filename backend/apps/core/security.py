@@ -96,6 +96,17 @@ def resolve_object_facility(obj):
             return Facility.get_by_code(root.code)
         return None
 
+    # Special handling for DepartmentDutyType, RotationRule, RosterEntry - department is a ClinicalUnit
+    from apps.organization.models import DepartmentDutyType, RotationRule, RosterEntry
+    if isinstance(obj, (DepartmentDutyType, RotationRule, RosterEntry)):
+        department = getattr(obj, 'department', None)
+        if department and isinstance(department, ClinicalUnit):
+            root = department.root_unit
+            if root:
+                from apps.core.models import Facility
+                return Facility.get_by_code(root.code)
+        return None
+
     direct = getattr(obj, 'facility', None)
     if direct is not None:
         return direct

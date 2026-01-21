@@ -993,11 +993,10 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 if to_bed.ward.department and to_bed.ward.department.facility_id != facility.id:
                     raise PermissionDenied("Destination bed does not belong to the active facility.")
 
-                # Try to get admitting practitioner from duty roster for destination ward
+                # Resolve primary team from ward allocation when available
                 dest_practitioner = from_admission.admitting_doctor
                 primary_team = from_admission.primary_team
                 try:
-                    from apps.organization.services import DutyRosterService
                     from apps.organization.models import UnitWardAllocation
 
                     unit_allocation = UnitWardAllocation.objects.filter(
@@ -1005,14 +1004,9 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     ).select_related('unit').first()
 
                     if unit_allocation:
-                        roster_practitioner = DutyRosterService.get_admitting_practitioner(
-                            unit=unit_allocation.unit
-                        )
-                        if roster_practitioner:
-                            dest_practitioner = roster_practitioner
                         primary_team = unit_allocation.unit
                 except Exception:
-                    pass  # Fall back to original practitioner
+                    pass
 
                 # Create a new admission for the destination bed
                 to_admission = Admission.objects.create(

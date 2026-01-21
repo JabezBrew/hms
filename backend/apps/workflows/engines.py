@@ -971,12 +971,11 @@ class AdmissionEngine(BaseWorkflowEngine):
                 logger.warning(f"No practitioner profile found for user {workflow.user.id}")
                 practitioner = None
 
-        # Try to get admitting practitioner from duty roster based on ward
+        # Resolve primary team from ward allocation when available
         admitting_practitioner = practitioner
         primary_team = None
         if admission_data.ward_id:
             try:
-                from apps.organization.services import DutyRosterService
                 from apps.organization.models import UnitWardAllocation
 
                 ward = Bed.objects.get(id=admission_data.bed_id).ward if admission_data.bed_id else None
@@ -986,15 +985,9 @@ class AdmissionEngine(BaseWorkflowEngine):
                     ).select_related('unit').first()
 
                     if unit_allocation:
-                        roster_practitioner = DutyRosterService.get_admitting_practitioner(
-                            unit=unit_allocation.unit
-                        )
-                        if roster_practitioner:
-                            admitting_practitioner = roster_practitioner
-                            logger.info(f"Assigned admission to on-duty practitioner {roster_practitioner}")
                         primary_team = unit_allocation.unit
             except Exception as e:
-                logger.warning(f"Could not get duty roster practitioner: {e}")
+                logger.warning(f"Could not resolve primary team: {e}")
 
         # Create Admission record
         admission = Admission.objects.create(
@@ -1046,7 +1039,7 @@ class AdmissionEngine(BaseWorkflowEngine):
         TeamAssignmentService.assign_initial_team(
             encounter=encounter,
             team=primary_team,
-            use_duty_roster=True,
+            use_roster=True,
             context='inpatient'
         )
         if admission.bed:

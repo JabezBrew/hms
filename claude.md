@@ -109,6 +109,13 @@ class MyViewSet(viewsets.ModelViewSet):
 **Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod, date-fns, lucide-react, sonner
 **Backend:** Django 4+, DRF, PostgreSQL, Celery, Redis, JWT
 
+### shadcn/ui Components
+If a UI component doesn't exist in `frontend/src/components/ui/`, install it:
+```bash
+cd frontend && npx shadcn@latest add <component-name> -y
+```
+Example: `npx shadcn@latest add accordion -y`
+
 ---
 
 ## Chronicle Design System

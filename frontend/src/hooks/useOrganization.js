@@ -26,6 +26,8 @@ import {
   teamRosterEntriesApi,
   clinicsApi,
   clinicSchedulesApi,
+  rotationRulesApi,
+  rosterEntriesApi,
 } from '@/lib/api/organization';
 import { usePaginatedQuery } from './usePaginatedQuery';
 
@@ -135,6 +137,18 @@ export const organizationKeys = {
   // Clinic Schedules
   clinicSchedules: () => [...organizationKeys.all, 'clinic-schedules'],
   clinicSchedulesList: (params) => [...organizationKeys.clinicSchedules(), 'list', params],
+
+  // Rotation Rules (simplified roster system)
+  rotationRules: () => [...organizationKeys.all, 'rotation-rules'],
+  rotationRulesList: (departmentId, params) => [...organizationKeys.rotationRules(), departmentId, 'list', params],
+  rotationRule: (id) => [...organizationKeys.rotationRules(), id],
+
+  // Roster Entries (simplified roster system)
+  rosterEntries: () => [...organizationKeys.all, 'roster-entries'],
+  rosterEntriesList: (departmentId, params) => [...organizationKeys.rosterEntries(), departmentId, 'list', params],
+  rosterEntry: (id) => [...organizationKeys.rosterEntries(), id],
+  rosterOnDutyDepartment: (departmentId, params) => [...organizationKeys.rosterEntries(), departmentId, 'on-duty', params],
+  rosterOnDutyAll: (params) => [...organizationKeys.rosterEntries(), 'on-duty-all', params],
 };
 
 function getTreeNodes(treeQueryData) {
@@ -1487,6 +1501,203 @@ export function useClinicSchedules(params = {}, options = {}) {
     queryKey: organizationKeys.clinicSchedulesList(params),
     queryFn: () => clinicSchedulesApi.list(params),
     staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+// =============================================================================
+// Rotation Rules Hooks (Simplified Roster System)
+// =============================================================================
+
+export function useRotationRules(departmentId, params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rotationRulesList(departmentId, params),
+    queryFn: () => rotationRulesApi.list(departmentId, params),
+    enabled: !!departmentId,
+    staleTime: 5 * 60 * 1000,
+    ...options,
+  });
+}
+
+export function useRotationRule(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rotationRule(id),
+    queryFn: () => rotationRulesApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useCreateRotationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rotationRulesApi.create(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rotationRulesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useUpdateRotationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => rotationRulesApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rotationRules() });
+    },
+  });
+}
+
+export function useDeleteRotationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => rotationRulesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rotationRules() });
+    },
+  });
+}
+
+// =============================================================================
+// Roster Entries Hooks (Simplified Roster System)
+// =============================================================================
+
+export function useRosterEntries(departmentId, params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterEntriesList(departmentId, params),
+    queryFn: () => rosterEntriesApi.list(departmentId, params),
+    enabled: !!departmentId,
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useRosterEntry(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterEntry(id),
+    queryFn: () => rosterEntriesApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useCreateRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.create(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useUpdateRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => rosterEntriesApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntries() });
+    },
+  });
+}
+
+export function useDeleteRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => rosterEntriesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntries() });
+    },
+  });
+}
+
+export function useGenerateRosterEntries() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.generate(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useBulkRosterEntries() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.bulk(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useImportRosterCsv() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.importCsv(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function usePublishRoster() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.publish(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useClearRoster() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => rosterEntriesApi.clear(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntriesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useOverrideRosterEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => rosterEntriesApi.override(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.rosterEntries() });
+    },
+  });
+}
+
+export function useRosterOnDutyDepartment(departmentId, params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterOnDutyDepartment(departmentId, params),
+    queryFn: () => rosterEntriesApi.onDutyDepartment(departmentId, params),
+    enabled: !!departmentId,
+    staleTime: 60 * 1000,
+    ...options,
+  });
+}
+
+export function useRosterOnDutyAll(params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.rosterOnDutyAll(params),
+    queryFn: () => rosterEntriesApi.onDutyAll(params),
+    staleTime: 60 * 1000,
     ...options,
   });
 }

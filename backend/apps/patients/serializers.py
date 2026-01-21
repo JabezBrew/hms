@@ -609,7 +609,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_duty_roster=True,
+                        use_roster=True,
                         context='outpatient',
                         at_datetime=encounter.start_time,
                     )
@@ -639,7 +639,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_duty_roster=True,
+                        use_roster=True,
                         context='emergency',
                         at_datetime=encounter.start_time,
                     )
@@ -716,7 +716,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_duty_roster=True,
+                        use_roster=True,
                         context='inpatient',
                         at_datetime=encounter.start_time,
                     )

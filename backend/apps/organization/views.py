@@ -4,13 +4,16 @@ DRF ViewSets for the organization app.
 Provides CRUD operations and specialized endpoints for organizational hierarchy management.
 """
 import ast
+import calendar
 import hashlib
+import io
 import json
 import re
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.core.cache import cache
-from django.http import HttpResponseNotModified
+from django.http import HttpResponse, HttpResponseNotModified
 from django.db.models import Q, Count
 from django.utils.cache import patch_vary_headers
 from django.utils import timezone
@@ -18,7 +21,7 @@ from django.utils.http import http_date, parse_http_date
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.core.pagination import StandardResultsSetPagination
@@ -40,16 +43,8 @@ from .models import (
     CrossCoverageSchedule,
     UnitWardAllocation,
     DepartmentDutyType,
-    DepartmentStation,
-    DepartmentRosterPlan,
-    DepartmentRosterPattern,
-    RosterPatternSlot,
-    RosterOverride,
-    TeamRosterPlan,
-    TeamRosterEntry,
-    ShiftDefinition,
-    DutyRosterTemplate,
-    DutyRoster,
+    RotationRule,
+    RosterEntry,
 )
 from .serializers import (
     UnitTypeConfigListSerializer,
@@ -77,32 +72,16 @@ from .serializers import (
     UnitWardAllocationSerializer,
     DepartmentDutyTypeListSerializer,
     DepartmentDutyTypeSerializer,
-    DepartmentStationListSerializer,
-    DepartmentStationSerializer,
-    DepartmentRosterPlanListSerializer,
-    DepartmentRosterPlanSerializer,
-    DepartmentRosterPatternListSerializer,
-    DepartmentRosterPatternSerializer,
-    RosterPatternSlotListSerializer,
-    RosterPatternSlotSerializer,
-    RosterOverrideListSerializer,
+    RotationRuleListSerializer,
+    RotationRuleSerializer,
+    RosterEntryListSerializer,
+    RosterEntrySerializer,
+    RosterGenerateSerializer,
+    RosterBulkSerializer,
+    RosterPublishSerializer,
     RosterOverrideSerializer,
-    TeamRosterPlanListSerializer,
-    TeamRosterPlanSerializer,
-    TeamRosterEntryListSerializer,
-    TeamRosterEntrySerializer,
-    ShiftDefinitionListSerializer,
-    ShiftDefinitionSerializer,
-    DutyRosterTemplateListSerializer,
-    DutyRosterTemplateSerializer,
-    DutyRosterListSerializer,
-    DutyRosterSerializer,
-    GenerateRosterSerializer,
-    SwapDutySerializer,
+    RosterImportSerializer,
     OnDutyQuerySerializer,
-    DepartmentRosterImportSerializer,
-    TeamRosterImportSerializer,
-    RosterImportApplySerializer,
 )
 from apps.core.cache_utils import facility_cache_key
 from .tree_cache import ORG_TREE_CACHE_TTL, get_org_tree_payload
@@ -271,7 +250,7 @@ class UnitTypeConfigViewSet(viewsets.ModelViewSet):
     (e.g., facility, department, team) and their capabilities.
     """
     queryset = UnitTypeConfig.objects.all()
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -299,7 +278,7 @@ class LeadershipRoleConfigViewSet(viewsets.ModelViewSet):
     and their associated permissions.
     """
     queryset = LeadershipRoleConfig.objects.all()
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -332,7 +311,7 @@ class StaffAssignmentTypeConfigViewSet(viewsets.ModelViewSet):
     """
     queryset = StaffAssignmentTypeConfig.objects.all()
     serializer_class = StaffAssignmentTypeConfigSerializer
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
@@ -1105,6 +1084,9 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
         queryset = queryset.filter(covered_unit__root_unit__code=facility.code)
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
+        if self.request.query_params.get('current') == 'true':
+            now = timezone.now()
+            queryset = queryset.filter(start_datetime__lte=now, end_datetime__gte=now)
         return queryset.order_by('-start_datetime')
 
     def perform_create(self, serializer):
@@ -1236,75 +1218,26 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class DepartmentStationViewSet(viewsets.ModelViewSet):
-    queryset = DepartmentStation.objects.all()
+class RotationRuleViewSet(viewsets.ModelViewSet):
+    queryset = RotationRule.objects.all()
     permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
-    filterset_fields = ['department', 'is_active']
+    filterset_fields = ['department', 'duty_type', 'is_active']
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return DepartmentStationListSerializer
-        return DepartmentStationSerializer
+            return RotationRuleListSerializer
+        return RotationRuleSerializer
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
         if not facility:
-            return DepartmentStation.objects.none()
-        queryset = super().get_queryset().select_related('department', 'department__unit_type')
+            return RotationRule.objects.none()
+        queryset = super().get_queryset().select_related('department', 'duty_type')
         queryset = queryset.filter(department__root_unit__code=facility.code)
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
-        return queryset.order_by('display_order', 'name')
-
-    def perform_create(self, serializer):
-        facility = get_user_facility(self.request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        department = serializer.validated_data.get('department')
-        if department and department.root_unit and department.root_unit.code != facility.code:
-            raise PermissionDenied("Department does not belong to the active facility.")
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentStation',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Created department station.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentStation',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Updated department station.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentStation',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Deleted department station.'
-        )
-        instance.delete()
-
-
-class DepartmentRosterPlanViewSet(viewsets.ModelViewSet):
-    queryset = DepartmentRosterPlan.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['department', 'status']
+        return queryset.order_by('name')
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -1314,19 +1247,14 @@ class DepartmentRosterPlanViewSet(viewsets.ModelViewSet):
         if department and department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
         instance = serializer.save(created_by=self.request.user, updated_by=self.request.user)
-        DepartmentRosterPattern.objects.get_or_create(
-            plan=instance,
-            name='Default',
-            defaults={'display_order': 0, 'is_active': True}
-        )
         AuditService.log(
             request=self.request,
             action=AuditAction.CREATE,
             category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPlan',
+            resource_type='RotationRule',
             resource_id=instance.id,
             resource_name=instance.name,
-            description='Created department roster plan.'
+            description='Created rotation rule.'
         )
 
     def perform_update(self, serializer):
@@ -1335,10 +1263,10 @@ class DepartmentRosterPlanViewSet(viewsets.ModelViewSet):
             request=self.request,
             action=AuditAction.UPDATE,
             category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPlan',
+            resource_type='RotationRule',
             resource_id=instance.id,
             resource_name=instance.name,
-            description='Updated department roster plan.'
+            description='Updated rotation rule.'
         )
 
     def perform_destroy(self, instance):
@@ -1346,492 +1274,563 @@ class DepartmentRosterPlanViewSet(viewsets.ModelViewSet):
             request=self.request,
             action=AuditAction.DELETE,
             category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPlan',
+            resource_type='RotationRule',
             resource_id=instance.id,
             resource_name=instance.name,
-            description='Deleted department roster plan.'
+            description='Deleted rotation rule.'
         )
         instance.delete()
 
-    @action(detail=False, methods=['post'], url_path='import/preview')
-    def import_preview(self, request):
-        serializer = DepartmentRosterImportSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        facility = get_user_facility(request)
+
+class RosterEntryViewSet(viewsets.ModelViewSet):
+    queryset = RosterEntry.objects.all()
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['department', 'duty_type', 'status']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'on_duty', 'on_duty_department', 'print_roster']:
+            return [IsAuthenticated(), FacilityScopedPermission()]
+        return [IsAuthenticated(), IsAdmin(), FacilityScopedPermission()]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return RosterEntryListSerializer
+        if self.action == 'generate':
+            return RosterGenerateSerializer
+        if self.action == 'bulk':
+            return RosterBulkSerializer
+        if self.action == 'publish':
+            return RosterPublishSerializer
+        if self.action == 'override':
+            return RosterOverrideSerializer
+        if self.action == 'import_csv':
+            return RosterImportSerializer
+        if self.action in ['on_duty', 'on_duty_department']:
+            return OnDutyQuerySerializer
+        return RosterEntrySerializer
+
+    def _get_department(self):
+        department_id = self.kwargs.get('department_id') or self.request.query_params.get('department')
+        if not department_id:
+            return None
+        return ClinicalUnit.objects.filter(id=department_id, unit_type__code='department').first()
+
+    def _require_department(self):
+        department = self._get_department()
+        if not department:
+            raise PermissionDenied("Department context is required.")
+        facility = get_user_facility(self.request)
+        if department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+        return department
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
         if not facility:
-            raise PermissionDenied("Facility context is required.")
+            return RosterEntry.objects.none()
+        queryset = super().get_queryset().select_related('department', 'duty_type', 'team')
+        queryset = queryset.filter(department__root_unit__code=facility.code)
+        department = self._get_department()
+        if department:
+            queryset = queryset.filter(department=department)
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(date__lte=date_to)
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset.order_by('date', 'duty_type__display_order')
+
+    def perform_create(self, serializer):
+        department = self._require_department()
+        facility = get_user_facility(self.request)
+        duty_type = serializer.validated_data.get('duty_type')
+        team = serializer.validated_data.get('team')
+        entry_date = serializer.validated_data.get('date')
+
+        if duty_type and duty_type.department_id != department.id:
+            raise ValidationError('Duty type must belong to the selected department.')
+        if team:
+            if team.root_unit and team.root_unit.code != facility.code:
+                raise PermissionDenied("Team does not belong to the active facility.")
+            if not team.is_descendant_of(department):
+                raise ValidationError('Team must belong to the selected department.')
+
+        if duty_type and duty_type.is_24_hour and team and entry_date:
+            adjacent = RosterEntry.objects.filter(
+                department=department,
+                duty_type=duty_type,
+                team=team,
+                date__in=[entry_date - timedelta(days=1), entry_date + timedelta(days=1)]
+            )
+            if adjacent.exists():
+                raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
+
+        instance = serializer.save(
+            department=department,
+            source=serializer.validated_data.get('source') or 'manual',
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+        AuditService.log(
+            request=self.request,
+            action=AuditAction.CREATE,
+            category=AuditCategory.ADMIN,
+            resource_type='RosterEntry',
+            resource_id=instance.id,
+            resource_name=str(instance.date),
+            description='Created roster entry.'
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save(updated_by=self.request.user)
+        AuditService.log(
+            request=self.request,
+            action=AuditAction.UPDATE,
+            category=AuditCategory.ADMIN,
+            resource_type='RosterEntry',
+            resource_id=instance.id,
+            resource_name=str(instance.date),
+            description='Updated roster entry.'
+        )
+
+    def perform_destroy(self, instance):
+        AuditService.log(
+            request=self.request,
+            action=AuditAction.DELETE,
+            category=AuditCategory.ADMIN,
+            resource_type='RosterEntry',
+            resource_id=instance.id,
+            resource_name=str(instance.date),
+            description='Deleted roster entry.'
+        )
+        instance.delete()
+
+    def _resolve_period(self, data):
+        period = data.get('period')
+        if period:
+            try:
+                start = datetime.strptime(period, '%Y-%m').date()
+            except ValueError as exc:
+                raise ValidationError('Period must be in YYYY-MM format.') from exc
+            last_day = calendar.monthrange(start.year, start.month)[1]
+            end = start.replace(day=last_day)
+            return start, end
+        return data.get('date_from'), data.get('date_to')
+
+    def generate(self, request, department_id=None):
+        serializer = RosterGenerateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+        date_from, date_to = self._resolve_period(serializer.validated_data)
+        if not date_from or not date_to:
+            raise ValidationError('date_from and date_to are required.')
+
+        from .services import RosterGenerationService
+
+        try:
+            entries = RosterGenerationService.generate_roster(
+                department=department,
+                date_from=date_from,
+                date_to=date_to,
+                created_by=request.user,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        return Response({'entries_created': len(entries)})
+
+    def bulk(self, request, department_id=None):
+        serializer = RosterBulkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+        facility = get_user_facility(request)
+
+        entries_data = serializer.validated_data['entries']
+        duty_type_ids = {entry['duty_type'] for entry in entries_data}
+        team_ids = {entry['team'] for entry in entries_data}
+
+        duty_types = {
+            str(duty_type.id): duty_type
+            for duty_type in DepartmentDutyType.objects.filter(
+                id__in=duty_type_ids,
+                department=department
+            )
+        }
+        teams = {
+            str(team.id): team
+            for team in ClinicalUnit.objects.filter(
+                id__in=team_ids,
+                root_unit__code=facility.code
+            )
+        }
+
+        if len(duty_types) != len(duty_type_ids):
+            raise ValidationError('One or more duty types are invalid for this department.')
+        if len(teams) != len(team_ids):
+            raise ValidationError('One or more teams are invalid for this facility.')
+
+        dates = [entry['date'] for entry in entries_data]
+        existing = RosterEntry.objects.filter(
+            department=department,
+            date__in=dates,
+            duty_type_id__in=duty_type_ids
+        ).values_list('date', 'duty_type_id')
+        existing_keys = set(existing)
+
+        date_from = min(dates)
+        date_to = max(dates)
+        adjacent_entries = RosterEntry.objects.filter(
+            department=department,
+            date__gte=date_from - timedelta(days=1),
+            date__lte=date_to + timedelta(days=1)
+        )
+        entries_by_team_date = {
+            (entry.team_id, entry.duty_type_id, entry.date)
+            for entry in adjacent_entries
+            if entry.team_id
+        }
+
+        to_create = []
+        for entry in entries_data:
+            duty_type = duty_types[str(entry['duty_type'])]
+            team = teams[str(entry['team'])]
+            if not team.is_descendant_of(department):
+                raise ValidationError('Team must belong to the selected department.')
+            if (entry['date'], duty_type.id) in existing_keys:
+                raise ValidationError('Roster entry already exists for provided date and duty type.')
+
+            back_to_back_error = None
+            if duty_type.is_24_hour:
+                back_to_back_error = (
+                    (team.id, duty_type.id, entry['date'] - timedelta(days=1)) in entries_by_team_date or
+                    (team.id, duty_type.id, entry['date'] + timedelta(days=1)) in entries_by_team_date
+                )
+                if back_to_back_error:
+                    raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
+
+            to_create.append(RosterEntry(
+                department=department,
+                duty_type=duty_type,
+                date=entry['date'],
+                team=team,
+                start_time=entry.get('start_time'),
+                end_time=entry.get('end_time'),
+                source=entry.get('source') or 'manual',
+                status=entry.get('status') or 'draft',
+                created_by=request.user,
+                updated_by=request.user,
+            ))
+
+        if to_create:
+            RosterEntry.objects.bulk_create(to_create)
+        return Response({'created': len(to_create)})
+
+    def import_csv(self, request, department_id=None):
+        serializer = RosterImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+        facility = get_user_facility(request)
+        conflict_strategy = request.data.get('conflict_strategy', 'skip')
+
         from .services import RosterImportService
-        results = RosterImportService.validate_department_roster_csv(
+
+        results = RosterImportService.validate_roster_csv(
             serializer.validated_data['csv'],
+            department,
             facility
         )
-        return Response({
-            'errors': results['errors'],
-            'conflicts': results['conflicts'],
-            'rows': [
-                {
-                    'line': row['line'],
-                    'plan_id': str(row['plan'].id),
-                    'pattern_name': row['pattern_name'],
-                    'day_offset': row['day_offset'],
-                    'duty_type_id': str(row['duty_type'].id),
-                    'team_id': str(row['team'].id),
-                    'context_override': row['context_override'],
-                    'role_override': row['role_override'],
-                    'start_time': row['start_time'].isoformat() if row['start_time'] else None,
-                    'end_time': row['end_time'].isoformat() if row['end_time'] else None,
-                }
-                for row in results['rows']
-            ],
-        })
+        if results['errors']:
+            return Response(results, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'], url_path='import/apply')
-    def import_apply(self, request):
-        serializer = RosterImportApplySerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        from .services import RosterImportService
-        conflict_strategy = serializer.validated_data.get('conflict_strategy', 'skip')
-        rows = []
-        from .models import DepartmentRosterPlan, DepartmentDutyType, ClinicalUnit
-        for row in serializer.validated_data['rows']:
-            row = _coerce_import_row(row)
-            if not row:
-                continue
-            plan = DepartmentRosterPlan.objects.filter(id=row.get('plan_id')).first()
-            duty_type = DepartmentDutyType.objects.filter(id=row.get('duty_type_id')).first()
-            team = ClinicalUnit.objects.filter(id=row.get('team_id')).first()
-            if not plan or not duty_type or not team:
-                continue
-            if plan.department.root_unit_id != team.root_unit_id:
-                continue
-            start_time = row.get('start_time')
-            end_time = row.get('end_time')
-            if (start_time is None) ^ (end_time is None):
-                continue
-            rows.append({
-                'plan': plan,
-                'pattern_name': row.get('pattern_name') or 'Default',
-                'day_offset': row.get('day_offset'),
-                'duty_type': duty_type,
-                'team': team,
-                'context_override': row.get('context_override'),
-                'role_override': row.get('role_override'),
-                'start_time': start_time,
-                'end_time': end_time,
-            })
-        created = RosterImportService.apply_department_roster_csv(
-            rows,
+        created = RosterImportService.apply_roster_csv(
+            results['rows'],
+            department,
             request.user,
             conflict_strategy=conflict_strategy
         )
+
         AuditService.log(
             request=request,
             action=AuditAction.CREATE,
             category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterImport',
+            resource_type='RosterImport',
             resource_id=None,
             resource_name='department-roster',
-            description=f'Applied department roster import with {created} rows.'
-        )
-        return Response({'created': created})
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return DepartmentRosterPlanListSerializer
-        return DepartmentRosterPlanSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return DepartmentRosterPlan.objects.none()
-        queryset = super().get_queryset().select_related('department')
-        queryset = queryset.filter(department__root_unit__code=facility.code)
-        return queryset.order_by('-effective_from', '-version')
-
-
-class DepartmentRosterPatternViewSet(viewsets.ModelViewSet):
-    queryset = DepartmentRosterPattern.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['plan', 'is_active']
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return DepartmentRosterPatternListSerializer
-        return DepartmentRosterPatternSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return DepartmentRosterPattern.objects.none()
-        queryset = super().get_queryset().select_related('plan', 'plan__department')
-        queryset = queryset.filter(plan__department__root_unit__code=facility.code)
-        return queryset.order_by('display_order', 'name')
-
-    def perform_create(self, serializer):
-        facility = get_user_facility(self.request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        plan = serializer.validated_data.get('plan')
-        if plan and plan.department.root_unit and plan.department.root_unit.code != facility.code:
-            raise PermissionDenied("Plan does not belong to the active facility.")
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPattern',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Created department roster pattern.'
+            description=f'Imported roster entries ({created} rows).'
         )
 
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPattern',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Updated department roster pattern.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='DepartmentRosterPattern',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Deleted department roster pattern.'
-        )
-        instance.delete()
-
-
-class RosterPatternSlotViewSet(viewsets.ModelViewSet):
-    queryset = RosterPatternSlot.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['plan', 'pattern', 'duty_type', 'team', 'is_active', 'day_offset']
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return RosterPatternSlotListSerializer
-        return RosterPatternSlotSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return RosterPatternSlot.objects.none()
-        queryset = super().get_queryset().select_related('plan', 'pattern', 'duty_type', 'team')
-        queryset = queryset.filter(plan__department__root_unit__code=facility.code)
-        if self.request.query_params.get('include_inactive') != 'true':
-            queryset = queryset.filter(is_active=True)
-        return queryset.order_by('day_offset', 'duty_type__display_order')
-
-    def perform_create(self, serializer):
-        pattern = serializer.validated_data.get('pattern')
-        plan = serializer.validated_data.get('plan')
-        if pattern and pattern.plan_id != plan.id:
-            raise PermissionDenied("Pattern does not belong to the roster plan.")
-        if not pattern:
-            pattern = DepartmentRosterPattern.objects.get_or_create(
-                plan=plan,
-                name='Default',
-                defaults={'display_order': 0, 'is_active': True}
-            )[0]
-        instance = serializer.save(pattern=pattern)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterPatternSlot',
-            resource_id=instance.id,
-            resource_name=f"{instance.plan_id}:{instance.day_offset}",
-            description='Created roster pattern slot.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterPatternSlot',
-            resource_id=instance.id,
-            resource_name=f"{instance.plan_id}:{instance.day_offset}",
-            description='Updated roster pattern slot.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterPatternSlot',
-            resource_id=instance.id,
-            resource_name=f"{instance.plan_id}:{instance.day_offset}",
-            description='Deleted roster pattern slot.'
-        )
-        instance.delete()
-
-
-class RosterOverrideViewSet(viewsets.ModelViewSet):
-    queryset = RosterOverride.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['plan', 'date', 'duty_type', 'team']
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return RosterOverrideListSerializer
-        return RosterOverrideSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return RosterOverride.objects.none()
-        queryset = super().get_queryset().select_related('plan', 'duty_type', 'team')
-        queryset = queryset.filter(plan__department__root_unit__code=facility.code)
-        return queryset.order_by('date')
-
-    def perform_create(self, serializer):
-        instance = serializer.save(created_by=self.request.user, updated_by=self.request.user)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterOverride',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Created roster override.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save(updated_by=self.request.user)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterOverride',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Updated roster override.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='RosterOverride',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Deleted roster override.'
-        )
-        instance.delete()
-
-
-class TeamRosterPlanViewSet(viewsets.ModelViewSet):
-    queryset = TeamRosterPlan.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['team', 'status']
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return TeamRosterPlanListSerializer
-        return TeamRosterPlanSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return TeamRosterPlan.objects.none()
-        queryset = super().get_queryset().select_related('team')
-        queryset = queryset.filter(team__root_unit__code=facility.code)
-        return queryset.order_by('-effective_from', '-version')
-
-    def perform_create(self, serializer):
-        instance = serializer.save(created_by=self.request.user, updated_by=self.request.user)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterPlan',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Created team roster plan.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save(updated_by=self.request.user)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterPlan',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Updated team roster plan.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterPlan',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Deleted team roster plan.'
-        )
-        instance.delete()
-
-
-class TeamRosterEntryViewSet(viewsets.ModelViewSet):
-    queryset = TeamRosterEntry.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['team', 'date', 'duty_type', 'station', 'practitioner']
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return TeamRosterEntryListSerializer
-        return TeamRosterEntrySerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return TeamRosterEntry.objects.none()
-        queryset = super().get_queryset().select_related('team', 'duty_type', 'station', 'practitioner')
-        queryset = queryset.filter(team__root_unit__code=facility.code)
-        return queryset.order_by('date')
-
-    @action(detail=False, methods=['post'], url_path='import/preview')
-    def import_preview(self, request):
-        serializer = TeamRosterImportSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        from .services import RosterImportService
-        results = RosterImportService.validate_team_roster_csv(
-            serializer.validated_data['csv'],
-            facility
-        )
         return Response({
-            'errors': results['errors'],
+            'created': created,
             'conflicts': results['conflicts'],
-            'rows': [
-                {
-                    'line': row['line'],
-                    'team_id': str(row['team'].id),
-                    'date': row['date'].isoformat(),
-                    'duty_type_id': str(row['duty_type'].id),
-                    'station_id': str(row['station'].id) if row['station'] else None,
-                    'practitioner_id': str(row['practitioner'].id),
-                    'start_time': row['start_time'].isoformat() if row['start_time'] else None,
-                    'end_time': row['end_time'].isoformat() if row['end_time'] else None,
-                    'notes': row['notes'],
-                }
-                for row in results['rows']
-            ],
         })
 
-    @action(detail=False, methods=['post'], url_path='import/apply')
-    def import_apply(self, request):
-        serializer = RosterImportApplySerializer(data=request.data)
+    def publish(self, request, department_id=None):
+        serializer = RosterPublishSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+        date_from = serializer.validated_data['date_from']
+        date_to = serializer.validated_data['date_to']
+
+        # Only publish draft entries - don't touch already published ones
+        updated = RosterEntry.objects.filter(
+            department=department,
+            date__gte=date_from,
+            date__lte=date_to,
+            status='draft'
+        ).update(status='published', updated_by=request.user)
+
+        return Response({'updated': updated})
+
+    def clear(self, request, department_id=None):
+        """Clear (delete) roster entries for a period. Only draft entries can be cleared."""
+        serializer = RosterPublishSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+        date_from = serializer.validated_data['date_from']
+        date_to = serializer.validated_data['date_to']
+
+        # Only delete draft entries to avoid accidentally removing published rosters
+        entries = RosterEntry.objects.filter(
+            department=department,
+            date__gte=date_from,
+            date__lte=date_to,
+            status='draft'
+        )
+        deleted_count = entries.count()
+        entries.delete()
+
+        AuditService.log(
+            request=request,
+            action=AuditAction.DELETE,
+            category=AuditCategory.ADMIN,
+            resource_type='RosterEntry',
+            resource_id=str(department.id),
+            resource_name=department.name,
+            description=f'Cleared {deleted_count} draft roster entries from {date_from} to {date_to}.'
+        )
+
+        return Response({'deleted': deleted_count})
+
+    def override(self, request, pk=None):
+        entry = self.get_object()
+        serializer = RosterOverrideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        replacement_team_id = serializer.validated_data['replacement_team']
+        replacement_team = ClinicalUnit.objects.filter(id=replacement_team_id).first()
+        if not replacement_team:
+            raise ValidationError('Replacement team not found.')
+        if not replacement_team.is_descendant_of(entry.department):
+            raise ValidationError('Replacement team must belong to the department.')
+
+        if not entry.original_team_id:
+            entry.original_team = entry.team
+        entry.team = replacement_team
+        entry.is_override = True
+        entry.override_reason = serializer.validated_data.get('reason', '')
+        entry.source = 'override'
+        entry.updated_by = request.user
+        entry.save()
+
+        return Response(RosterEntrySerializer(entry).data)
+
+    def on_duty_department(self, request, department_id=None):
+        serializer = OnDutyQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        department = self._require_department()
+
+        from .services import DepartmentRosterService
+
+        coverage = DepartmentRosterService.get_on_duty(
+            department=department,
+            at_datetime=serializer.validated_data.get('at_datetime')
+        )
+
+        return Response({'results': coverage, 'count': len(coverage)})
+
+    def on_duty(self, request):
+        serializer = OnDutyQuerySerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         facility = get_user_facility(request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
-        from .services import RosterImportService
-        conflict_strategy = serializer.validated_data.get('conflict_strategy', 'skip')
-        rows = []
-        from .models import ClinicalUnit, DepartmentDutyType, DepartmentStation
-        from apps.users.models import PractitionerProfile
-        for row in serializer.validated_data['rows']:
-            row = _coerce_import_row(row)
-            if not row:
-                continue
-            team = ClinicalUnit.objects.filter(id=row.get('team_id')).first()
-            duty_type = DepartmentDutyType.objects.filter(id=row.get('duty_type_id')).first()
-            practitioner = PractitionerProfile.objects.filter(id=row.get('practitioner_id')).first()
-            station = None
-            station_id = row.get('station_id')
-            if station_id:
-                station = DepartmentStation.objects.filter(id=station_id).first()
-            if not team or not duty_type or not practitioner:
-                continue
-            if duty_type.department_id != team.parent_id and duty_type.department_id != team.id:
-                continue
-            rows.append({
-                'team': team,
-                'date': row.get('date'),
-                'duty_type': duty_type,
-                'station': station,
-                'practitioner': practitioner,
-                'start_time': row.get('start_time'),
-                'end_time': row.get('end_time'),
-                'notes': row.get('notes') or ''
-            })
-        created = RosterImportService.apply_team_roster_csv(
-            rows,
-            request.user,
-            conflict_strategy=conflict_strategy
-        )
-        AuditService.log(
-            request=request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterImport',
-            resource_id=None,
-            resource_name='team-roster',
-            description=f'Applied team roster import with {created} rows.'
-        )
-        return Response({'created': created})
 
-    def perform_create(self, serializer):
-        instance = serializer.save(created_by=self.request.user)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Created team roster entry.'
+        departments = ClinicalUnit.objects.filter(
+            unit_type__code='department',
+            root_unit__code=facility.code,
+            is_active=True
         )
 
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Updated team roster entry.'
+        from .services import DepartmentRosterService
+
+        results = []
+        at_datetime = serializer.validated_data.get('at_datetime')
+        for department in departments:
+            coverage = DepartmentRosterService.get_on_duty(department, at_datetime=at_datetime)
+            for entry in coverage:
+                entry['department_name'] = department.name
+                results.append(entry)
+
+        return Response({'results': results, 'count': len(results)})
+
+    def print_roster(self, request, department_id=None):
+        department = self._require_department()
+        period = request.query_params.get('period')
+        if not period:
+            raise ValidationError('period query param is required (YYYY-MM).')
+        try:
+            start = datetime.strptime(period, '%Y-%m').date()
+        except ValueError as exc:
+            raise ValidationError('period must be in YYYY-MM format.') from exc
+        end_day = calendar.monthrange(start.year, start.month)[1]
+        end = start.replace(day=end_day)
+
+        entries = RosterEntry.objects.filter(
+            department=department,
+            date__gte=start,
+            date__lte=end,
+            status='published'
+        ).select_related('duty_type', 'team').order_by('date', 'duty_type__display_order')
+
+        try:
+            from reportlab.lib.pagesizes import letter, landscape
+            from reportlab.lib import colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        except Exception as exc:
+            raise ValidationError('PDF generation dependency missing.') from exc
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(letter),
+            rightMargin=0.5*inch,
+            leftMargin=0.5*inch,
+            topMargin=0.5*inch,
+            bottomMargin=0.5*inch
         )
 
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='TeamRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Deleted team roster entry.'
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'Title',
+            parent=styles['Heading1'],
+            fontSize=16,
+            spaceAfter=6
         )
-        instance.delete()
+        subtitle_style = ParagraphStyle(
+            'Subtitle',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.gray,
+            spaceAfter=12
+        )
+
+        elements = []
+        elements.append(Paragraph(f'{department.name} Duty Roster', title_style))
+        elements.append(Paragraph(f'Period: {start.strftime("%B %Y")}', subtitle_style))
+        elements.append(Spacer(1, 12))
+
+        # Group entries by date and pivot by duty type
+        duty_types = list(DepartmentDutyType.objects.filter(
+            department=department,
+            is_active=True
+        ).order_by('display_order').values_list('id', 'name'))
+
+        duty_type_names = {dt_id: name for dt_id, name in duty_types}
+        duty_type_order = [dt_id for dt_id, _ in duty_types]
+
+        # Build data by date
+        from collections import defaultdict
+        data_by_date = defaultdict(dict)
+        for entry in entries:
+            data_by_date[entry.date][entry.duty_type_id] = entry.team.name if entry.team else '-'
+
+        # Build table header
+        header = ['Date', 'Day'] + [duty_type_names.get(dt_id, '') for dt_id in duty_type_order]
+
+        # Build table rows
+        table_data = [header]
+        current_date = start
+        while current_date <= end:
+            day_name = current_date.strftime('%a')
+            row = [
+                current_date.strftime('%d'),
+                day_name
+            ]
+            date_entries = data_by_date.get(current_date, {})
+            for dt_id in duty_type_order:
+                row.append(date_entries.get(dt_id, '-'))
+            table_data.append(row)
+            current_date += timedelta(days=1)
+
+        # Calculate column widths
+        col_widths = [0.4*inch, 0.5*inch]  # Date, Day
+        remaining_width = 9.5*inch - sum(col_widths)
+        duty_col_width = remaining_width / max(len(duty_type_order), 1)
+        col_widths.extend([duty_col_width] * len(duty_type_order))
+
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+
+        # Style the table
+        style = TableStyle([
+            # Header
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a1a')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+
+            # Body
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (0, 1), (1, -1), 'CENTER'),  # Date and Day columns
+            ('ALIGN', (2, 1), (-1, -1), 'CENTER'),  # Duty type columns
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+            ('TOPPADDING', (0, 1), (-1, -1), 5),
+
+            # Grid
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#1a1a1a')),
+        ])
+
+        # Alternate row colors
+        for i in range(1, len(table_data)):
+            if i % 2 == 0:
+                style.add('BACKGROUND', (0, i), (-1, i), colors.HexColor('#f5f5f5'))
+
+            # Highlight weekends
+            row_date = start + timedelta(days=i-1)
+            if row_date.weekday() >= 5:  # Saturday or Sunday
+                style.add('BACKGROUND', (0, i), (1, i), colors.HexColor('#fff3cd'))
+                style.add('FONTNAME', (1, i), (1, i), 'Helvetica-Bold')
+
+        table.setStyle(style)
+        elements.append(table)
+
+        # Footer
+        elements.append(Spacer(1, 12))
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.gray
+        )
+        generated_at = timezone.now().strftime('%Y-%m-%d %H:%M')
+        elements.append(Paragraph(f'Generated: {generated_at}', footer_style))
+
+        doc.build(elements)
+        buffer.seek(0)
+        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="roster-{period}.pdf"'
+        return response
 
 
 # =============================================================================
@@ -1882,370 +1881,4 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
         unit = serializer.validated_data.get('unit')
         if unit and unit.root_unit and unit.root_unit.code != facility.code:
             raise PermissionDenied("Unit does not belong to the active facility.")
-        serializer.save(facility=facility)
-
-
-# =============================================================================
-# Duty Roster ViewSets
-# =============================================================================
-
-
-class ShiftDefinitionViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing shift definitions.
-    """
-    queryset = ShiftDefinition.objects.all()
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['is_active']
-
-    def get_permissions(self):
-        if self.action not in ['list', 'retrieve']:
-            return [IsAuthenticated(), IsAdmin(), FacilityScopedPermission()]
-        return super().get_permissions()
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return ShiftDefinitionListSerializer
-        return ShiftDefinitionSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return ShiftDefinition.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        if self.request.query_params.get('include_inactive') != 'true':
-            queryset = queryset.filter(is_active=True)
-
-        return queryset.order_by('display_order', 'start_time')
-
-    def perform_create(self, serializer):
-        facility = get_user_facility(self.request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        instance = serializer.save(facility=facility)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='ShiftDefinition',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Created shift definition.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='ShiftDefinition',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Updated shift definition.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='ShiftDefinition',
-            resource_id=instance.id,
-            resource_name=instance.name,
-            description='Deleted shift definition.'
-        )
-        instance.delete()
-
-
-class DutyRosterTemplateViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing duty roster templates.
-    """
-    queryset = DutyRosterTemplate.objects.all()
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['unit', 'practitioner', 'day_of_week', 'role', 'context', 'is_active']
-
-    def get_permissions(self):
-        if self.action not in ['list', 'retrieve']:
-            return [IsAuthenticated(), IsAdmin(), FacilityScopedPermission()]
-        return super().get_permissions()
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return DutyRosterTemplateListSerializer
-        return DutyRosterTemplateSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return DutyRosterTemplate.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-        queryset = queryset.select_related('unit', 'practitioner', 'shift', 'facility')
-
-        if self.request.query_params.get('include_inactive') != 'true':
-            queryset = queryset.filter(is_active=True)
-
-        return queryset.order_by('unit', 'day_of_week')
-
-    def perform_create(self, serializer):
-        facility = get_user_facility(self.request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        unit = serializer.validated_data.get('unit')
-        if unit and unit.root_unit and unit.root_unit.code != facility.code:
-            raise PermissionDenied("Unit does not belong to the active facility.")
-        instance = serializer.save(facility=facility)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterTemplate',
-            resource_id=instance.id,
-            resource_name=str(instance.id),
-            description='Created duty roster template.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterTemplate',
-            resource_id=instance.id,
-            resource_name=str(instance.id),
-            description='Updated duty roster template.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterTemplate',
-            resource_id=instance.id,
-            resource_name=str(instance.id),
-            description='Deleted duty roster template.'
-        )
-        instance.delete()
-
-
-class DutyRosterViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing duty roster entries.
-    """
-    queryset = DutyRoster.objects.all()
-    permission_classes = [IsAuthenticated, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
-    filterset_fields = ['unit', 'practitioner', 'date', 'role', 'context', 'is_active']
-
-    def get_permissions(self):
-        if self.action != 'on_duty':
-            return [IsAuthenticated(), IsAdmin(), FacilityScopedPermission()]
-        return super().get_permissions()
-
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return DutyRosterListSerializer
-        if self.action == 'generate':
-            return GenerateRosterSerializer
-        if self.action == 'swap':
-            return SwapDutySerializer
-        if self.action == 'on_duty':
-            return OnDutyQuerySerializer
-        return DutyRosterSerializer
-
-    def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return DutyRoster.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-        queryset = queryset.select_related(
-            'unit', 'practitioner', 'practitioner__staff', 'practitioner__staff__user',
-            'shift', 'original_practitioner'
-        )
-
-        if self.request.query_params.get('include_inactive') != 'true':
-            queryset = queryset.filter(is_active=True)
-
-        # Date range filter
-        date_from = self.request.query_params.get('date_from')
-        date_to = self.request.query_params.get('date_to')
-        if date_from:
-            queryset = queryset.filter(date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(date__lte=date_to)
-
-        return queryset.order_by('date', 'start_time')
-
-    def perform_create(self, serializer):
-        facility = get_user_facility(self.request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-        unit = serializer.validated_data.get('unit')
-        if unit and unit.root_unit and unit.root_unit.code != facility.code:
-            raise PermissionDenied("Unit does not belong to the active facility.")
-        instance = serializer.save(facility=facility)
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.CREATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Created duty roster entry.'
-        )
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.UPDATE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Updated duty roster entry.'
-        )
-
-    def perform_destroy(self, instance):
-        AuditService.log(
-            request=self.request,
-            action=AuditAction.DELETE,
-            category=AuditCategory.ADMIN,
-            resource_type='DutyRosterEntry',
-            resource_id=instance.id,
-            resource_name=str(instance.date),
-            description='Deleted duty roster entry.'
-        )
-        instance.delete()
-
-    @action(detail=False, methods=['post'])
-    def generate(self, request):
-        """
-        Generate roster entries from templates.
-
-        POST /api/organization/duty-roster/generate/
-        Body: { unit_id?: UUID, start_date: date, end_date: date, overwrite: bool }
-        """
-        serializer = GenerateRosterSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-
-        unit_id = serializer.validated_data.get('unit_id')
-        start_date = serializer.validated_data['start_date']
-        end_date = serializer.validated_data['end_date']
-        overwrite = serializer.validated_data['overwrite']
-
-        from .services import DutyRosterService
-
-        if unit_id:
-            unit = ClinicalUnit.objects.filter(id=unit_id).first()
-            if not unit:
-                return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
-            if unit.root_unit and unit.root_unit.code != facility.code:
-                raise PermissionDenied("Unit does not belong to the active facility.")
-
-            entries = DutyRosterService.generate_roster(
-                unit=unit,
-                start_date=start_date,
-                end_date=end_date,
-                overwrite=overwrite,
-                created_by=request.user,
-            )
-            count = len(entries)
-        else:
-            count = DutyRosterService.generate_facility_roster(
-                facility=facility,
-                start_date=start_date,
-                end_date=end_date,
-                created_by=request.user,
-            )
-
-        return Response({
-            'success': True,
-            'entries_created': count,
-        })
-
-    @action(detail=True, methods=['post'])
-    def swap(self, request, pk=None):
-        """
-        Swap a duty assignment to a different practitioner.
-
-        POST /api/organization/duty-roster/{id}/swap/
-        Body: { replacement_practitioner_id: UUID, reason: str }
-        """
-        roster_entry = self.get_object()
-        serializer = SwapDutySerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        from apps.users.models import PractitionerProfile
-        from .services import DutyRosterService
-
-        replacement = PractitionerProfile.objects.get(
-            id=serializer.validated_data['replacement_practitioner_id']
-        )
-
-        new_entry = DutyRosterService.swap_duty(
-            roster_entry=roster_entry,
-            replacement_practitioner=replacement,
-            reason=serializer.validated_data.get('reason', ''),
-            created_by=request.user,
-        )
-
-        # Trigger notification task (if tasks are set up)
-        try:
-            from .tasks import notify_duty_swap
-            notify_duty_swap.delay(str(new_entry.id))
-        except ImportError:
-            pass  # Tasks not yet set up
-
-        return Response({
-            'success': True,
-            'new_entry': DutyRosterSerializer(new_entry).data,
-        })
-
-    @action(detail=False, methods=['get'], url_path='on-duty')
-    def on_duty(self, request):
-        """
-        Get department roster coverage currently on duty.
-
-        GET /api/organization/duty-roster/on-duty/?unit_id=...&role=...&context=...
-        """
-        serializer = OnDutyQuerySerializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
-
-        data = serializer.validated_data
-        unit = ClinicalUnit.objects.filter(id=data['unit_id']).first()
-        if not unit:
-            return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        facility = get_user_facility(request)
-        if unit.root_unit and unit.root_unit.code != facility.code:
-            raise PermissionDenied("Unit does not belong to the active facility.")
-
-        from .services import DepartmentRosterService
-
-        coverage = DepartmentRosterService.get_on_duty_coverage(
-            department=unit,
-            at_datetime=data.get('at_datetime'),
-            role=data.get('role'),
-            context=data.get('context'),
-            include_descendants=data.get('include_descendants', False),
-            include_team_details=data.get('include_team_details', False),
-        )
-
-        return Response({
-            'results': coverage,
-            'count': len(coverage),
-        })
+        serializer.save()

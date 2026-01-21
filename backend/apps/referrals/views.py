@@ -441,7 +441,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
                 from apps.organization.services import TeamAssignmentService
                 TeamAssignmentService.assign_initial_team(
                     encounter=encounter,
-                    use_duty_roster=True,
+                    use_roster=True,
                     context='outpatient'
                 )
                 encounter_id = str(encounter.id)

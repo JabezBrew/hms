@@ -123,7 +123,7 @@ class Command(BaseCommand):
                 TeamAssignmentService.assign_initial_team(
                     encounter=encounter,
                     team=admission.primary_team,
-                    use_duty_roster=False,
+                    use_roster=False,
                     context='inpatient'
                 )
                 if admission.bed:
@@ -172,7 +172,7 @@ class Command(BaseCommand):
             from apps.organization.services import TeamAssignmentService
             TeamAssignmentService.assign_initial_team(
                 encounter=encounter,
-                use_duty_roster=False,
+                use_roster=False,
                 context='outpatient'
             )
             return encounter, True, 'created_new_outpatient'

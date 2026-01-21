@@ -282,6 +282,57 @@ export const dutyRosterApi = {
 };
 
 // =============================================================================
+// Simplified Roster Endpoints (per ROSTER_MANAGEMENT_SPEC.md)
+// =============================================================================
+
+/**
+ * Rotation Rules API - Department-scoped
+ */
+export const rotationRulesApi = {
+  list: (departmentId, params = {}) =>
+    apiClient.get(`/organization/departments/${departmentId}/rotation-rules/`, { params }),
+  get: (id) => apiClient.get(`/organization/rotation-rules/${id}/`),
+  create: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/rotation-rules/`, { ...data, department: departmentId }),
+  update: (id, data) => apiClient.patch(`/organization/rotation-rules/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/rotation-rules/${id}/`),
+};
+
+/**
+ * Roster Entries API - Department-scoped simplified roster
+ */
+export const rosterEntriesApi = {
+  list: (departmentId, params = {}) =>
+    apiClient.get(`/organization/departments/${departmentId}/roster/`, { params }),
+  get: (id) => apiClient.get(`/organization/roster/${id}/`),
+  create: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/`, data),
+  update: (id, data) => apiClient.patch(`/organization/roster/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/roster/${id}/`),
+  generate: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/generate/`, data),
+  bulk: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/bulk/`, data),
+  importCsv: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/import/`, data),
+  publish: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/publish/`, data),
+  clear: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/roster/clear/`, data),
+  override: (id, data) =>
+    apiClient.post(`/organization/roster/${id}/override/`, data),
+  print: (departmentId, params = {}) =>
+    apiClient.get(`/organization/departments/${departmentId}/roster/print/`, {
+      params,
+      responseType: 'blob',
+    }),
+  onDutyDepartment: (departmentId, params = {}) =>
+    apiClient.get(`/organization/departments/${departmentId}/on-duty/`, { params }),
+  onDutyAll: (params = {}) =>
+    apiClient.get(`/organization/on-duty/`, { params }),
+};
+
+// =============================================================================
 // Clinics Endpoints
 // =============================================================================
 
@@ -326,4 +377,6 @@ export default {
   teamRosterEntries: teamRosterEntriesApi,
   clinics: clinicsApi,
   clinicSchedules: clinicSchedulesApi,
+  rotationRules: rotationRulesApi,
+  rosterEntries: rosterEntriesApi,
 };

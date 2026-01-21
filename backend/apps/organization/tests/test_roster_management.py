@@ -1,5 +1,5 @@
 """
-Tests for configurable roster management.
+Tests for the simplified roster management system.
 """
 from datetime import date, datetime, time
 
@@ -8,17 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 
-from apps.organization.models import (
-    ClinicalUnit,
-    DepartmentDutyType,
-    DepartmentStation,
-    DepartmentRosterPlan,
-    RosterOverride,
-    RosterPatternSlot,
-    TeamRosterEntry,
-    TeamRosterPlan,
-)
-from apps.organization.services import DepartmentRosterService, RosterImportService
+from apps.organization.models import ClinicalUnit, DepartmentDutyType, RotationRule, RosterEntry
 
 
 @pytest.fixture
@@ -63,63 +53,18 @@ def team(unit_types, department):
 
 
 @pytest.fixture
-def practitioner(db, django_user_model, default_facility):
-    from apps.users.models import Staff, PractitionerProfile
-    staff_user = django_user_model.objects.create_user(
-        username='surgeon',
-        email='surgeon@test.com',
-        password='testpass123',
-        user_type='doctor',
-    )
-    staff = Staff.objects.create(
-        user=staff_user,
-        employee_id='EMP-SURG',
-        department='Surgery',
-        position='Attending',
-        hire_date=date(2020, 1, 1),
-        primary_facility=default_facility,
-    )
-    return PractitionerProfile.objects.create(
-        staff=staff,
-        license_number='LIC-SURG',
-        specialization='Surgery',
-        qualification='MD',
-    )
-
-
-@pytest.fixture
 def duty_type(department):
     return DepartmentDutyType.objects.create(
         department=department,
-        name='Admitting',
-        code='ADM',
-        default_context='inpatient',
-        default_role='admitting',
-        requires_time_range=True,
+        name='Obs Clinic',
+        code='OBS',
+        rotation_type='fixed_weekly',
+        applicable_days=[0, 1, 2, 3, 4],
+        is_24_hour=False,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
         display_order=1,
         is_active=True,
-    )
-
-
-@pytest.fixture
-def station(department):
-    return DepartmentStation.objects.create(
-        department=department,
-        name='Ward 3',
-        code='STN-3',
-        is_active=True,
-    )
-
-
-@pytest.fixture
-def roster_plan(department):
-    return DepartmentRosterPlan.objects.create(
-        department=department,
-        name='Weekday Coverage',
-        cycle_length_days=7,
-        effective_from=date.today(),
-        status='active',
-        version=1,
     )
 
 
@@ -137,200 +82,202 @@ def admin_api_client(admin_user, default_facility):
 
 
 @pytest.mark.django_db
-class TestRosterCoverageService:
-    def test_pattern_slot_coverage(self, roster_plan, duty_type, team):
-        slot = RosterPatternSlot.objects.create(
-            plan=roster_plan,
-            day_offset=0,
-            duty_type=duty_type,
-            team=team,
-            start_time=time(8, 0),
-            end_time=time(16, 0),
-        )
-        check_time = datetime.combine(date.today(), time(9, 0))
-        coverage = DepartmentRosterService.get_on_duty_coverage(
-            department=roster_plan.department,
-            at_datetime=timezone.make_aware(check_time),
-        )
-        assert len(coverage) == 1
-        assert coverage[0]['id'] == slot.id
-        assert coverage[0]['team_id'] == team.id
+def test_create_department_duty_type(admin_api_client, department):
+    response = admin_api_client.post('/api/organization/department-duty-types/', {
+        'department': str(department.id),
+        'name': 'Theatre',
+        'code': 'THEATRE',
+        'rotation_type': 'fixed_weekly',
+        'applicable_days': [0, 1, 2, 3, 4],
+        'is_24_hour': False,
+        'start_time': '08:00',
+        'end_time': '17:00',
+        'display_order': 2,
+        'is_active': True,
+    }, format='json')
+    assert response.status_code == status.HTTP_201_CREATED
 
-    def test_override_supersedes_pattern(self, roster_plan, duty_type, team, unit_types, facility_unit):
-        alternate_team = ClinicalUnit.objects.create(
-            code='TEAM-B',
-            name='Surgery Team B',
+
+@pytest.mark.django_db
+def test_create_rotation_rule(admin_api_client, department, duty_type, team):
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/rotation-rules/',
+        {
+            'department': str(department.id),
+            'duty_type': str(duty_type.id),
+            'name': 'Weekday Rotation',
+            'rule_type': 'fixed_weekly',
+            'day_assignments': {
+                '0': str(team.id),
+                '1': str(team.id),
+            },
+            'applicable_days': [0, 1, 2, 3, 4],
+            'is_active': True,
+        },
+        format='json'
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+
+
+@pytest.mark.django_db
+def test_generate_roster(admin_api_client, department, duty_type, team):
+    RotationRule.objects.create(
+        department=department,
+        duty_type=duty_type,
+        name='Sequential Weekdays',
+        rule_type='sequential',
+        team_sequence=[str(team.id)],
+        applicable_days=[0, 1, 2, 3, 4],
+        is_active=True,
+    )
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/generate/',
+        {'period': '2026-01'}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['entries_created'] > 0
+
+
+@pytest.mark.django_db
+def test_roster_csv_import(admin_api_client, department, duty_type, team, default_facility):
+    csv_payload = """date,duty_type_code,team_code,start_time,end_time
+2026-02-01,OBS,TEAM-A,08:00,17:00
+"""
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/import/',
+        {'csv': csv_payload, 'conflict_strategy': 'skip'}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['created'] == 1
+
+
+@pytest.mark.django_db
+def test_on_duty_endpoint(admin_api_client, department, duty_type, team):
+    entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=duty_type,
+        date=date(2026, 1, 6),
+        team=team,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
+        source='manual',
+        status='published',
+    )
+    at_datetime = datetime(2026, 1, 6, 9, 0, tzinfo=timezone.get_current_timezone())
+    response = admin_api_client.get(
+        f'/api/organization/departments/{department.id}/on-duty/',
+        {'at_datetime': at_datetime.isoformat()}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['count'] == 1
+    assert response.data['results'][0]['id'] == str(entry.id)
+
+
+@pytest.mark.django_db
+def test_clear_roster_drafts(admin_api_client, department, duty_type, team):
+    """Clear endpoint should delete draft entries only."""
+    # Create a draft entry
+    draft_entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=duty_type,
+        date=date(2026, 3, 1),
+        team=team,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
+        source='generated',
+        status='draft',
+    )
+    # Create a published entry
+    published_entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=duty_type,
+        date=date(2026, 3, 2),
+        team=team,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
+        source='generated',
+        status='published',
+    )
+
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/clear/',
+        {'date_from': '2026-03-01', 'date_to': '2026-03-31'}
+    )
+
+    assert response.status_code == 200
+    assert response.data['deleted'] == 1
+
+    # Draft entry should be deleted
+    assert not RosterEntry.objects.filter(id=draft_entry.id).exists()
+    # Published entry should still exist
+    assert RosterEntry.objects.filter(id=published_entry.id).exists()
+
+
+@pytest.mark.django_db
+def test_sequential_roster_continues_across_months(department, duty_type, unit_types):
+    """Sequential roster generation should continue from the last team of the previous period."""
+    from apps.organization.services import RosterGenerationService
+
+    # Create 4 teams
+    teams = []
+    for i in range(1, 5):
+        team = ClinicalUnit.objects.create(
+            code=f'PS-{i}',
+            name=f'Physician Specialists Team {i}',
             unit_type=unit_types['team'],
-            parent=roster_plan.department,
+            parent=department,
         )
-        RosterPatternSlot.objects.create(
-            plan=roster_plan,
-            day_offset=0,
-            duty_type=duty_type,
-            team=team,
-        )
-        override = RosterOverride.objects.create(
-            plan=roster_plan,
-            date=date.today(),
-            duty_type=duty_type,
-            team=alternate_team,
-            reason='Coverage swap',
-        )
-        coverage = DepartmentRosterService.get_on_duty_coverage(
-            department=roster_plan.department,
-            at_datetime=timezone.now(),
-        )
-        assert len(coverage) == 1
-        assert coverage[0]['id'] == override.id
-        assert coverage[0]['team_id'] == alternate_team.id
+        teams.append(team)
 
+    # Update duty type for sequential rotation
+    duty_type.rotation_type = 'sequential'
+    duty_type.applicable_days = [0, 1, 2, 3, 4, 5, 6]  # All days
+    duty_type.save()
 
-@pytest.mark.django_db
-class TestRosterImportService:
-    def test_department_csv_import(self, roster_plan, duty_type, team, default_facility):
-        csv_payload = """department_code,plan_name,cycle_day,duty_type_code,team_code,start_time,end_time
-SURG,Weekday Coverage,0,ADM,TEAM-A,08:00,16:00
-"""
-        results = RosterImportService.validate_department_roster_csv(csv_payload, default_facility)
-        assert results['errors'] == []
-        assert len(results['rows']) == 1
-        created = RosterImportService.apply_department_roster_csv(results['rows'], None)
-        assert created == 1
-        assert RosterPatternSlot.objects.filter(plan=roster_plan).count() == 1
+    # Create sequential rotation rule
+    RotationRule.objects.create(
+        department=department,
+        duty_type=duty_type,
+        name='Sequential Rotation',
+        rule_type='sequential',
+        team_sequence=[str(t.id) for t in teams],
+        applicable_days=[0, 1, 2, 3, 4, 5, 6],
+        is_active=True,
+    )
 
-    def test_team_csv_import(self, duty_type, station, team, practitioner, default_facility):
-        csv_payload = f"""team_code,date,duty_type_code,practitioner_id,station_code,start_time,end_time
-TEAM-A,2026-02-01,ADM,{practitioner.id},STN-3,08:00,16:00
-"""
-        results = RosterImportService.validate_team_roster_csv(csv_payload, default_facility)
-        assert results['errors'] == []
-        assert len(results['rows']) == 1
-        created = RosterImportService.apply_team_roster_csv(results['rows'], None)
-        assert created == 1
-        assert TeamRosterEntry.objects.filter(team=team, practitioner=practitioner).count() == 1
+    # Generate roster for January (last few days)
+    jan_start = date(2026, 1, 28)
+    jan_end = date(2026, 1, 31)
+    RosterGenerationService.generate_roster(department, jan_start, jan_end)
 
+    # Get the last entry from January
+    last_jan_entry = RosterEntry.objects.filter(
+        department=department,
+        duty_type=duty_type,
+        date=jan_end
+    ).first()
+    assert last_jan_entry is not None
 
-@pytest.mark.django_db
-class TestRosterApi:
-    def test_create_department_duty_type(self, admin_api_client, department):
-        response = admin_api_client.post('/api/organization/department-duty-types/', {
-            'department': str(department.id),
-            'name': 'Covering',
-            'code': 'COV',
-            'default_context': 'inpatient',
-            'default_role': 'covering',
-            'requires_time_range': False,
-            'display_order': 2,
-            'is_active': True,
-        })
-        assert response.status_code == status.HTTP_201_CREATED
+    # Find the position of the last team in the sequence
+    team_ids = [str(t.id) for t in teams]
+    last_team_position = team_ids.index(str(last_jan_entry.team_id))
+    expected_next_team_id = teams[(last_team_position + 1) % len(teams)].id
 
-    def test_create_department_station(self, admin_api_client, department):
-        response = admin_api_client.post('/api/organization/department-stations/', {
-            'department': str(department.id),
-            'name': 'Ward 1',
-            'code': 'STN-1',
-            'display_order': 1,
-            'is_active': True,
-        })
-        assert response.status_code == status.HTTP_201_CREATED
+    # Generate roster for February
+    feb_start = date(2026, 2, 1)
+    feb_end = date(2026, 2, 7)
+    RosterGenerationService.generate_roster(department, feb_start, feb_end)
 
-    def test_create_roster_plan_and_slot(self, admin_api_client, department, duty_type, team):
-        plan_response = admin_api_client.post('/api/organization/department-roster-plans/', {
-            'department': str(department.id),
-            'name': 'Weekday Coverage',
-            'cycle_length_days': 7,
-            'effective_from': date.today().isoformat(),
-            'status': 'active',
-            'version': 1,
-        })
-        assert plan_response.status_code == status.HTTP_201_CREATED
+    # Get the first entry from February
+    first_feb_entry = RosterEntry.objects.filter(
+        department=department,
+        duty_type=duty_type,
+        date=feb_start
+    ).first()
+    assert first_feb_entry is not None
 
-        slot_response = admin_api_client.post('/api/organization/department-roster-slots/', {
-            'plan': plan_response.data['id'],
-            'day_offset': 0,
-            'duty_type': str(duty_type.id),
-            'team': str(team.id),
-            'start_time': '08:00',
-            'end_time': '16:00',
-            'is_active': True,
-        })
-        assert slot_response.status_code == status.HTTP_201_CREATED
-
-    def test_create_roster_override(self, admin_api_client, roster_plan, duty_type, team):
-        response = admin_api_client.post('/api/organization/department-roster-overrides/', {
-            'plan': str(roster_plan.id),
-            'date': date.today().isoformat(),
-            'duty_type': str(duty_type.id),
-            'team': str(team.id),
-            'reason': 'Coverage change',
-        })
-        assert response.status_code == status.HTTP_201_CREATED
-
-    def test_create_team_plan_and_entry(self, admin_api_client, roster_plan, duty_type, team, practitioner, station):
-        plan_response = admin_api_client.post('/api/organization/team-roster-plans/', {
-            'team': str(team.id),
-            'department_plan': str(roster_plan.id),
-            'name': 'Team Coverage',
-            'effective_from': date.today().isoformat(),
-            'status': 'active',
-            'version': 1,
-        })
-        assert plan_response.status_code == status.HTTP_201_CREATED
-
-        entry_response = admin_api_client.post('/api/organization/team-roster-entries/', {
-            'team': str(team.id),
-            'date': date.today().isoformat(),
-            'duty_type': str(duty_type.id),
-            'station': str(station.id),
-            'practitioner': str(practitioner.id),
-            'start_time': '08:00',
-            'end_time': '16:00',
-            'notes': 'Assigned to ward 3',
-        })
-        assert entry_response.status_code == status.HTTP_201_CREATED
-
-    def test_department_import_preview_and_apply(self, admin_api_client, roster_plan, duty_type, team):
-        csv_payload = """department_code,plan_name,cycle_day,duty_type_code,team_code,start_time,end_time
-SURG,Weekday Coverage,0,ADM,TEAM-A,08:00,16:00
-"""
-        preview_response = admin_api_client.post('/api/organization/department-roster-plans/import/preview/', {
-            'csv': csv_payload,
-        })
-        assert preview_response.status_code == status.HTTP_200_OK
-        assert preview_response.data['errors'] == []
-        assert len(preview_response.data['rows']) == 1
-
-        apply_response = admin_api_client.post('/api/organization/department-roster-plans/import/apply/', {
-            'rows': preview_response.data['rows'],
-        })
-        assert apply_response.status_code == status.HTTP_200_OK
-        assert apply_response.data['created'] == 1
-
-    def test_team_import_preview_and_apply(self, admin_api_client, duty_type, team, practitioner, station):
-        csv_payload = f"""team_code,date,duty_type_code,practitioner_id,station_code,start_time,end_time
-TEAM-A,2026-02-01,ADM,{practitioner.id},STN-3,08:00,16:00
-"""
-        preview_response = admin_api_client.post('/api/organization/team-roster-entries/import/preview/', {
-            'csv': csv_payload,
-        })
-        assert preview_response.status_code == status.HTTP_200_OK
-        assert preview_response.data['errors'] == []
-        assert len(preview_response.data['rows']) == 1
-
-        apply_response = admin_api_client.post('/api/organization/team-roster-entries/import/apply/', {
-            'rows': preview_response.data['rows'],
-        })
-        assert apply_response.status_code == status.HTTP_200_OK
-        assert apply_response.data['created'] == 1
-
-    def test_team_entry_list_endpoint(self, admin_api_client, team, duty_type, practitioner):
-        TeamRosterEntry.objects.create(
-            team=team,
-            date=date.today(),
-            duty_type=duty_type,
-            practitioner=practitioner,
-        )
-        response = admin_api_client.get('/api/organization/team-roster-entries/')
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data['results']) == 1
+    # Verify continuity: Feb 1 should have the next team in sequence after Jan 31
+    assert first_feb_entry.team_id == expected_next_team_id, (
+        f"Expected team {expected_next_team_id} but got {first_feb_entry.team_id}. "
+        f"Jan 31 had team at position {last_team_position}, Feb 1 should have position {(last_team_position + 1) % len(teams)}"
+    )
