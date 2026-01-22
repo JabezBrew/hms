@@ -230,8 +230,9 @@ class DepartmentDutyType(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if getattr(self.department.unit_type, 'code', None) != 'department':
-            raise ValidationError({'department': 'Duty types must belong to a department unit.'})
+        unit_type_code = getattr(self.department.unit_type, 'code', None)
+        if unit_type_code not in ('department', 'division'):
+            raise ValidationError({'department': 'Duty types must belong to a department or division unit.'})
 
 
 # =============================================================================
@@ -1025,10 +1026,11 @@ class RotationRule(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if getattr(self.department.unit_type, 'code', None) != 'department':
-            raise ValidationError({'department': 'Rotation rules must belong to a department unit.'})
+        unit_type_code = getattr(self.department.unit_type, 'code', None)
+        if unit_type_code not in ('department', 'division'):
+            raise ValidationError({'department': 'Rotation rules must belong to a department or division unit.'})
         if self.duty_type_id and self.department_id and self.duty_type.department_id != self.department_id:
-            raise ValidationError({'duty_type': 'Duty type must belong to the selected department.'})
+            raise ValidationError({'duty_type': 'Duty type must belong to the selected unit.'})
 
 
 class RosterEntry(models.Model):
@@ -1126,7 +1128,8 @@ class RosterEntry(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if getattr(self.department.unit_type, 'code', None) != 'department':
-            raise ValidationError({'department': 'Roster entries must belong to a department unit.'})
+        unit_type_code = getattr(self.department.unit_type, 'code', None)
+        if unit_type_code not in ('department', 'division'):
+            raise ValidationError({'department': 'Roster entries must belong to a department or division unit.'})
         if self.duty_type_id and self.department_id and self.duty_type.department_id != self.department_id:
-            raise ValidationError({'duty_type': 'Duty type must belong to the selected department.'})
+            raise ValidationError({'duty_type': 'Duty type must belong to the selected unit.'})

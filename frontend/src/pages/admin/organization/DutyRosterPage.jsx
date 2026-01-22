@@ -198,8 +198,8 @@ function RosterCalendarView({ departmentId, flatUnits }) {
     return (
       <EmptyState
         icon={CalendarIcon}
-        title="Select a department"
-        description="Choose a department to view its roster calendar."
+        title="Select a unit"
+        description="Choose a department or division to view its roster calendar."
       />
     );
   }
@@ -353,8 +353,9 @@ export default function DutyRosterPage() {
     return flattenUnitTree(Array.isArray(nodes) ? nodes : []);
   }, [treeData]);
 
-  const departments = useMemo(
-    () => flatUnits.filter((u) => u.unit_type_code === 'department'),
+  // Include both departments and divisions
+  const rosterUnits = useMemo(
+    () => flatUnits.filter((u) => u.unit_type_code === 'department' || u.unit_type_code === 'division'),
     [flatUnits]
   );
 
@@ -455,22 +456,41 @@ export default function DutyRosterPage() {
             </Link>
           </div>
 
-          {/* Department Filter */}
+          {/* Unit Filter */}
           <div className="mb-6">
             <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2 block">
-              Filter by Department
+              Filter by Department / Division
             </label>
             <Select value={selectedDepartment || 'all'} onValueChange={(v) => setSelectedDepartment(v === 'all' ? '' : v)}>
               <SelectTrigger className="w-full max-w-xs">
-                <SelectValue placeholder="All departments" />
+                <SelectValue placeholder="All units" />
               </SelectTrigger>
               <SelectContent className="z-[200]">
-                <SelectItem value="all">All departments</SelectItem>
-                {departments.map((dept) => (
-                  <SelectItem key={dept.id} value={dept.id}>
-                    {dept.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All units</SelectItem>
+                {(() => {
+                  // Group divisions under their parent departments
+                  const departments = rosterUnits.filter((u) => u.unit_type_code === 'department');
+                  const divisions = rosterUnits.filter((u) => u.unit_type_code === 'division');
+                  const groupedUnits = [];
+                  departments.forEach((dept) => {
+                    groupedUnits.push({ ...dept, indent: 0 });
+                    divisions
+                      .filter((div) => div.parentId === dept.id)
+                      .forEach((div) => {
+                        groupedUnits.push({ ...div, indent: 1 });
+                      });
+                  });
+                  return groupedUnits.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      <span className={unit.indent ? 'pl-4' : ''}>
+                        {unit.name}
+                        {unit.unit_type_code === 'division' && (
+                          <span className="ml-2 text-xs text-muted-foreground">(Division)</span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ));
+                })()}
               </SelectContent>
             </Select>
           </div>

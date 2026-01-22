@@ -109,20 +109,27 @@ export default function RosterBuilderPage() {
     return flattenUnitTree(Array.isArray(nodes) ? nodes : []);
   }, [treeData]);
 
-  const departments = useMemo(
-    () => flatUnits.filter((u) => u.unit_type_code === 'department'),
+  // Include both departments and divisions
+  const rosterUnits = useMemo(
+    () => flatUnits.filter((u) => u.unit_type_code === 'department' || u.unit_type_code === 'division'),
     [flatUnits]
   );
 
-  const teams = useMemo(
-    () =>
-      selectedDepartment
-        ? flatUnits.filter(
-            (u) => u.unit_type_code === 'team' && u.parentId === selectedDepartment
-          )
-        : [],
-    [selectedDepartment, flatUnits]
-  );
+  // Get teams for selected unit - look under the unit itself OR its parent (for divisions)
+  const teams = useMemo(() => {
+    if (!selectedDepartment) return [];
+    const selectedUnit = flatUnits.find((u) => u.id === selectedDepartment);
+    if (!selectedUnit) return [];
+
+    const unitIdsToCheck = [selectedDepartment];
+    if (selectedUnit.unit_type_code === 'division' && selectedUnit.parentId) {
+      unitIdsToCheck.push(selectedUnit.parentId);
+    }
+
+    return flatUnits.filter(
+      (u) => u.unit_type_code === 'team' && unitIdsToCheck.includes(u.parentId)
+    );
+  }, [selectedDepartment, flatUnits]);
 
   const teamById = useMemo(() => {
     const map = new Map();
@@ -374,21 +381,40 @@ export default function RosterBuilderPage() {
           <Card className="mb-6 border-border">
             <CardContent className="p-4">
               <div className="flex flex-col md:flex-row md:items-center gap-4">
-                {/* Department Selector */}
+                {/* Unit Selector (Departments & Divisions) */}
                 <div className="flex-1 min-w-[200px]">
                   <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1 block">
-                    Department
+                    Department / Division
                   </label>
                   <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select department" />
+                      <SelectValue placeholder="Select unit" />
                     </SelectTrigger>
                     <SelectContent className="z-[200]">
-                      {departments.map((dept) => (
-                        <SelectItem key={dept.id} value={dept.id}>
-                          {dept.name}
-                        </SelectItem>
-                      ))}
+                      {(() => {
+                        // Group divisions under their parent departments
+                        const departments = rosterUnits.filter((u) => u.unit_type_code === 'department');
+                        const divisions = rosterUnits.filter((u) => u.unit_type_code === 'division');
+                        const groupedUnits = [];
+                        departments.forEach((dept) => {
+                          groupedUnits.push({ ...dept, indent: 0 });
+                          divisions
+                            .filter((div) => div.parentId === dept.id)
+                            .forEach((div) => {
+                              groupedUnits.push({ ...div, indent: 1 });
+                            });
+                        });
+                        return groupedUnits.map((unit) => (
+                          <SelectItem key={unit.id} value={unit.id}>
+                            <span className={unit.indent ? 'pl-4' : ''}>
+                              {unit.name}
+                              {unit.unit_type_code === 'division' && (
+                                <span className="ml-2 text-xs text-muted-foreground">(Division)</span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        ));
+                      })()}
                     </SelectContent>
                   </Select>
                 </div>
@@ -490,8 +516,8 @@ export default function RosterBuilderPage() {
               <CardContent className="p-8">
                 <EmptyState
                   icon={CalendarClock}
-                  title="Select a department"
-                  description="Choose a department to view and build its roster."
+                  title="Select a unit"
+                  description="Choose a department or division to view and build its roster."
                 />
               </CardContent>
             </Card>
@@ -524,11 +550,11 @@ export default function RosterBuilderPage() {
             </Card>
           ) : (
             <Card className="border-border overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[70vh]">
                 <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-muted/30">
-                      <th className="sticky left-0 z-10 bg-muted/30 border-b border-r border-border px-3 py-2 text-left">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-muted">
+                      <th className="sticky left-0 z-30 bg-muted border-b border-r border-border px-3 py-2 text-left">
                         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                           Date
                         </span>
@@ -536,7 +562,7 @@ export default function RosterBuilderPage() {
                       {dutyTypes.map((dt) => (
                         <th
                           key={dt.id}
-                          className="border-b border-border px-3 py-2 text-center min-w-[100px]"
+                          className="bg-muted border-b border-border px-3 py-2 text-center min-w-[100px]"
                         >
                           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                             {dt.name}

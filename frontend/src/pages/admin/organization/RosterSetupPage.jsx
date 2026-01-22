@@ -85,26 +85,46 @@ const DAYS_OF_WEEK = [
 const RULE_TYPES = [
   { value: 'sequential', label: 'Sequential', description: 'Teams rotate in order: A → B → C → D' },
   { value: 'fixed_weekly', label: 'Fixed Weekly', description: 'Same team each weekday: Mon=A, Tue=B' },
-  { value: 'exclusion', label: 'Sequential with Exclusion', description: 'Skip teams based on rules' },
 ];
 
 /**
- * Department selector with tree navigation
+ * Unit selector showing departments and divisions grouped
  */
-function DepartmentSelector({ value, onChange, departments, isLoading }) {
+function UnitSelector({ value, onChange, units, isLoading }) {
   if (isLoading) {
     return <Skeleton className="h-10 w-full" />;
   }
 
+  // Group by type and organize divisions under their parent department
+  const departments = units.filter((u) => u.unit_type_code === 'department');
+  const divisions = units.filter((u) => u.unit_type_code === 'division');
+
+  // Build grouped structure
+  const groupedUnits = [];
+  departments.forEach((dept) => {
+    groupedUnits.push({ ...dept, indent: 0 });
+    // Add divisions under this department
+    divisions
+      .filter((div) => div.parentId === dept.id)
+      .forEach((div) => {
+        groupedUnits.push({ ...div, indent: 1, parentName: dept.name });
+      });
+  });
+
   return (
     <Select value={value || ''} onValueChange={onChange}>
       <SelectTrigger className="w-full">
-        <SelectValue placeholder="Select a department" />
+        <SelectValue placeholder="Select a department or division" />
       </SelectTrigger>
       <SelectContent className="z-[200]">
-        {departments.map((dept) => (
-          <SelectItem key={dept.id} value={dept.id}>
-            {dept.name}
+        {groupedUnits.map((unit) => (
+          <SelectItem key={unit.id} value={unit.id}>
+            <span className={unit.indent ? 'pl-4' : ''}>
+              {unit.name}
+              {unit.unit_type_code === 'division' && (
+                <span className="ml-2 text-xs text-muted-foreground">(Division)</span>
+              )}
+            </span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -113,22 +133,15 @@ function DepartmentSelector({ value, onChange, departments, isLoading }) {
 }
 
 /**
- * Teams panel - shows teams under the selected department
+ * Teams panel - shows teams for the selected unit
  */
-function TeamsPanel({ departmentId, flatUnits }) {
-  const teams = useMemo(() => {
-    if (!departmentId) return [];
-    return flatUnits.filter(
-      (u) => u.unit_type_code === 'team' && u.parentId === departmentId
-    );
-  }, [departmentId, flatUnits]);
-
-  if (!departmentId) {
+function TeamsPanel({ unitId, teams }) {
+  if (!unitId) {
     return (
       <EmptyState
         icon={Users}
-        title="Select a department"
-        description="Choose a department to view its teams."
+        title="Select a unit"
+        description="Choose a department or division to view its teams."
       />
     );
   }
@@ -138,7 +151,7 @@ function TeamsPanel({ departmentId, flatUnits }) {
       <EmptyState
         icon={Users}
         title="No teams found"
-        description="Create teams under this department in the Organization page."
+        description="Create teams under this unit in the Organization page."
         action={
           <Button variant="outline" size="sm" asChild>
             <Link to="/admin/organization">Go to Organization</Link>
@@ -287,8 +300,8 @@ function DutyTypesPanel({ departmentId }) {
     return (
       <EmptyState
         icon={Clipboard}
-        title="Select a department"
-        description="Choose a department to manage its duty types."
+        title="Select a unit"
+        description="Choose a department or division to manage its duty types."
       />
     );
   }
@@ -665,8 +678,8 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
     return (
       <EmptyState
         icon={RotateCw}
-        title="Select a department"
-        description="Choose a department to manage its rotation rules."
+        title="Select a unit"
+        description="Choose a department or division to manage its rotation rules."
       />
     );
   }
@@ -829,7 +842,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
               </Select>
             </div>
 
-            {(formState.rule_type === 'sequential' || formState.rule_type === 'exclusion') && (
+            {formState.rule_type === 'sequential' && (
               <div className="space-y-2">
                 <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Team Sequence (click to toggle)
@@ -856,6 +869,68 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                     Order: {formState.team_sequence.map((t) => getTeamName(t)).join(' → ')}
                   </p>
                 )}
+              </div>
+            )}
+
+            {formState.rule_type === 'fixed_weekly' && (
+              <div className="space-y-3">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  Day Assignments (click to assign)
+                </label>
+                <div className="border rounded-lg overflow-hidden">
+                  {/* Header row with team names */}
+                  <div className="grid bg-muted/50 border-b" style={{ gridTemplateColumns: `60px repeat(${teams.length}, 1fr)` }}>
+                    <div className="p-2 text-[10px] font-mono uppercase text-muted-foreground border-r">Day</div>
+                    {teams.map((team) => (
+                      <div key={team.id} className="p-2 text-[10px] font-mono uppercase text-center text-muted-foreground truncate">
+                        {team.code || team.name.slice(0, 6)}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Day rows */}
+                  {DAYS_OF_WEEK.map((day, dayIndex) => (
+                    <div
+                      key={day.value}
+                      className={cn('grid', dayIndex < DAYS_OF_WEEK.length - 1 && 'border-b')}
+                      style={{ gridTemplateColumns: `60px repeat(${teams.length}, 1fr)` }}
+                    >
+                      <div className="p-2 text-xs font-mono text-muted-foreground border-r bg-muted/30">
+                        {day.label}
+                      </div>
+                      {teams.map((team) => {
+                        const isSelected = formState.day_assignments[String(day.value)] === team.id;
+                        return (
+                          <button
+                            key={team.id}
+                            type="button"
+                            onClick={() =>
+                              setFormState((prev) => {
+                                const newAssignments = { ...prev.day_assignments };
+                                if (isSelected) {
+                                  delete newAssignments[String(day.value)];
+                                } else {
+                                  newAssignments[String(day.value)] = team.id;
+                                }
+                                return { ...prev, day_assignments: newAssignments };
+                              })
+                            }
+                            className={cn(
+                              'p-2 transition-colors text-center',
+                              isSelected
+                                ? 'bg-primary text-primary-foreground'
+                                : 'hover:bg-muted/50'
+                            )}
+                          >
+                            {isSelected && <span className="text-xs">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Click a cell to assign that team to that day. Only one team per day.
+                </p>
               </div>
             )}
 
@@ -899,20 +974,30 @@ export default function RosterSetupPage() {
     return flattenUnitTree(Array.isArray(nodes) ? nodes : []);
   }, [treeData]);
 
-  const departments = useMemo(
-    () => flatUnits.filter((u) => u.unit_type_code === 'department'),
+  // Include both departments and divisions for roster setup
+  const rosterUnits = useMemo(
+    () => flatUnits.filter((u) => u.unit_type_code === 'department' || u.unit_type_code === 'division'),
     [flatUnits]
   );
 
-  const teams = useMemo(
-    () =>
-      selectedDepartment
-        ? flatUnits.filter(
-            (u) => u.unit_type_code === 'team' && u.parentId === selectedDepartment
-          )
-        : [],
-    [selectedDepartment, flatUnits]
-  );
+  // Get teams for selected unit - look under the unit itself OR its parent (for divisions)
+  // This handles both Model A (teams under department) and Model B (teams under division)
+  const teams = useMemo(() => {
+    if (!selectedDepartment) return [];
+    const selectedUnit = flatUnits.find((u) => u.id === selectedDepartment);
+    if (!selectedUnit) return [];
+
+    // If it's a division, also look for teams under the parent department
+    // since teams might be siblings of divisions, not children
+    const unitIdsToCheck = [selectedDepartment];
+    if (selectedUnit.unit_type_code === 'division' && selectedUnit.parentId) {
+      unitIdsToCheck.push(selectedUnit.parentId);
+    }
+
+    return flatUnits.filter(
+      (u) => u.unit_type_code === 'team' && unitIdsToCheck.includes(u.parentId)
+    );
+  }, [selectedDepartment, flatUnits]);
 
   const { data: dutyTypeData } = useDepartmentDutyTypes(
     selectedDepartment ? { department: selectedDepartment } : null
@@ -943,7 +1028,7 @@ export default function RosterSetupPage() {
                   Roster Setup
                 </h1>
                 <p className="mt-2 text-muted-foreground text-sm">
-                  Configure teams, duty types, and rotation rules for each department.
+                  Configure teams, duty types, and rotation rules for each department or division.
                 </p>
               </div>
             </div>
@@ -954,17 +1039,17 @@ export default function RosterSetupPage() {
             <CardHeader className="pb-3">
               <CardTitle className="font-heading text-lg flex items-center gap-2">
                 <CalendarClock className="h-5 w-5 text-primary" />
-                Select Department
+                Select Unit
               </CardTitle>
               <CardDescription>
-                Choose a department to configure its roster settings.
+                Choose a department or division to configure its roster settings.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <DepartmentSelector
+              <UnitSelector
                 value={selectedDepartment}
                 onChange={setSelectedDepartment}
-                departments={departments}
+                units={rosterUnits}
                 isLoading={treeLoading}
               />
             </CardContent>
@@ -982,13 +1067,13 @@ export default function RosterSetupPage() {
                   <div className="text-left">
                     <h3 className="font-heading font-medium">Teams</h3>
                     <p className="text-xs text-muted-foreground">
-                      {teams.length} team{teams.length !== 1 ? 's' : ''} in this department
+                      {teams.length} team{teams.length !== 1 ? 's' : ''} available
                     </p>
                   </div>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
-                <TeamsPanel departmentId={selectedDepartment} flatUnits={flatUnits} />
+                <TeamsPanel unitId={selectedDepartment} teams={teams} />
               </AccordionContent>
             </AccordionItem>
 

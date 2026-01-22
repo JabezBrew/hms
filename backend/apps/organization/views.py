@@ -1235,6 +1235,12 @@ class RotationRuleViewSet(viewsets.ModelViewSet):
             return RotationRule.objects.none()
         queryset = super().get_queryset().select_related('department', 'duty_type')
         queryset = queryset.filter(department__root_unit__code=facility.code)
+
+        # Filter by department_id from URL if present
+        department_id = self.kwargs.get('department_id')
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         return queryset.order_by('name')
@@ -1314,7 +1320,11 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         department_id = self.kwargs.get('department_id') or self.request.query_params.get('department')
         if not department_id:
             return None
-        return ClinicalUnit.objects.filter(id=department_id, unit_type__code='department').first()
+        # Allow both departments and divisions for roster management
+        return ClinicalUnit.objects.filter(
+            id=department_id,
+            unit_type__code__in=['department', 'division']
+        ).first()
 
     def _require_department(self):
         department = self._get_department()
@@ -1660,8 +1670,9 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         if not facility:
             raise PermissionDenied("Facility context is required.")
 
+        # Include both departments and divisions for on-duty lookup
         departments = ClinicalUnit.objects.filter(
-            unit_type__code='department',
+            unit_type__code__in=['department', 'division'],
             root_unit__code=facility.code,
             is_active=True
         )
