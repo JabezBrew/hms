@@ -28,6 +28,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -56,6 +66,7 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
 import { toast } from 'sonner';
 
 import {
@@ -68,6 +79,11 @@ import {
   useCreateRotationRule,
   useUpdateRotationRule,
   useDeleteRotationRule,
+  useValidationRules,
+  useValidationRuleTemplates,
+  useCreateValidationRule,
+  useUpdateValidationRule,
+  useDeleteValidationRule,
 } from '@/hooks/useOrganization';
 import { flattenUnitTree, toList } from './duty-roster/utils';
 import { EmptyState } from './duty-roster/components';
@@ -195,6 +211,7 @@ function TeamsPanel({ unitId, teams }) {
 function DutyTypesPanel({ departmentId }) {
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const { data, isLoading } = useDepartmentDutyTypes(
     departmentId ? { department: departmentId } : null
@@ -277,11 +294,12 @@ function DutyTypesPanel({ departmentId }) {
     }
   };
 
-  const handleDelete = async (item) => {
-    if (!confirm('Delete this duty type?')) return;
+  const handleDeleteDutyType = async () => {
+    if (!deleteConfirm) return;
     try {
-      await deleteMutation.mutateAsync(item.id);
+      await deleteMutation.mutateAsync(deleteConfirm.id);
       toast.success('Duty type deleted.');
+      setDeleteConfirm(null);
     } catch (error) {
       toast.error(error.message || 'Failed to delete.');
     }
@@ -380,7 +398,7 @@ function DutyTypesPanel({ departmentId }) {
                   <Button variant="ghost" size="icon" onClick={() => openForm(dt)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(dt)}>
+                  <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(dt)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
@@ -556,6 +574,30 @@ function DutyTypesPanel({ departmentId }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-destructive">
+              Delete Duty Type
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{deleteConfirm?.name}"</strong>? This may affect existing roster entries and rotation rules.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDutyType}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -566,6 +608,7 @@ function DutyTypesPanel({ departmentId }) {
 function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const { data, isLoading } = useRotationRules(departmentId);
   const rules = toList(data);
@@ -645,11 +688,12 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
     }
   };
 
-  const handleDelete = async (item) => {
-    if (!confirm('Delete this rotation rule?')) return;
+  const handleDeleteRotationRule = async () => {
+    if (!deleteConfirm) return;
     try {
-      await deleteMutation.mutateAsync(item.id);
+      await deleteMutation.mutateAsync(deleteConfirm.id);
       toast.success('Rotation rule deleted.');
+      setDeleteConfirm(null);
     } catch (error) {
       toast.error(error.message || 'Failed to delete.');
     }
@@ -763,7 +807,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                     <Button variant="ghost" size="icon" onClick={() => openForm(rule)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(rule)}>
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(rule)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -958,6 +1002,635 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-destructive">
+              Delete Rotation Rule
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{deleteConfirm?.name}"</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteRotationRule}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/**
+ * Validation Rules Panel - Manage configurable validation constraints
+ */
+function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // Item to delete
+
+  const { data, isLoading } = useValidationRules(departmentId);
+  const { data: templates } = useValidationRuleTemplates();
+  const rules = toList(data);
+
+  const createMutation = useCreateValidationRule();
+  const updateMutation = useUpdateValidationRule();
+  const deleteMutation = useDeleteValidationRule();
+
+  const [formState, setFormState] = useState({
+    name: '',
+    rule_type: 'no_consecutive_days',
+    duty_type: '',
+    params: {},
+    severity: 'error',
+    is_active: true,
+  });
+
+  const openForm = (item = null) => {
+    if (item) {
+      setEditingItem(item);
+      setFormState({
+        name: item.name || '',
+        rule_type: item.rule_type || 'no_consecutive_days',
+        duty_type: item.duty_type || '',
+        params: item.params || {},
+        severity: item.severity || 'error',
+        is_active: item.is_active ?? true,
+      });
+    } else {
+      setEditingItem(null);
+      setFormState({
+        name: '',
+        rule_type: 'no_consecutive_days',
+        duty_type: '',
+        params: {},
+        severity: 'error',
+        is_active: true,
+      });
+    }
+    setShowForm(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!formState.name.trim()) {
+      toast.error('Name is required.');
+      return;
+    }
+
+    const payload = {
+      name: formState.name.trim(),
+      rule_type: formState.rule_type,
+      duty_type: formState.duty_type || null,
+      params: formState.params,
+      severity: formState.severity,
+      is_active: formState.is_active,
+    };
+
+    try {
+      if (editingItem) {
+        await updateMutation.mutateAsync({ id: editingItem.id, data: payload });
+        toast.success('Validation rule updated.');
+      } else {
+        await createMutation.mutateAsync({ departmentId, data: payload });
+        toast.success('Validation rule created.');
+      }
+      setShowForm(false);
+    } catch (error) {
+      toast.error(error.message || 'Failed to save validation rule.');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await deleteMutation.mutateAsync(deleteConfirm.id);
+      toast.success('Validation rule deleted.');
+      setDeleteConfirm(null);
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete.');
+    }
+  };
+
+  const getDutyTypeName = (dutyTypeId) => {
+    if (!dutyTypeId) return 'All duty types';
+    const dt = dutyTypes.find((d) => d.id === dutyTypeId);
+    return dt?.name || dutyTypeId;
+  };
+
+  const currentTemplate = templates?.[formState.rule_type];
+
+  if (!departmentId) {
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="Select a unit"
+        description="Choose a department or division to manage its validation rules."
+      />
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2].map((i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => openForm()}>
+          <Plus className="h-4 w-4 mr-1" />
+          Add Rule
+        </Button>
+      </div>
+
+      {rules.length === 0 ? (
+        <div className="p-4 rounded-lg border border-dashed border-border text-center">
+          <p className="text-sm text-muted-foreground">
+            No validation rules defined. Rules help prevent scheduling conflicts.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rules.map((rule) => (
+            <div
+              key={rule.id}
+              className="p-4 rounded-lg border border-border hover:border-primary/30 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-heading font-medium">{rule.name}</span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-[9px] font-mono',
+                        rule.severity === 'error'
+                          ? 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+                          : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                      )}
+                    >
+                      {rule.severity}
+                    </Badge>
+                    {!rule.is_active && (
+                      <Badge variant="secondary" className="text-[9px]">
+                        Inactive
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {rule.rule_type_display} •{' '}
+                    {rule.rule_type === 'linked_duty_no_consecutive'
+                      ? (rule.params?.duty_type_ids || [])
+                          .map((id) => dutyTypes.find((dt) => dt.id === id)?.name || id)
+                          .join(', ') || 'No duty types linked'
+                      : getDutyTypeName(rule.duty_type)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => openForm(rule)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setDeleteConfirm(rule)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Form Dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editingItem ? 'Edit Validation Rule' : 'Add Validation Rule'}
+            </DialogTitle>
+            <DialogDescription>
+              Define constraints to prevent scheduling conflicts.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Rule Name
+              </label>
+              <Input
+                value={formState.name}
+                onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g., No back-to-back weekends"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Rule Type
+              </label>
+              <Select
+                value={formState.rule_type}
+                onValueChange={(v) => setFormState((p) => ({ ...p, rule_type: v, params: {} }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {templates && Object.entries(templates).map(([key, tmpl]) => (
+                    <SelectItem key={key} value={key}>
+                      <div>
+                        <div>{tmpl.name}</div>
+                        <div className="text-xs text-muted-foreground">{tmpl.description}</div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {currentTemplate?.example && (
+                <p className="text-xs text-muted-foreground italic">
+                  Example: {currentTemplate.example}
+                </p>
+              )}
+            </div>
+
+            {/* Apply To - not shown for linked_duty_no_consecutive which uses duty_type_ids param */}
+            {formState.rule_type !== 'linked_duty_no_consecutive' && (
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  Apply To
+                </label>
+                <Select
+                  value={formState.duty_type || '_all_'}
+                  onValueChange={(v) => setFormState((p) => ({ ...p, duty_type: v === '_all_' ? '' : v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All duty types" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200]">
+                    <SelectItem value="_all_">All duty types</SelectItem>
+                    {dutyTypes.map((dt) => (
+                      <SelectItem key={dt.id} value={dt.id}>
+                        {dt.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Dynamic params based on rule type */}
+            {formState.rule_type === 'no_consecutive_days' && (
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  Days Apart
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={formState.params.days_apart || 1}
+                  onChange={(e) =>
+                    setFormState((p) => ({
+                      ...p,
+                      params: { ...p.params, days_apart: parseInt(e.target.value) || 1 },
+                    }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  1 = no back-to-back days (Fri then Sat)
+                </p>
+              </div>
+            )}
+
+            {formState.rule_type === 'day_pair_exclusion' && (
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  Excluded Day Pairs
+                </label>
+                <div className="space-y-2">
+                  {(formState.params.pairs || []).map((pair, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Select
+                        value={String(pair[0])}
+                        onValueChange={(v) => {
+                          const newPairs = [...(formState.params.pairs || [])];
+                          newPairs[idx] = [parseInt(v), pair[1]];
+                          setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
+                        }}
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-[200]">
+                          {DAYS_OF_WEEK.map((d) => (
+                            <SelectItem key={d.value} value={String(d.value)}>{d.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-muted-foreground">→</span>
+                      <Select
+                        value={String(pair[1])}
+                        onValueChange={(v) => {
+                          const newPairs = [...(formState.params.pairs || [])];
+                          newPairs[idx] = [pair[0], parseInt(v)];
+                          setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
+                        }}
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-[200]">
+                          {DAYS_OF_WEEK.map((d) => (
+                            <SelectItem key={d.value} value={String(d.value)}>{d.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newPairs = (formState.params.pairs || []).filter((_, i) => i !== idx);
+                          setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newPairs = [...(formState.params.pairs || []), [4, 5]]; // Default Fri-Sat
+                      setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Pair
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Team cannot work both days of a pair in the same week.
+                </p>
+              </div>
+            )}
+
+            {formState.rule_type === 'max_per_period' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Maximum Duties
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={formState.params.max || 2}
+                    onChange={(e) =>
+                      setFormState((p) => ({
+                        ...p,
+                        params: { ...p.params, max: parseInt(e.target.value) || 2 },
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Period
+                  </label>
+                  <Select
+                    value={formState.params.period || 'week'}
+                    onValueChange={(v) =>
+                      setFormState((p) => ({ ...p, params: { ...p.params, period: v } }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[200]">
+                      <SelectItem value="week">Per Week</SelectItem>
+                      <SelectItem value="month">Per Month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            {formState.rule_type === 'team_day_exclusion' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Excluded Teams
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {teams.map((team) => (
+                      <button
+                        key={team.id}
+                        type="button"
+                        onClick={() => {
+                          const currentTeams = formState.params.team_ids || [];
+                          const newTeams = currentTeams.includes(team.id)
+                            ? currentTeams.filter((t) => t !== team.id)
+                            : [...currentTeams, team.id];
+                          setFormState((p) => ({ ...p, params: { ...p.params, team_ids: newTeams } }));
+                        }}
+                        className={cn(
+                          'px-3 py-1.5 rounded-md border text-xs font-mono transition-colors',
+                          (formState.params.team_ids || []).includes(team.id)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background border-border hover:bg-muted'
+                        )}
+                      >
+                        {team.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Excluded Days
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map((day) => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => {
+                          const currentDays = formState.params.days || [];
+                          const newDays = currentDays.includes(day.value)
+                            ? currentDays.filter((d) => d !== day.value)
+                            : [...currentDays, day.value];
+                          setFormState((p) => ({ ...p, params: { ...p.params, days: newDays } }));
+                        }}
+                        className={cn(
+                          'px-3 py-1.5 rounded-md border text-xs font-mono transition-colors',
+                          (formState.params.days || []).includes(day.value)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background border-border hover:bg-muted'
+                        )}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {formState.rule_type === 'linked_duty_no_consecutive' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Linked Duty Types
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Select duty types that should be treated as linked for consecutive day checking.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {dutyTypes.map((dt) => (
+                      <button
+                        key={dt.id}
+                        type="button"
+                        onClick={() => {
+                          const currentTypes = formState.params.duty_type_ids || [];
+                          const newTypes = currentTypes.includes(dt.id)
+                            ? currentTypes.filter((t) => t !== dt.id)
+                            : [...currentTypes, dt.id];
+                          setFormState((p) => ({ ...p, params: { ...p.params, duty_type_ids: newTypes } }));
+                        }}
+                        className={cn(
+                          'px-3 py-1.5 rounded-md border text-xs font-mono transition-colors',
+                          (formState.params.duty_type_ids || []).includes(dt.id)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background border-border hover:bg-muted'
+                        )}
+                      >
+                        {dt.name}
+                      </button>
+                    ))}
+                  </div>
+                  {(formState.params.duty_type_ids || []).length < 2 && (
+                    <p className="text-xs text-amber-600">Select at least 2 duty types to link.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Days Apart
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={6}
+                    value={formState.params.days_apart || 1}
+                    onChange={(e) =>
+                      setFormState((p) => ({
+                        ...p,
+                        params: { ...p.params, days_apart: parseInt(e.target.value) || 1 },
+                      }))
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    1 = no back-to-back days (e.g., Fri Emergency Weekdays → Sat Emergency Weekends)
+                  </p>
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Severity
+              </label>
+              <Select
+                value={formState.severity}
+                onValueChange={(v) => setFormState((p) => ({ ...p, severity: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  <SelectItem value="warning">
+                    <div>
+                      <div>Warning</div>
+                      <div className="text-xs text-muted-foreground">Show warning but allow save</div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="error">
+                    <div>
+                      <div>Error</div>
+                      <div className="text-xs text-muted-foreground">Block publish until fixed</div>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={formState.is_active}
+                  onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))}
+                />
+                <span className="text-sm">Active</span>
+              </label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={createMutation.isPending || updateMutation.isPending}
+            >
+              {editingItem ? 'Save' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-destructive">
+              Delete Validation Rule
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{deleteConfirm?.name}"</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1011,7 +1684,7 @@ export default function RosterSetupPage() {
       </Helmet>
 
       <div className="min-h-screen bg-background">
-        <div className="container max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div className="container max-w-5xl mx-auto py-8 pb-24 px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <header className="mb-8">
             <div className="flex items-center gap-4 mb-4">
@@ -1114,6 +1787,30 @@ export default function RosterSetupPage() {
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
                 <RotationRulesPanel
+                  departmentId={selectedDepartment}
+                  teams={teams}
+                  dutyTypes={dutyTypes}
+                />
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* Validation Rules Section */}
+            <AccordionItem value="validation-rules" className="border rounded-lg !border-b">
+              <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                    <ShieldAlert className="h-4 w-4 text-rose-500" />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-heading font-medium">Validation Rules</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Constraints on roster assignments
+                    </p>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-4 pb-4">
+                <ValidationRulesPanel
                   departmentId={selectedDepartment}
                   teams={teams}
                   dutyTypes={dutyTypes}

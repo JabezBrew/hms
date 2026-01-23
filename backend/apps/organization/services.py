@@ -558,8 +558,37 @@ class RosterImportService:
 
 
 
+class ValidationResult:
+    """Result of a validation check."""
+
+    def __init__(self, rule, severity, message, entry=None):
+        self.rule = rule
+        self.severity = severity
+        self.message = message
+        self.entry = entry
+
+    def to_dict(self):
+        return {
+            'rule_id': str(self.rule.id) if self.rule else None,
+            'rule_name': self.rule.name if self.rule else None,
+            'severity': self.severity,
+            'message': self.message,
+            'entry_id': str(self.entry.id) if self.entry else None,
+            'date': str(self.entry.date) if self.entry else None,
+            'duty_type': self.entry.duty_type.name if self.entry and self.entry.duty_type else None,
+        }
+
+
 class RosterValidationService:
-    """Validation helpers for roster entry constraints."""
+    """
+    Validation service for roster entry constraints.
+
+    Supports both legacy hardcoded validations and configurable RosterValidationRules.
+    """
+
+    # -------------------------------------------------------------------------
+    # Legacy validators (for backward compatibility during generation)
+    # -------------------------------------------------------------------------
 
     @staticmethod
     def validate_back_to_back(entries_by_team_date, duty_type, team_id, date):
@@ -605,6 +634,322 @@ class RosterValidationService:
         start_of_week = date - timedelta(days=date.weekday())
         reference_date = start_of_week + timedelta(days=working_day)
         return existing_by_date_duty_type.get((reference_date, reference_duty_type_id))
+
+    # -------------------------------------------------------------------------
+    # Configurable rule validators
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def get_rules_for_department(cls, department_id):
+        """Fetch active validation rules for a department."""
+        from .models import RosterValidationRule
+        return list(
+            RosterValidationRule.objects.filter(
+                department_id=department_id,
+                is_active=True
+            ).select_related('duty_type')
+        )
+
+    @classmethod
+    def validate_entry(cls, entry, all_entries, rules=None):
+        """
+        Validate a single roster entry against all applicable rules.
+
+        Args:
+            entry: RosterEntry to validate
+            all_entries: List of all entries in the roster period (for cross-checks)
+            rules: Optional list of rules (fetched if not provided)
+
+        Returns:
+            List of ValidationResult objects
+        """
+        if rules is None:
+            rules = cls.get_rules_for_department(entry.department_id)
+
+        results = []
+        for rule in rules:
+            # Skip inactive rules
+            if not rule.is_active:
+                continue
+
+            # For linked_duty_no_consecutive, check if entry's duty type is in the linked list
+            if rule.rule_type == 'linked_duty_no_consecutive':
+                duty_type_ids = rule.params.get('duty_type_ids', [])
+                duty_type_ids_str = [str(d) for d in duty_type_ids]
+                if str(entry.duty_type_id) not in duty_type_ids_str:
+                    continue
+            else:
+                # Skip if rule is for specific duty type and doesn't match
+                if rule.duty_type_id and rule.duty_type_id != entry.duty_type_id:
+                    continue
+
+            # Skip if rule only applies on certain days and this isn't one
+            if rule.apply_days and entry.date.weekday() not in rule.apply_days:
+                continue
+
+            # Get the validator for this rule type
+            validator = cls._get_validator(rule.rule_type)
+            if not validator:
+                continue
+
+            # Run validation
+            error_msg = validator(entry, all_entries, rule.params)
+            if error_msg:
+                results.append(ValidationResult(
+                    rule=rule,
+                    severity=rule.severity,
+                    message=error_msg,
+                    entry=entry
+                ))
+
+        return results
+
+    @classmethod
+    def validate_roster(cls, entries, rules=None):
+        """
+        Validate all entries in a roster.
+
+        Returns:
+            dict with 'warnings' and 'errors' lists
+        """
+        if not entries:
+            return {'warnings': [], 'errors': []}
+
+        if rules is None:
+            # Assume all entries are from same department
+            department_id = entries[0].department_id
+            rules = cls.get_rules_for_department(department_id)
+
+        all_results = []
+        for entry in entries:
+            if entry.team_id:  # Only validate entries with team assigned
+                results = cls.validate_entry(entry, entries, rules)
+                all_results.extend(results)
+
+        return {
+            'warnings': [r.to_dict() for r in all_results if r.severity == 'warning'],
+            'errors': [r.to_dict() for r in all_results if r.severity == 'error'],
+        }
+
+    @classmethod
+    def validate_for_publish(cls, entries, rules=None):
+        """
+        Validate roster before publishing. Returns errors only.
+        Raises ValueError if there are blocking errors.
+        """
+        result = cls.validate_roster(entries, rules)
+        if result['errors']:
+            error_messages = [e['message'] for e in result['errors'][:5]]  # First 5
+            raise ValueError(
+                f"Cannot publish roster with validation errors: {'; '.join(error_messages)}"
+            )
+        return result
+
+    @classmethod
+    def _get_validator(cls, rule_type):
+        """Get validator function for a rule type."""
+        validators = {
+            'no_consecutive_days': cls._validate_no_consecutive_days,
+            'linked_duty_no_consecutive': cls._validate_linked_duty_no_consecutive,
+            'day_pair_exclusion': cls._validate_day_pair_exclusion,
+            'team_day_exclusion': cls._validate_team_day_exclusion,
+            'max_per_period': cls._validate_max_per_period,
+        }
+        return validators.get(rule_type)
+
+    # -------------------------------------------------------------------------
+    # Individual rule validators
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_no_consecutive_days(entry, all_entries, params):
+        """
+        Validate that same team doesn't work days that are N days apart.
+
+        Params:
+            days_apart: int (default 1 = consecutive days)
+        """
+        days_apart = params.get('days_apart', 1)
+        if not entry.team_id:
+            return None
+
+        # Find entries for same team and duty type within days_apart
+        for other in all_entries:
+            if other.id == entry.id:
+                continue
+            if other.team_id != entry.team_id:
+                continue
+            if other.duty_type_id != entry.duty_type_id:
+                continue
+
+            day_diff = abs((entry.date - other.date).days)
+            if day_diff <= days_apart:
+                return f"Team cannot work duties {days_apart} day(s) apart. Conflict: {entry.date} and {other.date}"
+
+        return None
+
+    @staticmethod
+    def _validate_linked_duty_no_consecutive(entry, all_entries, params):
+        """
+        Validate that same team doesn't work consecutive days across linked duty types.
+
+        Params:
+            duty_type_ids: list of duty type UUIDs to treat as linked
+            days_apart: int (default 1 = consecutive days)
+
+        Example: Emergency Weekdays (Fri) + Emergency Weekends (Sat) = violation
+        """
+        duty_type_ids = params.get('duty_type_ids', [])
+        days_apart = params.get('days_apart', 1)
+
+        if not entry.team_id or not duty_type_ids:
+            return None
+
+        # Convert to strings for comparison (UUIDs may come as strings)
+        duty_type_ids_str = [str(d) for d in duty_type_ids]
+
+        # Only check if this entry's duty type is in the linked list
+        if str(entry.duty_type_id) not in duty_type_ids_str:
+            return None
+
+        # Find entries for same team with ANY of the linked duty types within days_apart
+        for other in all_entries:
+            if other.id == entry.id:
+                continue
+            if other.team_id != entry.team_id:
+                continue
+            # Check if other entry's duty type is in the linked list
+            if str(other.duty_type_id) not in duty_type_ids_str:
+                continue
+
+            day_diff = abs((entry.date - other.date).days)
+            if day_diff <= days_apart and day_diff > 0:
+                return f"Team cannot work linked duties {days_apart} day(s) apart. Conflict: {entry.date} and {other.date}"
+
+        return None
+
+    @staticmethod
+    def _validate_day_pair_exclusion(entry, all_entries, params):
+        """
+        Validate that same team doesn't work specific day pairs in same week.
+
+        Params:
+            pairs: list of [day1, day2] pairs (0=Mon, 6=Sun)
+        """
+        pairs = params.get('pairs', [])
+        if not pairs or not entry.team_id:
+            return None
+
+        entry_weekday = entry.date.weekday()
+        # Calculate start of week (Monday)
+        start_of_week = entry.date - timedelta(days=entry_weekday)
+        end_of_week = start_of_week + timedelta(days=6)
+
+        # Check if this entry's day is in any pair
+        for pair in pairs:
+            if len(pair) != 2:
+                continue
+
+            day_a, day_b = pair
+
+            # If entry is on day_a, check if team has day_b in same week
+            if entry_weekday == day_a:
+                target_date = start_of_week + timedelta(days=day_b)
+                for other in all_entries:
+                    if other.id == entry.id:
+                        continue
+                    if other.team_id != entry.team_id:
+                        continue
+                    if other.duty_type_id != entry.duty_type_id:
+                        continue
+                    if other.date == target_date:
+                        day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                        return f"Team cannot work both {day_names[day_a]} and {day_names[day_b]} in the same week"
+
+            # If entry is on day_b, check if team has day_a in same week
+            if entry_weekday == day_b:
+                target_date = start_of_week + timedelta(days=day_a)
+                for other in all_entries:
+                    if other.id == entry.id:
+                        continue
+                    if other.team_id != entry.team_id:
+                        continue
+                    if other.duty_type_id != entry.duty_type_id:
+                        continue
+                    if other.date == target_date:
+                        day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                        return f"Team cannot work both {day_names[day_a]} and {day_names[day_b]} in the same week"
+
+        return None
+
+    @staticmethod
+    def _validate_team_day_exclusion(entry, all_entries, params):
+        """
+        Validate that specific teams don't work on specific days.
+
+        Params:
+            team_ids: list of team UUIDs
+            days: list of day indices (0=Mon, 6=Sun)
+        """
+        team_ids = params.get('team_ids', [])
+        days = params.get('days', [])
+
+        if not team_ids or not days or not entry.team_id:
+            return None
+
+        # Convert to strings for comparison (UUIDs might come as strings)
+        team_ids_str = [str(t) for t in team_ids]
+        entry_team_str = str(entry.team_id)
+
+        if entry_team_str in team_ids_str and entry.date.weekday() in days:
+            day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            day_name = day_names[entry.date.weekday()]
+            return f"This team is excluded from working on {day_name}"
+
+        return None
+
+    @staticmethod
+    def _validate_max_per_period(entry, all_entries, params):
+        """
+        Validate that team doesn't exceed max duties in a period.
+
+        Params:
+            max: int (maximum duties allowed)
+            period: 'week' or 'month'
+        """
+        max_duties = params.get('max', 2)
+        period = params.get('period', 'week')
+
+        if not entry.team_id:
+            return None
+
+        # Determine period boundaries
+        if period == 'week':
+            # Week starts on Monday
+            start = entry.date - timedelta(days=entry.date.weekday())
+            end = start + timedelta(days=6)
+        else:  # month
+            start = entry.date.replace(day=1)
+            # Last day of month
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
+
+        # Count duties for this team in the period
+        count = 0
+        for other in all_entries:
+            if other.team_id != entry.team_id:
+                continue
+            if other.duty_type_id != entry.duty_type_id:
+                continue
+            if start <= other.date <= end:
+                count += 1
+
+        if count > max_duties:
+            return f"Team exceeds maximum of {max_duties} duties per {period} (has {count})"
+
+        return None
 
 
 class RosterGenerationService:

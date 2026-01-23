@@ -1133,3 +1133,195 @@ class RosterEntry(models.Model):
             raise ValidationError({'department': 'Roster entries must belong to a department or division unit.'})
         if self.duty_type_id and self.department_id and self.duty_type.department_id != self.department_id:
             raise ValidationError({'duty_type': 'Duty type must belong to the selected unit.'})
+
+
+# =============================================================================
+# Roster Validation Rules
+# =============================================================================
+
+
+class RosterValidationRule(models.Model):
+    """
+    Configurable validation rules for roster entries.
+
+    Separate from RotationRule (which defines HOW to auto-assign teams),
+    this defines CONSTRAINTS on assignments (what's allowed/forbidden).
+
+    Uses a template-based approach with JSON params for flexibility
+    without requiring schema changes for new rule types.
+    """
+    RULE_TYPE_CHOICES = [
+        ('no_consecutive_days', 'No Consecutive Days'),
+        ('linked_duty_no_consecutive', 'Linked Duties No Consecutive'),
+        ('day_pair_exclusion', 'Day Pair Exclusion'),
+        ('team_day_exclusion', 'Team Day Exclusion'),
+        ('max_per_period', 'Max Duties Per Period'),
+    ]
+
+    SCOPE_CHOICES = [
+        ('duty_type', 'Specific Duty Type'),
+        ('department', 'Entire Department'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('warning', 'Warning'),   # Warn on draft, allow save
+        ('error', 'Error'),       # Block on publish
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Scope
+    department = models.ForeignKey(
+        ClinicalUnit,
+        on_delete=models.CASCADE,
+        related_name='validation_rules'
+    )
+    duty_type = models.ForeignKey(
+        DepartmentDutyType,
+        on_delete=models.CASCADE,
+        related_name='validation_rules',
+        null=True,
+        blank=True,
+        help_text='Leave blank to apply to all duty types in department'
+    )
+
+    # Rule definition
+    rule_type = models.CharField(max_length=30, choices=RULE_TYPE_CHOICES)
+    params = models.JSONField(
+        default=dict,
+        help_text='Rule-specific parameters (see RULE_TEMPLATES for schema)'
+    )
+    apply_days = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Days of week to apply rule (0=Mon, 6=Sun). Empty = all days.'
+    )
+
+    # Behavior
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='duty_type')
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default='error')
+
+    # Metadata
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='+'
+    )
+
+    class Meta:
+        db_table = 'organization_roster_validation_rule'
+        ordering = ['department', 'duty_type', 'name']
+        verbose_name = 'Roster Validation Rule'
+        verbose_name_plural = 'Roster Validation Rules'
+
+    def __str__(self):
+        duty = self.duty_type.name if self.duty_type else 'All'
+        return f"{self.name} ({duty})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        unit_type_code = getattr(self.department.unit_type, 'code', None)
+        if unit_type_code not in ('department', 'division'):
+            raise ValidationError({'department': 'Validation rules must belong to a department or division unit.'})
+        if self.duty_type_id and self.duty_type.department_id != self.department_id:
+            raise ValidationError({'duty_type': 'Duty type must belong to the selected department.'})
+
+
+# Rule templates capability matrix for frontend
+VALIDATION_RULE_TEMPLATES = {
+    'no_consecutive_days': {
+        'name': 'No Consecutive Days',
+        'description': 'Same team cannot work duties that are N days apart',
+        'params': {
+            'days_apart': {
+                'type': 'int',
+                'label': 'Days Apart',
+                'default': 1,
+                'min': 1,
+                'max': 6,
+                'help': '1 = no back-to-back days (e.g., Fri then Sat)'
+            }
+        },
+        'example': 'Team doing Friday duty cannot do Saturday duty'
+    },
+    'day_pair_exclusion': {
+        'name': 'Day Pair Exclusion',
+        'description': 'Same team cannot work specific day combinations within the same week',
+        'params': {
+            'pairs': {
+                'type': 'day_pairs',
+                'label': 'Excluded Day Pairs',
+                'default': [],
+                'help': 'List of [day1, day2] pairs. 0=Mon, 6=Sun'
+            }
+        },
+        'example': 'Team doing Sunday cannot do Monday (weekend wrap-around)'
+    },
+    'team_day_exclusion': {
+        'name': 'Team Day Exclusion',
+        'description': 'Specific teams cannot work on specific days',
+        'params': {
+            'team_ids': {
+                'type': 'team_list',
+                'label': 'Teams',
+                'default': [],
+                'help': 'Select teams to exclude'
+            },
+            'days': {
+                'type': 'day_list',
+                'label': 'Days',
+                'default': [],
+                'help': 'Days when these teams cannot work'
+            }
+        },
+        'example': 'Team A never works on Wednesdays'
+    },
+    'max_per_period': {
+        'name': 'Max Duties Per Period',
+        'description': 'Limit how many duties a team can have in a period',
+        'params': {
+            'max': {
+                'type': 'int',
+                'label': 'Maximum Duties',
+                'default': 2,
+                'min': 1,
+                'max': 10
+            },
+            'period': {
+                'type': 'enum',
+                'label': 'Period',
+                'options': ['week', 'month'],
+                'default': 'week'
+            }
+        },
+        'example': 'No team can have more than 2 weekend duties per month'
+    },
+    'linked_duty_no_consecutive': {
+        'name': 'Linked Duties No Consecutive',
+        'description': 'Team cannot work consecutive days across linked duty types',
+        'params': {
+            'duty_type_ids': {
+                'type': 'duty_type_list',
+                'label': 'Linked Duty Types',
+                'default': [],
+                'help': 'Select duty types to link together for consecutive day checking'
+            },
+            'days_apart': {
+                'type': 'int',
+                'label': 'Days Apart',
+                'default': 1,
+                'min': 1,
+                'max': 6,
+                'help': '1 = no back-to-back days'
+            }
+        },
+        'example': 'Team working Emergency Weekdays on Friday cannot work Emergency Weekends on Saturday'
+    }
+}

@@ -805,3 +805,105 @@ class RosterImportSerializer(serializers.Serializer):
 
 class OnDutyQuerySerializer(serializers.Serializer):
     at_datetime = serializers.DateTimeField(required=False)
+
+
+# =============================================================================
+# Roster Validation Rule Serializers
+# =============================================================================
+
+
+class RosterValidationRuleListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for list views."""
+    duty_type_name = serializers.CharField(source='duty_type.name', read_only=True, allow_null=True)
+    rule_type_display = serializers.CharField(source='get_rule_type_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+
+    class Meta:
+        from .models import RosterValidationRule
+        model = RosterValidationRule
+        fields = [
+            'id', 'name', 'description',
+            'rule_type', 'rule_type_display',
+            'duty_type', 'duty_type_name',
+            'params',  # Include params for validation rules that need them (e.g., linked_duty_no_consecutive)
+            'severity', 'severity_display',
+            'is_active'
+        ]
+
+
+class RosterValidationRuleSerializer(serializers.ModelSerializer):
+    """Full serializer for detail/create/update."""
+    duty_type_name = serializers.CharField(source='duty_type.name', read_only=True, allow_null=True)
+    rule_type_display = serializers.CharField(source='get_rule_type_display', read_only=True)
+
+    class Meta:
+        from .models import RosterValidationRule
+        model = RosterValidationRule
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        from .models import VALIDATION_RULE_TEMPLATES
+
+        rule_type = data.get('rule_type', getattr(self.instance, 'rule_type', None))
+        params = data.get('params', getattr(self.instance, 'params', {}))
+
+        # Validate rule_type exists in templates
+        if rule_type and rule_type not in VALIDATION_RULE_TEMPLATES:
+            raise serializers.ValidationError({
+                'rule_type': f'Unknown rule type: {rule_type}'
+            })
+
+        # Validate params match expected schema
+        if rule_type:
+            template = VALIDATION_RULE_TEMPLATES.get(rule_type, {})
+            expected_params = template.get('params', {})
+
+            for param_name, param_schema in expected_params.items():
+                value = params.get(param_name)
+                param_type = param_schema.get('type')
+
+                # Check required params have values (unless they have defaults)
+                if value is None and 'default' not in param_schema:
+                    # Use default if not provided
+                    params[param_name] = param_schema.get('default')
+                    continue
+
+                # Type validation
+                if value is not None:
+                    if param_type == 'int' and not isinstance(value, int):
+                        raise serializers.ValidationError({
+                            'params': f'{param_name} must be an integer'
+                        })
+                    if param_type == 'day_pairs' and not isinstance(value, list):
+                        raise serializers.ValidationError({
+                            'params': f'{param_name} must be a list of day pairs'
+                        })
+                    if param_type == 'day_list' and not isinstance(value, list):
+                        raise serializers.ValidationError({
+                            'params': f'{param_name} must be a list of days'
+                        })
+                    if param_type == 'team_list' and not isinstance(value, list):
+                        raise serializers.ValidationError({
+                            'params': f'{param_name} must be a list of team IDs'
+                        })
+
+            data['params'] = params
+
+        # Validate duty_type belongs to department
+        duty_type = data.get('duty_type')
+        department = data.get('department', getattr(self.instance, 'department', None))
+        if duty_type and department and duty_type.department_id != department.id:
+            raise serializers.ValidationError({
+                'duty_type': 'Duty type must belong to the selected department.'
+            })
+
+        return data
+
+
+class ValidationRuleTemplatesSerializer(serializers.Serializer):
+    """Serializer for returning rule templates to frontend."""
+
+    def to_representation(self, instance):
+        from .models import VALIDATION_RULE_TEMPLATES
+        return VALIDATION_RULE_TEMPLATES

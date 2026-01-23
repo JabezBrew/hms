@@ -332,6 +332,21 @@ export const rosterEntriesApi = {
     apiClient.get(`/organization/on-duty/`, { params }),
 };
 
+/**
+ * Roster Validation Rules API
+ */
+export const validationRulesApi = {
+  list: (departmentId, params = {}) =>
+    apiClient.get(`/organization/departments/${departmentId}/validation-rules/`, { params }),
+  get: (id) => apiClient.get(`/organization/validation-rules/${id}/`),
+  create: (departmentId, data) =>
+    apiClient.post(`/organization/departments/${departmentId}/validation-rules/`, { ...data, department: departmentId }),
+  update: (id, data) => apiClient.patch(`/organization/validation-rules/${id}/`, data),
+  delete: (id) => apiClient.delete(`/organization/validation-rules/${id}/`),
+  templates: () => apiClient.get(`/organization/validation-rules/templates/`),
+  validate: (data) => apiClient.post(`/organization/validation-rules/validate/`, data),
+};
+
 // =============================================================================
 // Clinics Endpoints
 // =============================================================================
@@ -379,4 +394,5 @@ export default {
   clinicSchedules: clinicSchedulesApi,
   rotationRules: rotationRulesApi,
   rosterEntries: rosterEntriesApi,
+  validationRules: validationRulesApi,
 };

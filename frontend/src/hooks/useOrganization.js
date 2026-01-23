@@ -28,6 +28,7 @@ import {
   clinicSchedulesApi,
   rotationRulesApi,
   rosterEntriesApi,
+  validationRulesApi,
 } from '@/lib/api/organization';
 import { usePaginatedQuery } from './usePaginatedQuery';
 
@@ -149,6 +150,12 @@ export const organizationKeys = {
   rosterEntry: (id) => [...organizationKeys.rosterEntries(), id],
   rosterOnDutyDepartment: (departmentId, params) => [...organizationKeys.rosterEntries(), departmentId, 'on-duty', params],
   rosterOnDutyAll: (params) => [...organizationKeys.rosterEntries(), 'on-duty-all', params],
+
+  // Validation Rules
+  validationRules: () => [...organizationKeys.all, 'validation-rules'],
+  validationRulesList: (departmentId, params) => [...organizationKeys.validationRules(), departmentId, 'list', params],
+  validationRule: (id) => [...organizationKeys.validationRules(), id],
+  validationRuleTemplates: () => [...organizationKeys.validationRules(), 'templates'],
 };
 
 function getTreeNodes(treeQueryData) {
@@ -1707,4 +1714,75 @@ export function useRosterOnDutyAll(params = {}, options = {}) {
  */
 export function useDepartments(options = {}) {
   return useClinicalUnits({ is_active: true }, options);
+}
+
+// =============================================================================
+// Validation Rules Hooks
+// =============================================================================
+
+export function useValidationRules(departmentId, params = {}, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.validationRulesList(departmentId, params),
+    queryFn: () => validationRulesApi.list(departmentId, params),
+    enabled: !!departmentId,
+    staleTime: 5 * 60 * 1000,
+    ...options,
+  });
+}
+
+export function useValidationRule(id, options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.validationRule(id),
+    queryFn: () => validationRulesApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useValidationRuleTemplates(options = {}) {
+  return useQuery({
+    queryKey: organizationKeys.validationRuleTemplates(),
+    queryFn: () => validationRulesApi.templates(),
+    staleTime: 60 * 60 * 1000, // Templates rarely change
+    ...options,
+  });
+}
+
+export function useCreateValidationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, data }) => validationRulesApi.create(departmentId, data),
+    onSuccess: (_, { departmentId }) => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.validationRulesList(departmentId, {}) });
+    },
+  });
+}
+
+export function useUpdateValidationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => validationRulesApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.validationRules() });
+    },
+  });
+}
+
+export function useDeleteValidationRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => validationRulesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.validationRules() });
+    },
+  });
+}
+
+export function useValidateRoster() {
+  return useMutation({
+    mutationFn: (data) => validationRulesApi.validate(data),
+  });
 }

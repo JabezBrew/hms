@@ -19,6 +19,7 @@ from .views import (
     DepartmentDutyTypeViewSet,
     RotationRuleViewSet,
     RosterEntryViewSet,
+    RosterValidationRuleViewSet,
 )
 
 router = DefaultRouter()
@@ -111,6 +112,27 @@ urlpatterns = [
         'on-duty/',
         RosterEntryViewSet.as_view({'get': 'on_duty'}),
         name='on-duty'
+    ),
+    # Validation rules endpoints
+    path(
+        'departments/<uuid:department_id>/validation-rules/',
+        RosterValidationRuleViewSet.as_view({'get': 'list', 'post': 'create'}),
+        name='department-validation-rules'
+    ),
+    path(
+        'validation-rules/<uuid:pk>/',
+        RosterValidationRuleViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'}),
+        name='validation-rule-detail'
+    ),
+    path(
+        'validation-rules/templates/',
+        RosterValidationRuleViewSet.as_view({'get': 'templates'}),
+        name='validation-rule-templates'
+    ),
+    path(
+        'validation-rules/validate/',
+        RosterValidationRuleViewSet.as_view({'post': 'validate_roster'}),
+        name='validate-roster'
     ),
     path('', include(router.urls)),
 ]

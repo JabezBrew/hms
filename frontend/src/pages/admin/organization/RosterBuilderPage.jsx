@@ -26,6 +26,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -48,6 +58,7 @@ import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/alert-circle.js';
 import { toast } from 'sonner';
 import format from 'date-fns/format';
 import startOfMonth from 'date-fns/startOfMonth';
@@ -66,6 +77,8 @@ import {
   usePublishRoster,
   useClearRoster,
   useUpdateRosterEntry,
+  useCreateRosterEntry,
+  useValidationRules,
 } from '@/hooks/useOrganization';
 import { rosterEntriesApi } from '@/lib/api/organization';
 import { flattenUnitTree, toList } from './duty-roster/utils';
@@ -101,6 +114,7 @@ export default function RosterBuilderPage() {
   const [editingCell, setEditingCell] = useState(null);
   const [pendingTeamChange, setPendingTeamChange] = useState(null); // { teamId, teamName }
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showPublishWarningConfirm, setShowPublishWarningConfirm] = useState(false);
 
   // Get organization tree
   const { data: treeData, isLoading: treeLoading } = useClinicalUnitsTree();
@@ -172,19 +186,243 @@ export default function RosterBuilderPage() {
     return map;
   }, [entries]);
 
+  // Fetch validation rules for real-time validation
+  const { data: validationRulesData } = useValidationRules(selectedDepartment);
+  const validationRules = toList(validationRulesData).filter((r) => r.is_active);
+
+  // Client-side validation - compute violations for all entries
+  const violations = useMemo(() => {
+    if (!entries.length || !validationRules.length) return new Map();
+
+    const violationsMap = new Map(); // key: "date|duty_type" -> { errors: [], warnings: [] }
+
+    // Helper to get day of week (0=Mon, 6=Sun)
+    const getDayOfWeek = (dateStr) => {
+      const d = new Date(dateStr);
+      const jsDay = d.getDay(); // 0=Sun, 1=Mon
+      return jsDay === 0 ? 6 : jsDay - 1;
+    };
+
+    // Helper to get week number for grouping
+    const getWeekKey = (dateStr) => {
+      const d = new Date(dateStr);
+      const startOfYear = new Date(d.getFullYear(), 0, 1);
+      const days = Math.floor((d - startOfYear) / (24 * 60 * 60 * 1000));
+      return `${d.getFullYear()}-W${Math.ceil((days + startOfYear.getDay() + 1) / 7)}`;
+    };
+
+    // Group entries by team and duty type for validation
+    const entriesByTeamDutyType = new Map();
+    entries.forEach((entry) => {
+      if (!entry.team) return;
+      const key = `${entry.team}|${entry.duty_type}`;
+      if (!entriesByTeamDutyType.has(key)) {
+        entriesByTeamDutyType.set(key, []);
+      }
+      entriesByTeamDutyType.get(key).push(entry);
+    });
+
+    // Run each rule
+    validationRules.forEach((rule) => {
+      const addViolation = (entry, message) => {
+        const key = `${entry.date}|${entry.duty_type}`;
+        if (!violationsMap.has(key)) {
+          violationsMap.set(key, { errors: [], warnings: [] });
+        }
+        const v = violationsMap.get(key);
+        if (rule.severity === 'error') {
+          v.errors.push({ rule: rule.name, message });
+        } else {
+          v.warnings.push({ rule: rule.name, message });
+        }
+      };
+
+      // Filter entries relevant to this rule
+      const relevantEntries = entries.filter((e) => {
+        if (!e.team) return false;
+        // Check if rule applies to this duty type
+        if (rule.duty_type && rule.duty_type !== e.duty_type) return false;
+        // Check apply_days
+        if (rule.apply_days?.length > 0) {
+          const dayOfWeek = getDayOfWeek(e.date);
+          if (!rule.apply_days.includes(dayOfWeek)) return false;
+        }
+        return true;
+      });
+
+      switch (rule.rule_type) {
+        case 'no_consecutive_days': {
+          const daysApart = rule.params?.days_apart || 1;
+          relevantEntries.forEach((entry) => {
+            const entryDate = new Date(entry.date);
+            // Look for entries by same team within days_apart
+            for (let d = 1; d <= daysApart; d++) {
+              const checkDate = new Date(entryDate);
+              checkDate.setDate(checkDate.getDate() + d);
+              const checkDateStr = checkDate.toISOString().split('T')[0];
+
+              const nextDayEntry = entries.find(
+                (e) =>
+                  e.date === checkDateStr &&
+                  e.team === entry.team &&
+                  (!rule.duty_type || e.duty_type === rule.duty_type)
+              );
+              if (nextDayEntry) {
+                const teamName = teamById.get(entry.team)?.name || 'Team';
+                const nextDateFormatted = format(checkDate, 'EEE d');
+                addViolation(entry, `${teamName} also on duty ${nextDateFormatted}`);
+              }
+            }
+          });
+          break;
+        }
+
+        case 'day_pair_exclusion': {
+          const pairs = rule.params?.pairs || [];
+          pairs.forEach(([day1, day2]) => {
+            // Group by team and week
+            const byTeamWeek = new Map();
+            relevantEntries.forEach((entry) => {
+              const dayOfWeek = getDayOfWeek(entry.date);
+              if (dayOfWeek === day1 || dayOfWeek === day2) {
+                const weekKey = getWeekKey(entry.date);
+                const key = `${entry.team}|${weekKey}`;
+                if (!byTeamWeek.has(key)) {
+                  byTeamWeek.set(key, { day1Entries: [], day2Entries: [] });
+                }
+                if (dayOfWeek === day1) {
+                  byTeamWeek.get(key).day1Entries.push(entry);
+                } else {
+                  byTeamWeek.get(key).day2Entries.push(entry);
+                }
+              }
+            });
+
+            byTeamWeek.forEach(({ day1Entries, day2Entries }) => {
+              if (day1Entries.length > 0 && day2Entries.length > 0) {
+                const teamName = teamById.get(day1Entries[0].team)?.name || 'Team';
+                const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                day1Entries.forEach((e) =>
+                  addViolation(e, `${teamName} cannot do both ${dayNames[day1]} and ${dayNames[day2]} this week`)
+                );
+                day2Entries.forEach((e) =>
+                  addViolation(e, `${teamName} cannot do both ${dayNames[day1]} and ${dayNames[day2]} this week`)
+                );
+              }
+            });
+          });
+          break;
+        }
+
+        case 'team_day_exclusion': {
+          const excludedTeams = rule.params?.team_ids || [];
+          const excludedDays = rule.params?.days || [];
+          relevantEntries.forEach((entry) => {
+            if (excludedTeams.includes(entry.team)) {
+              const dayOfWeek = getDayOfWeek(entry.date);
+              if (excludedDays.includes(dayOfWeek)) {
+                const teamName = teamById.get(entry.team)?.name || 'Team';
+                const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                addViolation(entry, `${teamName} cannot be assigned on ${dayNames[dayOfWeek]}s`);
+              }
+            }
+          });
+          break;
+        }
+
+        case 'max_per_period': {
+          const maxDuties = rule.params?.max || 2;
+          const period = rule.params?.period || 'week';
+
+          // Group by team and period
+          const byTeamPeriod = new Map();
+          relevantEntries.forEach((entry) => {
+            const periodKey =
+              period === 'week' ? getWeekKey(entry.date) : entry.date.substring(0, 7);
+            const key = `${entry.team}|${periodKey}`;
+            if (!byTeamPeriod.has(key)) {
+              byTeamPeriod.set(key, []);
+            }
+            byTeamPeriod.get(key).push(entry);
+          });
+
+          byTeamPeriod.forEach((periodEntries) => {
+            if (periodEntries.length > maxDuties) {
+              const teamName = teamById.get(periodEntries[0].team)?.name || 'Team';
+              const periodLabel = period === 'week' ? 'this week' : 'this month';
+              periodEntries.forEach((e) =>
+                addViolation(e, `${teamName} exceeds ${maxDuties} duties ${periodLabel} (has ${periodEntries.length})`)
+              );
+            }
+          });
+          break;
+        }
+
+        case 'linked_duty_no_consecutive': {
+          const linkedDutyTypes = (rule.params?.duty_type_ids || []).map(String);
+          const daysApart = rule.params?.days_apart || 1;
+
+          // Get all entries for linked duty types (not just relevantEntries which may be filtered)
+          // Convert both to strings for comparison to handle UUID format mismatches
+          const linkedEntries = entries.filter(
+            (e) => e.team && linkedDutyTypes.includes(String(e.duty_type))
+          );
+
+          linkedEntries.forEach((entry) => {
+            const entryDate = new Date(entry.date);
+            // Look for entries by same team within days_apart across ANY linked duty type
+            for (let d = 1; d <= daysApart; d++) {
+              const checkDate = new Date(entryDate);
+              checkDate.setDate(checkDate.getDate() + d);
+              const checkDateStr = checkDate.toISOString().split('T')[0];
+
+              const conflictEntry = linkedEntries.find(
+                (e) =>
+                  e.id !== entry.id &&
+                  e.date === checkDateStr &&
+                  e.team === entry.team
+              );
+              if (conflictEntry) {
+                const teamName = teamById.get(entry.team)?.name || 'Team';
+                // Find duty type names for clearer message
+                const entryDutyName = dutyTypes.find(dt => dt.id === entry.duty_type)?.name || 'duty';
+                const conflictDutyName = dutyTypes.find(dt => dt.id === conflictEntry.duty_type)?.name || 'duty';
+                const conflictDateFormatted = format(new Date(conflictEntry.date), 'EEE d');
+                addViolation(entry, `${teamName} also assigned to ${conflictDutyName} on ${conflictDateFormatted}`);
+              }
+            }
+          });
+          break;
+        }
+      }
+    });
+
+    return violationsMap;
+  }, [entries, validationRules, teamById, dutyTypes]);
+
   // Mutations
   const generateMutation = useGenerateRosterEntries();
   const publishMutation = usePublishRoster();
   const clearMutation = useClearRoster();
   const updateMutation = useUpdateRosterEntry();
+  const createMutation = useCreateRosterEntry();
 
   // Stats
   const stats = useMemo(() => {
     const draft = entries.filter((e) => e.status === 'draft').length;
     const published = entries.filter((e) => e.status === 'published').length;
     const overrides = entries.filter((e) => e.is_override).length;
-    return { draft, published, overrides, total: entries.length };
-  }, [entries]);
+
+    // Count validation violations
+    let errorCount = 0;
+    let warningCount = 0;
+    violations.forEach((v) => {
+      errorCount += v.errors.length;
+      warningCount += v.warnings.length;
+    });
+
+    return { draft, published, overrides, total: entries.length, errorCount, warningCount };
+  }, [entries, violations]);
 
   // Navigation
   const goToPreviousPeriod = () => {
@@ -229,6 +467,22 @@ export default function RosterBuilderPage() {
       return;
     }
 
+    // Block publish if there are validation errors
+    if (stats.errorCount > 0) {
+      toast.error(`Cannot publish: ${stats.errorCount} validation error(s) must be fixed first.`);
+      return;
+    }
+
+    // Warn but allow publish if there are warnings
+    if (stats.warningCount > 0) {
+      setShowPublishWarningConfirm(true);
+      return;
+    }
+
+    await doPublish();
+  };
+
+  const doPublish = async () => {
     try {
       const start = format(startOfMonth(periodDate), 'yyyy-MM-dd');
       const end = format(endOfMonth(periodDate), 'yyyy-MM-dd');
@@ -239,6 +493,7 @@ export default function RosterBuilderPage() {
       const count = result?.updated ?? result?.data?.updated ?? 0;
       toast.success(`Published ${count} roster entries.`);
       refetchRoster();
+      setShowPublishWarningConfirm(false);
     } catch (error) {
       toast.error(error.message || 'Failed to publish roster.');
     }
@@ -280,7 +535,10 @@ export default function RosterBuilderPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `roster-${currentPeriod}.pdf`;
+      // Include department/division name in filename
+      const selectedUnit = rosterUnits.find((u) => u.id === selectedDepartment);
+      const unitName = selectedUnit?.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'roster';
+      a.download = `roster-${unitName}-${currentPeriod}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -312,8 +570,21 @@ export default function RosterBuilderPage() {
         });
         toast.success('Entry updated.');
       } else {
-        // Create new entry (this would need useCreateRosterEntry but let's use the API directly)
-        toast.info('Manual entry creation not yet implemented. Use Generate first.');
+        // Create new entry
+        await createMutation.mutateAsync({
+          departmentId: selectedDepartment,
+          data: {
+            department: selectedDepartment,
+            duty_type: editingCell.dutyType.id,
+            date: dateStr,
+            team: teamId,
+            start_time: editingCell.dutyType.start_time,
+            end_time: editingCell.dutyType.end_time,
+            source: 'manual',
+            status: 'draft',
+          },
+        });
+        toast.success('Entry created.');
       }
       refetchRoster();
       setEditingCell(null);
@@ -379,11 +650,11 @@ export default function RosterBuilderPage() {
 
           {/* Controls */}
           <Card className="mb-6 border-border">
-            <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <CardContent className="p-4 pr-6">
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
                 {/* Unit Selector (Departments & Divisions) */}
-                <div className="flex-1 min-w-[200px]">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1 block">
+                <div className="min-w-[200px]">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
                     Department / Division
                   </label>
                   <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
@@ -420,21 +691,16 @@ export default function RosterBuilderPage() {
                 </div>
 
                 {/* Period Navigator */}
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Period
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="font-heading font-medium w-36 text-center">
-                      {format(periodDate, 'MMMM yyyy')}
-                    </span>
-                    <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="font-heading font-medium w-36 text-center">
+                    {format(periodDate, 'MMMM yyyy')}
+                  </span>
+                  <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
 
                 {/* Actions */}
@@ -504,6 +770,24 @@ export default function RosterBuilderPage() {
                   <span className="text-xs font-mono text-rose-600 dark:text-rose-400">Overrides</span>
                   <Badge variant="outline" className="font-mono bg-rose-500/10">
                     {stats.overrides}
+                  </Badge>
+                </div>
+              )}
+              {stats.errorCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                  <AlertCircle className="h-4 w-4 text-rose-500" />
+                  <span className="text-xs font-mono text-rose-600 dark:text-rose-400">Errors</span>
+                  <Badge variant="outline" className="font-mono bg-rose-500/10 text-rose-600">
+                    {stats.errorCount}
+                  </Badge>
+                </div>
+              )}
+              {stats.warningCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <span className="text-xs font-mono text-amber-600 dark:text-amber-400">Warnings</span>
+                  <Badge variant="outline" className="font-mono bg-amber-500/10 text-amber-600">
+                    {stats.warningCount}
                   </Badge>
                 </div>
               )}
@@ -613,6 +897,12 @@ export default function RosterBuilderPage() {
                               );
                             }
 
+                            // Check for violations on this cell
+                            const cellKey = `${format(date, 'yyyy-MM-dd')}|${dt.id}`;
+                            const cellViolations = violations.get(cellKey);
+                            const hasErrors = cellViolations?.errors?.length > 0;
+                            const hasWarnings = cellViolations?.warnings?.length > 0;
+
                             return (
                               <td key={dt.id} className="border-b border-border px-2 py-1">
                                 <TooltipProvider>
@@ -622,9 +912,13 @@ export default function RosterBuilderPage() {
                                         type="button"
                                         onClick={() => openCellEditor(date, dt)}
                                         className={cn(
-                                          'w-full px-2 py-1.5 rounded text-xs font-mono transition-colors',
+                                          'w-full px-2 py-1.5 rounded text-xs font-mono transition-colors relative',
                                           'hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20',
-                                          entry
+                                          hasErrors
+                                            ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/50'
+                                            : hasWarnings
+                                            ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/50'
+                                            : entry
                                             ? entry.is_override
                                               ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300'
                                               : entry.status === 'published'
@@ -634,14 +928,39 @@ export default function RosterBuilderPage() {
                                         )}
                                       >
                                         {entry ? teamById.get(entry.team)?.name || 'Unknown' : '—'}
+                                        {(hasErrors || hasWarnings) && (
+                                          <span className="absolute -top-1 -right-1">
+                                            <AlertCircle
+                                              className={cn(
+                                                'h-3.5 w-3.5',
+                                                hasErrors ? 'text-rose-500' : 'text-amber-500'
+                                              )}
+                                            />
+                                          </span>
+                                        )}
                                       </button>
                                     </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p className="text-xs">
-                                        {entry
-                                          ? `${entry.status}${entry.is_override ? ' (override)' : ''}`
-                                          : 'Click to assign'}
-                                      </p>
+                                    <TooltipContent className="max-w-xs bg-popover text-popover-foreground">
+                                      {hasErrors || hasWarnings ? (
+                                        <div className="space-y-1.5">
+                                          {cellViolations.errors.map((v, i) => (
+                                            <p key={`e-${i}`} className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                                              {v.message}
+                                            </p>
+                                          ))}
+                                          {cellViolations.warnings.map((v, i) => (
+                                            <p key={`w-${i}`} className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                              {v.message}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs">
+                                          {entry
+                                            ? `${entry.status}${entry.is_override ? ' (override)' : ''}`
+                                            : 'Click to assign'}
+                                        </p>
+                                      )}
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
@@ -705,9 +1024,9 @@ export default function RosterBuilderPage() {
                         handleCellSave(pendingTeamChange.teamId);
                         setPendingTeamChange(null);
                       }}
-                      disabled={updateMutation.isPending}
+                      disabled={updateMutation.isPending || createMutation.isPending}
                     >
-                      {updateMutation.isPending ? 'Saving...' : 'Confirm Change'}
+                      {(updateMutation.isPending || createMutation.isPending) ? 'Saving...' : 'Confirm Change'}
                     </Button>
                   </DialogFooter>
                 </div>
@@ -806,6 +1125,31 @@ export default function RosterBuilderPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Publish Warning Confirmation Dialog */}
+          <AlertDialog open={showPublishWarningConfirm} onOpenChange={setShowPublishWarningConfirm}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  Validation Warnings
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  There are <strong>{stats.warningCount}</strong> validation warning(s) in this roster.
+                  Do you want to publish anyway?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={doPublish}
+                  disabled={publishMutation.isPending}
+                >
+                  {publishMutation.isPending ? 'Publishing...' : 'Publish Anyway'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </>

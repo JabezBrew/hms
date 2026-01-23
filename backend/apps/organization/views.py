@@ -45,6 +45,8 @@ from .models import (
     DepartmentDutyType,
     RotationRule,
     RosterEntry,
+    RosterValidationRule,
+    VALIDATION_RULE_TEMPLATES,
 )
 from .serializers import (
     UnitTypeConfigListSerializer,
@@ -82,6 +84,8 @@ from .serializers import (
     RosterOverrideSerializer,
     RosterImportSerializer,
     OnDutyQuerySerializer,
+    RosterValidationRuleListSerializer,
+    RosterValidationRuleSerializer,
 )
 from apps.core.cache_utils import facility_cache_key
 from .tree_cache import ORG_TREE_CACHE_TTL, get_org_tree_payload
@@ -1580,21 +1584,44 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         })
 
     def publish(self, request, department_id=None):
+        from .services import RosterValidationService
+
         serializer = RosterPublishSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         department = self._require_department()
         date_from = serializer.validated_data['date_from']
         date_to = serializer.validated_data['date_to']
 
-        # Only publish draft entries - don't touch already published ones
-        updated = RosterEntry.objects.filter(
+        # Get entries to publish
+        entries_qs = RosterEntry.objects.filter(
             department=department,
             date__gte=date_from,
             date__lte=date_to,
             status='draft'
-        ).update(status='published', updated_by=request.user)
+        ).select_related('duty_type', 'team')
 
-        return Response({'updated': updated})
+        entries = list(entries_qs)
+
+        # Validate before publishing (only 'error' severity rules block publish)
+        rules = RosterValidationService.get_rules_for_department(department.id)
+        validation_result = RosterValidationService.validate_roster(entries, rules)
+
+        if validation_result['errors']:
+            # Return validation errors without publishing
+            return Response({
+                'updated': 0,
+                'validation_errors': validation_result['errors'],
+                'validation_warnings': validation_result['warnings'],
+                'message': 'Cannot publish roster with validation errors. Please fix the errors and try again.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Publish the entries
+        updated = entries_qs.update(status='published', updated_by=request.user)
+
+        return Response({
+            'updated': updated,
+            'validation_warnings': validation_result['warnings'],
+        })
 
     def clear(self, request, department_id=None):
         """Clear (delete) roster entries for a period. Only draft entries can be cleared."""
@@ -1893,3 +1920,107 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
         if unit and unit.root_unit and unit.root_unit.code != facility.code:
             raise PermissionDenied("Unit does not belong to the active facility.")
         serializer.save()
+
+
+# =============================================================================
+# Roster Validation Rules ViewSet
+# =============================================================================
+
+
+class RosterValidationRuleViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for roster validation rules.
+
+    Provides configurable validation constraints for roster entries.
+    Rules can warn on draft or block on publish depending on severity.
+    """
+    queryset = RosterValidationRule.objects.all()
+    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['department', 'duty_type', 'rule_type', 'severity', 'is_active']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return RosterValidationRuleListSerializer
+        return RosterValidationRuleSerializer
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return RosterValidationRule.objects.none()
+
+        queryset = super().get_queryset().select_related('department', 'duty_type')
+        queryset = queryset.filter(department__root_unit__code=facility.code)
+
+        # Filter by department_id from URL if present
+        department_id = self.kwargs.get('department_id')
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(is_active=True)
+
+        return queryset.order_by('name')
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        department = serializer.validated_data.get('department')
+        if department and department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+    @action(detail=False, methods=['get'])
+    def templates(self, request):
+        """
+        Return available rule templates with their parameter schemas.
+
+        Used by frontend to render appropriate form controls for each rule type.
+        """
+        return Response(VALIDATION_RULE_TEMPLATES)
+
+    @action(detail=False, methods=['post'], url_path='validate')
+    def validate_roster(self, request):
+        """
+        Validate roster entries against all rules.
+
+        Request body:
+            department_id: UUID (required)
+            date_from: YYYY-MM-DD (optional)
+            date_to: YYYY-MM-DD (optional)
+
+        Returns:
+            warnings: list of warning violations
+            errors: list of error violations
+        """
+        from .services import RosterValidationService
+
+        department_id = request.data.get('department_id')
+        if not department_id:
+            raise ValidationError({'department_id': 'Department ID is required.'})
+
+        # Get date range
+        date_from = request.data.get('date_from')
+        date_to = request.data.get('date_to')
+
+        # Build query
+        entries_qs = RosterEntry.objects.filter(
+            department_id=department_id
+        ).select_related('duty_type', 'team')
+
+        if date_from:
+            entries_qs = entries_qs.filter(date__gte=date_from)
+        if date_to:
+            entries_qs = entries_qs.filter(date__lte=date_to)
+
+        entries = list(entries_qs)
+        rules = RosterValidationService.get_rules_for_department(department_id)
+        result = RosterValidationService.validate_roster(entries, rules)
+
+        return Response(result)
