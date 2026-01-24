@@ -3,7 +3,7 @@
  * Shows who's on duty now, quick links to setup and builder
  * Chronicle Design System styling
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -346,6 +346,32 @@ function RosterCalendarView({ departmentId, flatUnits }) {
 export default function DutyRosterPage() {
   const [activeTab, setActiveTab] = useState('now');
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Live clock - updates at the start of each minute (synchronized with system clock)
+  useEffect(() => {
+    // Calculate ms until the next minute starts
+    const now = new Date();
+    const msUntilNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+
+    // First update at the start of the next minute
+    const timeout = setTimeout(() => {
+      setCurrentTime(new Date());
+      // Then update every 60 seconds
+      const interval = setInterval(() => {
+        setCurrentTime(new Date());
+      }, 60000);
+      // Store interval ID for cleanup
+      timeoutRef.current = interval;
+    }, msUntilNextMinute);
+
+    const timeoutRef = { current: null };
+
+    return () => {
+      clearTimeout(timeout);
+      if (timeoutRef.current) clearInterval(timeoutRef.current);
+    };
+  }, []);
 
   const { data: treeData, isLoading: treeLoading } = useClinicalUnitsTree();
   const flatUnits = useMemo(() => {
@@ -405,10 +431,10 @@ export default function DutyRosterPage() {
                   </div>
                   <div>
                     <p className="text-2xl font-display font-semibold">
-                      {format(new Date(), 'h:mm a')}
+                      {format(currentTime, 'h:mm a')}
                     </p>
                     <p className="text-xs text-muted-foreground font-mono">
-                      {format(new Date(), 'EEEE, MMM d')}
+                      {format(currentTime, 'EEEE, MMM d')}
                     </p>
                   </div>
                 </div>
