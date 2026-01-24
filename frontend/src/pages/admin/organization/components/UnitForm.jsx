@@ -31,6 +31,7 @@ const unitSchema = z.object({
   short_name: z.string().max(50).optional(),
   description: z.string().optional(),
   unit_type: z.string().min(1, 'Unit type is required'),
+  unit_category: z.enum(['clinical', 'ancillary', 'ops_only']),
   staffing_mode: z.enum(['clinical_only', 'mixed', 'ops_only']),
   ward_assignment_policy: z.enum(['flexible', 'strict']).optional(),
   location: z.string().optional(),
@@ -67,6 +68,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
       short_name: unit?.short_name || '',
       description: unit?.description || '',
       unit_type: unit?.unit_type?.toString() || '',
+      unit_category: unit?.unit_category || 'clinical',
       staffing_mode: unit?.staffing_mode || 'clinical_only',
       ward_assignment_policy: unit?.ward_assignment_policy || 'flexible',
       location: unit?.location || '',
@@ -83,8 +85,39 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
   });
 
   const selectedUnitTypeId = form.watch('unit_type');
+  const selectedUnitCategory = form.watch('unit_category');
+  const selectedStaffingMode = form.watch('staffing_mode');
   const staffingModeDirty = !!form.formState.dirtyFields?.staffing_mode;
+  const isOpsOnlyCategory = selectedUnitCategory === 'ops_only';
+  const isOpsOnlyStaffing = selectedStaffingMode === 'ops_only';
 
+  // Reset form when unit data changes (for edit mode)
+  useEffect(() => {
+    if (unit) {
+      form.reset({
+        code: unit.code || '',
+        name: unit.name || '',
+        short_name: unit.short_name || '',
+        description: unit.description || '',
+        unit_type: unit.unit_type?.toString() || '',
+        unit_category: unit.unit_category || 'clinical',
+        staffing_mode: unit.staffing_mode || 'clinical_only',
+        ward_assignment_policy: unit.ward_assignment_policy || 'flexible',
+        location: unit.location || '',
+        floor: unit.floor || '',
+        building: unit.building || '',
+        phone: unit.phone || '',
+        email: unit.email || '',
+        is_active: unit.is_active ?? true,
+        accepts_admissions: unit.accepts_admissions ?? true,
+        accepts_referrals: unit.accepts_referrals ?? true,
+        has_own_budget: unit.has_own_budget ?? false,
+        operates_24_hours: unit.operates_24_hours ?? false,
+      });
+    }
+  }, [unit, form]);
+
+  // Auto-set staffing mode based on unit type for new units
   useEffect(() => {
     if (unit || staffingModeDirty) {
       return;
@@ -100,6 +133,24 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
       : 'clinical_only';
     form.setValue('staffing_mode', defaultMode, { shouldDirty: false });
   }, [unit, staffingModeDirty, selectedUnitTypeId, unitTypes, form]);
+
+  // Auto-update clinical fields when unit category changes to ops_only
+  useEffect(() => {
+    if (isOpsOnlyCategory) {
+      form.setValue('accepts_admissions', false);
+      form.setValue('accepts_referrals', false);
+      form.setValue('ward_assignment_policy', 'flexible'); // Reset to default
+      form.setValue('staffing_mode', 'ops_only'); // Ops category should have ops staffing
+    }
+  }, [isOpsOnlyCategory, form]);
+
+  // Also sync when staffing mode is ops_only
+  useEffect(() => {
+    if (isOpsOnlyStaffing) {
+      form.setValue('accepts_admissions', false);
+      form.setValue('accepts_referrals', false);
+    }
+  }, [isOpsOnlyStaffing, form]);
 
   const handleSubmit = (data) => {
     // Remove empty/null values - don't send them to API
@@ -149,6 +200,32 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
 
           <FormField
             control={form.control}
+            name="unit_category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Category *</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="font-mono text-sm">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent className="z-[200]">
+                    <SelectItem value="clinical">Clinical (Patient-Facing)</SelectItem>
+                    <SelectItem value="ancillary">Ancillary (Support Services)</SelectItem>
+                    <SelectItem value="ops_only">Operations Only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription className="text-[10px] text-muted-foreground">
+                  Clinical units see patients; Ancillary units support clinical work (Lab, Radiology)
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="staffing_mode"
             render={({ field }) => (
               <FormItem>
@@ -173,30 +250,32 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="ward_assignment_policy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger className="font-mono text-sm">
-                      <SelectValue placeholder="Select policy" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value="flexible">Flexible - Patient stays with admitting team</SelectItem>
-                    <SelectItem value="strict">Strict - Patient transfers to ward&apos;s team</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormDescription className="text-[10px] text-muted-foreground">
-                  Controls team handoff when patient is placed in a ward owned by a different team
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {!isOpsOnlyCategory && (
+            <FormField
+              control={form.control}
+              name="ward_assignment_policy"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="font-mono text-sm">
+                        <SelectValue placeholder="Select policy" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="z-[200]">
+                      <SelectItem value="flexible">Flexible - Patient stays with admitting team</SelectItem>
+                      <SelectItem value="strict">Strict - Patient transfers to ward&apos;s team</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription className="text-[10px] text-muted-foreground">
+                    Controls team handoff when patient is placed in a ward owned by a different team
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <FormField
@@ -377,37 +456,41 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="accepts_admissions"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-medium">Accepts Admissions</FormLabel>
-                    <FormDescription className="text-[10px]">Can be primary team</FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+            {!isOpsOnlyCategory && (
+              <FormField
+                control={form.control}
+                name="accepts_admissions"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-medium">Accepts Admissions</FormLabel>
+                      <FormDescription className="text-[10px]">Can be primary team</FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            )}
 
-            <FormField
-              control={form.control}
-              name="accepts_referrals"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-medium">Accepts Referrals</FormLabel>
-                    <FormDescription className="text-[10px]">Can receive consults</FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+            {!isOpsOnlyCategory && (
+              <FormField
+                control={form.control}
+                name="accepts_referrals"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-medium">Accepts Referrals</FormLabel>
+                      <FormDescription className="text-[10px]">Can receive consults</FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

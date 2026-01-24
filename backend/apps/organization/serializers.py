@@ -113,7 +113,7 @@ class ClinicalUnitListSerializer(serializers.ModelSerializer):
             'parent', 'parent_name',
             'path_cache', 'root_unit',
             'is_active', 'accepts_admissions', 'accepts_referrals',
-            'staffing_mode'
+            'staffing_mode', 'unit_category'
         ]
 
 
@@ -133,7 +133,7 @@ class ClinicalUnitTreeSerializer(serializers.ModelSerializer):
             'unit_type', 'unit_type_name', 'unit_type_code',
             'unit_type_icon', 'unit_type_color',
             'is_active', 'level', 'children',
-            'staffing_mode'
+            'staffing_mode', 'unit_category'
         ]
 
     def get_children(self, obj):

@@ -10,8 +10,9 @@ export function useUnitOptions() {
   const tree = Array.isArray(data) ? data : (data?.data || data || []);
   const units = useMemo(() => flattenUnitTree(tree), [tree]);
 
+  // Only include clinical departments (exclude ancillary like Lab/Radiology and ops_only like Administration)
   const departments = useMemo(
-    () => units.filter((unit) => unit.unit_type_code === 'department'),
+    () => units.filter((unit) => unit.unit_type_code === 'department' && unit.unit_category === 'clinical'),
     [units]
   );
 

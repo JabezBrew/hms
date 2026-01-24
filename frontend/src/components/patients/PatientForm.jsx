@@ -111,10 +111,10 @@ const PatientForm = ({ patient, onSuccess }) => {
 
   // Department and clinic queries
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useDepartments();
-  // Filter to only show clinical departments (exclude ops_only like Administration)
+  // Filter to only show clinical departments (exclude ancillary like Lab/Radiology and ops_only like Administration)
   const allUnits = Array.isArray(departmentsData) ? departmentsData : [];
   const departments = allUnits.filter(unit =>
-    unit.unit_type_code === 'department' && unit.staffing_mode !== 'ops_only'
+    unit.unit_type_code === 'department' && unit.unit_category === 'clinical'
   );
 
   // Fetch clinics for selected department (outpatient only)

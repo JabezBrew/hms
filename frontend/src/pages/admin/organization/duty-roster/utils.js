@@ -49,6 +49,8 @@ export const flattenUnitTree = (nodes, parentId = null, parentName = null, resul
       code: node.code,
       unit_type_code: node.unit_type_code,
       unit_type_name: node.unit_type_name,
+      unit_category: node.unit_category,
+      staffing_mode: node.staffing_mode,
       parentId,
       parentName,
     });

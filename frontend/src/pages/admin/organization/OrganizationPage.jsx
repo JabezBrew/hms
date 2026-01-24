@@ -434,7 +434,7 @@ export default function OrganizationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUnitId, setSelectedUnitId] = useState(null);
   const [expandedIds, setExpandedIds] = useState(new Set());
-  const [editingUnit, setEditingUnit] = useState(null);
+  const [editingUnitId, setEditingUnitId] = useState(null);
   const [parentForNewUnit, setParentForNewUnit] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
@@ -442,6 +442,11 @@ export default function OrganizationPage() {
   const [showUnitForm, openUnitForm, closeUnitForm] = useSlideOver();
 
   const { data: treeData, isLoading, refetch } = useClinicalUnitsTree();
+  // Fetch full unit details when editing (tree data doesn't include all fields)
+  const { data: editingUnitData, isLoading: isLoadingEditUnit } = useClinicalUnit(editingUnitId, {
+    enabled: !!editingUnitId,
+  });
+  const editingUnit = editingUnitData?.data || editingUnitData || null;
   const createUnit = useCreateClinicalUnit();
   const updateUnit = useUpdateClinicalUnit();
   const deleteUnit = useDeleteClinicalUnit();
@@ -555,11 +560,11 @@ export default function OrganizationPage() {
     switch (action) {
       case 'add-child':
         setParentForNewUnit(node);
-        setEditingUnit(null);
+        setEditingUnitId(null);
         openUnitForm();
         break;
       case 'edit':
-        setEditingUnit(node);
+        setEditingUnitId(node.id);
         setParentForNewUnit(null);
         openUnitForm();
         break;
@@ -571,14 +576,14 @@ export default function OrganizationPage() {
 
   const handleCreateUnit = () => {
     setParentForNewUnit(null);
-    setEditingUnit(null);
+    setEditingUnitId(null);
     openUnitForm();
   };
 
   const handleSaveUnit = async (data) => {
     try {
-      if (editingUnit) {
-        await updateUnit.mutateAsync({ id: editingUnit.id, data });
+      if (editingUnitId) {
+        await updateUnit.mutateAsync({ id: editingUnitId, data });
         toast.success('Unit updated successfully');
       } else {
         if (parentForNewUnit) {
@@ -588,7 +593,7 @@ export default function OrganizationPage() {
         toast.success('Unit created successfully');
       }
       closeUnitForm();
-      setEditingUnit(null);
+      setEditingUnitId(null);
       setParentForNewUnit(null);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to save unit');
@@ -703,7 +708,7 @@ export default function OrganizationPage() {
               unitId={selectedUnitId}
               onClose={() => setSelectedUnitId(null)}
               onEdit={(unit) => {
-                setEditingUnit(unit);
+                setEditingUnitId(unit.id);
                 openUnitForm();
               }}
             />
@@ -736,7 +741,7 @@ export default function OrganizationPage() {
             </div>
             <div>
               <h2 className="font-display text-xl font-semibold">
-                {editingUnit ? 'Edit Unit' : 'Create Unit'}
+                {editingUnitId ? 'Edit Unit' : 'Create Unit'}
               </h2>
               {parentForNewUnit && (
                 <p className="font-mono text-xs text-muted-foreground">
@@ -757,13 +762,23 @@ export default function OrganizationPage() {
 
         {/* Content - scrollable */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          <UnitForm
-            unit={editingUnit}
-            parentUnit={parentForNewUnit}
-            onSubmit={handleSaveUnit}
-            onCancel={closeUnitForm}
-            isLoading={createUnit.isPending || updateUnit.isPending}
-          />
+          {editingUnitId && isLoadingEditUnit ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-2/3" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <UnitForm
+              key={editingUnitId || 'new'}
+              unit={editingUnit}
+              parentUnit={parentForNewUnit}
+              onSubmit={handleSaveUnit}
+              onCancel={closeUnitForm}
+              isLoading={createUnit.isPending || updateUnit.isPending}
+            />
+          )}
         </div>
       </div>
 

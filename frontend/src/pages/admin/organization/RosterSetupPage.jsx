@@ -1648,8 +1648,12 @@ export default function RosterSetupPage() {
   }, [treeData]);
 
   // Include both departments and divisions for roster setup
+  // Filter out ancillary and ops_only units (Lab, Radiology, Pharmacy, Administration)
   const rosterUnits = useMemo(
-    () => flatUnits.filter((u) => u.unit_type_code === 'department' || u.unit_type_code === 'division'),
+    () => flatUnits.filter((u) =>
+      (u.unit_type_code === 'department' || u.unit_type_code === 'division') &&
+      u.unit_category === 'clinical'
+    ),
     [flatUnits]
   );
 

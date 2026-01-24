@@ -342,6 +342,17 @@ class ClinicalUnit(MPTTModel):
         default='clinical_only',
         help_text='Controls which staff assignments are allowed for this unit'
     )
+    UNIT_CATEGORY_CHOICES = (
+        ('clinical', 'Clinical (Patient-Facing)'),
+        ('ancillary', 'Ancillary (Support Services)'),
+        ('ops_only', 'Operations Only'),
+    )
+    unit_category = models.CharField(
+        max_length=20,
+        choices=UNIT_CATEGORY_CHOICES,
+        default='clinical',
+        help_text='Primary function of this unit'
+    )
 
     # Status
     is_active = models.BooleanField(default=True)
