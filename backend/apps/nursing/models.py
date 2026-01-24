@@ -435,6 +435,32 @@ class MedicationAdministration(models.Model):
         related_name='dispensed_medications'
     )
 
+    # Inventory integration (Phase 2: Clinical Integration)
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='medication_administrations',
+        help_text="Linked inventory item for this medication"
+    )
+    batch_used = models.ForeignKey(
+        'inventory.ExpiryTracker',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='medication_administrations',
+        help_text="Batch/lot used for this administration (FEFO tracking)"
+    )
+    dispensing_location = models.ForeignKey(
+        'inventory.StorageLocation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispensed_medications',
+        help_text="Location from which medication was dispensed"
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -615,6 +641,16 @@ class TreatmentSheetEntry(models.Model):
     total_doses_administered = models.PositiveIntegerField(
         default=0,
         help_text="Total doses actually administered to patient"
+    )
+
+    # Link to inventory item (for stock tracking)
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='treatment_entries',
+        help_text="Linked inventory item for stock depletion on dispense"
     )
 
     # Link to source prescription (optional)
