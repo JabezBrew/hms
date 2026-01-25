@@ -733,8 +733,32 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def wards(self, request, pk=None):
-        """Get ward allocations for a unit."""
+        """
+        Get wards for a unit.
+
+        For facility-level units: Returns all wards belonging to the facility
+        (via ward.department.facility matching by code).
+
+        For other units: Returns explicit ward allocations (UnitWardAllocation).
+        """
         unit = self.get_object()
+
+        # Check if this is a facility-level unit
+        if unit.unit_type.code == 'facility':
+            # For facilities, return all wards belonging to this facility
+            # Match by code since ClinicalUnit and core.Facility share the same code
+            from apps.wards.models import Ward
+            from apps.wards.serializers import WardListSerializer
+
+            wards = Ward.objects.filter(
+                department__facility__code=unit.code,
+                is_active=True
+            ).select_related('department', 'head_nurse__staff__user').order_by('name')
+
+            serializer = WardListSerializer(wards, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        # For non-facility units, return explicit allocations
         allocations = UnitWardAllocation.objects.filter(
             unit=unit,
             is_active=True

@@ -151,6 +151,7 @@ class ClinicalUnitTreeSerializer(serializers.ModelSerializer):
 class ClinicalUnitSerializer(serializers.ModelSerializer):
     """Full serializer for unit details including all fields."""
     unit_type_name = serializers.CharField(source='unit_type.name', read_only=True)
+    unit_type_code = serializers.CharField(source='unit_type.code', read_only=True)
     parent_name = serializers.CharField(source='parent.name', read_only=True, allow_null=True)
     full_path = serializers.CharField(read_only=True)
     facility_name = serializers.CharField(source='facility.name', read_only=True, allow_null=True)

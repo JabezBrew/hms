@@ -421,7 +421,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
             isOpsUnit ? <OpsStaffPanel unitId={unitId} /> : <StaffPanel unitId={unitId} />
           )
         )}
-        {activeTab === 'wards' && <WardAllocationPanel unitId={unitId} />}
+        {activeTab === 'wards' && <WardAllocationPanel unitId={unitId} unitType={unit?.unit_type_code} />}
       </div>
     </div>
   );

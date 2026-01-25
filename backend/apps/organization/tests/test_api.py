@@ -946,3 +946,49 @@ class TestWardAllocationAPI:
         response = authenticated_client.get(f'/api/organization/units/{department.id}/wards/')
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
+
+    def test_facility_wards_endpoint_returns_all_facility_wards(
+        self, authenticated_client, facility, default_facility
+    ):
+        """Test that facility-level units return all wards belonging to the facility."""
+        from decimal import Decimal
+        from apps.wards.models import Ward
+        from apps.core.models import Department
+
+        # Create a core.Department linked to the facility
+        dept = Department.objects.create(
+            facility=default_facility,
+            code='TEST_DEPT',
+            name='Test Department',
+            department_type='clinical',
+        )
+
+        # Create wards under this department
+        ward1 = Ward.objects.create(
+            name='Ward A',
+            department=dept,
+            total_beds=20,
+            ward_type='general',
+            base_rate_per_night=Decimal('100.00'),
+        )
+        ward2 = Ward.objects.create(
+            name='Ward B',
+            department=dept,
+            total_beds=15,
+            ward_type='private',
+            base_rate_per_night=Decimal('200.00'),
+        )
+
+        # Request wards for the facility-level unit
+        response = authenticated_client.get(f'/api/organization/units/{facility.id}/wards/')
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should return all wards (not allocations)
+        assert len(response.data) == 2
+        ward_names = [w['name'] for w in response.data]
+        assert 'Ward A' in ward_names
+        assert 'Ward B' in ward_names
+
+        # Should have ward fields, not allocation fields
+        assert 'total_beds' in response.data[0]
+        assert 'occupancy_rate' in response.data[0]

@@ -2,6 +2,7 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import BedDouble from 'lucide-react/dist/esm/icons/bed-double.js';
 import Percent from 'lucide-react/dist/esm/icons/percent.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +29,13 @@ import { useWardSearch } from '@/hooks/useWardQueries';
 import { toast } from 'sonner';
 import { normalizeApiResults } from '@/lib/utils';
 
-export function WardAllocationPanel({ unitId }) {
+/**
+ * WardAllocationPanel - Displays wards for a clinical unit
+ *
+ * For facility-level units: Shows all wards belonging to the facility (read-only view)
+ * For other units: Shows ward allocations with add/remove functionality
+ */
+export function WardAllocationPanel({ unitId, unitType }) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newAllocation, setNewAllocation] = useState({
     ward: '',
@@ -55,6 +62,9 @@ export function WardAllocationPanel({ unitId }) {
     value: ward.id,
     label: `${ward.name}${ward.department_name ? ` - ${ward.department_name}` : ''}${ward.ward_type ? ` - ${ward.ward_type}` : ''}`,
   }));
+
+  // Check if this is a facility-level unit
+  const isFacility = unitType === 'facility';
 
   const handleAdd = async () => {
     try {
@@ -101,6 +111,95 @@ export function WardAllocationPanel({ unitId }) {
     );
   }
 
+  // Facility view - shows all wards belonging to the facility
+  if (isFacility) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-muted-foreground">Facility Wards</h3>
+          <Badge variant="secondary" className="font-mono text-xs">
+            {wards.length} ward{wards.length !== 1 ? 's' : ''}
+          </Badge>
+        </div>
+
+        {wards.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <BedDouble className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No wards in this facility</p>
+            <p className="text-xs mt-1">Wards are created via the Wards module</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {wards.map((ward) => (
+              <div
+                key={ward.id}
+                className="p-4 bg-muted/50 rounded-lg"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-md bg-emerald-100 flex items-center justify-center">
+                      <BedDouble className="h-5 w-5 text-emerald-700" />
+                    </div>
+                    <div>
+                      <div className="font-medium">{ward.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {ward.ward_type?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={ward.is_active ? 'default' : 'secondary'}>
+                      {ward.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Ward Stats */}
+                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-border/50">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <BedDouble className="h-3 w-3" />
+                      Total Beds
+                    </div>
+                    <div className="text-sm font-mono">{ward.total_beds}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <BedDouble className="h-3 w-3" />
+                      Available
+                    </div>
+                    <div className="text-sm font-mono">{ward.available_beds_count}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <Percent className="h-3 w-3" />
+                      Occupancy
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Progress value={ward.occupancy_rate} className="h-2 flex-1" />
+                      <span className="text-sm font-mono">{Math.round(ward.occupancy_rate)}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {ward.head_nurse_name && (
+                  <div className="mt-3 pt-3 border-t border-border/50">
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <Users className="h-3 w-3" />
+                      Head Nurse
+                    </div>
+                    <div className="text-sm">{ward.head_nurse_name}</div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Non-facility view - shows ward allocations with add/remove
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -131,15 +230,15 @@ export function WardAllocationPanel({ unitId }) {
                   <div>
                     <div className="font-medium">{allocation.ward_name}</div>
                     <div className="text-sm text-muted-foreground font-mono">
-                      {allocation.ward_code}
+                      {allocation.allocation_type}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
-                    {allocation.is_exclusive && (
+                    {allocation.allocation_type === 'dedicated' && (
                       <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                        Exclusive
+                        Dedicated
                       </Badge>
                     )}
                     <Badge variant="outline">Priority {allocation.priority}</Badge>
@@ -157,26 +256,22 @@ export function WardAllocationPanel({ unitId }) {
 
               {/* Allocation Stats */}
               <div className="grid grid-cols-3 gap-4 pt-3 border-t border-border/50">
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                    <Percent className="h-3 w-3" />
-                    Allocation
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Progress value={allocation.allocation_percentage} className="h-2" />
-                    <span className="text-sm font-mono">{allocation.allocation_percentage}%</span>
-                  </div>
-                </div>
-                {allocation.allocated_beds && (
+                {allocation.allocated_beds != null && (
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Allocated Beds</div>
                     <div className="text-sm font-mono">{allocation.allocated_beds}</div>
                   </div>
                 )}
-                {allocation.total_beds && (
+                {allocation.min_beds != null && (
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">Total Ward Beds</div>
-                    <div className="text-sm font-mono">{allocation.total_beds}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Min Beds</div>
+                    <div className="text-sm font-mono">{allocation.min_beds}</div>
+                  </div>
+                )}
+                {allocation.max_beds != null && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Max Beds</div>
+                    <div className="text-sm font-mono">{allocation.max_beds}</div>
                   </div>
                 )}
               </div>

@@ -20,6 +20,7 @@ from .models import (
     InventoryItem, StockMovement, ExpiryTracker, LocationStock,
     PurchaseOrder, PurchaseOrderItem, GoodsReceivedNote,
     StorageLocation, ControlledSubstanceEntry,
+    PurchaseRequisition, ControlledSubstanceDiscrepancy,
 )
 
 
@@ -713,6 +714,24 @@ class InventoryAnalyticsService:
             status__in=['sent', 'acknowledged', 'partially_received'],
         ).count()
 
+        # Pending requisitions (waiting for approval)
+        pending_requisitions = PurchaseRequisition.objects.filter(
+            facility=facility,
+            status='pending_approval',
+        ).count()
+
+        # Pending GRNs (waiting for inspection)
+        pending_grns = GoodsReceivedNote.objects.filter(
+            facility=facility,
+            status='pending_inspection',
+        ).count()
+
+        # Unresolved discrepancies (controlled substances)
+        discrepancies = ControlledSubstanceDiscrepancy.objects.filter(
+            register__facility=facility,
+            status__in=['reported', 'investigating'],
+        ).count()
+
         # Recent consumption (7 days)
         week_ago = timezone.now() - timedelta(days=7)
         weekly_consumption = StockMovement.objects.filter(
@@ -741,6 +760,9 @@ class InventoryAnalyticsService:
             'orders': {
                 'pending_pos': pending_pos,
             },
+            'pending_requisitions': pending_requisitions,
+            'pending_grns': pending_grns,
+            'discrepancies': discrepancies,
             'consumption_7_days': {
                 'quantity': weekly_consumption['total'],
                 'value': str(weekly_consumption['value']),

@@ -7,9 +7,19 @@ import {
   SidebarInset,
 } from "@/components/ui/sidebar"
 
+// Read sidebar state from cookie
+function getSidebarDefaultOpen() {
+  if (typeof document === 'undefined') return true
+  const match = document.cookie.match(/(?:^|; )sidebar_state=([^;]*)/)
+  if (match) {
+    return match[1] === 'true'
+  }
+  return true
+}
+
 export function Layout({ children }) {
   return (
-    <SidebarProvider defaultOpen={true}>
+    <SidebarProvider defaultOpen={getSidebarDefaultOpen()}>
       <div className="relative min-h-screen bg-background w-full">
         {/* Skip link for keyboard navigation */}
         <a
