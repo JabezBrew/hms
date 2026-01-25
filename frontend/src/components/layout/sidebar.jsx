@@ -1,4 +1,3 @@
-
 import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
@@ -20,6 +19,12 @@ import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js';
+import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
+import FileBox from 'lucide-react/dist/esm/icons/file-box.js';
+import Truck from 'lucide-react/dist/esm/icons/truck.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import {
   SidebarContent,
   SidebarGroup,
@@ -29,12 +34,17 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarMenuBadge,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 import { useAuth } from "@/lib/auth"
 import { useInboxCount } from "@/hooks/useInboxCount"
+import { useSidebarState } from "@/hooks/useSidebarState"
 
 // Helper function to check if a user has access to a menu item
 const hasAccess = (userRole, allowedRoles) => {
@@ -46,6 +56,7 @@ export function AppSidebar() {
   const { user } = useAuth()
   const userRole = user?.role || ''
   const { count: inboxCount } = useInboxCount()
+  const { getCollapsibleProps } = useSidebarState()
 
   // Get role-specific dashboard URL
   // Support staff are redirected to their workflow pages instead of a generic dashboard
@@ -91,7 +102,7 @@ export function AppSidebar() {
       shiftHandoff: ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'],
       noteTemplates: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
       chartTemplates: ['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'practitioner', 'physician'],
-      inventory: ['admin', 'pharmacist'],
+      inventory: ['admin', 'pharmacist', 'store_keeper'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
       labWorklist: ['admin', 'lab_technician'],
@@ -280,12 +291,75 @@ export function AppSidebar() {
             )}
 
             {hasAccess(userRole, menuItems.management.inventory) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Inventory" href="/inventory">
-                  <Package />
-                  <span>Inventory</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('inventory')}>
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton tooltip="Inventory">
+                      <Package />
+                      <span>Inventory</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory">
+                          <LayoutDashboard className="h-4 w-4" />
+                          <span>Dashboard</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/items">
+                          <Package className="h-4 w-4" />
+                          <span>Items</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/locations">
+                          <Warehouse className="h-4 w-4" />
+                          <span>Locations</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/requisitions">
+                          <ClipboardList className="h-4 w-4" />
+                          <span>Requisitions</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/purchase-orders">
+                          <ShoppingCart className="h-4 w-4" />
+                          <span>Purchase Orders</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/grns">
+                          <FileBox className="h-4 w-4" />
+                          <span>GRNs</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/transfers">
+                          <Truck className="h-4 w-4" />
+                          <span>Transfers</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/controlled">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span>Controlled</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/analytics">
+                          <BarChart3 className="h-4 w-4" />
+                          <span>Analytics</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             )}
 
             {hasAccess(userRole, menuItems.management.staff) && (

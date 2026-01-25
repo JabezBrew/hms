@@ -122,6 +122,24 @@ const ProfileSettingsPage = lazy(() => import('./pages/settings/ProfileSettingsP
 const SecuritySettingsPage = lazy(() => import('./pages/settings/SecuritySettingsPage'))
 const PreferencesSettingsPage = lazy(() => import('./pages/settings/PreferencesSettingsPage'))
 
+// Inventory Pages
+const InventoryDashboardPage = lazy(() => import('./pages/inventory/InventoryDashboardPage'))
+const ItemsPage = lazy(() => import('./pages/inventory/ItemsPage'))
+const ItemDetailPage = lazy(() => import('./pages/inventory/ItemDetailPage'))
+const LocationsPage = lazy(() => import('./pages/inventory/LocationsPage'))
+const RequisitionsPage = lazy(() => import('./pages/inventory/RequisitionsPage'))
+const RequisitionDetailPage = lazy(() => import('./pages/inventory/RequisitionDetailPage'))
+const PurchaseOrdersPage = lazy(() => import('./pages/inventory/PurchaseOrdersPage'))
+const PurchaseOrderDetailPage = lazy(() => import('./pages/inventory/PurchaseOrderDetailPage'))
+const GRNsPage = lazy(() => import('./pages/inventory/GRNsPage'))
+const GRNDetailPage = lazy(() => import('./pages/inventory/GRNDetailPage'))
+const InternalRequisitionsPage = lazy(() => import('./pages/inventory/InternalRequisitionsPage'))
+const StandingOrdersPage = lazy(() => import('./pages/inventory/StandingOrdersPage'))
+const TransferRequestsPage = lazy(() => import('./pages/inventory/TransferRequestsPage'))
+const ControlledSubstancesPage = lazy(() => import('./pages/inventory/ControlledSubstancesPage'))
+const ControlledRegisterDetailPage = lazy(() => import('./pages/inventory/ControlledRegisterDetailPage'))
+const AnalyticsPage = lazy(() => import('./pages/inventory/AnalyticsPage'))
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -614,6 +632,120 @@ function AppContent() {
             <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
               <Layout>
                 <InsuranceManagementPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+
+          {/* Inventory routes */}
+          <Route path="/inventory" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <InventoryDashboardPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/items" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <ItemsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/items/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <ItemDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/locations" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <LocationsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/requisitions" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <RequisitionsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/requisitions/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <RequisitionDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/purchase-orders" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <PurchaseOrdersPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/purchase-orders/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <PurchaseOrderDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/grns" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <GRNsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/grns/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <GRNDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/internal-requisitions" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <InternalRequisitionsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/standing-orders" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <StandingOrdersPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/transfers" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <TransferRequestsPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/controlled" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <ControlledSubstancesPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/controlled/:id" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <ControlledRegisterDetailPage />
+              </Layout>
+            </RoleBasedRoute>
+          } />
+          <Route path="/inventory/analytics" element={
+            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+              <Layout>
+                <AnalyticsPage />
               </Layout>
             </RoleBasedRoute>
           } />

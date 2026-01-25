@@ -1709,8 +1709,8 @@ class StockTransferRequestViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(StockTransferRequestSerializer(transfer).data)
 
-    @action(detail=True, methods=['post'])
-    def dispatch(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_path='dispatch')
+    def dispatch_transfer(self, request, pk=None):
         """Dispatch items from source location."""
         transfer = self.get_object()
         dispatch_quantities = request.data.get('dispatch_quantities')

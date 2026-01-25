@@ -122,7 +122,9 @@ export function AuthProvider({ children }) {
 
   // Handler for when refresh fails - called by api-client
   const handleRefreshFailure = useCallback(async () => {
-    await logout(true)
+    // Try to notify backend to revoke the session, but don't block on it
+    // This ensures expired sessions are cleaned up server-side
+    await logout(false)
     notifications.info("Your session has expired. Please log in again.")
   }, [logout])
 

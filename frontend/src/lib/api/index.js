@@ -17,3 +17,4 @@ export { consentApi } from './consent';
 export { interopApi } from './interop';
 export { facilitiesApi } from './facilities';
 export { notificationsApi } from './notifications';
+export { inventoryApi } from './inventory';

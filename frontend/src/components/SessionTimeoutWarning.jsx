@@ -50,11 +50,12 @@ export function SessionTimeoutWarning() {
     setShowWarning(false);
   }, [updateActivity]);
 
-  // Handle session timeout - use local-only logout for session timeouts
+  // Handle session timeout - notify backend to revoke the session
   const handleTimeout = useCallback(() => {
     setShowWarning(false);
-    // Use local-only logout since token is likely expired
-    logout(true);
+    // Try to notify backend even if token may be expired - backend logout
+    // endpoint allows unauthenticated calls and will use the refresh cookie
+    logout(false);
   }, [logout]);
 
   // Setup activity listeners
