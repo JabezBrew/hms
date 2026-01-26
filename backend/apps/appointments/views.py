@@ -178,7 +178,7 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         check_demographics_access(self.request.user, patient)
 
         clinic = serializer.validated_data.get('clinic')
-        if clinic.facility_id != facility.id:
+        if clinic and clinic.facility_id != facility.id:
             raise PermissionDenied("Clinic does not belong to the active facility.")
 
         practitioner = serializer.validated_data.get('practitioner')

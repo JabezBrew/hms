@@ -237,7 +237,7 @@ const AppointmentCreatePage = () => {
 
   // Handle form submission
   const onSubmit = async (data) => {
-    if (!data.slotId) {
+    if (!selectedSlot) {
       toast.error('Please select a time slot');
       return;
     }
@@ -245,10 +245,11 @@ const AppointmentCreatePage = () => {
     setSubmitting(true);
     try {
       const appointmentData = {
-        patient_id: data.patientId,
-        practitioner_id: data.practitionerId,
-        appointment_type_id: data.appointmentTypeId,
-        slot_id: data.slotId,
+        patient: data.patientId,
+        practitioner: data.practitionerId,
+        appointment_type: data.appointmentTypeId,
+        start_time: selectedSlot.start,
+        end_time: selectedSlot.end,
         description: data.description,
         comment: data.comment,
       };
@@ -258,7 +259,14 @@ const AppointmentCreatePage = () => {
       navigate(`/appointments/${result.id}`);
     } catch (error) {
       console.error('Error creating appointment:', error);
-      toast.error(error.message || 'Failed to create appointment');
+      // Show field-specific errors or general message
+      const errorMessage = error.message || 'Failed to create appointment';
+      // Split by newlines for multiple field errors
+      if (errorMessage.includes('\n')) {
+        errorMessage.split('\n').forEach(msg => toast.error(msg));
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setSubmitting(false);
     }

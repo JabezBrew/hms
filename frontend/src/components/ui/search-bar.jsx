@@ -115,7 +115,7 @@ const SearchBar = ({
           </div>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0 w-[var(--radix-popover-trigger-width)]"
+          className="p-0 w-[var(--radix-popover-trigger-width)] z-[400]"
           align="start"
           sideOffset={5}
         >

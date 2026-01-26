@@ -8,7 +8,6 @@ import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
-import Users from 'lucide-react/dist/esm/icons/users.js';
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import CalendarX from 'lucide-react/dist/esm/icons/calendar-x.js';
 import { useState, useMemo } from 'react';
@@ -156,9 +155,18 @@ const PractitionerAvailabilityPage = () => {
           label: displayName,
           value: practitioner.local_data?.id || practitioner.fhir_resource.id
         };
-      } else if (practitioner.staff_details) {
+      } else if (practitioner.local_data?.staff_details?.user_details) {
+        // Handle nested local_data structure from search API
+        const user = practitioner.local_data.staff_details.user_details;
         return {
-          label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name}`.trim(),
+          label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown',
+          value: practitioner.local_data.id
+        };
+      } else if (practitioner.staff_details?.user_details) {
+        // Handle direct staff_details structure
+        const user = practitioner.staff_details.user_details;
+        return {
+          label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown',
           value: practitioner.id
         };
       } else {
@@ -300,11 +308,8 @@ const PractitionerAvailabilityPage = () => {
             </div>
           </div>
 
-          {/* Stats - Show different cards for doctors vs admins */}
-          <div className={cn(
-            "grid gap-4",
-            isDoctor ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2 md:grid-cols-4"
-          )}>
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard
               icon={CalendarClock}
               label="Active Schedules"
@@ -319,16 +324,6 @@ const PractitionerAvailabilityPage = () => {
               sublabel={`${stats.totalBlocks} total`}
               color="rose"
             />
-            {/* Only show practitioners count for admins/receptionists */}
-            {!isDoctor && (
-              <StatCard
-                icon={Users}
-                label="Practitioners"
-                value={practitionerOptions.length}
-                sublabel="configured"
-                color="emerald"
-              />
-            )}
             <StatCard
               icon={CalendarDays}
               label="This Week"

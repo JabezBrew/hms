@@ -10,7 +10,6 @@ import * as z from 'zod';
 import format from 'date-fns/format';
 
 import { toast } from 'sonner';
-import { useDebounce } from '@/hooks/use-debounce';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -93,11 +92,9 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   const currentUserName = user ? `${user.firstName} ${user.lastName}` : '';
 
   const [submitting, setSubmitting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [previewData, setPreviewData] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const isEditing = !!initialData;
 
   // Determine if practitioner should be auto-filled (doctor creating their own schedule)
@@ -108,9 +105,9 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
     data: practitioners = [],
     isLoading,
     isError: isPractitionersError,
-    error: practitionersError
+    error: practitionersError,
+    setSearchTerm
   } = useSearchPractitioners(false, {
-    enabled: !shouldAutoFillPractitioner && (debouncedSearchQuery.length >= 2 || (isEditing && !!initialData?.practitioner)),
     minLength: 2
   });
 
@@ -126,13 +123,13 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
     }
   }, [isPractitionersError, practitionersError]);
 
-  // Set search query when editing to load the current practitioner
+  // Set search term when editing to load the current practitioner
   useEffect(() => {
-    if (isEditing && initialData?.practitioner) {
-      // Set the search query to the practitioner ID to trigger a search
-      setSearchQuery(initialData.practitioner);
+    if (isEditing && initialData?.practitioner_name) {
+      // Set the search term to the practitioner name to trigger a search
+      setSearchTerm(initialData.practitioner_name);
     }
-  }, [isEditing, initialData]);
+  }, [isEditing, initialData, setSearchTerm]);
 
   // Days of week options
   const daysOfWeek = [
@@ -333,7 +330,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                     }) : []}
                     value={field.value}
                     onChange={field.onChange}
-                    onInputChange={setSearchQuery}
+                    onInputChange={setSearchTerm}
                     placeholder="Select a practitioner"
                     emptyMessage={isLoading ? "Searching..." : "No practitioners found."}
                     searchPlaceholder="Search by name, employee ID, or license number..."
