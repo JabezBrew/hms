@@ -187,6 +187,14 @@ class DepartmentDutyType(models.Model):
         ('none', 'No Rotation'),
     ]
 
+    DUTY_CATEGORY_CHOICES = [
+        ('clinic', 'Clinic Session'),      # Generates appointment slots
+        ('ward', 'Ward Duty'),              # Inpatient coverage
+        ('on_call', 'On-Call'),             # Emergency/on-call coverage
+        ('theatre', 'Theatre/Procedure'),   # Surgical/procedural
+        ('admin', 'Administrative'),        # Non-clinical duties
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     department = models.ForeignKey(
         'organization.ClinicalUnit',
@@ -196,6 +204,12 @@ class DepartmentDutyType(models.Model):
     )
     name = models.CharField(max_length=120)
     code = models.CharField(max_length=40)
+    category = models.CharField(
+        max_length=20,
+        choices=DUTY_CATEGORY_CHOICES,
+        default='ward',
+        help_text='Category determines if this duty type generates appointment slots'
+    )
     rotation_type = models.CharField(
         max_length=20,
         choices=ROTATION_TYPE_CHOICES,
@@ -205,6 +219,41 @@ class DepartmentDutyType(models.Model):
     is_24_hour = models.BooleanField(default=False)
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
+
+    # Clinic-specific scheduling fields (only used when category='clinic')
+    slot_duration_minutes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text='Duration of each appointment slot in minutes (required for clinic category)'
+    )
+    max_patients_per_slot = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        default=1,
+        help_text='Maximum patients that can be booked per slot'
+    )
+    breaks = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Break periods during the duty, e.g. [{"start": "12:00", "end": "13:00"}]'
+    )
+    clinic = models.ForeignKey(
+        'organization.Clinic',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='duty_types',
+        help_text='Associated clinic for this duty type'
+    )
+    default_appointment_type = models.ForeignKey(
+        'appointments.AppointmentType',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='duty_types',
+        help_text='Default appointment type for slots generated from this duty'
+    )
+
     is_active = models.BooleanField(default=True)
     display_order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)

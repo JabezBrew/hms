@@ -211,6 +211,10 @@ class ScheduleFHIRMapping(models.Model):
 class RecurringSchedule(models.Model):
     """
     Model for defining recurring practitioner availability schedules.
+
+    DEPRECATION NOTE: This model is being deprecated in favor of roster-based availability
+    via RosterEntry + DepartmentDutyType with category='clinic'. During the migration period,
+    both systems will be supported, with roster taking precedence.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
@@ -232,6 +236,25 @@ class RecurringSchedule(models.Model):
     breaks = models.JSONField(default=list, blank=True, help_text="List of break times, e.g. [{'start': '12:00', 'end': '13:00'}]")
     is_active = models.BooleanField(default=True)
 
+    # Migration tracking fields (for deprecation)
+    migrated_to_roster = models.BooleanField(
+        default=False,
+        help_text='Whether this schedule has been migrated to roster-based availability'
+    )
+    migrated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When this schedule was migrated to roster-based availability'
+    )
+    roster_duty_type = models.ForeignKey(
+        'organization.DepartmentDutyType',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='migrated_schedules',
+        help_text='The duty type this schedule was migrated to'
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -244,6 +267,7 @@ class RecurringSchedule(models.Model):
             models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
             models.Index(fields=['days_of_week']),
+            models.Index(fields=['migrated_to_roster']),
         ]
 
     def __str__(self):

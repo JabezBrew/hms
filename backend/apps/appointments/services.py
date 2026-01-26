@@ -214,142 +214,217 @@ class AvailabilityService:
         end_date: str,
         appointment_type_id: Optional[str] = None,
         facility=None,
+        use_roster: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Compute available slots on-the-fly from recurring schedules.
-        This is the new efficient approach that doesn't pre-generate slots.
+        Compute available slots on-the-fly.
+
+        This method supports dual-mode availability:
+        1. Roster-based: Derives slots from published RosterEntry records with clinic-type duties
+        2. RecurringSchedule-based: Legacy approach using RecurringSchedule records
+
+        During the migration period, roster-based availability takes precedence. If no roster
+        entries are found, it falls back to RecurringSchedule.
 
         Args:
             practitioner_id: Local PractitionerProfile ID (UUID)
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
             appointment_type_id: Optional AppointmentType ID
+            facility: Optional facility for scoping
+            use_roster: Explicit control over which source to use:
+                        None = auto (roster first, fallback to schedule)
+                        True = roster only
+                        False = schedule only
 
         Returns:
             List of available slot dictionaries
         """
         try:
-            # Convert string dates to date objects
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            # Import RosterAvailabilityService here to avoid circular imports
+            from apps.organization.services import RosterAvailabilityService
 
-            # 1. Get practitioner's recurring schedules (1 query)
-            recurring_schedules = RecurringSchedule.objects.filter(
+            # Try roster-based availability first (unless explicitly disabled)
+            if use_roster is not False:
+                # Check if practitioner has roster-based availability
+                has_roster = RosterAvailabilityService.has_roster_availability(
+                    practitioner_id=practitioner_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    facility=facility
+                )
+
+                if has_roster or use_roster is True:
+                    roster_slots = RosterAvailabilityService.compute_available_slots(
+                        practitioner_id=practitioner_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                        facility=facility,
+                        appointment_type_id=appointment_type_id,
+                    )
+
+                    if roster_slots:
+                        logger.info(
+                            f"Using roster-based availability: {len(roster_slots)} slots "
+                            f"for practitioner {practitioner_id}"
+                        )
+                        return roster_slots
+
+                    if use_roster is True:
+                        # Explicit roster mode but no slots found
+                        logger.info(f"No roster-based slots found for practitioner {practitioner_id}")
+                        return []
+
+            # Fall back to RecurringSchedule-based availability
+            return AvailabilityService._compute_slots_from_recurring_schedule(
                 practitioner_id=practitioner_id,
-                is_active=True,
-                active_from__lte=end_date_obj
+                start_date=start_date,
+                end_date=end_date,
+                facility=facility,
             )
-            if facility is not None:
-                recurring_schedules = recurring_schedules.filter(facility=facility)
-            recurring_schedules = recurring_schedules.filter(
-                Q(active_to__isnull=True) | Q(active_to__gte=start_date_obj)
-            ).prefetch_related('practitioner')
-
-            if not recurring_schedules.exists():
-                logger.info(f"No active recurring schedules found for practitioner {practitioner_id}")
-                return []
-
-            # Ensure practitioner context is available
-            practitioner = recurring_schedules.first().practitioner
-
-            # 2. Get blocked times (1 query)
-            blocked_times = BlockedTime.objects.filter(
-                practitioner_id=practitioner_id,
-                date__gte=start_date_obj,
-                date__lte=end_date_obj
-            )
-            if facility is not None:
-                blocked_times = blocked_times.filter(facility=facility)
-            blocked_times = list(blocked_times)
-
-            # 3. Get booked appointments (local source of truth)
-            appointments = Appointment.objects.filter(
-                practitioner_id=practitioner_id,
-                status__in=['booked', 'arrived', 'fulfilled'],
-                start_time__date__gte=start_date_obj,
-                start_time__date__lte=end_date_obj,
-            )
-            if facility is not None:
-                appointments = appointments.filter(facility=facility)
-            appointments = list(appointments)
-
-            # 4. Compute slots in memory
-            slots = []
-            current_date = start_date_obj
-
-            while current_date <= end_date_obj:
-                day_of_week = current_date.weekday()  # 0=Monday, 6=Sunday
-
-                # Find schedules for this day
-                for schedule in recurring_schedules:
-                    if day_of_week not in schedule.days_of_week:
-                        continue
-
-                    # Generate time slots for this schedule
-                    current_time = schedule.start_time
-
-                    while current_time < schedule.end_time:
-                        # Calculate slot end time
-                        slot_end = AvailabilityService._add_minutes_to_time(
-                            current_time,
-                            schedule.slot_duration
-                        )
-
-                        # Ensure slot doesn't go beyond schedule end time
-                        if slot_end > schedule.end_time:
-                            break
-
-                        # Check if slot is valid (not in break, not blocked, not booked)
-                        is_in_break = AvailabilityService._is_in_break(
-                            current_time, slot_end, schedule.breaks
-                        )
-
-                        is_blocked = AvailabilityService._is_blocked(
-                            current_date, current_time, slot_end, blocked_times
-                        )
-
-                        has_appointment = AvailabilityService._has_appointment(
-                            current_date, current_time, slot_end, appointments
-                        )
-
-                        # Only add slot if it's not in a break
-                        if not is_in_break:
-                            # Determine slot status
-                            if is_blocked:
-                                status = "busy-unavailable"
-                            elif has_appointment:
-                                status = "busy"
-                            else:
-                                status = "free"
-
-                            # Create slot dictionary
-                            slot_start_dt = datetime.combine(current_date, current_time)
-                            slot_end_dt = datetime.combine(current_date, slot_end)
-
-                            slots.append({
-                                "id": f"computed-{practitioner_id}-{slot_start_dt.isoformat()}",
-                                "resourceType": "Slot",
-                                "status": status,
-                                "start": slot_start_dt.isoformat(),
-                                "end": slot_end_dt.isoformat(),
-                                "schedule": {
-                                    "reference": f"Schedule/{schedule.id}"
-                                },
-                                "computed": True  # Flag to indicate this was computed, not stored
-                            })
-
-                        # Move to next slot
-                        current_time = slot_end
-
-                # Move to next day
-                current_date += timedelta(days=1)
-
-            logger.info(f"Computed {len(slots)} slots for practitioner {practitioner_id} from {start_date} to {end_date}")
-            return slots
 
         except Exception as e:
             logger.error(f"Error computing available slots: {str(e)}", exc_info=True)
             raise
+
+    @staticmethod
+    def _compute_slots_from_recurring_schedule(
+        practitioner_id: str,
+        start_date: str,
+        end_date: str,
+        facility=None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Compute available slots from RecurringSchedule records.
+
+        This is the legacy approach that will be deprecated once all schedules
+        are migrated to roster-based availability.
+
+        Args:
+            practitioner_id: Local PractitionerProfile ID (UUID)
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            facility: Optional facility for scoping
+
+        Returns:
+            List of available slot dictionaries
+        """
+        # Convert string dates to date objects
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        # 1. Get practitioner's recurring schedules (1 query)
+        recurring_schedules = RecurringSchedule.objects.filter(
+            practitioner_id=practitioner_id,
+            is_active=True,
+            migrated_to_roster=False,  # Exclude migrated schedules
+            active_from__lte=end_date_obj
+        )
+        if facility is not None:
+            recurring_schedules = recurring_schedules.filter(facility=facility)
+        recurring_schedules = recurring_schedules.filter(
+            Q(active_to__isnull=True) | Q(active_to__gte=start_date_obj)
+        ).prefetch_related('practitioner')
+
+        if not recurring_schedules.exists():
+            logger.info(f"No active recurring schedules found for practitioner {practitioner_id}")
+            return []
+
+        # 2. Get blocked times (1 query)
+        blocked_times = BlockedTime.objects.filter(
+            practitioner_id=practitioner_id,
+            date__gte=start_date_obj,
+            date__lte=end_date_obj
+        )
+        if facility is not None:
+            blocked_times = blocked_times.filter(facility=facility)
+        blocked_times = list(blocked_times)
+
+        # 3. Get booked appointments (local source of truth)
+        appointments = Appointment.objects.filter(
+            practitioner_id=practitioner_id,
+            status__in=['booked', 'arrived', 'fulfilled'],
+            start_time__date__gte=start_date_obj,
+            start_time__date__lte=end_date_obj,
+        )
+        if facility is not None:
+            appointments = appointments.filter(facility=facility)
+        appointments = list(appointments)
+
+        # 4. Compute slots in memory
+        slots = []
+        current_date = start_date_obj
+
+        while current_date <= end_date_obj:
+            day_of_week = current_date.weekday()  # 0=Monday, 6=Sunday
+
+            # Find schedules for this day
+            for schedule in recurring_schedules:
+                if day_of_week not in schedule.days_of_week:
+                    continue
+
+                # Generate time slots for this schedule
+                current_time = schedule.start_time
+
+                while current_time < schedule.end_time:
+                    # Calculate slot end time
+                    slot_end = AvailabilityService._add_minutes_to_time(
+                        current_time,
+                        schedule.slot_duration
+                    )
+
+                    # Ensure slot doesn't go beyond schedule end time
+                    if slot_end > schedule.end_time:
+                        break
+
+                    # Check if slot is valid (not in break, not blocked, not booked)
+                    is_in_break = AvailabilityService._is_in_break(
+                        current_time, slot_end, schedule.breaks
+                    )
+
+                    is_blocked = AvailabilityService._is_blocked(
+                        current_date, current_time, slot_end, blocked_times
+                    )
+
+                    has_appointment = AvailabilityService._has_appointment(
+                        current_date, current_time, slot_end, appointments
+                    )
+
+                    # Only add slot if it's not in a break
+                    if not is_in_break:
+                        # Determine slot status
+                        if is_blocked:
+                            status = "busy-unavailable"
+                        elif has_appointment:
+                            status = "busy"
+                        else:
+                            status = "free"
+
+                        # Create slot dictionary
+                        slot_start_dt = datetime.combine(current_date, current_time)
+                        slot_end_dt = datetime.combine(current_date, slot_end)
+
+                        slots.append({
+                            "id": f"computed-{practitioner_id}-{slot_start_dt.isoformat()}",
+                            "resourceType": "Slot",
+                            "status": status,
+                            "start": slot_start_dt.isoformat(),
+                            "end": slot_end_dt.isoformat(),
+                            "schedule": {
+                                "reference": f"Schedule/{schedule.id}"
+                            },
+                            "computed": True,  # Flag to indicate this was computed, not stored
+                            "source": "recurring_schedule"  # Indicate source for debugging
+                        })
+
+                    # Move to next slot
+                    current_time = slot_end
+
+            # Move to next day
+            current_date += timedelta(days=1)
+
+        logger.info(f"Computed {len(slots)} slots from RecurringSchedule for practitioner {practitioner_id} from {start_date} to {end_date}")
+        return slots
 
     @staticmethod
     def generate_slots_for_date(

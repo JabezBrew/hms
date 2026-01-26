@@ -1121,6 +1121,640 @@ class RosterGenerationService:
         return team_id
 
 
+class RosterAvailabilityService:
+    """
+    Service for computing available appointment slots from published roster entries.
+
+    This service provides roster-based availability as the single source of truth
+    for practitioner scheduling. It derives appointment slots from RosterEntry
+    records where the duty_type.category='clinic'.
+
+    This replaces the RecurringSchedule-based approach during the migration period,
+    with dual-mode support in AvailabilityService.
+    """
+
+    @staticmethod
+    def _add_minutes_to_time(base_time, minutes):
+        """Add minutes to a time object."""
+        from datetime import datetime, timedelta, date
+        dummy_date = date.today()
+        dt = datetime.combine(dummy_date, base_time)
+        dt += timedelta(minutes=minutes)
+        return dt.time()
+
+    @staticmethod
+    def _times_overlap(start1, end1, start2, end2):
+        """Check if two time ranges overlap."""
+        return start1 < end2 and end1 > start2
+
+    @staticmethod
+    def _is_in_break(slot_start, slot_end, breaks):
+        """Check if a slot overlaps with any break period."""
+        for break_period in breaks:
+            break_start = datetime.strptime(break_period['start'], '%H:%M').time()
+            break_end = datetime.strptime(break_period['end'], '%H:%M').time()
+            if RosterAvailabilityService._times_overlap(slot_start, slot_end, break_start, break_end):
+                return True
+        return False
+
+    @staticmethod
+    def _is_blocked(check_date, slot_start, slot_end, blocked_times):
+        """Check if a slot is blocked by a BlockedTime entry."""
+        for blocked in blocked_times:
+            if blocked.date != check_date:
+                continue
+            if blocked.is_all_day:
+                return True
+            if RosterAvailabilityService._times_overlap(
+                slot_start, slot_end, blocked.start_time, blocked.end_time
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _has_appointment(check_date, slot_start, slot_end, appointments):
+        """Check if there's an appointment during this slot."""
+        slot_start_dt = datetime.combine(check_date, slot_start)
+        slot_end_dt = datetime.combine(check_date, slot_end)
+
+        # Make timezone-aware if needed
+        if timezone.is_aware(slot_start_dt):
+            pass  # Already aware
+        else:
+            # Use current timezone
+            slot_start_dt = timezone.make_aware(slot_start_dt)
+            slot_end_dt = timezone.make_aware(slot_end_dt)
+
+        for appointment in appointments:
+            appt_start = appointment.start_time
+            appt_end = appointment.end_time
+
+            # Ensure both are timezone-aware for comparison
+            if appt_start and not timezone.is_aware(appt_start):
+                appt_start = timezone.make_aware(appt_start)
+            if appt_end and not timezone.is_aware(appt_end):
+                appt_end = timezone.make_aware(appt_end)
+
+            # Check for overlap
+            if appt_start and appt_end and slot_start_dt < appt_end and slot_end_dt > appt_start:
+                return True
+        return False
+
+    @classmethod
+    def _resolve_practitioners_from_entry(cls, entry, facility):
+        """
+        Resolve individual practitioners from a roster entry.
+
+        For team-based entries, resolves to practitioners via StaffUnitAssignment.
+        For practitioner-based entries, returns the practitioner directly.
+
+        Returns list of (practitioner_id, practitioner_name) tuples.
+        """
+        from .models import StaffUnitAssignment
+
+        practitioners = []
+
+        if entry.practitioner_id:
+            # Direct practitioner assignment
+            practitioners.append((
+                entry.practitioner_id,
+                entry.practitioner.staff.user.get_full_name() if entry.practitioner else None
+            ))
+        elif entry.team_id:
+            # Team-based entry - resolve to practitioners assigned to this team
+            today = timezone.now().date()
+            assignments = StaffUnitAssignment.objects.filter(
+                unit_id=entry.team_id,
+                is_active=True
+            ).filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=today)
+            ).filter(
+                Q(effective_until__isnull=True) | Q(effective_until__gte=today)
+            ).select_related('practitioner__staff__user')
+
+            for assignment in assignments:
+                prac = assignment.practitioner
+                prac_name = prac.staff.user.get_full_name() if prac and prac.staff else None
+                practitioners.append((prac.id, prac_name))
+
+        return practitioners
+
+    @classmethod
+    def compute_available_slots(
+        cls,
+        practitioner_id,
+        start_date,
+        end_date,
+        facility=None,
+        appointment_type_id=None,
+    ):
+        """
+        Compute available slots from published roster entries for a practitioner.
+
+        This is the core method that queries published RosterEntry records where
+        duty_type.category='clinic' and generates appointment slots based on
+        the duty type's slot_duration_minutes and breaks configuration.
+
+        Args:
+            practitioner_id: UUID of the PractitionerProfile
+            start_date: Start date string (YYYY-MM-DD)
+            end_date: End date string (YYYY-MM-DD)
+            facility: Optional Facility instance for scoping
+            appointment_type_id: Optional AppointmentType ID for filtering
+
+        Returns:
+            List of slot dictionaries with status (free, busy, busy-unavailable)
+        """
+        import logging
+        from .models import RosterEntry, StaffUnitAssignment
+
+        logger = logging.getLogger(__name__)
+
+        # Convert string dates to date objects
+        if isinstance(start_date, str):
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        else:
+            start_date_obj = start_date
+
+        if isinstance(end_date, str):
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date_obj = end_date
+
+        # 1. Get published roster entries for clinic-type duties that include this practitioner
+        # This includes entries where:
+        #   - practitioner is directly assigned, OR
+        #   - the team the practitioner is assigned to is on duty
+        today = timezone.now().date()
+
+        # Get teams the practitioner is assigned to
+        team_ids = list(StaffUnitAssignment.objects.filter(
+            practitioner_id=practitioner_id,
+            is_active=True
+        ).filter(
+            Q(effective_from__isnull=True) | Q(effective_from__lte=today)
+        ).filter(
+            Q(effective_until__isnull=True) | Q(effective_until__gte=today)
+        ).values_list('unit_id', flat=True))
+
+        # Query roster entries
+        roster_entries = RosterEntry.objects.filter(
+            date__gte=start_date_obj,
+            date__lte=end_date_obj,
+            status='published',
+            duty_type__category='clinic',
+            duty_type__is_active=True
+        ).filter(
+            Q(practitioner_id=practitioner_id) |
+            Q(team_id__in=team_ids)
+        ).select_related(
+            'duty_type',
+            'duty_type__clinic',
+            'duty_type__default_appointment_type',
+            'team'
+        )
+
+        # Note: Facility filtering is complex due to the unit hierarchy.
+        # For now, we rely on the practitioner assignment being facility-specific.
+        # Full facility isolation would require ensuring the department's root unit
+        # is linked to the correct facility via ClinicalUnit.core_department.facility
+
+        roster_entries = list(roster_entries)
+
+        if not roster_entries:
+            logger.info(f"No roster entries found for practitioner {practitioner_id}")
+            return []
+
+        # 2. Get blocked times (1 query)
+        from apps.appointments.models import BlockedTime
+        blocked_times = BlockedTime.objects.filter(
+            practitioner_id=practitioner_id,
+            date__gte=start_date_obj,
+            date__lte=end_date_obj
+        )
+        if facility:
+            blocked_times = blocked_times.filter(facility=facility)
+        blocked_times = list(blocked_times)
+
+        # 3. Get booked appointments (1 query)
+        from apps.appointments.models import Appointment
+        appointments = Appointment.objects.filter(
+            practitioner_id=practitioner_id,
+            status__in=['booked', 'arrived', 'fulfilled'],
+            start_time__date__gte=start_date_obj,
+            start_time__date__lte=end_date_obj,
+        )
+        if facility:
+            appointments = appointments.filter(facility=facility)
+        appointments = list(appointments)
+
+        # 4. Compute slots from roster entries
+        slots = []
+
+        for entry in roster_entries:
+            duty_type = entry.duty_type
+
+            # Skip if no slot duration configured
+            if not duty_type.slot_duration_minutes:
+                logger.warning(
+                    f"Duty type {duty_type.name} has category=clinic but no slot_duration_minutes"
+                )
+                continue
+
+            # Get time range from entry or duty type
+            start_time = entry.start_time or duty_type.start_time
+            end_time = entry.end_time or duty_type.end_time
+
+            if not start_time or not end_time:
+                logger.warning(f"No time range defined for roster entry {entry.id}")
+                continue
+
+            # Get breaks from duty type
+            breaks = duty_type.breaks or []
+            slot_duration = duty_type.slot_duration_minutes
+            current_time = start_time
+
+            while current_time < end_time:
+                # Calculate slot end time
+                slot_end = cls._add_minutes_to_time(current_time, slot_duration)
+
+                # Ensure slot doesn't go beyond schedule end time
+                if slot_end > end_time:
+                    break
+
+                # Check if slot is valid
+                is_in_break = cls._is_in_break(current_time, slot_end, breaks)
+                is_blocked = cls._is_blocked(entry.date, current_time, slot_end, blocked_times)
+                has_appointment = cls._has_appointment(entry.date, current_time, slot_end, appointments)
+
+                # Only add slot if not in a break
+                if not is_in_break:
+                    # Determine slot status
+                    if is_blocked:
+                        status = "busy-unavailable"
+                    elif has_appointment:
+                        status = "busy"
+                    else:
+                        status = "free"
+
+                    # Create slot dictionary
+                    slot_start_dt = datetime.combine(entry.date, current_time)
+                    slot_end_dt = datetime.combine(entry.date, slot_end)
+
+                    slot_data = {
+                        "id": f"roster-{entry.id}-{slot_start_dt.isoformat()}",
+                        "resourceType": "Slot",
+                        "status": status,
+                        "start": slot_start_dt.isoformat(),
+                        "end": slot_end_dt.isoformat(),
+                        "schedule": {
+                            "reference": f"RosterEntry/{entry.id}"
+                        },
+                        "roster_entry_id": str(entry.id),
+                        "duty_type_id": str(duty_type.id),
+                        "duty_type_name": duty_type.name,
+                        "computed": True,
+                        "source": "roster"
+                    }
+
+                    # Add clinic info if available
+                    if duty_type.clinic:
+                        slot_data["clinic_id"] = str(duty_type.clinic.id)
+                        slot_data["clinic_name"] = duty_type.clinic.name
+
+                    # Add default appointment type if available
+                    if duty_type.default_appointment_type:
+                        slot_data["default_appointment_type_id"] = str(
+                            duty_type.default_appointment_type.id
+                        )
+                        slot_data["default_appointment_type_name"] = (
+                            duty_type.default_appointment_type.name
+                        )
+
+                    slots.append(slot_data)
+
+                # Move to next slot
+                current_time = slot_end
+
+        logger.info(
+            f"Computed {len(slots)} roster-based slots for practitioner "
+            f"{practitioner_id} from {start_date} to {end_date}"
+        )
+        return slots
+
+    @classmethod
+    def has_roster_availability(cls, practitioner_id, start_date, end_date, facility=None):
+        """
+        Check if a practitioner has any roster-based availability in the date range.
+
+        This is a fast check used to determine whether to use roster-based or
+        RecurringSchedule-based availability.
+
+        Returns:
+            Boolean indicating if roster entries exist for this practitioner
+        """
+        from .models import RosterEntry, StaffUnitAssignment
+
+        if isinstance(start_date, str):
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        else:
+            start_date_obj = start_date
+
+        if isinstance(end_date, str):
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date_obj = end_date
+
+        today = timezone.now().date()
+
+        # Get teams the practitioner is assigned to
+        team_ids = list(StaffUnitAssignment.objects.filter(
+            practitioner_id=practitioner_id,
+            is_active=True
+        ).filter(
+            Q(effective_from__isnull=True) | Q(effective_from__lte=today)
+        ).filter(
+            Q(effective_until__isnull=True) | Q(effective_until__gte=today)
+        ).values_list('unit_id', flat=True))
+
+        return RosterEntry.objects.filter(
+            date__gte=start_date_obj,
+            date__lte=end_date_obj,
+            status='published',
+            duty_type__category='clinic',
+            duty_type__is_active=True
+        ).filter(
+            Q(practitioner_id=practitioner_id) |
+            Q(team_id__in=team_ids)
+        ).exists()
+
+
+    @classmethod
+    def compute_clinic_available_slots(
+        cls,
+        duty_type_id,
+        start_date,
+        end_date,
+        facility=None,
+    ):
+        """
+        Compute available slots for ALL practitioners at a clinic duty type.
+
+        This is more efficient than calling compute_available_slots() for each
+        practitioner individually when showing "any doctor" availability.
+
+        Query count: 4 queries total (vs 4 × N practitioners)
+
+        Args:
+            duty_type_id: UUID of the DepartmentDutyType (must be category='clinic')
+            start_date: Start date string (YYYY-MM-DD)
+            end_date: End date string (YYYY-MM-DD)
+            facility: Optional Facility instance for scoping
+
+        Returns:
+            Dict with:
+                - practitioners: List of {id, name} for practitioners with slots
+                - slots_by_practitioner: Dict[practitioner_id, List[slot]]
+                - all_slots: Flat list of all slots (for "any doctor" view)
+        """
+        import logging
+        from .models import RosterEntry, StaffUnitAssignment, DepartmentDutyType
+
+        logger = logging.getLogger(__name__)
+
+        # Convert string dates to date objects
+        if isinstance(start_date, str):
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        else:
+            start_date_obj = start_date
+
+        if isinstance(end_date, str):
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date_obj = end_date
+
+        # Verify duty type is clinic
+        try:
+            duty_type = DepartmentDutyType.objects.get(id=duty_type_id)
+            if duty_type.category != 'clinic':
+                logger.warning(f"Duty type {duty_type_id} is not a clinic type")
+                return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+        except DepartmentDutyType.DoesNotExist:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        # 1. Get all roster entries for this duty type in date range (1 query)
+        roster_entries = RosterEntry.objects.filter(
+            duty_type_id=duty_type_id,
+            date__gte=start_date_obj,
+            date__lte=end_date_obj,
+            status='published',
+        ).select_related('team', 'practitioner__staff__user')
+
+        roster_entries = list(roster_entries)
+        if not roster_entries:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        # 2. Resolve all practitioners from roster entries
+        # Collect team IDs and direct practitioner IDs
+        team_ids = set()
+        direct_practitioner_ids = set()
+
+        for entry in roster_entries:
+            if entry.practitioner_id:
+                direct_practitioner_ids.add(entry.practitioner_id)
+            if entry.team_id:
+                team_ids.add(entry.team_id)
+
+        # Get practitioners assigned to teams (1 query)
+        today = timezone.now().date()
+        team_assignments = {}
+        if team_ids:
+            assignments = StaffUnitAssignment.objects.filter(
+                unit_id__in=team_ids,
+                is_active=True
+            ).filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=today)
+            ).filter(
+                Q(effective_until__isnull=True) | Q(effective_until__gte=today)
+            ).select_related('practitioner__staff__user')
+
+            for assignment in assignments:
+                if assignment.unit_id not in team_assignments:
+                    team_assignments[assignment.unit_id] = []
+                team_assignments[assignment.unit_id].append(assignment.practitioner)
+
+        # Build practitioner list with their applicable roster entries
+        practitioner_entries = {}  # practitioner_id -> list of roster entries
+
+        for entry in roster_entries:
+            if entry.practitioner_id:
+                # Direct practitioner assignment
+                if entry.practitioner_id not in practitioner_entries:
+                    practitioner_entries[entry.practitioner_id] = []
+                practitioner_entries[entry.practitioner_id].append(entry)
+            elif entry.team_id and entry.team_id in team_assignments:
+                # Team-based assignment - add entry to all team members
+                for practitioner in team_assignments[entry.team_id]:
+                    if practitioner.id not in practitioner_entries:
+                        practitioner_entries[practitioner.id] = []
+                    practitioner_entries[practitioner.id].append(entry)
+
+        if not practitioner_entries:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        practitioner_ids = list(practitioner_entries.keys())
+
+        # 3. Get blocked times for all practitioners (1 query)
+        from apps.appointments.models import BlockedTime
+        blocked_times_qs = BlockedTime.objects.filter(
+            practitioner_id__in=practitioner_ids,
+            date__gte=start_date_obj,
+            date__lte=end_date_obj
+        )
+        if facility:
+            blocked_times_qs = blocked_times_qs.filter(facility=facility)
+
+        blocked_by_practitioner = {}
+        for bt in blocked_times_qs:
+            if bt.practitioner_id not in blocked_by_practitioner:
+                blocked_by_practitioner[bt.practitioner_id] = []
+            blocked_by_practitioner[bt.practitioner_id].append(bt)
+
+        # 4. Get appointments for all practitioners (1 query)
+        from apps.appointments.models import Appointment
+        appointments_qs = Appointment.objects.filter(
+            practitioner_id__in=practitioner_ids,
+            status__in=['booked', 'arrived', 'fulfilled'],
+            start_time__date__gte=start_date_obj,
+            start_time__date__lte=end_date_obj,
+        )
+        if facility:
+            appointments_qs = appointments_qs.filter(facility=facility)
+
+        appts_by_practitioner = {}
+        for appt in appointments_qs:
+            if appt.practitioner_id not in appts_by_practitioner:
+                appts_by_practitioner[appt.practitioner_id] = []
+            appts_by_practitioner[appt.practitioner_id].append(appt)
+
+        # 5. Generate slots for each practitioner
+        slots_by_practitioner = {}
+        all_slots = []
+        practitioners_info = []
+
+        # Get practitioner names
+        from apps.users.models import PractitionerProfile
+        practitioner_objs = {
+            p.id: p for p in PractitionerProfile.objects.filter(
+                id__in=practitioner_ids
+            ).select_related('staff__user')
+        }
+
+        for prac_id, entries in practitioner_entries.items():
+            prac = practitioner_objs.get(prac_id)
+            prac_name = prac.staff.user.get_full_name() if prac and prac.staff else 'Unknown'
+
+            blocked_times = blocked_by_practitioner.get(prac_id, [])
+            appointments = appts_by_practitioner.get(prac_id, [])
+
+            prac_slots = []
+            for entry in entries:
+                # Generate slots for this entry
+                entry_slots = cls._generate_slots_for_entry(
+                    entry, duty_type, prac_id, prac_name, blocked_times, appointments
+                )
+                prac_slots.extend(entry_slots)
+
+            if prac_slots:
+                slots_by_practitioner[str(prac_id)] = prac_slots
+                all_slots.extend(prac_slots)
+                practitioners_info.append({
+                    'id': str(prac_id),
+                    'name': prac_name,
+                    'slot_count': len(prac_slots),
+                    'free_slot_count': len([s for s in prac_slots if s['status'] == 'free'])
+                })
+
+        # Sort all_slots by start time
+        all_slots.sort(key=lambda s: s['start'])
+
+        logger.info(
+            f"Computed clinic slots for duty_type {duty_type_id}: "
+            f"{len(practitioners_info)} practitioners, {len(all_slots)} total slots"
+        )
+
+        return {
+            'practitioners': practitioners_info,
+            'slots_by_practitioner': slots_by_practitioner,
+            'all_slots': all_slots,
+        }
+
+    @classmethod
+    def _generate_slots_for_entry(cls, entry, duty_type, practitioner_id, practitioner_name, blocked_times, appointments):
+        """Generate slots for a single roster entry."""
+        slots = []
+
+        if not duty_type.slot_duration_minutes:
+            return slots
+
+        start_time = entry.start_time or duty_type.start_time
+        end_time = entry.end_time or duty_type.end_time
+
+        if not start_time or not end_time:
+            return slots
+
+        breaks = duty_type.breaks or []
+        slot_duration = duty_type.slot_duration_minutes
+        current_time = start_time
+
+        while current_time < end_time:
+            slot_end = cls._add_minutes_to_time(current_time, slot_duration)
+
+            if slot_end > end_time:
+                break
+
+            is_in_break = cls._is_in_break(current_time, slot_end, breaks)
+            is_blocked = cls._is_blocked(entry.date, current_time, slot_end, blocked_times)
+            has_appointment = cls._has_appointment(entry.date, current_time, slot_end, appointments)
+
+            if not is_in_break:
+                if is_blocked:
+                    status = "busy-unavailable"
+                elif has_appointment:
+                    status = "busy"
+                else:
+                    status = "free"
+
+                slot_start_dt = datetime.combine(entry.date, current_time)
+                slot_end_dt = datetime.combine(entry.date, slot_end)
+
+                slot_data = {
+                    "id": f"roster-{entry.id}-{practitioner_id}-{slot_start_dt.isoformat()}",
+                    "resourceType": "Slot",
+                    "status": status,
+                    "start": slot_start_dt.isoformat(),
+                    "end": slot_end_dt.isoformat(),
+                    "practitioner_id": str(practitioner_id),
+                    "practitioner_name": practitioner_name,
+                    "schedule": {"reference": f"RosterEntry/{entry.id}"},
+                    "roster_entry_id": str(entry.id),
+                    "duty_type_id": str(duty_type.id),
+                    "duty_type_name": duty_type.name,
+                    "computed": True,
+                    "source": "roster"
+                }
+
+                if duty_type.clinic:
+                    slot_data["clinic_id"] = str(duty_type.clinic.id)
+                    slot_data["clinic_name"] = duty_type.clinic.name
+
+                slots.append(slot_data)
+
+            current_time = slot_end
+
+        return slots
+
+
 class TeamAssignmentService:
     """
     Service for automatic team assignment using roster entries.

@@ -103,6 +103,14 @@ const RULE_TYPES = [
   { value: 'fixed_weekly', label: 'Fixed Weekly', description: 'Same team each weekday: Mon=A, Tue=B' },
 ];
 
+const DUTY_CATEGORY_OPTIONS = [
+  { value: 'clinic', label: 'Clinic Session', description: 'Generates appointment slots' },
+  { value: 'ward', label: 'Ward Duty', description: 'Inpatient coverage' },
+  { value: 'on_call', label: 'On-Call', description: 'Emergency/on-call coverage' },
+  { value: 'theatre', label: 'Theatre/Procedure', description: 'Surgical/procedural' },
+  { value: 'admin', label: 'Administrative', description: 'Non-clinical duties' },
+];
+
 /**
  * Unit selector showing departments and divisions grouped
  */
@@ -225,10 +233,15 @@ function DutyTypesPanel({ departmentId }) {
   const [formState, setFormState] = useState({
     name: '',
     code: '',
+    category: 'ward',
     applicable_days: [0, 1, 2, 3, 4],
     is_24_hour: false,
     start_time: '08:00',
     end_time: '17:00',
+    // Clinic-specific fields
+    slot_duration_minutes: 15,
+    max_patients_per_slot: 1,
+    breaks: [],
     display_order: 0,
     is_active: true,
   });
@@ -239,10 +252,15 @@ function DutyTypesPanel({ departmentId }) {
       setFormState({
         name: item.name || '',
         code: item.code || '',
+        category: item.category || 'ward',
         applicable_days: item.applicable_days || [0, 1, 2, 3, 4],
         is_24_hour: item.is_24_hour || false,
         start_time: item.start_time?.slice(0, 5) || '08:00',
         end_time: item.end_time?.slice(0, 5) || '17:00',
+        // Clinic-specific fields
+        slot_duration_minutes: item.slot_duration_minutes || 15,
+        max_patients_per_slot: item.max_patients_per_slot || 1,
+        breaks: item.breaks || [],
         display_order: item.display_order ?? 0,
         is_active: item.is_active ?? true,
       });
@@ -251,10 +269,15 @@ function DutyTypesPanel({ departmentId }) {
       setFormState({
         name: '',
         code: '',
+        category: 'ward',
         applicable_days: [0, 1, 2, 3, 4],
         is_24_hour: false,
         start_time: '08:00',
         end_time: '17:00',
+        // Clinic-specific fields
+        slot_duration_minutes: 15,
+        max_patients_per_slot: 1,
+        breaks: [],
         display_order: 0,
         is_active: true,
       });
@@ -268,14 +291,27 @@ function DutyTypesPanel({ departmentId }) {
       return;
     }
 
+    // Validate clinic-specific fields
+    if (formState.category === 'clinic') {
+      if (!formState.slot_duration_minutes || formState.slot_duration_minutes < 5) {
+        toast.error('Slot duration must be at least 5 minutes for clinic duties.');
+        return;
+      }
+    }
+
     const payload = {
       name: formState.name.trim(),
       code: formState.code.trim().toUpperCase(),
       department: departmentId,
+      category: formState.category,
       applicable_days: formState.applicable_days,
       is_24_hour: formState.is_24_hour,
       start_time: formState.is_24_hour ? null : formState.start_time,
       end_time: formState.is_24_hour ? null : formState.end_time,
+      // Include clinic-specific fields when category is 'clinic'
+      slot_duration_minutes: formState.category === 'clinic' ? Number(formState.slot_duration_minutes) : null,
+      max_patients_per_slot: formState.category === 'clinic' ? Number(formState.max_patients_per_slot) || 1 : null,
+      breaks: formState.category === 'clinic' ? formState.breaks : [],
       display_order: Number(formState.display_order) || 0,
       is_active: formState.is_active,
     };
@@ -350,6 +386,7 @@ function DutyTypesPanel({ departmentId }) {
           <TableHeader>
             <TableRow className="bg-muted/30">
               <TableHead className="font-mono text-[10px] uppercase">Name</TableHead>
+              <TableHead className="font-mono text-[10px] uppercase">Category</TableHead>
               <TableHead className="font-mono text-[10px] uppercase">Days</TableHead>
               <TableHead className="font-mono text-[10px] uppercase">Time</TableHead>
               <TableHead className="font-mono text-[10px] uppercase">Status</TableHead>
@@ -366,6 +403,24 @@ function DutyTypesPanel({ departmentId }) {
                 <TableCell>
                   <div className="font-heading font-medium">{dt.name}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">{dt.code}</div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'text-[10px]',
+                      dt.category === 'clinic'
+                        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                        : 'bg-muted/50'
+                    )}
+                  >
+                    {dt.category_display || dt.category || 'Ward'}
+                  </Badge>
+                  {dt.category === 'clinic' && dt.slot_duration_minutes && (
+                    <div className="font-mono text-[9px] text-muted-foreground mt-0.5">
+                      {dt.slot_duration_minutes}min slots
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1 flex-wrap">
@@ -419,7 +474,7 @@ function DutyTypesPanel({ departmentId }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
@@ -442,6 +497,31 @@ function DutyTypesPanel({ departmentId }) {
                   className="font-mono"
                 />
               </div>
+            </div>
+
+            {/* Category Selector */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Category
+              </label>
+              <Select
+                value={formState.category}
+                onValueChange={(v) => setFormState((p) => ({ ...p, category: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {DUTY_CATEGORY_OPTIONS.map((cat) => (
+                    <SelectItem key={cat.value} value={cat.value}>
+                      <div className="flex flex-col">
+                        <span>{cat.label}</span>
+                        <span className="text-xs text-muted-foreground">{cat.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -535,6 +615,128 @@ function DutyTypesPanel({ departmentId }) {
                 </div>
               )}
             </div>
+
+            {/* Clinic-specific fields - shown when category is 'clinic' */}
+            {formState.category === 'clinic' && (
+              <div className="space-y-4 pt-2 border-t border-border">
+                <div className="flex items-center gap-2 text-amber-600">
+                  <CalendarClock className="h-4 w-4" />
+                  <span className="text-xs font-medium">Appointment Scheduling Settings</span>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      Slot Duration (minutes)
+                    </label>
+                    <Input
+                      type="number"
+                      min="5"
+                      max="480"
+                      step="5"
+                      value={formState.slot_duration_minutes}
+                      onChange={(e) =>
+                        setFormState((p) => ({ ...p, slot_duration_minutes: e.target.value }))
+                      }
+                      className="font-mono"
+                      placeholder="15"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Duration of each appointment slot
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      Patients per Practitioner Slot
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={formState.max_patients_per_slot}
+                      onChange={(e) =>
+                        setFormState((p) => ({ ...p, max_patients_per_slot: e.target.value }))
+                      }
+                      className="font-mono"
+                      placeholder="1"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      For group sessions or overbooking per doctor. Multiple doctors in same clinic each get their own slots via roster.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Breaks Editor */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      Breaks
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setFormState((p) => ({
+                          ...p,
+                          breaks: [...p.breaks, { start: '12:00', end: '13:00' }],
+                        }))
+                      }
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      <span className="text-xs">Add Break</span>
+                    </Button>
+                  </div>
+
+                  {formState.breaks.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      No breaks configured. Slots will be generated continuously.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {formState.breaks.map((brk, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Input
+                            type="time"
+                            value={brk.start}
+                            onChange={(e) => {
+                              const updated = [...formState.breaks];
+                              updated[idx] = { ...updated[idx], start: e.target.value };
+                              setFormState((p) => ({ ...p, breaks: updated }));
+                            }}
+                            className="font-mono w-28"
+                          />
+                          <span className="text-muted-foreground">to</span>
+                          <Input
+                            type="time"
+                            value={brk.end}
+                            onChange={(e) => {
+                              const updated = [...formState.breaks];
+                              updated[idx] = { ...updated[idx], end: e.target.value };
+                              setFormState((p) => ({ ...p, breaks: updated }));
+                            }}
+                            className="font-mono w-28"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setFormState((p) => ({
+                                ...p,
+                                breaks: p.breaks.filter((_, i) => i !== idx),
+                              }));
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">

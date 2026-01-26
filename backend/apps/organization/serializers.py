@@ -620,19 +620,29 @@ class UnitWardAllocationSerializer(serializers.ModelSerializer):
 
 class DepartmentDutyTypeListSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True, allow_null=True)
 
     class Meta:
         model = DepartmentDutyType
         fields = [
             'id', 'department', 'department_name', 'code', 'name',
+            'category', 'category_display',
             'rotation_type', 'applicable_days', 'is_24_hour',
             'start_time', 'end_time',
+            'slot_duration_minutes', 'max_patients_per_slot',
+            'clinic', 'clinic_name',
             'display_order', 'is_active'
         ]
 
 
 class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True, allow_null=True)
+    default_appointment_type_name = serializers.CharField(
+        source='default_appointment_type.name', read_only=True, allow_null=True
+    )
 
     class Meta:
         model = DepartmentDutyType
@@ -657,6 +667,56 @@ class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'start_time': 'Both start_time and end_time are required.'})
         if start_time and end_time and start_time == end_time:
             raise serializers.ValidationError({'start_time': 'start_time and end_time cannot match.'})
+
+        # Validate clinic-specific fields
+        category = data.get('category', getattr(self.instance, 'category', 'ward'))
+        slot_duration = data.get('slot_duration_minutes', getattr(self.instance, 'slot_duration_minutes', None))
+
+        if category == 'clinic':
+            # slot_duration_minutes is required for clinic category
+            if slot_duration is None:
+                raise serializers.ValidationError({
+                    'slot_duration_minutes': 'Slot duration is required for clinic-type duties.'
+                })
+            if slot_duration < 5:
+                raise serializers.ValidationError({
+                    'slot_duration_minutes': 'Slot duration must be at least 5 minutes.'
+                })
+            if slot_duration > 480:
+                raise serializers.ValidationError({
+                    'slot_duration_minutes': 'Slot duration cannot exceed 480 minutes (8 hours).'
+                })
+
+        # Validate breaks format
+        breaks = data.get('breaks', getattr(self.instance, 'breaks', []))
+        if breaks:
+            if not isinstance(breaks, list):
+                raise serializers.ValidationError({'breaks': 'Breaks must be a list.'})
+            for i, break_period in enumerate(breaks):
+                if not isinstance(break_period, dict):
+                    raise serializers.ValidationError({
+                        'breaks': f'Break {i+1} must be an object with start and end times.'
+                    })
+                if 'start' not in break_period or 'end' not in break_period:
+                    raise serializers.ValidationError({
+                        'breaks': f'Break {i+1} must have both start and end times.'
+                    })
+                # Validate time format (HH:MM)
+                try:
+                    from datetime import datetime
+                    datetime.strptime(break_period['start'], '%H:%M')
+                    datetime.strptime(break_period['end'], '%H:%M')
+                except ValueError:
+                    raise serializers.ValidationError({
+                        'breaks': f'Break {i+1} times must be in HH:MM format.'
+                    })
+
+        # Validate max_patients_per_slot
+        max_patients = data.get('max_patients_per_slot', getattr(self.instance, 'max_patients_per_slot', 1))
+        if max_patients is not None and max_patients < 1:
+            raise serializers.ValidationError({
+                'max_patients_per_slot': 'Max patients per slot must be at least 1.'
+            })
 
         return data
 
