@@ -278,12 +278,12 @@ def close_stale_outpatient_encounters():
     """
     from .models import Encounter
 
-    yesterday = timezone.now().date() - timedelta(days=1)
+    today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     stale_encounters = Encounter.objects.filter(
         encounter_type='outpatient',
         status='in-progress',
-        start_time__date__lte=yesterday
+        start_time__lt=today_start
     )
 
     count = stale_encounters.count()

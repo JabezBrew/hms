@@ -84,6 +84,7 @@ import {
   useCreateValidationRule,
   useUpdateValidationRule,
   useDeleteValidationRule,
+  useClinics,
 } from '@/hooks/useOrganization';
 import { flattenUnitTree, toList } from './duty-roster/utils';
 import { EmptyState } from './duty-roster/components';
@@ -226,6 +227,13 @@ function DutyTypesPanel({ departmentId }) {
   );
   const dutyTypes = toList(data);
 
+  // Fetch clinics for this department to link to clinic duty types
+  const { data: clinicsData } = useClinics(
+    { department: departmentId, is_active: true },
+    { enabled: !!departmentId }
+  );
+  const clinics = Array.isArray(clinicsData) ? clinicsData : (clinicsData?.results || []);
+
   const createMutation = useCreateDepartmentDutyType();
   const updateMutation = useUpdateDepartmentDutyType();
   const deleteMutation = useDeleteDepartmentDutyType();
@@ -239,6 +247,7 @@ function DutyTypesPanel({ departmentId }) {
     start_time: '08:00',
     end_time: '17:00',
     // Clinic-specific fields
+    clinic: '', // FK to Clinic model
     slot_duration_minutes: 15,
     max_patients_per_slot: 1,
     breaks: [],
@@ -258,6 +267,7 @@ function DutyTypesPanel({ departmentId }) {
         start_time: item.start_time?.slice(0, 5) || '08:00',
         end_time: item.end_time?.slice(0, 5) || '17:00',
         // Clinic-specific fields
+        clinic: item.clinic || '',
         slot_duration_minutes: item.slot_duration_minutes || 15,
         max_patients_per_slot: item.max_patients_per_slot || 1,
         breaks: item.breaks || [],
@@ -275,6 +285,7 @@ function DutyTypesPanel({ departmentId }) {
         start_time: '08:00',
         end_time: '17:00',
         // Clinic-specific fields
+        clinic: '',
         slot_duration_minutes: 15,
         max_patients_per_slot: 1,
         breaks: [],
@@ -309,6 +320,7 @@ function DutyTypesPanel({ departmentId }) {
       start_time: formState.is_24_hour ? null : formState.start_time,
       end_time: formState.is_24_hour ? null : formState.end_time,
       // Include clinic-specific fields when category is 'clinic'
+      clinic: formState.category === 'clinic' && formState.clinic ? formState.clinic : null,
       slot_duration_minutes: formState.category === 'clinic' ? Number(formState.slot_duration_minutes) : null,
       max_patients_per_slot: formState.category === 'clinic' ? Number(formState.max_patients_per_slot) || 1 : null,
       breaks: formState.category === 'clinic' ? formState.breaks : [],
@@ -416,9 +428,9 @@ function DutyTypesPanel({ departmentId }) {
                   >
                     {dt.category_display || dt.category || 'Ward'}
                   </Badge>
-                  {dt.category === 'clinic' && dt.slot_duration_minutes && (
+                  {dt.category === 'clinic' && (
                     <div className="font-mono text-[9px] text-muted-foreground mt-0.5">
-                      {dt.slot_duration_minutes}min slots
+                      {dt.clinic_name ? dt.clinic_name : dt.slot_duration_minutes ? `${dt.slot_duration_minutes}min slots` : 'No clinic linked'}
                     </div>
                   )}
                 </TableCell>
@@ -624,6 +636,34 @@ function DutyTypesPanel({ departmentId }) {
                   <span className="text-xs font-medium">Appointment Scheduling Settings</span>
                 </div>
 
+                {/* Clinic Selector */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    Link to Clinic (Optional)
+                  </label>
+                  <Select
+                    value={formState.clinic || '_none_'}
+                    onValueChange={(v) => setFormState((p) => ({ ...p, clinic: v === '_none_' ? '' : v }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a clinic" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[200]">
+                      <SelectItem value="_none_">No clinic linked</SelectItem>
+                      {clinics.map((clinic) => (
+                        <SelectItem key={clinic.id} value={clinic.id}>
+                          {clinic.name} ({clinic.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {clinics.length === 0
+                      ? 'No clinics available. Create clinics in Organization → unit → Clinics tab.'
+                      : 'Link this duty type to a clinic for appointment scheduling.'}
+                  </p>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
@@ -647,7 +687,7 @@ function DutyTypesPanel({ departmentId }) {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                      Patients per Practitioner Slot
+                      Patients/Slot
                     </label>
                     <Input
                       type="number"

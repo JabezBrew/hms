@@ -19,7 +19,8 @@ from apps.charts.serializers import (
     ChartTemplateListSerializer, ChartTemplateSerializer, ChartTemplateCreateSerializer,
     ChartFieldSerializer, ChartFieldCreateSerializer,
     ChartAssignmentListSerializer, ChartAssignmentSerializer, ChartAssignmentCreateSerializer,
-    ChartEntryListSerializer, ChartEntrySerializer, ChartEntryCreateSerializer,
+    ChartEntryListSerializer, ChartEntryListWithDataSerializer,
+    ChartEntrySerializer, ChartEntryCreateSerializer,
     ChartEntrySummarySerializer, ChartEntryTrendSerializer,
 )
 from apps.charts.permissions import (
@@ -533,7 +534,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return ChartEntryListSerializer
+            include_data = self.request.query_params.get('include_data', '').lower() == 'true'
+            return ChartEntryListWithDataSerializer if include_data else ChartEntryListSerializer
         elif self.action == 'create':
             return ChartEntryCreateSerializer
         return ChartEntrySerializer
@@ -675,5 +677,7 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         limit = int(request.query_params.get('limit', 100))
         queryset = queryset[:limit]
 
-        serializer = ChartEntryListSerializer(queryset, many=True)
+        include_data = request.query_params.get('include_data', '').lower() == 'true'
+        serializer_class = ChartEntryListWithDataSerializer if include_data else ChartEntryListSerializer
+        serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)

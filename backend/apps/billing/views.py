@@ -34,7 +34,7 @@ from .serializers import (
 )
 from ..users.permissions import IsBillingStaff
 from apps.core.pagination import StandardResultsSetPagination as CorePagination
-from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.core.security import FacilityScopedPermission, get_user_facility, check_billing_access
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 
@@ -287,10 +287,8 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: Allow admin/billing or users with demographics access to view insurance
-        if request.user.user_type not in ['admin', 'billing']:
-            from apps.core.security import check_demographics_access
-            check_demographics_access(request.user, patient_id)
+        # SECURITY: Billing access only (admin/billing/patient self)
+        check_billing_access(request.user, patient_id)
 
         insurances = self.get_queryset().filter(patient_id=patient_id)
 
@@ -324,7 +322,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'for_patient':
-            return [permissions.IsAuthenticated()]
+            return [permissions.IsAuthenticated(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -395,10 +393,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: Allow admin/billing or users with demographics access to view invoices
-        if request.user.user_type not in ['admin', 'billing']:
-            from apps.core.security import check_demographics_access
-            check_demographics_access(request.user, patient_id)
+        # SECURITY: Billing access only (admin/billing/patient self)
+        check_billing_access(request.user, patient_id)
 
         invoices = self.get_queryset().filter(patient_id=patient_id)
 

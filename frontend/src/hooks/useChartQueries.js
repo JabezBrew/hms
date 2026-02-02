@@ -505,6 +505,9 @@ export function useChartEntries(filters = {}) {
   if (filters.has_critical_values !== undefined) {
     params.append('has_critical_values', filters.has_critical_values);
   }
+  if (filters.include_data) {
+    params.append('include_data', 'true');
+  }
 
   return useQuery({
     queryKey: chartKeys.entryList(filters),

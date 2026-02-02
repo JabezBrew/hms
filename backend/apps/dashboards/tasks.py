@@ -11,27 +11,22 @@ from apps.appointments.proxies import AppointmentProxy
 from apps.core.cache_utils import facility_cache_key_for_code
 from apps.core.models import Facility
 from apps.users.models import PatientProfile
+from .appointment_cache import (
+    extract_patient_fhir_id,
+    filter_appointments_by_patient_ids,
+    project_appointment_for_cache,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_patient_fhir_id(appointment):
-    participant_data = appointment.get('participant', [])
-    for participant in participant_data:
-        actor = participant.get('actor', {})
-        reference = actor.get('reference', '')
-        if reference.startswith('Patient/'):
-            return reference.split('/')[-1]
-    return None
 
 
 def _filter_appointments_by_facility(appointments, facility):
     if not facility:
         return []
     patient_ids = {
-        _extract_patient_fhir_id(appt)
+        extract_patient_fhir_id(appt)
         for appt in appointments
-        if _extract_patient_fhir_id(appt)
+        if extract_patient_fhir_id(appt)
     }
     if not patient_ids:
         return []
@@ -39,12 +34,17 @@ def _filter_appointments_by_facility(appointments, facility):
         PatientProfile.objects.filter(
             fhir_patient_id__in=patient_ids,
             facility=facility,
-        ).values_list('fhir_patient_id', flat=True)
+        ).values_list("fhir_patient_id", flat=True)
     )
-    return [
-        appt for appt in appointments
-        if _extract_patient_fhir_id(appt) in allowed_ids
-    ]
+    return filter_appointments_by_patient_ids(appointments, allowed_ids)
+
+
+def _cache_appointments(facility_code: str, cache_key: str, appointments: list) -> None:
+    stale_cache_key = f"{cache_key}_stale"
+    cache_key = facility_cache_key_for_code(facility_code, cache_key)
+    stale_cache_key = facility_cache_key_for_code(facility_code, stale_cache_key)
+    cache.set(cache_key, appointments, timeout=60)
+    cache.set(stale_cache_key, appointments, timeout=600)
 
 
 @shared_task(bind=True, ignore_result=True)
@@ -75,17 +75,8 @@ def refresh_admin_dashboard_appointments(self, facility_id: str, facility_code: 
         logger.warning("Failed to refresh admin dashboard appointments: %s", exc)
         return
 
-    cache_key = facility_cache_key_for_code(
-        facility_code,
-        f"admin_dashboard_appointments_{date_str}",
-    )
-    stale_cache_key = facility_cache_key_for_code(
-        facility_code,
-        f"admin_dashboard_appointments_{date_str}_stale",
-    )
-
-    cache.set(cache_key, count, timeout=60)
-    cache.set(stale_cache_key, count, timeout=600)
+    cache_key = f"admin_dashboard_appointments_{date_str}"
+    _cache_appointments(facility_code, cache_key, count)
 
 
 @shared_task(bind=True, ignore_result=True)
@@ -98,3 +89,65 @@ def refresh_admin_dashboard_appointments_for_all_facilities(self) -> None:
             facility_code=facility.code,
             date_str=today,
         )
+
+
+@shared_task(bind=True, ignore_result=True)
+def refresh_facility_dashboard_appointments(self, facility_id: str, facility_code: str, date_str: str) -> None:
+    facility = Facility.objects.filter(id=facility_id).first()
+    if not facility:
+        logger.warning("Facility not found for dashboard refresh")
+        return
+
+    try:
+        bundle = AppointmentProxy.search(date=date_str)
+        appointments = [
+            entry.get("resource")
+            for entry in bundle.get("entry", [])
+            if entry.get("resource")
+        ] if bundle else []
+        filtered = _filter_appointments_by_facility(appointments, facility)
+        projected = [
+            projected_appt
+            for appt in filtered
+            if (projected_appt := project_appointment_for_cache(appt))
+        ]
+    except Exception as exc:
+        logger.warning("Failed to refresh facility appointments: %s", exc)
+        return
+
+    cache_key = f"facility_dashboard_appointments_{date_str}"
+    _cache_appointments(facility_code, cache_key, projected)
+
+
+@shared_task(bind=True, ignore_result=True)
+def refresh_doctor_dashboard_appointments(
+    self,
+    facility_id: str,
+    facility_code: str,
+    practitioner_id: str,
+    date_str: str,
+) -> None:
+    facility = Facility.objects.filter(id=facility_id).first()
+    if not facility:
+        logger.warning("Facility not found for doctor dashboard refresh")
+        return
+
+    try:
+        bundle = AppointmentProxy.search(practitioner_id=practitioner_id, date=date_str)
+        appointments = [
+            entry.get("resource")
+            for entry in bundle.get("entry", [])
+            if entry.get("resource")
+        ] if bundle else []
+        filtered = _filter_appointments_by_facility(appointments, facility)
+        projected = [
+            projected_appt
+            for appt in filtered
+            if (projected_appt := project_appointment_for_cache(appt))
+        ]
+    except Exception as exc:
+        logger.warning("Failed to refresh doctor appointments: %s", exc)
+        return
+
+    cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{date_str}"
+    _cache_appointments(facility_code, cache_key, projected)

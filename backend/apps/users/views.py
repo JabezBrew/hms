@@ -7,6 +7,8 @@ from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction
 from django.db.models import Q
+from django.core.cache import cache
+import hashlib
 from django.utils import timezone
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from .serializers import (
@@ -17,7 +19,7 @@ from .serializers import (
     StaffInviteSerializer,
     PractitionerProfileSerializer, PractitionerProfileListSerializer,
     PatientProfileSerializer, PatientProfileListSerializer,
-    PractitionerFHIRMappingSerializer,
+    PractitionerFHIRMappingSerializer, PractitionerFHIRMappingListSerializer,
     UserPatientListSerializer, UserPatientListCreateSerializer,
     UserSessionListSerializer
 )
@@ -30,7 +32,8 @@ from .rbac import (
 )
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, check_demographics_access, get_user_facility
-from ..fhir_client.client import fhir_client
+from apps.core.cache_utils import facility_cache_key
+from .tasks import fetch_practitioner_fhir_snapshot, search_practitioners_in_fhir
 
 User = get_user_model()
 
@@ -517,6 +520,7 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
         """
         query = request.query_params.get('q', '')
         doctors_only = request.query_params.get('doctors_only', '').lower() == 'true'
+        allow_fhir = request.user.user_type in ['admin', 'doctor', 'nurse']
 
         if not query or len(query) < 2:
             return Response({"detail": "Search query must be at least 2 characters long."}, 
@@ -548,8 +552,18 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
 
             # Format local results
             for practitioner in combined_results:
+                fhir_resource = None
+                if allow_fhir and practitioner.fhir_practitioner_id:
+                    cache_key = facility_cache_key(f'fhir_practitioner_snapshot_{practitioner.id}')
+                    fhir_resource = cache.get(cache_key)
+                    if fhir_resource is None:
+                        fetch_practitioner_fhir_snapshot.delay(
+                            str(practitioner.id),
+                            practitioner.fhir_practitioner_id,
+                            facility_code=getattr(request, 'facility_code', None)
+                        )
                 local_practitioners.append({
-                    "fhir_resource": fhir_client.get_resource("Practitioner", practitioner.fhir_practitioner_id) if practitioner.fhir_practitioner_id else None,
+                    "fhir_resource": fhir_resource,
                     "local_data": self.get_serializer(practitioner).data
                 })
 
@@ -561,54 +575,38 @@ class PractitionerProfileViewSet(viewsets.ModelViewSet):
                     "practitioners": local_practitioners
                 })
 
-            # If no local practitioners found, search in FHIR
-            search_params = {
-                "name": query,
-                "_sort": "family",
-                "_count": 10
-            }
+            # If no local practitioners found, search in FHIR (clinical only)
+            if not allow_fhir:
+                return Response({
+                    "query": query,
+                    "total": 0,
+                    "practitioners": [],
+                    "fhir_status": "forbidden"
+                })
 
-            # Also search by identifier (employee ID or license number)
-            identifier_search_params = {
-                "identifier": query,
-                "_sort": "family",
-                "_count": 10
-            }
+            cache_key = facility_cache_key(
+                f'fhir_practitioner_search_{request.user.id}_{hashlib.md5(query.encode()).hexdigest()}'
+            )
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response({
+                    "query": query,
+                    "total": len(cached),
+                    "practitioners": cached,
+                    "fhir_status": "available"
+                })
 
-            # Try name search first
-            fhir_results = fhir_client.search_resources("Practitioner", search_params)
-
-            # If no results, try identifier search
-            if "entry" not in fhir_results or len(fhir_results.get("entry", [])) == 0:
-                fhir_results = fhir_client.search_resources("Practitioner", identifier_search_params)
-
-            # Process results
-            practitioners = []
-
-            if "entry" in fhir_results:
-                for entry in fhir_results["entry"]:
-                    resource = entry.get("resource", {})
-
-                    # Try to find the local mapping
-                    try:
-                        mapping = PractitionerFHIRMapping.objects.get(fhir_practitioner_id=resource.get("id"))
-
-                        # Include local data
-                        practitioners.append({
-                            "fhir_resource": resource,
-                            "local_data": self.get_serializer(mapping.practitioner_profile).data
-                        })
-                    except PractitionerFHIRMapping.DoesNotExist:
-                        # Just include FHIR data
-                        practitioners.append({
-                            "fhir_resource": resource,
-                            "local_data": None
-                        })
+            search_practitioners_in_fhir.delay(
+                query,
+                str(request.user.id),
+                facility_code=getattr(request, 'facility_code', None)
+            )
 
             return Response({
                 "query": query,
-                "total": fhir_results.get("total", 0),
-                "practitioners": practitioners
+                "total": 0,
+                "practitioners": [],
+                "fhir_status": "pending"
             })
 
         except Exception as e:
@@ -627,6 +625,11 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
     serializer_class = PractitionerFHIRMappingSerializer
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PractitionerFHIRMappingListSerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
@@ -658,25 +661,20 @@ class PractitionerFHIRMappingViewSet(viewsets.ModelViewSet):
         mapping = self.get_object()
 
         try:
-            # Get the FHIR resource
-            fhir_practitioner = fhir_client.get_resource("Practitioner", mapping.fhir_practitioner_id)
-
-            # Update the mapping with the latest version
-            mapping.fhir_resource_version = fhir_practitioner.get("meta", {}).get("versionId")
-            mapping.is_synced = True
-            mapping.save()
-
+            fetch_practitioner_fhir_snapshot.delay(
+                str(mapping.practitioner_profile_id),
+                mapping.fhir_practitioner_id,
+                facility_code=getattr(request, 'facility_code', None)
+            )
             return Response({
-                "message": "Successfully synced with FHIR resource.",
-                "fhir_practitioner": fhir_practitioner
-            })
+                "message": "FHIR sync queued.",
+                "fhir_status": "queued"
+            }, status=status.HTTP_202_ACCEPTED)
 
-        except Exception as e:
-            mapping.is_synced = False
-            mapping.save()
-            logger.error(f"Failed to sync with FHIR resource: {str(e)}")
+        except Exception:
+            logger.error("Failed to queue FHIR sync")
             return Response(
-                {"error": "Failed to sync with FHIR resource. Please try again."},
+                {"error": "Failed to queue FHIR sync."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

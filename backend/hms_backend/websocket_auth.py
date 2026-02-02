@@ -49,6 +49,11 @@ def get_user_from_token(token_str):
             logger.warning(f"Inactive user {user_id} attempted WebSocket connection")
             return AnonymousUser()
 
+        token_user_type = token.payload.get('user_type')
+        if token_user_type and token_user_type != user.user_type:
+            logger.warning("JWT user_type mismatch in WebSocket auth")
+            return AnonymousUser()
+
         return user
 
     except (InvalidToken, TokenError) as e:
@@ -84,6 +89,17 @@ class JWTAuthMiddleware(BaseMiddleware):
         # Extract token
         token_list = query_params.get('token', [])
         token = token_list[0] if token_list else None
+
+        # Fallback to subprotocols for safer token transport
+        if not token:
+            for protocol in scope.get('subprotocols', []) or []:
+                lowered = protocol.lower()
+                if lowered.startswith('bearer '):
+                    token = protocol.split(' ', 1)[1].strip()
+                    break
+                if lowered.startswith('bearer,'):
+                    token = protocol.split(',', 1)[1].strip()
+                    break
 
         if token:
             # Authenticate with JWT

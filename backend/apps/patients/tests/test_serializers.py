@@ -435,14 +435,10 @@ class TestPatientRegistrationSerializer:
         assert not serializer.is_valid()
         assert 'phone_number' in serializer.errors
 
-    @patch('apps.fhir_client.client.fhir_client.create_resource')
-    def test_create_patient_with_fhir(self, mock_create_resource, db, request_context):
-        """Test creating a patient creates FHIR resource."""
-        mock_create_resource.return_value = {
-            "resourceType": "Patient",
-            "id": "fhir-patient-123",
-            "meta": {"versionId": "1"}
-        }
+    @patch('apps.patients.tasks.create_patient_in_fhir.delay')
+    def test_create_patient_with_fhir(self, mock_create_task, db, request_context):
+        """Test creating a patient queues FHIR resource creation."""
+        mock_create_task.return_value = MagicMock(id='task-123')
         facility = request_context['request'].facility
         clinic = create_clinic(facility)
 
@@ -467,6 +463,7 @@ class TestPatientRegistrationSerializer:
         assert serializer.is_valid(), serializer.errors
 
         patient_profile = serializer.save()
+        mock_create_task.assert_called_once()
 
         assert patient_profile.user.email == 'fhirpatient@test.com'
         assert patient_profile.user.first_name == 'FHIR'

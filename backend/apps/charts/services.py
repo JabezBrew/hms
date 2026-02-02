@@ -472,7 +472,9 @@ class ChartEntryService:
         - critical_entries: count of entries with critical values
         - field_summaries: dict of field_key -> {min, max, avg, latest}
         """
-        from django.db.models import Count, Avg
+        from django.db.models import Count, Avg, Min, Max, FloatField, Value, Case, When, Q
+        from django.db.models.functions import Cast
+        from django.contrib.postgres.fields.jsonb import KeyTextTransform
         from apps.charts.models import ChartEntry
 
         entries = assignment.entries.filter(is_deleted=False)
@@ -482,31 +484,47 @@ class ChartEntryService:
         if end_date:
             entries = entries.filter(observation_datetime__lte=end_date)
 
-        total = entries.count()
-        critical = entries.filter(has_critical_values=True).count()
+        counts = entries.aggregate(
+            total_entries=Count('id'),
+            critical_entries=Count('id', filter=Q(has_critical_values=True)),
+        )
+        total = counts['total_entries'] or 0
+        critical = counts['critical_entries'] or 0
 
         # Calculate field summaries for numeric fields
         field_summaries = {}
-        numeric_fields = assignment.template.fields.filter(
+        numeric_fields = list(assignment.template.fields.filter(
             field_type__in=['numeric', 'scale', 'calculated']
-        )
+        ).values_list('field_key', flat=True))
 
-        for field in numeric_fields:
-            values = []
-            for entry in entries:
-                value = entry.data.get(field.field_key)
-                if value is not None:
-                    try:
-                        values.append(float(value))
-                    except (TypeError, ValueError):
-                        pass
+        aggregates = {}
+        for field_key in numeric_fields:
+            value_text = KeyTextTransform(field_key, 'data')
+            numeric_value = Case(
+                When(
+                    **{f"data__{field_key}__regex": r"^-?\d+(\.\d+)?$"},
+                    then=Cast(value_text, FloatField())
+                ),
+                default=Value(None),
+                output_field=FloatField(),
+            )
+            aggregates[f"{field_key}__min"] = Min(numeric_value)
+            aggregates[f"{field_key}__max"] = Max(numeric_value)
+            aggregates[f"{field_key}__avg"] = Avg(numeric_value)
+            aggregates[f"{field_key}__count"] = Count(numeric_value)
 
-            if values:
-                field_summaries[field.field_key] = {
-                    'min': min(values),
-                    'max': max(values),
-                    'avg': round(sum(values) / len(values), 2),
-                    'count': len(values),
+        if aggregates:
+            agg_results = entries.aggregate(**aggregates)
+            for field_key in numeric_fields:
+                min_val = agg_results.get(f"{field_key}__min")
+                if min_val is None:
+                    continue
+                avg_val = agg_results.get(f"{field_key}__avg")
+                field_summaries[field_key] = {
+                    'min': min_val,
+                    'max': agg_results.get(f"{field_key}__max"),
+                    'avg': round(avg_val, 2) if avg_val is not None else None,
+                    'count': agg_results.get(f"{field_key}__count") or 0,
                 }
 
         # Get latest entry

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import logging
 import random
 import string
 import datetime
@@ -9,17 +10,14 @@ from .models import (
 )
 from ..users.models import PatientProfile, User
 from ..users.serializers import PatientProfileSerializer, UserSerializer, generate_secure_password
-from ..fhir_client.client import fhir_client
+from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
 from hms_backend.tenancy import get_current_facility_code
 from apps.core.security import get_user_facility, resolve_object_facility
 from apps.core.models import Facility
 from django.utils import timezone
 from django.db import transaction
-from ..fhir_client.utils import (
-    create_human_name, create_identifier, create_contact_point,
-    create_address, generate_fhir_id
-)
+logger = logging.getLogger(__name__)
 
 
 def generate_unique_mrn():
@@ -45,9 +43,29 @@ def generate_unique_mrn():
     raise Exception("Unable to generate a unique medical record number after multiple attempts.")
 
 
+class PatientFHIRMappingListSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for patient FHIR mappings (list).
+    """
+    patient_name = serializers.SerializerMethodField()
+    medical_record_number = serializers.CharField(source='patient_profile.medical_record_number', read_only=True)
+
+    class Meta:
+        model = PatientFHIRMapping
+        fields = [
+            'id', 'patient_profile', 'patient_name', 'medical_record_number',
+            'fhir_patient_id', 'last_synced', 'is_synced'
+        ]
+        read_only_fields = ['id', 'last_synced']
+
+    def get_patient_name(self, obj):
+        user = getattr(obj.patient_profile, 'user', None)
+        return user.get_full_name() if user else None
+
+
 class PatientFHIRMappingSerializer(serializers.ModelSerializer):
     """
-    Serializer for the PatientFHIRMapping model.
+    Serializer for the PatientFHIRMapping model (detail).
     """
     patient_profile_details = PatientProfileSerializer(source='patient_profile', read_only=True)
 
@@ -516,69 +534,8 @@ class PatientRegistrationSerializer(serializers.Serializer):
             created_by_user_id=getattr(request.user, 'id', None) if request else None,
         )
 
-        # Create FHIR Patient resource
-        fhir_patient_data = {
-            "resourceType": "Patient",
-            "id": generate_fhir_id(),
-            "active": True,
-            "name": [
-                create_human_name(
-                    family=validated_data['last_name'],
-                    given=[validated_data['first_name']]
-                )
-            ],
-            "identifier": [
-                create_identifier(
-                    system="http://hospital.example.org/fhir/identifier/mrn",
-                    value=medical_record_number
-                )
-            ],
-            "birthDate": validated_data['date_of_birth'].isoformat()
-        }
-
-        # Add telecom if phone number is provided
-        if validated_data.get('phone_number'):
-            fhir_patient_data["telecom"] = [
-                create_contact_point(
-                    system="phone",
-                    value=validated_data['phone_number'],
-                    use="home"
-                )
-            ]
-
-        # Add address if provided
-        if any(address_fields.values()):
-            lines = [address_fields['address_line1']]
-            if address_fields['address_line2']:
-                lines.append(address_fields['address_line2'])
-
-            fhir_patient_data["address"] = [
-                create_address(
-                    line=lines,
-                    city=address_fields['city'],
-                    state=address_fields['state'],
-                    postalCode=address_fields['postal_code'],
-                    country=address_fields['country']
-                )
-            ]
-
-        # Create the FHIR resource
+        # Queue FHIR creation and handle admissions
         try:
-            fhir_patient = fhir_client.create_resource("Patient", fhir_patient_data)
-
-            # Create the mapping
-            PatientFHIRMapping.objects.create(
-                patient_profile=patient_profile,
-                fhir_patient_id=fhir_patient["id"],
-                fhir_resource_version=fhir_patient.get("meta", {}).get("versionId"),
-                created_by=self.context['request'].user,
-                updated_by=self.context['request'].user
-            )
-
-            # Update the patient profile with the FHIR ID
-            patient_profile.fhir_patient_id = fhir_patient["id"]
-            patient_profile.save()
-            
             if admission_details:
                 encounter_type = admission_details.get('type')
                 admission_notes = admission_details.get('notes', '')
@@ -737,20 +694,19 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     except Exception:
                         pass
 
+            request_user_id = None
+            if self.context.get('request') and getattr(self.context['request'], 'user', None):
+                request_user_id = self.context['request'].user.id
+            transaction.on_commit(
+                lambda: create_patient_in_fhir.delay(
+                    str(patient_profile.id),
+                    address_fields=address_fields,
+                    requested_by_user_id=request_user_id,
+                    facility_code=facility_code
+                )
+            )
         except Exception as e:
-            # If FHIR creation fails, delete the local resources and raise the error
-            patient_profile.delete()
-            user.delete()
-            try:
-                from apps.mpi.models import PatientFacilityLink
-                PatientFacilityLink.objects.filter(
-                    patient_identity=patient_identity,
-                    facility_code=facility_code or ''
-                ).delete()
-                if identity_created and not patient_identity.facility_links.exists():
-                    patient_identity.delete()
-            except Exception:
-                pass
-            raise serializers.ValidationError(f"Failed to create FHIR Patient resource: {str(e)}")
+            logger.warning("Failed to finalize patient registration")
+            raise serializers.ValidationError(f"Failed to finalize patient registration: {str(e)}")
 
         return patient_profile

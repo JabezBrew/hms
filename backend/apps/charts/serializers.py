@@ -420,7 +420,7 @@ class ChartAssignmentCreateSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class ChartEntryListSerializer(serializers.ModelSerializer):
-    """Lightweight serializer for entry lists."""
+    """Lightweight serializer for entry lists (no JSON payload)."""
 
     recorded_by_name = serializers.SerializerMethodField()
     template_name = serializers.CharField(source='assignment.template.name', read_only=True)
@@ -430,9 +430,7 @@ class ChartEntryListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'assignment',
             'observation_datetime',
-            'data',
-            'has_critical_values', 'critical_fields',
-            'notes',
+            'has_critical_values',
             'recorded_by_name', 'template_name',
             'created_at',
         ]
@@ -441,6 +439,13 @@ class ChartEntryListSerializer(serializers.ModelSerializer):
         if obj.recorded_by and obj.recorded_by.staff:
             return obj.recorded_by.staff.user.get_full_name()
         return None
+
+
+class ChartEntryListWithDataSerializer(ChartEntryListSerializer):
+    """List serializer that includes entry data for grid views."""
+
+    class Meta(ChartEntryListSerializer.Meta):
+        fields = ChartEntryListSerializer.Meta.fields + ['data']
 
 
 class ChartEntrySerializer(serializers.ModelSerializer):

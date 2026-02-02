@@ -372,7 +372,7 @@ class DepartmentRosterService:
             department=department,
             date=check_date,
             status='published'
-        ).select_related('duty_type', 'team')
+        ).select_related('duty_type', 'duty_type__clinic', 'team')
 
         results = []
         for entry in entries:
@@ -395,6 +395,9 @@ class DepartmentRosterService:
                 'duty_type_id': str(duty_type.id),
                 'duty_type_name': duty_type.name,
                 'duty_type_code': duty_type.code,
+                'duty_type_category': duty_type.category,
+                'clinic_id': str(duty_type.clinic_id) if duty_type.clinic_id else None,
+                'clinic_name': duty_type.clinic.name if duty_type.clinic else None,
                 'team_id': str(entry.team_id) if entry.team_id else None,
                 'team_name': entry.team.name if entry.team else None,
                 'date': entry.date.isoformat(),
@@ -1338,11 +1341,19 @@ class RosterAvailabilityService:
 
         # 3. Get booked appointments (1 query)
         from apps.appointments.models import Appointment
+        start_dt = timezone.make_aware(
+            datetime.combine(start_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = timezone.make_aware(
+            datetime.combine(end_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        ) + timedelta(days=1)
         appointments = Appointment.objects.filter(
             practitioner_id=practitioner_id,
             status__in=['booked', 'arrived', 'fulfilled'],
-            start_time__date__gte=start_date_obj,
-            start_time__date__lte=end_date_obj,
+            start_time__gte=start_dt,
+            start_time__lt=end_dt,
         )
         if facility:
             appointments = appointments.filter(facility=facility)
@@ -1622,11 +1633,19 @@ class RosterAvailabilityService:
 
         # 4. Get appointments for all practitioners (1 query)
         from apps.appointments.models import Appointment
+        start_dt = timezone.make_aware(
+            datetime.combine(start_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = timezone.make_aware(
+            datetime.combine(end_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        ) + timedelta(days=1)
         appointments_qs = Appointment.objects.filter(
             practitioner_id__in=practitioner_ids,
             status__in=['booked', 'arrived', 'fulfilled'],
-            start_time__date__gte=start_date_obj,
-            start_time__date__lte=end_date_obj,
+            start_time__gte=start_dt,
+            start_time__lt=end_dt,
         )
         if facility:
             appointments_qs = appointments_qs.filter(facility=facility)

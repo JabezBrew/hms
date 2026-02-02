@@ -1503,6 +1503,48 @@ export function useClinics(params = {}, options = {}) {
   });
 }
 
+export function useClinic(id, options = {}) {
+  return useQuery({
+    queryKey: [...organizationKeys.clinics(), id],
+    queryFn: () => clinicsApi.get(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useCreateClinic() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => clinicsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.clinics() });
+    },
+  });
+}
+
+export function useUpdateClinic() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => clinicsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.clinics() });
+    },
+  });
+}
+
+export function useDeleteClinic() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => clinicsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.clinics() });
+    },
+  });
+}
+
 export function useClinicSchedules(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.clinicSchedulesList(params),

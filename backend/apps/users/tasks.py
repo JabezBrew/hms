@@ -1,12 +1,25 @@
 from celery import shared_task
+from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.utils import timezone
 from django.db import models
+import hashlib
 import logging
 
 from apps.core.retry import EMAIL_CONFIG
+from apps.core.cache_utils import facility_cache_key
+from apps.fhir_client.client import fhir_client
+from apps.fhir_client.utils import (
+    project_fhir_practitioner,
+    create_human_name,
+    create_identifier,
+    create_contact_point,
+    create_address,
+    generate_fhir_id,
+)
+from .models import PractitionerFHIRMapping, PractitionerProfile, User
 
 logger = logging.getLogger(__name__)
 
@@ -225,3 +238,158 @@ def cleanup_user_sessions():
 
     logger.info(f"Cleaned up {deleted_count} expired/revoked user sessions")
     return {"deleted": deleted_count}
+
+
+@shared_task(bind=True, max_retries=3)
+def fetch_practitioner_fhir_snapshot(self, practitioner_id, fhir_practitioner_id, facility_code=None):
+    """
+    Fetch and cache a minimal Practitioner FHIR snapshot.
+    """
+    try:
+        if not fhir_practitioner_id:
+            return {"status": "skipped"}
+        fhir_resource = fhir_client.get_resource("Practitioner", fhir_practitioner_id)
+        snapshot_key = facility_cache_key(f'fhir_practitioner_snapshot_{practitioner_id}')
+        cache.set(snapshot_key, project_fhir_practitioner(fhir_resource), timeout=300)
+        mapping = PractitionerFHIRMapping.objects.filter(fhir_practitioner_id=fhir_practitioner_id).first()
+        if mapping:
+            mapping.fhir_resource_version = fhir_resource.get("meta", {}).get("versionId")
+            mapping.is_synced = True
+            mapping.save(update_fields=['fhir_resource_version', 'is_synced', 'updated_at'])
+        return {"status": "success"}
+    except Exception as e:
+        logger.error("Error fetching practitioner FHIR snapshot")
+        raise self.retry(exc=e, countdown=60)
+
+
+@shared_task(bind=True, max_retries=3)
+def search_practitioners_in_fhir(self, query, user_id, facility_code=None):
+    """
+    Search practitioners in FHIR and cache minimal results for the user.
+    """
+    try:
+        search_params = {"name": query, "_sort": "family", "_count": 10}
+        fhir_results = fhir_client.search_resources("Practitioner", search_params)
+        if "entry" not in fhir_results or len(fhir_results.get("entry", [])) == 0:
+            identifier_search_params = {"identifier": query, "_sort": "family", "_count": 10}
+            fhir_results = fhir_client.search_resources("Practitioner", identifier_search_params)
+
+        practitioners = []
+        for entry in fhir_results.get("entry", []) or []:
+            resource = entry.get("resource", {})
+            fhir_id = resource.get("id")
+            local_id = None
+            if fhir_id:
+                mapping = PractitionerFHIRMapping.objects.filter(fhir_practitioner_id=fhir_id).first()
+                if mapping:
+                    local_id = str(mapping.practitioner_profile_id)
+            practitioners.append({
+                "fhir_resource": project_fhir_practitioner(resource),
+                "local_id": local_id
+            })
+
+        query_hash = hashlib.md5(query.encode()).hexdigest()
+        cache_key = facility_cache_key(f'fhir_practitioner_search_{user_id}_{query_hash}')
+        cache.set(cache_key, practitioners, timeout=60)
+        return {"status": "success", "count": len(practitioners)}
+    except Exception as e:
+        logger.error("Error searching practitioners in FHIR")
+        raise self.retry(exc=e, countdown=60)
+
+
+@shared_task(bind=True, max_retries=3)
+def create_practitioner_in_fhir(self, practitioner_profile_id, address_fields=None, requested_by_user_id=None, facility_code=None):
+    """
+    Background task to create a practitioner in FHIR and establish mapping.
+    """
+    try:
+        practitioner_profile = PractitionerProfile.objects.select_related('staff__user').get(id=practitioner_profile_id)
+        staff = practitioner_profile.staff
+        user = staff.user if staff else None
+        if not user:
+            raise ValueError("Practitioner user missing")
+
+        address_fields = address_fields or {}
+
+        fhir_practitioner_data = {
+            "resourceType": "Practitioner",
+            "id": generate_fhir_id(),
+            "active": True,
+            "name": [
+                create_human_name(
+                    family=user.last_name,
+                    given=[user.first_name]
+                )
+            ],
+            "identifier": [
+                create_identifier(
+                    system="http://hospital.example.org/fhir/identifier/employee",
+                    value=staff.employee_id
+                ),
+                create_identifier(
+                    system="http://hospital.example.org/fhir/identifier/license",
+                    value=practitioner_profile.license_number
+                )
+            ]
+        }
+
+        if user.phone_number:
+            fhir_practitioner_data["telecom"] = [
+                create_contact_point(
+                    system="phone",
+                    value=user.phone_number,
+                    use="work"
+                )
+            ]
+
+        if any(address_fields.values()):
+            lines = [address_fields.get('address_line1')] if address_fields.get('address_line1') else []
+            if address_fields.get('address_line2'):
+                lines.append(address_fields.get('address_line2'))
+
+            fhir_practitioner_data["address"] = [
+                create_address(
+                    line=lines,
+                    city=address_fields.get('city', ''),
+                    state=address_fields.get('state', ''),
+                    postalCode=address_fields.get('postal_code', ''),
+                    country=address_fields.get('country', '')
+                )
+            ]
+
+        if practitioner_profile.qualification:
+            fhir_practitioner_data["qualification"] = [
+                {"code": {"text": practitioner_profile.qualification}}
+            ]
+
+        fhir_practitioner = fhir_client.create_resource("Practitioner", fhir_practitioner_data)
+
+        created_by = None
+        if requested_by_user_id:
+            created_by = User.objects.filter(id=requested_by_user_id).first()
+
+        mapping, _ = PractitionerFHIRMapping.objects.get_or_create(
+            practitioner_profile=practitioner_profile,
+            defaults={
+                'fhir_practitioner_id': fhir_practitioner["id"],
+                'fhir_resource_version': fhir_practitioner.get("meta", {}).get("versionId"),
+                'created_by': created_by,
+                'updated_by': created_by,
+            }
+        )
+        if mapping.fhir_practitioner_id != fhir_practitioner["id"]:
+            mapping.fhir_practitioner_id = fhir_practitioner["id"]
+            mapping.fhir_resource_version = fhir_practitioner.get("meta", {}).get("versionId")
+            mapping.is_synced = True
+            mapping.updated_by = created_by
+            mapping.save(update_fields=['fhir_practitioner_id', 'fhir_resource_version', 'is_synced', 'updated_by', 'updated_at'])
+
+        practitioner_profile.fhir_practitioner_id = fhir_practitioner["id"]
+        practitioner_profile.save(update_fields=['fhir_practitioner_id'])
+
+        snapshot_key = facility_cache_key(f'fhir_practitioner_snapshot_{practitioner_profile.id}')
+        cache.set(snapshot_key, project_fhir_practitioner(fhir_practitioner), timeout=300)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error("Error creating practitioner in FHIR")
+        raise self.retry(exc=e, countdown=60)

@@ -287,10 +287,15 @@ class VisitService:
     @staticmethod
     def _next_queue_number(clinic, date=None):
         date = date or timezone.now().date()
+        start_dt = timezone.make_aware(
+            datetime.combine(date, time.min),
+            timezone.get_current_timezone()
+        )
+        end_dt = start_dt + timedelta(days=1)
         latest = (
             OutpatientVisit.objects
             .select_for_update()
-            .filter(clinic=clinic, checked_in_at__date=date)
+            .filter(clinic=clinic, checked_in_at__gte=start_dt, checked_in_at__lt=end_dt)
             .aggregate(max_queue=Max('queue_number'))
         )
         current = latest.get('max_queue') or 0
@@ -448,13 +453,19 @@ class VisitService:
     @staticmethod
     def get_waiting_room(clinic, date=None):
         date = date or timezone.now().date()
+        start_dt = timezone.make_aware(
+            datetime.combine(date, time.min),
+            timezone.get_current_timezone()
+        )
+        end_dt = start_dt + timedelta(days=1)
         return OutpatientVisit.objects.filter(
             clinic=clinic,
             visit_status__in=[
                 OutpatientVisit.VisitStatus.WAITING,
                 OutpatientVisit.VisitStatus.CALLED,
             ],
-            checked_in_at__date=date,
+            checked_in_at__gte=start_dt,
+            checked_in_at__lt=end_dt,
         ).select_related('encounter__patient__user').order_by('queue_number')
 
 
@@ -463,11 +474,14 @@ class TriageService:
 
     @staticmethod
     def add_to_queue(patient, facility, chief_complaint='', priority='routine', added_by=None):
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
         existing = TriageQueue.objects.filter(
             patient=patient,
             facility=facility,
             status__in=[TriageQueue.Status.WAITING, TriageQueue.Status.TRIAGED],
-            created_at__date=timezone.now().date(),
+            created_at__gte=today_start,
+            created_at__lt=today_end,
         ).first()
         if existing:
             raise ValueError("Patient already in triage queue")
@@ -554,9 +568,12 @@ class TriageService:
 
     @staticmethod
     def get_queue(facility, status=None, priority=None):
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
         queryset = TriageQueue.objects.filter(
             facility=facility,
-            created_at__date=timezone.now().date(),
+            created_at__gte=today_start,
+            created_at__lt=today_end,
         ).select_related('patient__user', 'assigned_clinic')
 
         if status:

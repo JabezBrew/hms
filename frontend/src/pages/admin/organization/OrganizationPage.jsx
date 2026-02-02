@@ -9,6 +9,7 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import UserCog from 'lucide-react/dist/esm/icons/user-cog.js';
 import BedDouble from 'lucide-react/dist/esm/icons/bed-double.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
@@ -51,6 +52,7 @@ import { LeadershipPanel } from './components/LeadershipPanel';
 import { StaffPanel } from './components/StaffPanel';
 import { OpsStaffPanel } from './components/OpsStaffPanel';
 import { WardAllocationPanel } from './components/WardAllocationPanel';
+import { ClinicsPanel } from './components/ClinicsPanel';
 
 import { toast } from 'sonner';
 
@@ -201,11 +203,15 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
   const isMixedUnit = unit?.staffing_mode === 'mixed';
   const staffTabLabel = isMixedUnit ? 'Staff' : isOpsUnit ? 'Operations Staff' : 'Clinical Staff';
 
+  // Clinics tab only for departments/divisions
+  const canHaveClinics = unit?.unit_type_code === 'department' || unit?.unit_type_code === 'division';
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Building2 },
     { id: 'leadership', label: 'Leadership', icon: UserCog },
     { id: 'staff', label: staffTabLabel, icon: Users },
     { id: 'wards', label: 'Wards', icon: BedDouble },
+    ...(canHaveClinics ? [{ id: 'clinics', label: 'Clinics', icon: Stethoscope }] : []),
   ];
 
   if (isLoading) {
@@ -422,6 +428,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
           )
         )}
         {activeTab === 'wards' && <WardAllocationPanel unitId={unitId} unitType={unit?.unit_type_code} />}
+        {activeTab === 'clinics' && <ClinicsPanel unitId={unitId} unitType={unit?.unit_type_code} />}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from django.conf import settings
@@ -19,18 +19,20 @@ from .models import (
     PatientRegistrationValidation, PatientNote
 )
 from .serializers import (
-    PatientFHIRMappingSerializer, PatientSearchSerializer,
+    PatientFHIRMappingSerializer, PatientFHIRMappingListSerializer, PatientSearchSerializer,
     RecentPatientListSerializer, RecentPatientSerializer,
     PatientRegistrationValidationSerializer, PatientNoteSerializer,
     PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
-from apps.users.permissions import IsAdminOrOwner, CanAccessPatient
+from apps.users.permissions import IsAdminOrOwner
+from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
     check_demographics_access,
+    check_clinical_access,
     get_access_flags,
     get_user_facility,
 )
@@ -39,8 +41,13 @@ from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSe
 from apps.core.cache_utils import facility_cache_key
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
-from apps.fhir_client.client import fhir_client
-from .tasks import sync_patient_with_fhir, log_patient_search
+from .tasks import (
+    sync_patient_with_fhir,
+    log_patient_search,
+    search_patients_in_fhir,
+    update_patient_in_fhir,
+    delete_patient_in_fhir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +58,13 @@ class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientFHIRMapping.objects.select_related('patient_profile', 'patient_profile__user').all()
     serializer_class = PatientFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, CanAccessPatient]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PatientFHIRMappingListSerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
@@ -366,6 +378,11 @@ class PatientViewSet(viewsets.ViewSet):
         ward_id = request.query_params.get('ward', '')
         admission_date = request.query_params.get('admission_date', '')
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+        if include_fhir and request.user.user_type not in ['admin', 'doctor', 'nurse']:
+            return Response(
+                {"error": "FHIR search is restricted to clinical staff."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Require minimum 2 characters for search query when no other filters
         has_other_filters = bool(ward_id or admission_date)
@@ -446,10 +463,13 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Filter by Ward (via active Admission)
             if ward_id:
-                local_patients_qs = local_patients_qs.filter(
-                    admissions__bed__ward_id=ward_id,
-                    admissions__status='admitted'
-                ).distinct()
+                ward_admission_exists = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status='admitted',
+                    bed__ward_id=ward_id,
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(ward_admission_exists))
 
             # Filter by Admission Date
             if admission_date:
@@ -465,10 +485,13 @@ class PatientViewSet(viewsets.ViewSet):
                     timezone.get_current_timezone()
                 )
                 end_dt = start_dt + timedelta(days=1)
-                local_patients_qs = local_patients_qs.filter(
-                    admissions__admission_date__gte=start_dt,
-                    admissions__admission_date__lt=end_dt
-                ).distinct()
+                date_admission_exists = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    admission_date__gte=start_dt,
+                    admission_date__lt=end_dt,
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(date_admission_exists))
 
             # Limit to 20 results and serialize with lightweight serializer
             patients_list = list(local_patients_qs[:20])
@@ -490,9 +513,15 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Optional: Include FHIR results if explicitly requested and local results are sparse
             if include_fhir and query and not ward_id and not admission_date and len(results) < 10:
-                fhir_results = self._search_fhir(query, results)
+                fhir_results, fhir_status = self._search_fhir(
+                    query,
+                    results,
+                    user=request.user,
+                    facility=facility
+                )
+                response_data['fhir_results'] = fhir_results
+                response_data['fhir_status'] = fhir_status
                 if fhir_results:
-                    response_data['fhir_results'] = fhir_results
                     response_data['total'] += len(fhir_results)
 
             return Response(response_data)
@@ -504,46 +533,49 @@ class PatientViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def _search_fhir(self, query, existing_results):
+    def _search_fhir(self, query, existing_results, user, facility):
         """
         Helper method to search FHIR for additional patients.
         Called only when include_fhir=true and local results are sparse.
         """
         try:
-            existing_ids = {str(r.get('id')) for r in existing_results}
-            fhir_patients = []
+            existing_ids = [str(r.get('id')) for r in existing_results if r.get('id')]
+            cache_key = facility_cache_key(
+                f'fhir_patient_search_{user.id}_{hashlib.md5(query.encode()).hexdigest()}'
+            )
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached, "available"
 
-            search_params = {"name": query, "_sort": "family", "_count": 10}
-            fhir_results = fhir_client.search_resources("Patient", search_params, timeout=2)
+            search_patients_in_fhir.delay(
+                query,
+                str(user.id),
+                existing_ids=existing_ids,
+                facility_code=facility.code if facility else None
+            )
+            return [], "pending"
+        except Exception:
+            logging.getLogger(__name__).warning("FHIR search failed")
+            return [], "unavailable"
 
-            if "entry" not in fhir_results or not fhir_results.get("entry"):
-                # Try identifier search
-                fhir_results = fhir_client.search_resources("Patient", {"identifier": query, "_count": 10}, timeout=2)
-
-            if "entry" in fhir_results:
-                for entry in fhir_results["entry"]:
-                    resource = entry.get("resource", {})
-                    fhir_id = resource.get('id')
-
-                    # Check for local mapping
-                    try:
-                        mapping = PatientFHIRMapping.objects.get(fhir_patient_id=fhir_id)
-                        if str(mapping.patient_profile_id) in existing_ids:
-                            continue
-                        fhir_patients.append({
-                            "fhir_resource": resource,
-                            "local_id": str(mapping.patient_profile_id)
-                        })
-                    except PatientFHIRMapping.DoesNotExist:
-                        fhir_patients.append({
-                            "fhir_resource": resource,
-                            "local_id": None
-                        })
-
-            return fhir_patients
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"FHIR search failed: {str(e)}")
-            return []
+    @staticmethod
+    def _filter_fhir_patient_update_payload(payload):
+        """
+        Allowlist FHIR Patient fields that can be updated from the API.
+        """
+        if not isinstance(payload, dict):
+            return {}
+        allowed_fields = {
+            'name',
+            'telecom',
+            'address',
+            'gender',
+            'birthDate',
+            'communication',
+            'contact',
+            'maritalStatus',
+        }
+        return {key: value for key, value in payload.items() if key in allowed_fields}
 
     @action(detail=True, methods=['get'])
     def get_patient(self, request, pk=None):
@@ -590,15 +622,22 @@ class PatientViewSet(viewsets.ViewSet):
 
         # Full access - return everything
         fhir_data = None
+        fhir_status = "unavailable"
         if patient_profile.fhir_patient_id:
-            try:
-                fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
-            except Exception:
-                logger.warning(f"Failed to get FHIR data for patient {pk}")
+            cache_key = facility_cache_key(f'fhir_patient_snapshot_{patient_profile.id}')
+            fhir_data = cache.get(cache_key)
+            if fhir_data is not None:
+                fhir_status = "available"
+            else:
+                mapping = PatientFHIRMapping.objects.filter(patient_profile=patient_profile).first()
+                if mapping:
+                    sync_patient_with_fhir.delay(str(mapping.id), facility_code=request.facility_code)
+                    fhir_status = "pending"
 
         return Response({
             "local_data": PatientProfileSerializer(patient_profile).data,
             "fhir_data": fhir_data,
+            "fhir_status": fhir_status,
             "access": access
         })
 
@@ -710,42 +749,33 @@ class PatientViewSet(viewsets.ViewSet):
             if profile_serializer.is_valid():
                 profile_serializer.save(updated_by=request.user)
 
-                # Update FHIR resource if available
+                # Queue FHIR update if requested
                 if patient_profile.fhir_patient_id and request.data.get('fhir_data'):
-                    try:
-                        # Get current FHIR data to preserve fields not in the update
-                        current_fhir_data = fhir_client.get_resource("Patient", patient_profile.fhir_patient_id)
-
-                        # Update with new data
-                        fhir_data = request.data.get('fhir_data')
-                        fhir_data['id'] = patient_profile.fhir_patient_id
-
-                        # Ensure resourceType is set
-                        fhir_data['resourceType'] = 'Patient'
-
-                        # Update the FHIR resource
-                        updated_fhir = fhir_client.update_resource("Patient", patient_profile.fhir_patient_id, fhir_data)
-
-                        # Update the mapping
-                        mapping = PatientFHIRMapping.objects.get(patient_profile=patient_profile)
-                        mapping.fhir_resource_version = updated_fhir.get("meta", {}).get("versionId")
-                        mapping.is_synced = True
-                        mapping.updated_by = request.user
-                        mapping.save()
-
-                        return Response({
-                            "message": "Patient updated successfully",
-                            "local_data": profile_serializer.data,
-                            "fhir_data": updated_fhir
-                        })
-                    except Exception as e:
-                        # If FHIR update fails, still return the local data
-                        logger.warning(f"FHIR update failed for patient {pk}")
-                        return Response({
-                            "message": "Patient local data updated, but FHIR update failed",
-                            "local_data": profile_serializer.data,
-                            "error": "FHIR synchronization error"
-                        }, status=status.HTTP_207_MULTI_STATUS)
+                    if request.user.user_type not in ['admin', 'doctor', 'nurse']:
+                        raise PermissionDenied("FHIR updates require clinical access.")
+                    check_clinical_access(request.user, patient_profile)
+                    mapping = PatientFHIRMapping.objects.filter(patient_profile=patient_profile).first()
+                    if not mapping:
+                        return Response(
+                            {"error": "FHIR mapping not found for patient."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    update_payload = self._filter_fhir_patient_update_payload(request.data.get('fhir_data', {}))
+                    if not update_payload:
+                        return Response(
+                            {"error": "No allowed FHIR fields provided."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    update_patient_in_fhir.delay(
+                        str(mapping.id),
+                        update_payload,
+                        facility_code=request.facility_code
+                    )
+                    return Response({
+                        "message": "Patient local data updated; FHIR update queued",
+                        "local_data": profile_serializer.data,
+                        "fhir_status": "queued"
+                    }, status=status.HTTP_202_ACCEPTED)
 
                 # If no FHIR data to update or no FHIR ID
                 return Response({
@@ -791,17 +821,9 @@ class PatientViewSet(viewsets.ViewSet):
                 patient_profile.delete()
                 user.delete()
 
-                # Delete the FHIR resource if available
+                # Delete the FHIR resource asynchronously if available
                 if fhir_patient_id:
-                    try:
-                        fhir_client.delete_resource("Patient", fhir_patient_id)
-                    except Exception as e:
-                        # If FHIR deletion fails, log the error but continue
-                        logger.warning(f"Failed to delete FHIR resource for patient {pk}")
-                        return Response({
-                            "message": "Patient local data deleted, but FHIR deletion failed",
-                            "error": "FHIR synchronization error"
-                        }, status=status.HTTP_207_MULTI_STATUS)
+                    delete_patient_in_fhir.delay(fhir_patient_id, facility_code=request.facility_code)
 
                 return Response({
                     "message": "Patient deleted successfully"

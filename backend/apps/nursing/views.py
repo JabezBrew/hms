@@ -9,7 +9,8 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.core.cache import cache
-from datetime import timedelta
+from django.conf import settings
+from datetime import timedelta, datetime
 import logging
 
 from ..core.pagination import StandardResultsSetPagination, SmallResultsSetPagination
@@ -44,6 +45,7 @@ from ..core.security import (
     FacilityScopedPermission,
     check_clinical_access,
     get_user_facility,
+    get_accessible_patients_for_clinician,
 )
 
 logger = logging.getLogger(__name__)
@@ -1076,7 +1078,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
 
             # Build cache key based on query params
             cache_key = facility_cache_key(
-                f'nursing_dashboard_{ward_id or "all"}_p{page}_ps{page_size}'
+                f'nursing_dashboard_{ward_id or "all"}_u{request.user.id}_p{page}_ps{page_size}'
             )
             lock_key = f'{cache_key}_lock'
             
@@ -1158,13 +1160,18 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                     ),
                 ).order_by('-admission_date')
 
+                # Restrict to accessible patients for nurses
+                if request.user.user_type == 'nurse' and getattr(settings, 'TEAM_ACCESS_STRICT', True):
+                    accessible_patients = get_accessible_patients_for_clinician(request.user)
+                    admissions = admissions.filter(patient__in=accessible_patients)
+
                 # Filter by ward if specified
                 if ward_id:
                     admissions = admissions.filter(bed__ward_id=ward_id)
 
                 # Get total count with caching (avoid expensive count on every request)
                 count_cache_key = facility_cache_key(
-                    f'nursing_dashboard_count_{ward_id or "all"}'
+                    f'nursing_dashboard_count_{ward_id or "all"}_u{request.user.id}'
                 )
                 total_count = cache.get(count_cache_key)
                 if total_count is None:
@@ -1259,6 +1266,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         facility = get_user_facility(request)
         if not facility or patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         # Get current admission
         admission = Admission.objects.filter(
@@ -1952,7 +1960,12 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
             try:
                 from datetime import datetime
                 filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                queryset = queryset.filter(recorded_at__date=filter_date)
+                start_dt = timezone.make_aware(
+                    datetime.combine(filter_date, datetime.min.time()),
+                    timezone.get_current_timezone()
+                )
+                end_dt = start_dt + timedelta(days=1)
+                queryset = queryset.filter(recorded_at__gte=start_dt, recorded_at__lt=end_dt)
             except ValueError:
                 pass  # Invalid date format, ignore filter
 
@@ -2083,10 +2096,15 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         else:
             filter_date = timezone.now().date()
 
-        # Calculate totals (excluding soft-deleted entries)
+        start_dt = timezone.make_aware(
+            datetime.combine(filter_date, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = start_dt + timedelta(days=1)
         entries = FluidBalance.objects.filter(
             patient=patient,
-            recorded_at__date=filter_date,
+            recorded_at__gte=start_dt,
+            recorded_at__lt=end_dt,
             is_deleted=False
         )
 
@@ -2151,9 +2169,15 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         today = timezone.now().date()
 
         # Calculate totals using database aggregation (N+1 fix)
+        start_dt = timezone.make_aware(
+            datetime.combine(today, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = start_dt + timedelta(days=1)
         entries = FluidBalance.objects.filter(
             patient=patient,
-            recorded_at__date=today,
+            recorded_at__gte=start_dt,
+            recorded_at__lt=end_dt,
             is_deleted=False
         )
 
@@ -2230,9 +2254,15 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         settings = FacilityFluidBalanceSettings.get_settings()
 
         # Calculate totals using database aggregation (N+1 fix)
+        start_dt = timezone.make_aware(
+            datetime.combine(filter_date, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = start_dt + timedelta(days=1)
         entries = FluidBalance.objects.filter(
             patient_id=patient_id,
-            recorded_at__date=filter_date,
+            recorded_at__gte=start_dt,
+            recorded_at__lt=end_dt,
             is_deleted=False
         )
 

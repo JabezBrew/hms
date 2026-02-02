@@ -16,7 +16,7 @@ import {
   usePatientValidationRules
 } from "@/hooks/usePatientQueries";
 import { useWards, useWardBeds } from "@/hooks/useWardQueries";
-import { useDepartments, useClinics, useClinicSchedules } from "@/hooks/useOrganization";
+import { useDepartments, useRosterOnDutyDepartment } from "@/hooks/useOrganization";
 import {
   useInsuranceProviders,
   useInsurancePlans,
@@ -117,28 +117,40 @@ const PatientForm = ({ patient, onSuccess }) => {
     unit.unit_type_code === 'department' && unit.unit_category === 'clinical'
   );
 
-  // Fetch clinics for selected department (outpatient only)
-  const { data: clinicsData } = useClinics(
-    { department: selectedDepartment, is_active: true },
+  // Fetch on-duty roster entries for the department (includes active clinics)
+  const { data: onDutyData } = useRosterOnDutyDepartment(
+    selectedDepartment,
+    {},
     { enabled: !!selectedDepartment && admissionType === 'outpatient' }
   );
-  const clinics = useMemo(
-    () => Array.isArray(clinicsData) ? clinicsData : [],
-    [clinicsData]
-  );
 
-  // Fetch clinic schedules to find currently active clinics
-  const currentDayOfWeek = new Date().getDay();
-  const backendDayOfWeek = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
-
-  const { data: schedulesData } = useClinicSchedules(
-    { department: selectedDepartment, day_of_week: backendDayOfWeek, is_active: true },
-    { enabled: !!selectedDepartment && admissionType === 'outpatient' }
-  );
-  const schedules = useMemo(
-    () => Array.isArray(schedulesData) ? schedulesData : [],
-    [schedulesData]
-  );
+  // Extract active clinics from roster entries with category='clinic'
+  const activeClinics = useMemo(() => {
+    const results = onDutyData?.results || [];
+    // Filter to only clinic-category duty types
+    const clinicEntries = results.filter(
+      (entry) => entry.duty_type_category === 'clinic'
+    );
+    // Deduplicate by clinic_id (or duty_type_id if no clinic linked)
+    const seen = new Set();
+    return clinicEntries.reduce((acc, entry) => {
+      // Use clinic_id if available, otherwise use duty_type_id as the identifier
+      const uniqueId = entry.clinic_id || entry.duty_type_id;
+      if (!seen.has(uniqueId)) {
+        seen.add(uniqueId);
+        acc.push({
+          // If clinic is linked, use clinic info; otherwise use duty type as the "clinic"
+          id: entry.clinic_id || entry.duty_type_id,
+          name: entry.clinic_name || entry.duty_type_name,
+          duty_type_id: entry.duty_type_id,
+          duty_type_name: entry.duty_type_name,
+          // Flag to indicate if this is a duty-type-as-clinic
+          is_duty_type: !entry.clinic_id,
+        });
+      }
+      return acc;
+    }, []);
+  }, [onDutyData]);
 
   // Insurance queries and state
   const { data: providersData } = useInsuranceProviders();
@@ -221,7 +233,7 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
   }, [isEditMode, patient, form]);
 
-  // Determine active clinics based on schedules
+  // Determine active clinics based on published roster entries
   useEffect(() => {
     if (admissionType !== 'outpatient' || !selectedDepartment) {
       setActiveClinicOptions([]);
@@ -229,18 +241,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       return;
     }
 
-    if (!schedules.length || !clinics.length) {
-      setActiveClinicOptions([]);
-      return;
-    }
-
-    const now = new Date();
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    const activeSchedules = schedules.filter(s => s.start_time <= currentTime && s.end_time > currentTime);
-    const activeClinicIds = [...new Set(activeSchedules.map(s => s.clinic))];
-    const activeClinics = clinics.filter(c => activeClinicIds.includes(c.id));
-
+    // Active clinics come from roster entries with category='clinic'
     setActiveClinicOptions(activeClinics);
 
     if (activeClinics.length === 1) {
@@ -252,7 +253,7 @@ const PatientForm = ({ patient, onSuccess }) => {
     } else {
       setClinicSelectionRequired(false);
     }
-  }, [schedules, clinics, selectedDepartment, admissionType]);
+  }, [activeClinics, selectedDepartment, admissionType]);
 
   // No need to fetch validation rules as React Query handles this
 
@@ -365,7 +366,14 @@ const PatientForm = ({ patient, onSuccess }) => {
       }
 
       if (admissionType === 'outpatient' && selectedClinic) {
-        admissionDetails.clinic_id = selectedClinic;
+        // Find the selected clinic option to check if it's a duty-type-as-clinic
+        const selectedClinicOption = activeClinicOptions.find(c => c.id === selectedClinic);
+        if (selectedClinicOption?.is_duty_type) {
+          // Use duty_type_id for scheduling, no clinic_id
+          admissionDetails.duty_type_id = selectedClinic;
+        } else {
+          admissionDetails.clinic_id = selectedClinic;
+        }
       }
 
       if (admissionType === 'inpatient') {

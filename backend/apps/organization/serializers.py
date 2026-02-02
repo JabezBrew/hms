@@ -244,6 +244,7 @@ class ClinicListSerializer(serializers.ModelSerializer):
         model = Clinic
         fields = [
             'id', 'code', 'name', 'department', 'department_name',
+            'operating_hours_start', 'operating_hours_end',
             'operates_24_hours', 'accepts_walk_ins', 'is_active'
         ]
 
@@ -256,7 +257,7 @@ class ClinicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Clinic
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class ClinicScheduleListSerializer(serializers.ModelSerializer):

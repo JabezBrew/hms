@@ -341,11 +341,19 @@ class AvailabilityService:
         blocked_times = list(blocked_times)
 
         # 3. Get booked appointments (local source of truth)
+        start_dt = timezone.make_aware(
+            datetime.combine(start_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        )
+        end_dt = timezone.make_aware(
+            datetime.combine(end_date_obj, datetime.min.time()),
+            timezone.get_current_timezone()
+        ) + timedelta(days=1)
         appointments = Appointment.objects.filter(
             practitioner_id=practitioner_id,
             status__in=['booked', 'arrived', 'fulfilled'],
-            start_time__date__gte=start_date_obj,
-            start_time__date__lte=end_date_obj,
+            start_time__gte=start_dt,
+            start_time__lt=end_dt,
         )
         if facility is not None:
             appointments = appointments.filter(facility=facility)

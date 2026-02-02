@@ -17,6 +17,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta, time
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 
 from apps.patients.models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -412,14 +414,10 @@ class TestPatientNoteViewSet:
 class TestPatientViewSet:
     """Tests for PatientViewSet (register, search, get, update, delete)."""
 
-    @patch('apps.fhir_client.client.fhir_client.create_resource')
-    def test_register_patient(self, mock_create_resource, db):
+    @patch('apps.patients.tasks.create_patient_in_fhir.delay')
+    def test_register_patient(self, mock_create_task, db):
         """Test patient registration."""
-        mock_create_resource.return_value = {
-            "resourceType": "Patient",
-            "id": "fhir-new-patient",
-            "meta": {"versionId": "1"}
-        }
+        mock_create_task.return_value = MagicMock(id='task-123')
 
         admin = AdminUserFactory()
         facility = admin.primary_facility
@@ -444,9 +442,9 @@ class TestPatientViewSet:
         assert PatientProfile.objects.filter(
             user__email='newpatient@test.com'
         ).exists()
+        mock_create_task.assert_called_once()
 
-    @patch('apps.fhir_client.client.fhir_client.create_resource')
-    def test_register_patient_duplicate_email(self, mock_create_resource, db):
+    def test_register_patient_duplicate_email(self, db):
         """Test registration fails with duplicate email."""
         UserFactory(email='existing@test.com')
         admin = AdminUserFactory()
@@ -468,16 +466,12 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @patch('apps.fhir_client.client.fhir_client.create_resource')
-    def test_register_patient_as_receptionist(self, mock_create_resource, db):
+    @patch('apps.patients.tasks.create_patient_in_fhir.delay')
+    def test_register_patient_as_receptionist(self, mock_create_task, db):
         """Test that receptionists can register patients."""
         from apps.users.tests.factories import ReceptionistUserFactory
 
-        mock_create_resource.return_value = {
-            "resourceType": "Patient",
-            "id": "fhir-new-patient",
-            "meta": {"versionId": "1"}
-        }
+        mock_create_task.return_value = MagicMock(id='task-123')
 
         receptionist = ReceptionistUserFactory()
         facility = receptionist.primary_facility
@@ -501,6 +495,7 @@ class TestPatientViewSet:
         assert PatientProfile.objects.filter(
             user__email='receptionist-patient@test.com'
         ).exists()
+        mock_create_task.assert_called_once()
 
     def test_register_patient_forbidden_for_doctor(self, db):
         """Test that doctors cannot register patients."""
@@ -536,11 +531,8 @@ class TestPatientViewSet:
             user__email='nurse-patient@test.com'
         ).exists()
 
-    @patch('apps.fhir_client.client.fhir_client.search_resources')
-    def test_search_patients(self, mock_search_resources, db):
+    def test_search_patients(self, db):
         """Test patient search."""
-        mock_search_resources.return_value = {"entry": []}
-
         admin = AdminUserFactory()
         # Create some local patients
         user1 = PatientUserFactory(first_name='John', last_name='Doe')
@@ -553,30 +545,46 @@ class TestPatientViewSet:
         assert 'results' in response.data
         assert 'total' in response.data
 
+    def test_search_query_count(self, db):
+        """Search should be O(1) queries per page."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        PatientProfileFactory.create_batch(5, facility=facility)
+
+        client = get_authenticated_client(admin, facility=facility)
+        with CaptureQueriesContext(connection) as ctx:
+            response = client.get('/api/patients/search/', {'query': 'Pat'})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(ctx) <= 8
+
+    def test_search_include_fhir_forbidden_for_receptionist(self, db):
+        """Test that FHIR search is restricted to clinical staff."""
+        from apps.users.tests.factories import ReceptionistUserFactory
+
+        receptionist = ReceptionistUserFactory()
+        client = get_authenticated_client(receptionist)
+
+        response = client.get('/api/patients/search/', {'query': 'John', 'include_fhir': 'true'})
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_search_creates_search_record(self, db):
         """Test that searching creates a search record."""
-        with patch('apps.fhir_client.client.fhir_client.search_resources') as mock_search:
-            mock_search.return_value = {"entry": []}
+        doctor = DoctorUserFactory()
+        client = get_authenticated_client(doctor)
 
-            doctor = DoctorUserFactory()
-            client = get_authenticated_client(doctor)
+        response = client.get('/api/patients/search/', {'query': 'TestQuery'})
 
-            response = client.get('/api/patients/search/', {'query': 'TestQuery'})
+        assert response.status_code == status.HTTP_200_OK
+        assert PatientSearch.objects.filter(
+            user=doctor,
+            search_query__icontains='TestQuery'
+        ).exists()
 
-            assert response.status_code == status.HTTP_200_OK
-            assert PatientSearch.objects.filter(
-                user=doctor,
-                search_query__icontains='TestQuery'
-            ).exists()
-
-    @patch('apps.fhir_client.client.fhir_client.get_resource')
-    def test_get_patient(self, mock_get_resource, db):
+    @patch('apps.patients.tasks.sync_patient_with_fhir.delay')
+    def test_get_patient(self, mock_sync_task, db):
         """Test getting a patient by ID."""
-        mock_get_resource.return_value = {
-            "resourceType": "Patient",
-            "id": "fhir-patient-123"
-        }
-
         admin = AdminUserFactory()
         patient = PatientProfileFactory(fhir_patient_id='fhir-patient-123')
 
@@ -586,23 +594,23 @@ class TestPatientViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert 'local_data' in response.data
         assert 'fhir_data' in response.data
+        assert response.data.get('fhir_status') in ['pending', 'available']
+        mock_sync_task.assert_called()
 
-    def test_get_patient_creates_recent_record(self, db):
+    @patch('apps.patients.tasks.sync_patient_with_fhir.delay')
+    def test_get_patient_creates_recent_record(self, mock_sync_task, db):
         """Test getting a patient adds to recent list."""
-        with patch('apps.fhir_client.client.fhir_client.get_resource') as mock_get:
-            mock_get.return_value = None
+        doctor = DoctorUserFactory()
+        patient = PatientProfileFactory()
 
-            doctor = DoctorUserFactory()
-            patient = PatientProfileFactory()
+        client = get_authenticated_client(doctor)
+        response = client.get(f'/api/patients/{patient.id}/get_patient/')
 
-            client = get_authenticated_client(doctor)
-            response = client.get(f'/api/patients/{patient.id}/get_patient/')
-
-            assert response.status_code == status.HTTP_200_OK
-            assert RecentPatient.objects.filter(
-                user=doctor,
-                patient_profile=patient
-            ).exists()
+        assert response.status_code == status.HTTP_200_OK
+        assert RecentPatient.objects.filter(
+            user=doctor,
+            patient_profile=patient
+        ).exists()
 
     def test_get_nonexistent_patient(self, db):
         """Test getting a non-existent patient returns 404."""

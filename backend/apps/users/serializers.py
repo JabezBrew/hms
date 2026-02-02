@@ -1,12 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
-from ..fhir_client.client import fhir_client
 from apps.core.security import get_user_facility
-from ..fhir_client.utils import (
-    create_human_name, create_identifier, create_contact_point,
-    create_address, generate_fhir_id
-)
+from .tasks import create_practitioner_in_fhir
 import random
 import string
 import datetime
@@ -259,8 +255,8 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'medical_record_number', 'nhis_id', 'name', 'date_of_birth',
-                  'gender', 'blood_group', 'current_ward', 'admission_date']
+        fields = ['id', 'medical_record_number', 'name', 'date_of_birth',
+                  'gender', 'current_ward', 'admission_date']
 
     def get_name(self, obj):
         """Get full name directly from prefetched user."""
@@ -286,9 +282,30 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
         return None
 
 
+class PractitionerFHIRMappingListSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for practitioner FHIR mappings (list).
+    """
+    practitioner_name = serializers.SerializerMethodField()
+    employee_id = serializers.CharField(source='practitioner_profile.staff.employee_id', read_only=True)
+
+    class Meta:
+        model = PractitionerFHIRMapping
+        fields = [
+            'id', 'practitioner_profile', 'practitioner_name', 'employee_id',
+            'fhir_practitioner_id', 'last_synced', 'is_synced'
+        ]
+        read_only_fields = ['id', 'last_synced']
+
+    def get_practitioner_name(self, obj):
+        staff = getattr(obj.practitioner_profile, 'staff', None)
+        user = getattr(staff, 'user', None) if staff else None
+        return user.get_full_name() if user else None
+
+
 class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):
     """
-    Serializer for the PractitionerFHIRMapping model.
+    Serializer for the PractitionerFHIRMapping model (detail).
     """
     practitioner_profile_details = PractitionerProfileSerializer(source='practitioner_profile', read_only=True)
 
@@ -651,83 +668,22 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 updated_by=self.context['request'].user
             )
 
-            # Create FHIR Practitioner resource
-            fhir_practitioner_data = {
-                "resourceType": "Practitioner",
-                "id": generate_fhir_id(),
-                "active": True,
-                "name": [
-                    create_human_name(
-                        family=validated_data['last_name'],
-                        given=[validated_data['first_name']]
+            # Queue FHIR Practitioner creation (async)
+            try:
+                request_user_id = None
+                if self.context.get('request') and getattr(self.context['request'], 'user', None):
+                    request_user_id = self.context['request'].user.id
+                facility_code = getattr(self.context.get('request'), 'facility_code', None)
+                transaction.on_commit(
+                    lambda: create_practitioner_in_fhir.delay(
+                        str(practitioner_profile.id),
+                        address_fields=address_fields,
+                        requested_by_user_id=request_user_id,
+                        facility_code=facility_code
                     )
-                ],
-                "identifier": [
-                    create_identifier(
-                        system="http://hospital.example.org/fhir/identifier/employee",
-                        value=employee_id
-                    ),
-                    create_identifier(
-                        system="http://hospital.example.org/fhir/identifier/license",
-                        value=practitioner_fields['license_number']
-                    )
-                ]
-            }
-
-            # Add telecom if phone number is provided
-            if validated_data.get('phone_number'):
-                fhir_practitioner_data["telecom"] = [
-                    create_contact_point(
-                        system="phone",
-                        value=validated_data['phone_number'],
-                        use="work"
-                    )
-                ]
-
-            # Add address if provided
-            if any(address_fields.values()):
-                lines = [address_fields['address_line1']]
-                if address_fields['address_line2']:
-                    lines.append(address_fields['address_line2'])
-
-                fhir_practitioner_data["address"] = [
-                    create_address(
-                        line=lines,
-                        city=address_fields['city'],
-                        state=address_fields['state'],
-                        postalCode=address_fields['postal_code'],
-                        country=address_fields['country']
-                    )
-                ]
-
-            # Add qualification
-            if practitioner_fields['qualification']:
-                fhir_practitioner_data["qualification"] = [
-                    {
-                        "code": {
-                            "text": practitioner_fields['qualification']
-                        }
-                    }
-                ]
-
-            # Create the FHIR resource
-            # Note: No try/except with manual cleanup needed here.
-            # The view wraps this in transaction.atomic(), so any exception
-            # will automatically rollback all DB changes (User, Staff, PractitionerProfile).
-            fhir_practitioner = fhir_client.create_resource("Practitioner", fhir_practitioner_data)
-
-            # Create the mapping
-            PractitionerFHIRMapping.objects.create(
-                practitioner_profile=practitioner_profile,
-                fhir_practitioner_id=fhir_practitioner["id"],
-                fhir_resource_version=fhir_practitioner.get("meta", {}).get("versionId"),
-                created_by=self.context['request'].user,
-                updated_by=self.context['request'].user
-            )
-
-            # Update the practitioner profile with the FHIR ID
-            practitioner_profile.fhir_practitioner_id = fhir_practitioner["id"]
-            practitioner_profile.save()
+                )
+            except Exception:
+                logger.warning("Failed to queue FHIR practitioner creation")
 
         return staff
 
@@ -892,7 +848,7 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         model = PatientProfile
         fields = [
             'id', 'user', 'user_details', 'name', 'email', 'phone', 'gender',
-            'date_of_birth', 'medical_record_number', 'blood_group', 'nhis_id',
+            'date_of_birth', 'medical_record_number',
             'current_ward', 'current_ward_id', 'admission_date'
         ]
 

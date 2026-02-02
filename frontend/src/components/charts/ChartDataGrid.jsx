@@ -30,6 +30,7 @@ const ChartDataGrid = ({
   const { data: entriesData, isLoading: entriesLoading } = useChartEntries({
     assignment: assignmentId,
     ...dateRange,
+    include_data: true,
   });
 
   const template = assignment?.template;
