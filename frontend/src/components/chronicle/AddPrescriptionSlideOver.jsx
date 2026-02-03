@@ -29,6 +29,9 @@ import { toast } from "sonner";
 import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDrugSafetyQueries";
 import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
 import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
+import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
+import { prescriptionKeys } from "@/hooks/usePrescriptionMutations";
+import { nursingKeys } from "@/hooks/useNursingQueries";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -130,8 +133,8 @@ const AddPrescriptionSlideOver = ({
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
-      queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
+      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
     }
   });
 
@@ -322,9 +325,9 @@ const AddPrescriptionSlideOver = ({
         toast.success('Prescription created successfully');
       }
       // Also invalidate MAR/medication queries
-      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
-      queryClient.invalidateQueries({ queryKey: ['pending-dispensing'] });
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
       onPrescriptionCreated?.();
       onClose();
     } catch (err) {

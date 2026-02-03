@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
+import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
+import { timelineKeys } from '@/hooks/useTimelineQueries';
 
 /**
  * Ward Round workflow step definitions
@@ -219,9 +222,9 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
-      queryClient.invalidateQueries({ queryKey: ['patient-timeline', patientId] });
-      queryClient.invalidateQueries({ queryKey: ['clinical-notes', patientId] });
+      queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
     },
     onError: (err) => {
       setError(err.message || 'Failed to complete ward round');

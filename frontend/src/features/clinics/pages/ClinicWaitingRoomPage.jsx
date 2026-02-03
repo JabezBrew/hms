@@ -19,6 +19,11 @@ import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const clinicKeys = {
+  detail: (clinicId) => keyWith('clinics', clinicId),
+};
 
 export default function ClinicWaitingRoomPage() {
   const { clinicId } = useParams();
@@ -31,7 +36,7 @@ export default function ClinicWaitingRoomPage() {
     isLoading: clinicLoading,
     error: clinicError,
   } = useQuery({
-    queryKey: ['clinics', clinicId],
+    queryKey: clinicKeys.detail(clinicId),
     queryFn: () => clinicsApi.get(clinicId),
     enabled: Boolean(facilityCode) && Boolean(clinicId),
   });

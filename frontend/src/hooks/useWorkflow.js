@@ -2,6 +2,13 @@ import { useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const workflowKeys = {
+  detail: (workflowId) => keyWith('workflow', workflowId),
+  list: () => keyWith('workflows'),
+  drafts: (filters) => keyWith('draft-workflows', filters),
+};
 
 /**
  * Hook for managing clinical workflows
@@ -13,7 +20,7 @@ export function useWorkflow(workflowType) {
 
   // Fetch workflow by ID
   const { data: workflow, isLoading, error } = useQuery({
-    queryKey: ['workflow', workflowId],
+    queryKey: workflowKeys.detail(workflowId),
     queryFn: () => apiClient.get(`/workflows/${workflowId}/`),
     enabled: !!workflowId,
   });
@@ -26,7 +33,7 @@ export function useWorkflow(workflowType) {
     },
     onSuccess: (data) => {
       setWorkflowId(data.id);
-      queryClient.setQueryData(['workflow', data.id], data);
+      queryClient.setQueryData(workflowKeys.detail(data.id), data);
       toast.success('Workflow started');
     },
     onError: (error) => {
@@ -45,7 +52,7 @@ export function useWorkflow(workflowType) {
       });
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(['workflow', workflowId], data);
+      queryClient.setQueryData(workflowKeys.detail(workflowId), data);
       toast.success('Progress saved');
     },
     onError: (error) => {
@@ -60,8 +67,8 @@ export function useWorkflow(workflowType) {
       return apiClient.post(endpoint, finalData);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries(['workflow', workflowId]);
-      queryClient.invalidateQueries(['workflows']);
+      queryClient.invalidateQueries(workflowKeys.detail(workflowId));
+      queryClient.invalidateQueries(workflowKeys.list());
       toast.success('Workflow completed successfully');
     },
     onError: (error) => {
@@ -91,8 +98,8 @@ export function useWorkflow(workflowType) {
       return apiClient.post(`/workflows/${workflowId}/cancel/`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['workflow', workflowId]);
-      queryClient.invalidateQueries(['workflows']);
+      queryClient.invalidateQueries(workflowKeys.detail(workflowId));
+      queryClient.invalidateQueries(workflowKeys.list());
       toast.success('Workflow cancelled');
     },
     onError: (error) => {
@@ -153,7 +160,7 @@ export function useWorkflow(workflowType) {
  */
 export function useDraftWorkflows(filters = {}) {
   return useQuery({
-    queryKey: ['draft-workflows', filters],
+    queryKey: workflowKeys.drafts(filters),
     queryFn: () => {
       const params = new URLSearchParams(filters);
       return apiClient.get(`/workflows/resume/?${params.toString()}`);

@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent } from '@/components/ui/card';
 
-import { createScheduleTemplate, updateScheduleTemplate } from '@/lib/api';
+import { createScheduleTemplate, updateScheduleTemplate } from '@/features/appointments/api';
 
 // Form validation schema
 const formSchema = z.object({

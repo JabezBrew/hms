@@ -11,6 +11,7 @@ export const patientKeys = {
   history: (id) => [...patientKeys.all, 'history', id],
   recent: () => [...patientKeys.all, 'recent'],
   validation: () => [...patientKeys.all, 'validation'],
+  context: (params) => [...patientKeys.all, 'context', params],
 };
 
 /**
@@ -226,7 +227,7 @@ export function useRecentPatients(limit = 10) {
  */
 export function useContextPatients(params = {}) {
   return useQuery({
-    queryKey: ['patients', 'context', params],
+    queryKey: patientKeys.context(params),
     queryFn: () => patientsApi.getContextPatients(params),
     staleTime: 60 * 1000, // 1 minute
   });

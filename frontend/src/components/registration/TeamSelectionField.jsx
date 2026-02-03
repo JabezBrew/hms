@@ -23,13 +23,19 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { rosterEntriesApi, clinicalUnitsApi } from '@/features/admin/api';
 import { cn } from '@/lib/utils';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const teamSelectionKeys = {
+  onDutyTeam: (departmentId, context) => keyWith('roster', 'on-duty-team', departmentId, context),
+  teams: (departmentId) => keyWith('clinical-units', 'teams', departmentId),
+};
 
 /**
  * Fetch on-duty team for a department using the new roster system.
  */
 function useOnDutyTeam(departmentId, context, options = {}) {
   return useQuery({
-    queryKey: ['roster', 'on-duty-team', departmentId, context],
+    queryKey: teamSelectionKeys.onDutyTeam(departmentId, context),
     queryFn: async () => {
       if (!departmentId) {
         return null;
@@ -67,7 +73,7 @@ function useOnDutyTeam(departmentId, context, options = {}) {
  */
 function useTeamsInDepartment(departmentId, options = {}) {
   return useQuery({
-    queryKey: ['clinical-units', 'teams', departmentId],
+    queryKey: teamSelectionKeys.teams(departmentId),
     queryFn: async () => {
       if (!departmentId) {
         return [];

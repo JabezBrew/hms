@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const doctorDashboardKeys = {
+  dashboard: () => keyWith('doctor-dashboard'),
+  clinicSchedule: (date, practitionerId) => keyWith('clinic-schedule', date, practitionerId),
+};
 
 /**
  * Hook for fetching doctor dashboard data
@@ -9,7 +15,7 @@ import { useAuth } from '@/lib/auth';
 export function useDoctorDashboard() {
   const { facilityCode } = useAuth();
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['doctor-dashboard'],
+    queryKey: doctorDashboardKeys.dashboard(),
     queryFn: () => apiClient.get('/dashboards/my-work/'),
     refetchInterval: 30000, // Refresh every 30 seconds
     enabled: Boolean(facilityCode),
@@ -33,7 +39,7 @@ export function useDoctorDashboard() {
 export function useClinicSchedule(date, practitionerId) {
   const { facilityCode } = useAuth();
   return useQuery({
-    queryKey: ['clinic-schedule', date, practitionerId],
+    queryKey: doctorDashboardKeys.clinicSchedule(date, practitionerId),
     queryFn: () => {
       const params = new URLSearchParams();
       if (date) params.append('date', date);

@@ -14,6 +14,16 @@ favor correctness, least privilege, and predictable performance.
 - Workflows and dashboards: `backend/workflows/`, `backend/dashboards/`.
 - Frontend: `frontend/src/` with built assets in `frontend/public/`.
 
+## Frontend Modularization Rules
+- Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.js`, `index.js` exports.
+- `frontend/src/pages/*` are thin route wrappers that import feature pages; do not put logic there.
+- Shared cross-cutting primitives live in `frontend/src/shared/` (components, hooks, constants, utils).
+- Routes are defined in `frontend/src/app/routes/*` with `roles`, `layout`, `title`, `breadcrumbs` and rendered via `renderRoutes`.
+- Use `PageShell`, `PageHeader`, and `PageState` for page structure and loading/error/empty states.
+- Use `usePageMeta` for titles and breadcrumbs when values are static or derived in-page.
+- Prefer feature/shared API modules over `frontend/src/lib/api.js`; treat `lib/api.js` as legacy compatibility only.
+- Centralize React Query keys with `shared/lib/queryKeys.js` helpers and feature key exports. Avoid ad-hoc `queryKey: ['...']`.
+
 ## Build, Test, and Development Commands
 - `cd backend && python manage.py runserver` starts the Django API.
 - `cd backend && pytest` runs backend tests (use `-k` or `apps.<app_name>` to scope).

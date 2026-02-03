@@ -14,7 +14,7 @@ import isToday from 'date-fns/isToday';
 import isSameDay from 'date-fns/isSameDay';
 
 import { useNavigate } from 'react-router-dom';
-import { fetchAppointments } from '@/lib/api';
+import { fetchAppointments } from '@/features/appointments/api';
 
 const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreateAppointment }) => {
   const [date, setDate] = useState(new Date());

@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
-import { generateSchedule } from '@/lib/api';
+import { generateSchedule } from '@/features/appointments/api';
 
 // Form validation schema
 const formSchema = z.object({

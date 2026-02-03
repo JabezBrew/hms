@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinicalNotesApi } from '@/features/clinical-notes/api';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { timelineKeys } from './useTimelineQueries';
 
 // Query keys
 const clinicalNotesKeyFactory = createKeyFactory('clinical-notes');
@@ -13,7 +14,9 @@ export const clinicalNotesKeys = {
   myTemplates: () => keyWith('clinical-notes', 'templates', 'mine'),
   templateCategories: () => keyWith('clinical-notes', 'templates', 'categories'),
   entries: () => keyWith('clinical-notes', 'entries'),
+  entriesList: (filters) => keyWith('clinical-notes', 'entries', filters),
   entry: (id) => keyWith('clinical-notes', 'entries', id),
+  entrySections: (id) => keyWith('clinical-notes', 'entries', id, 'sections'),
   entriesByEncounter: (encounterId) => keyWith('clinical-notes', 'entries', 'encounter', encounterId),
   entryHistory: (id) => keyWith('clinical-notes', 'entries', id, 'history'),
   entryVersion: (id, version) => keyWith('clinical-notes', 'entries', id, 'version', version),
@@ -206,7 +209,7 @@ export function useDuplicateNoteTemplate() {
  */
 export function useNoteEntries(filters = {}) {
   return useQuery({
-    queryKey: [...clinicalNotesKeys.entries(), filters],
+    queryKey: clinicalNotesKeys.entriesList(filters),
     queryFn: () => clinicalNotesApi.getNoteEntries(filters),
   });
 }
@@ -268,7 +271,7 @@ export function useCreateNoteEntry() {
  */
 export function useNoteEntrySections(id, options = {}) {
   return useQuery({
-    queryKey: [...clinicalNotesKeys.entry(id), 'sections'],
+    queryKey: clinicalNotesKeys.entrySections(id),
     queryFn: () => clinicalNotesApi.getNoteEntrySections(id),
     enabled: !!id && options.enabled !== false,
     ...options,
@@ -289,8 +292,7 @@ export function useCloneNoteEntry() {
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
 
       // Invalidate timeline queries (patient timeline uses different keys)
-      queryClient.invalidateQueries({ queryKey: ['patient-timeline'] });
-      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
 
       // If there's an encounter, invalidate that too
       if (data.encounter) {
@@ -324,8 +326,7 @@ export function useUpdateNoteEntry() {
       // Invalidate entries list
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
       // Invalidate timeline queries
-      queryClient.invalidateQueries({ queryKey: ['patient-timeline'] });
-      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
     },
   });
 }

@@ -1,6 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
+import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
+import { timelineKeys } from '@/hooks/useTimelineQueries';
+import { referralKeys } from '@/hooks/useReferralQueries';
 
 // Hoist RegExp patterns to module scope for performance
 const UNDERSCORE_REGEX = /_/g;
@@ -236,10 +240,10 @@ export function useConsultationWorkflow(patientId, options = {}) {
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
-      queryClient.invalidateQueries({ queryKey: ['patient-timeline', patientId] });
-      queryClient.invalidateQueries({ queryKey: ['clinical-notes', patientId] });
-      queryClient.invalidateQueries({ queryKey: ['referrals'] });
+      queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.all });
     },
     onError: (err) => {
       setError(err.message || 'Failed to complete consultation');

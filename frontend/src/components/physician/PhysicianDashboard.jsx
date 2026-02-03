@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchWardsRoot, fetchAdmissions } from '@/lib/api';
+import { admissionsApi } from '@/features/admissions/api';
+import { wardsApi } from '@/features/wards/api';
 
 import { PatientList } from './PatientList';
 import { WardRoundTools } from './WardRoundTools';
@@ -34,7 +35,7 @@ export function PhysicianDashboard() {
   useEffect(() => {
     const fetchWards = async () => {
       try {
-        const data = await fetchWardsRoot();
+        const data = await wardsApi.getWardsRoot();
         setWards(data);
         if (data.length > 0) {
           setSelectedWard(data[0].id);
@@ -58,7 +59,7 @@ export function PhysicianDashboard() {
       try {
         setLoading(true);
         // Get all admissions for the selected ward
-        const admissionsData = await fetchAdmissions({ ward: selectedWard, status: 'admitted' });
+        const admissionsData = await admissionsApi.getAdmissions({ ward: selectedWard, status: 'admitted' });
 
         // Extract patient information from admissions
         const patientData = admissionsData.map(admission => ({

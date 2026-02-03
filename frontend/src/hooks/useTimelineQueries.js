@@ -8,6 +8,8 @@ const timelineKeyFactory = createKeyFactory('timeline');
 export const timelineKeys = {
   all: timelineKeyFactory.all,
   list: (patientId) => keyWith('timeline', 'list', patientId),
+  listParams: (patientId, type, search, pageSize, startDate, endDate, encounterId) =>
+    keyWith('timeline', 'list', patientId, type, search, pageSize, startDate, endDate, encounterId),
   filtered: (patientId, filters) => keyWith('timeline', 'list', patientId, { filters }),
   stats: (patientId) => keyWith('timeline', 'stats', patientId),
 };
@@ -85,7 +87,7 @@ export function usePatientTimeline(patientId, options = {}) {
   return useInfiniteQuery({
     // Use primitive values in query key to prevent unnecessary refetches
     // React Query does deep comparison but object identity changes can cause issues
-    queryKey: ['timeline', 'list', patientId, type, search, pageSize, startDate, endDate, encounterId],
+    queryKey: timelineKeys.listParams(patientId, type, search, pageSize, startDate, endDate, encounterId),
     queryFn: ({ pageParam = 1 }) => fetchTimeline(patientId, {
       type,
       search,
@@ -159,10 +161,10 @@ export function useInvalidateTimeline() {
   return (patientId) => {
     if (patientId) {
       // Invalidate timeline list queries for this patient
-      queryClient.invalidateQueries({ queryKey: ['timeline', 'list', patientId] });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
       queryClient.invalidateQueries({ queryKey: timelineKeys.stats(patientId) });
     } else {
-      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
     }
   };
 }

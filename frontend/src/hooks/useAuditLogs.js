@@ -1,5 +1,12 @@
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const auditKeys = {
+  logs: (filters, page, pageSize) => keyWith('audit-logs', filters, page, pageSize),
+  stats: () => keyWith('audit-stats'),
+  filters: () => keyWith('audit-filters'),
+};
 
 /**
  * Fetch audit logs with pagination and filters
@@ -42,7 +49,7 @@ const fetchFilterOptions = async () => {
  */
 export function useAuditLogs(filters = {}, page = 1, pageSize = 35) {
   return useQuery({
-    queryKey: ['audit-logs', filters, page, pageSize],
+    queryKey: auditKeys.logs(filters, page, pageSize),
     queryFn: () => fetchAuditLogs(filters, page, pageSize),
     staleTime: 30000, // 30 seconds
   });
@@ -53,7 +60,7 @@ export function useAuditLogs(filters = {}, page = 1, pageSize = 35) {
  */
 export function useAuditStats() {
   return useQuery({
-    queryKey: ['audit-stats'],
+    queryKey: auditKeys.stats(),
     queryFn: fetchAuditStats,
     staleTime: 60000, // 1 minute
   });
@@ -64,7 +71,7 @@ export function useAuditStats() {
  */
 export function useAuditFilters() {
   return useQuery({
-    queryKey: ['audit-filters'],
+    queryKey: auditKeys.filters(),
     queryFn: fetchFilterOptions,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

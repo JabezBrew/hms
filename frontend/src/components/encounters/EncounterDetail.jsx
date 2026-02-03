@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNoteEntriesForEncounter } from '@/features/clinical-notes/hooks';
-import { fetchEncounter, dischargeEncounter, cancelEncounter } from '@/lib/api';
+import { encountersApi } from '@/features/encounters/api';
 import { TimelineEntry } from '@/components/chronicle';
 import {
   AlertDialog,
@@ -163,11 +163,11 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const handleDischarge = async () => {
     try {
       setActionInProgress(true);
-      await dischargeEncounter(id, {
+      await encountersApi.dischargePatient(id, {
         discharge_disposition: 'home',
         destination: 'Home'
       });
-      const updatedEncounter = await fetchEncounter(id);
+      const updatedEncounter = await encountersApi.getEncounter(id);
       setEncounter(updatedEncounter);
       setShowDischargeDialog(false);
     } catch (err) {
@@ -182,8 +182,8 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const handleCancel = async () => {
     try {
       setActionInProgress(true);
-      await cancelEncounter(id);
-      const updatedEncounter = await fetchEncounter(id);
+      await encountersApi.cancelEncounter(id);
+      const updatedEncounter = await encountersApi.getEncounter(id);
       setEncounter(updatedEncounter);
       setShowCancelDialog(false);
     } catch (err) {

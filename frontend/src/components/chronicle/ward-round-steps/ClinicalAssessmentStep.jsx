@@ -27,6 +27,7 @@ import {
 import format from 'date-fns/format';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { nursingKeys } from '@/hooks/useNursingQueries';
 
 /**
  * Fetch vital signs for a patient (last 48 hours)
@@ -241,7 +242,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
 
   // Fetch vital signs
   const { data: vitals, isLoading: vitalsLoading } = useQuery({
-    queryKey: ['vital-signs', patientId, '48h'],
+    queryKey: nursingKeys.vitalSignsWindow(patientId, '48h'),
     queryFn: () => fetchVitalSigns(patientId),
     enabled: !!patientId,
     staleTime: 5 * 60 * 1000, // 5 minutes

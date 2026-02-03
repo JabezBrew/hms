@@ -2,7 +2,7 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,8 +28,16 @@ import {
 } from '@/components/ui/select';
 import { useTriageActions } from '@/hooks/useVisitQueries';
 import { clinicsApi } from '@/features/clinics/api';
+import { appointmentsApi } from '@/features/appointments/api';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+const triageAssignKeys = {
+  clinics: () => keyWith('clinics', 'walk-in'),
+  appointmentTypes: () => keyWith('appointment-types'),
+  practitioners: (clinicId) => keyWith('clinic-practitioners', clinicId),
+};
 
 const assignSchema = z.object({
   clinic_id: z.string().min(1, 'Clinic is required'),
@@ -72,21 +80,21 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
 
   // Fetch clinics that accept walk-ins
   const { data: clinics, isLoading: clinicsLoading } = useQuery({
-    queryKey: ['clinics', 'walk-in'],
+    queryKey: triageAssignKeys.clinics(),
     queryFn: () => clinicsApi.list({ accepts_walk_ins: true }),
     enabled: open && Boolean(facilityCode),
   });
 
   // Fetch appointment types
   const { data: appointmentTypes, isLoading: typesLoading } = useQuery({
-    queryKey: ['appointment-types'],
-    queryFn: () => apiClient.get('/appointments/types/'),
+    queryKey: triageAssignKeys.appointmentTypes(),
+    queryFn: () => appointmentsApi.getAppointmentTypes(),
     enabled: open && Boolean(facilityCode),
   });
 
   // Fetch practitioners for selected clinic
   const { data: practitioners, isLoading: practitionersLoading } = useQuery({
-    queryKey: ['clinic-practitioners', clinicId],
+    queryKey: triageAssignKeys.practitioners(clinicId),
     queryFn: () => apiClient.get(`/organization/clinics/${clinicId}/practitioners/`),
     enabled: open && Boolean(clinicId),
   });

@@ -3,9 +3,12 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { visitsApi, triageApi } from '@/features/triage/api';
+import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
+import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { dashboardKeys } from '@/hooks/useDashboardQueries';
 
 // =============================================================================
 // Query Keys
@@ -76,8 +79,8 @@ export function useVisitActions() {
 
   const invalidateVisitQueries = () => {
     queryClient.invalidateQueries({ queryKey: visitKeys.all });
-    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
-    queryClient.invalidateQueries({ queryKey: ['encounters'] });
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    queryClient.invalidateQueries({ queryKey: encounterKeys.all });
   };
 
   const addToWaiting = useMutation({
@@ -218,7 +221,7 @@ export function useTriageActions() {
 
   const invalidateTriageQueries = () => {
     queryClient.invalidateQueries({ queryKey: triageKeys.all });
-    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
   };
 
   const addToQueue = useMutation({
@@ -248,7 +251,7 @@ export function useTriageActions() {
     onSuccess: () => {
       toast.success('Patient assigned to clinic');
       invalidateTriageQueries();
-      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to assign patient');

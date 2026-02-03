@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-import { fetchWards, fetchBeds } from '@/lib/api';
+import { wardsApi } from '@/features/wards/api';
 import { useAvailableBeds } from '@/features/wards/hooks/useWardQueries';
 import { SectionSelector } from './SectionSelector';
 import { BedAmenityPicker } from './BedAmenityPicker';
@@ -85,7 +85,7 @@ export function BedAssignment({
           params.search = searchQuery;
         }
 
-        const data = await fetchWards(params);
+        const data = await wardsApi.getWards(params);
         // Ensure data is an array
         const wardsArray = Array.isArray(data) ? data : [];
         setWards(wardsArray);

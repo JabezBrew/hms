@@ -11,7 +11,8 @@ import {
 } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { fetchUpcomingAppointments } from '@/lib/api';
+import { fetchUpcomingAppointments } from '@/features/appointments/api';
+import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
 
 const AppointmentNotifications = () => {
   const [open, setOpen] = useState(false);
@@ -19,7 +20,7 @@ const AppointmentNotifications = () => {
 
   // Use React Query for caching and deduplication
   const { data: appointments = [], isLoading: loading } = useQuery({
-    queryKey: ['upcomingAppointments'],
+    queryKey: appointmentKeys.upcoming(),
     queryFn: fetchUpcomingAppointments,
     staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
     refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes

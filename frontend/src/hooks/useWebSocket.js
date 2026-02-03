@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatest } from '@/hooks/useLatest';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { referralKeys } from '@/hooks/useReferralQueries';
 
 /**
  * Hook for subscribing to real-time nursing alerts.
@@ -274,9 +275,9 @@ export function useNotificationWebSocket(options = {}) {
       setNotifications((prev) => [notification, ...prev].slice(0, 50)); // Keep last 50
 
       // Invalidate React Query cache to refresh counts
-      queryClient.invalidateQueries({ queryKey: ['referralNotifications'] });
-      queryClient.invalidateQueries({ queryKey: ['referralNotificationCount'] });
-      queryClient.invalidateQueries({ queryKey: ['referrals', 'inbox-count'] });
+      queryClient.invalidateQueries({ queryKey: referralKeys.notifications() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.notificationCount() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
 
       onNotificationRef.current?.(notification);
     });

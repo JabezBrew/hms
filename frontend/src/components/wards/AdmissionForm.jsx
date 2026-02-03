@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import { BedAssignment } from './BedAssignment';
 import { admissionsApi } from '@/features/admissions/api';
+import { wardKeys } from '@/features/wards/hooks/useWardQueries';
 import format from 'date-fns/format';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
@@ -170,9 +171,9 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       console.log('Admission created successfully:', response);
 
       // Invalidate all ward-related queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['wards'] });
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
-      queryClient.invalidateQueries({ queryKey: ['admissions'] });
+      queryClient.invalidateQueries({ queryKey: wardKeys.all });
+      queryClient.invalidateQueries({ queryKey: wardKeys.beds() });
+      queryClient.invalidateQueries({ queryKey: wardKeys.admissions() });
 
       // Navigate to the ward detail page or admission detail
       if (wardId) {

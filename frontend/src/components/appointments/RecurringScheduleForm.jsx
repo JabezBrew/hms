@@ -50,7 +50,7 @@ import {
 import {
   useSearchPractitioners
 } from '@/features/staff/hooks';
-import { previewSlots } from '@/lib/api';
+import { previewSlots } from '@/features/appointments/api';
 
 // Form validation schema
 const formSchema = z.object({

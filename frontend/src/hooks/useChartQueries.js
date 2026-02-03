@@ -27,6 +27,8 @@ export const chartKeys = {
 
   assignments: () => keyWith('charts', 'assignments'),
   assignmentList: (filters) => keyWith('charts', 'assignments', 'list', filters),
+  assignmentListParams: (patient, admission, template, status) =>
+    keyWith('charts', 'assignments', 'list', patient, admission, template, status),
   assignmentDetail: (id) => keyWith('charts', 'assignments', 'detail', id),
   assignmentsByPatient: (patientId, status) => keyWith('charts', 'assignments', 'patient', patientId, status),
 
@@ -320,7 +322,7 @@ export function useChartAssignments(filters = {}, options = {}) {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: ['charts', 'assignments', 'list', patient, admission, template, status],
+    queryKey: chartKeys.assignmentListParams(patient, admission, template, status),
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },

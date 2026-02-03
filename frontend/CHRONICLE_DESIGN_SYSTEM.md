@@ -54,6 +54,47 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 
 ## Components
 
+### PageShell
+Base page container for Chronicle layouts.
+- Applies `min-h-screen bg-background` and consistent padding.
+- Use as the outer wrapper for page content.
+
+```jsx
+import { PageShell } from '@/shared/components/page/PageShell';
+
+<PageShell>
+  {/* page content */}
+</PageShell>
+```
+
+### PageHeader
+Chronicle-aligned page header with title, description, metadata, and actions.
+
+```jsx
+import { PageHeader } from '@/shared/components/page/PageHeader';
+
+<PageHeader
+  title="Scheduling"
+  description="Appointments and templates"
+  meta="Updated 2 minutes ago"
+  actions={<Button size="sm">New</Button>}
+/>
+```
+
+### PageState
+Standardized loading, error, and empty states.
+
+```jsx
+import { PageState } from '@/shared/components/page/PageState';
+
+<PageState
+  variant="error"
+  title="Failed to load"
+  description="Try again in a moment."
+  action={() => refetch()}
+/>
+```
+
 ### PatientChronicleCard
 Magazine-style patient list card with:
 - Status ribbon (critical/warning/stable)
@@ -211,6 +252,7 @@ Flash highlight when vitals update.
 ### Do
 - Use `font-display` for patient names
 - Use `font-mono` for all clinical data (MRNs, vitals, timestamps)
+- Use `PageShell`, `PageHeader`, and `PageState` for consistent Chronicle page framing
 - Show allergies prominently with rose accent
 - Use timeline as primary navigation metaphor
 - Stagger animations on list renders

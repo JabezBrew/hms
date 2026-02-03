@@ -20,7 +20,8 @@ import { cn } from '@/lib/utils';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
-import { fetchUpcomingAppointments } from '@/lib/api';
+import { fetchUpcomingAppointments } from '@/features/appointments/api';
+import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useReferralNotifications,
   useReferralNotificationCount,
@@ -79,7 +80,7 @@ const NotificationCenter = () => {
 
   // Appointment notifications
   const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
-    queryKey: ['upcomingAppointments'],
+    queryKey: appointmentKeys.upcoming(),
     queryFn: fetchUpcomingAppointments,
     staleTime: 5 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,

@@ -18,6 +18,7 @@ export const appointmentKeys = {
   recurringSchedule: (id) => [...appointmentKeys.recurringSchedules(), id],
   scheduleMappings: () => [...appointmentKeys.all, 'scheduleMappings'],
   blockedTimes: (params) => [...appointmentKeys.all, 'blockedTimes', params],
+  upcoming: () => [...appointmentKeys.all, 'upcoming'],
 };
 
 /**

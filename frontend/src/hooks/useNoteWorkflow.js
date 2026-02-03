@@ -2,6 +2,10 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { clinicalNotesApi } from '@/features/clinical-notes/api';
+import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
+import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries';
+import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
+import { timelineKeys } from '@/hooks/useTimelineQueries';
 
 /**
  * Derive workflow steps from a template structure
@@ -170,10 +174,10 @@ export function useNoteWorkflow(patientId, options = {}) {
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
-      queryClient.invalidateQueries(['patient', patientId]);
-      queryClient.invalidateQueries(['encounters']);
-      queryClient.invalidateQueries(['clinical-notes']);
-      queryClient.invalidateQueries(['timeline']);
+      queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
+      queryClient.invalidateQueries({ queryKey: encounterKeys.all });
+      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
       setError(null);
     },
     onError: (error) => {
