@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -357,10 +358,14 @@ export default function StandingOrdersPage() {
       </div>
 
       {orders.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {orders.map((order, index) => (
+        <VirtualizedGrid
+          items={orders}
+          minItemWidth={280}
+          rowHeight={260}
+          gap={16}
+          getItemKey={(order) => order.id}
+          renderItem={(order, index) => (
             <StandingOrderCard
-              key={order.id}
               order={order}
               index={index}
               onClick={() => handleClick(order.id)}
@@ -368,8 +373,8 @@ export default function StandingOrdersPage() {
               onGenerate={() => handleGenerate(order.id)}
               onToggleActive={() => {/* Would call mutation */}}
             />
-          ))}
-        </div>
+          )}
+        />
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <Repeat className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

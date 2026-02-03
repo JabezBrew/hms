@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -273,14 +274,16 @@ export default function LabCollectionWorklistPage() {
             </p>
           </div>
         ) : (
-          // Worklist
-          <div className="space-y-3">
-            {filteredOrders.map((order, index) => {
+          <VirtualizedList
+            items={filteredOrders}
+            estimateSize={150}
+            gap={12}
+            getItemKey={(order) => order.id}
+            renderItem={(order, index) => {
               const priorityConfig = getPriorityConfig(order.priority);
 
               return (
                 <div
-                  key={order.id}
                   onClick={() => handleOrderClick(order)}
                   className={cn(
                     "bg-card rounded-lg border border-border p-4 cursor-pointer",
@@ -291,7 +294,6 @@ export default function LabCollectionWorklistPage() {
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    {/* Left: Patient and Order Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge
@@ -329,7 +331,6 @@ export default function LabCollectionWorklistPage() {
                       )}
                     </div>
 
-                    {/* Right: Actions */}
                     <div className="flex items-center gap-2 sm:flex-shrink-0">
                       <Button
                         onClick={(e) => handleQuickCollect(e, order)}
@@ -343,8 +344,8 @@ export default function LabCollectionWorklistPage() {
                   </div>
                 </div>
               );
-            })}
-          </div>
+            }}
+          />
         )}
       </main>
 

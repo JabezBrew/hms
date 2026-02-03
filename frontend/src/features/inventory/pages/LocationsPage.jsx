@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -23,10 +26,19 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   LocationCard,
   LocationCardSkeleton,
-  LocationRow,
-  LocationRowSkeleton,
+  getLocationConfig,
+  getTempZoneConfig,
+  formatCurrency,
+  formatNumber,
 } from '@/components/inventory/LocationCard';
 import { LocationForm } from '@/components/inventory';
 import { useStorageLocations } from '@/features/inventory/hooks';
@@ -40,8 +52,11 @@ import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import ArrowRightLeft from 'lucide-react/dist/esm/icons/arrow-right-left.js';
+import Edit from 'lucide-react/dist/esm/icons/pencil.js';
 
 const LOCATION_TYPE_OPTIONS = [
   { value: 'all', label: 'All Types' },
@@ -197,6 +212,125 @@ export default function LocationsPage() {
       return params;
     });
   };
+
+  const locationColumns = useMemo(() => ([
+    {
+      key: 'location',
+      header: 'Location',
+      width: '240px',
+      render: (location) => {
+        const config = getLocationConfig(location.location_type || location.type);
+        const Icon = config.icon;
+
+        return (
+          <div className="flex items-center gap-3">
+            <div className={cn('flex items-center justify-center w-8 h-8 rounded-lg', config.bgColor)}>
+              <Icon className={cn('h-4 w-4', config.color)} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{location.name}</p>
+              {location.code && (
+                <p className="text-xs text-muted-foreground font-mono">{location.code}</p>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      width: '140px',
+      render: (location) => {
+        const config = getLocationConfig(location.location_type || location.type);
+        return (
+          <Badge variant="outline" className="text-xs">
+            {config.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'parent',
+      header: 'Parent',
+      width: '200px',
+      render: (location) => (
+        <span className="text-sm text-muted-foreground">
+          {location.parent_name || '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '120px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right font-mono text-sm',
+      render: (location) => formatNumber(location.item_count || location.items_count || 0),
+    },
+    {
+      key: 'value',
+      header: 'Value',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right font-mono text-sm text-emerald-500',
+      render: (location) => formatCurrency(location.stock_value || location.total_value || 0),
+    },
+    {
+      key: 'temp',
+      header: 'Temp Zone',
+      width: '160px',
+      render: (location) => {
+        const tempZone = getTempZoneConfig(location.temperature_zone);
+        const TempIcon = tempZone?.icon;
+        return tempZone ? (
+          <div className={cn('flex items-center gap-1 text-xs', tempZone.color)}>
+            <TempIcon className="h-3 w-3" />
+            <span>{tempZone.label}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground text-xs">-</span>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '64px',
+      render: (location) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleViewStock(location.id); }}>
+              <Eye className="h-4 w-4 mr-2" />
+              View Stock
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleTransferTo(location.id); }}>
+              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Transfer To
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditLocation(location.id); }}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ]), [
+    handleEditLocation,
+    handleTransferTo,
+    handleViewStock,
+  ]);
 
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
@@ -355,10 +489,14 @@ export default function LocationsPage() {
       {/* Locations Display */}
       {locations.length > 0 ? (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {locations.map((location, index) => (
+          <VirtualizedGrid
+            items={locations}
+            minItemWidth={260}
+            rowHeight={260}
+            gap={16}
+            getItemKey={(location) => location.id}
+            renderItem={(location, index) => (
               <LocationCard
-                key={location.id}
                 location={location}
                 index={index}
                 onClick={() => handleLocationClick(location.id)}
@@ -366,48 +504,20 @@ export default function LocationsPage() {
                 onEdit={() => handleEditLocation(location.id)}
                 onTransfer={() => handleTransferTo(location.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-            <table className="w-full">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Location
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Parent
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Value
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
-                    Temp Zone
-                  </th>
-                  <th className="w-10 px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {locations.map((location, index) => (
-                  <LocationRow
-                    key={location.id}
-                    location={location}
-                    index={index}
-                    onClick={() => handleLocationClick(location.id)}
-                    onViewStock={() => handleViewStock(location.id)}
-                    onEdit={() => handleEditLocation(location.id)}
-                    onTransfer={() => handleTransferTo(location.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={locations}
+              rowKey={(location) => location.id}
+              rowHeight={64}
+              columns={locationColumns}
+              onRowClick={(location) => handleLocationClick(location.id)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[980px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
           </div>
         )
       ) : (

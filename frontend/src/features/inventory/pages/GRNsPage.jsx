@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -17,12 +20,17 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   GRNCard,
   GRNCardSkeleton,
-  GRNRow,
-  GRNRowSkeleton,
   GRNForm,
 } from '@/components/inventory';
+import { getStatusConfig } from '@/components/inventory/GRNCard';
 import { useGRNs } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
@@ -35,6 +43,11 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import ClipboardCheck from 'lucide-react/dist/esm/icons/clipboard-check.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import { format, parseISO } from 'date-fns';
 
 const STATUS_TABS = [
   { value: 'all', label: 'All' },
@@ -167,6 +180,163 @@ export default function GRNsPage() {
       return params;
     });
   };
+
+  const grnColumns = useMemo(() => ([
+    {
+      key: 'number',
+      header: 'GRN #',
+      width: '200px',
+      render: (grn) => {
+        const hasQualityIssues = grn.quality_issues_count > 0 || grn.has_issues;
+        return (
+          <div className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-muted-foreground" />
+            <span className="font-mono text-sm font-medium text-primary">
+              {grn.grn_number || grn.number}
+            </span>
+            {hasQualityIssues && (
+              <AlertTriangle className="h-4 w-4 text-rose-500" />
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (grn) => {
+        const statusConfig = getStatusConfig(grn.status);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-xs',
+              statusConfig.bgColor,
+              statusConfig.textColor,
+              statusConfig.borderColor
+            )}
+          >
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'po',
+      header: 'PO #',
+      width: '140px',
+      render: (grn) => (
+        grn.po_number ? (
+          <span className="text-sm font-mono text-muted-foreground">{grn.po_number}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'supplier',
+      header: 'Supplier',
+      width: '200px',
+      render: (grn) => (
+        <span className="text-sm truncate max-w-[150px] block">
+          {grn.supplier_name || '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'received',
+      header: 'Received',
+      width: '160px',
+      render: (grn) => (
+        grn.received_date ? (
+          <span className="text-sm font-mono">
+            {format(parseISO(grn.received_date), 'MMM d, yyyy')}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '100px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (grn) => (
+        <span className="text-sm font-mono">
+          {grn.items_count || grn.item_count || 0}
+        </span>
+      ),
+    },
+    {
+      key: 'accepted',
+      header: 'Accepted',
+      width: '120px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (grn) => (
+        <span className="text-sm font-mono text-emerald-500">
+          {grn.accepted_count || 0}
+          {grn.rejected_count > 0 && (
+            <span className="text-sm font-mono text-rose-500 ml-1">
+              / {grn.rejected_count}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '64px',
+      render: (grn) => {
+        const canInspect = grn.status === 'pending_inspection';
+        const canAccept = grn.status === 'inspecting' || grn.status === 'pending_inspection';
+        const canReject = grn.status === 'inspecting' || grn.status === 'pending_inspection';
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleGRNClick(grn.id); }}>
+                <Eye className="h-4 w-4 mr-2" />
+                View Details
+              </DropdownMenuItem>
+              {canInspect && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleInspect(grn.id); }}>
+                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  Start Inspection
+                </DropdownMenuItem>
+              )}
+              {canAccept && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleAccept(grn.id); }}>
+                  <Check className="h-4 w-4 mr-2" />
+                  Accept
+                </DropdownMenuItem>
+              )}
+              {canReject && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleReject(grn.id); }}>
+                  <X className="h-4 w-4 mr-2" />
+                  Reject
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ]), [
+    handleAccept,
+    handleGRNClick,
+    handleInspect,
+    handleReject,
+  ]);
 
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
@@ -302,10 +472,14 @@ export default function GRNsPage() {
       {/* GRNs Display */}
       {grns.length > 0 ? (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {grns.map((grn, index) => (
+          <VirtualizedGrid
+            items={grns}
+            minItemWidth={280}
+            rowHeight={280}
+            gap={16}
+            getItemKey={(grn) => grn.id}
+            renderItem={(grn, index) => (
               <GRNCard
-                key={grn.id}
                 grn={grn}
                 index={index}
                 onClick={() => handleGRNClick(grn.id)}
@@ -313,51 +487,20 @@ export default function GRNsPage() {
                 onAccept={() => handleAccept(grn.id)}
                 onReject={() => handleReject(grn.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-            <table className="w-full">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    GRN #
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    PO #
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Supplier
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Received
-                  </th>
-                  <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Accepted
-                  </th>
-                  <th className="w-10 px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {grns.map((grn, index) => (
-                  <GRNRow
-                    key={grn.id}
-                    grn={grn}
-                    index={index}
-                    onClick={() => handleGRNClick(grn.id)}
-                    onInspect={() => handleInspect(grn.id)}
-                    onAccept={() => handleAccept(grn.id)}
-                    onReject={() => handleReject(grn.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={grns}
+              rowKey={(grn) => grn.id}
+              rowHeight={64}
+              columns={grnColumns}
+              onRowClick={(grn) => handleGRNClick(grn.id)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[980px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
           </div>
         )
       ) : (

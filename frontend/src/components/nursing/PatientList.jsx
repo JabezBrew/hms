@@ -2,7 +2,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 
 export function PatientList({ patients, onPatientSelect }) {
   // Function to calculate time since admission
@@ -54,62 +54,65 @@ export function PatientList({ patients, onPatientSelect }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[500px] pr-4">
-          <div className="space-y-4">
-            {patients.map(patient => {
-              const requiresAttention = needsAttention(patient);
-              
-              return (
-                <div
-                  key={patient.id}
-                  className={`p-4 border rounded-md cursor-pointer hover:bg-muted transition-colors ${
-                    requiresAttention ? 'border-red-300 bg-red-50' : ''
-                  }`}
-                  onClick={() => onPatientSelect(patient)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium">{patient.user.full_name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {patient.bed.ward.name} - Bed {patient.bed.bed_number}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      {requiresAttention && (
-                        <Badge variant="destructive" className="mb-1">
-                          Needs Attention
-                        </Badge>
-                      )}
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {getTimeSinceAdmission(patient.admission.admission_date)}
-                      </div>
-                    </div>
+        <VirtualizedList
+          items={patients}
+          useWindow={false}
+          height={500}
+          estimateSize={140}
+          gap={16}
+          getItemKey={(patient) => patient.id}
+          renderItem={(patient) => {
+            const requiresAttention = needsAttention(patient);
+
+            return (
+              <div
+                className={`p-4 border rounded-md cursor-pointer hover:bg-muted transition-colors ${
+                  requiresAttention ? 'border-red-300 bg-red-50' : ''
+                }`}
+                onClick={() => onPatientSelect(patient)}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">{patient.user.full_name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {patient.bed.ward.name} - Bed {patient.bed.bed_number}
+                    </p>
                   </div>
-                  
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Age:</span>{' '}
-                      {patient.date_of_birth ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear() : 'N/A'}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Gender:</span>{' '}
-                      {patient.gender || 'N/A'}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Doctor:</span>{' '}
-                      {patient.admission.admitting_doctor?.user.full_name || 'Not assigned'}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Type:</span>{' '}
-                      {patient.admission.admission_type.replace('_', ' ')}
+                  <div className="flex flex-col items-end">
+                    {requiresAttention && (
+                      <Badge variant="destructive" className="mb-1">
+                        Needs Attention
+                      </Badge>
+                    )}
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {getTimeSinceAdmission(patient.admission.admission_date)}
                     </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </ScrollArea>
+
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Age:</span>{' '}
+                    {patient.date_of_birth ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear() : 'N/A'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Gender:</span>{' '}
+                    {patient.gender || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Doctor:</span>{' '}
+                    {patient.admission.admitting_doctor?.user.full_name || 'Not assigned'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Type:</span>{' '}
+                    {patient.admission.admission_type.replace('_', ' ')}
+                  </div>
+                </div>
+              </div>
+            );
+          }}
+        />
       </CardContent>
     </Card>
   );

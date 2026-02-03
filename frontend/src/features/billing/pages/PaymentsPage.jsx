@@ -1,6 +1,5 @@
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
@@ -15,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -108,6 +108,122 @@ export default function PaymentsPage() {
 
   // Receipt printing hook
   const { printReceipt, printingId } = useReceiptPrint();
+
+  const columns = useMemo(() => ([
+    {
+      key: 'date',
+      header: 'Date',
+      width: '160px',
+      render: (payment) => (
+        <div>
+          <p className="font-mono text-sm text-foreground">
+            {formatDate(payment.payment_date)}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            {formatTime(payment.created_at)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '200px',
+      render: (payment) => (
+        <button
+          onClick={() => navigate(`/patients/${payment.patient_id}`)}
+          className="text-left hover:text-primary transition-colors"
+        >
+          <p className="text-sm text-foreground">{payment.patient_name}</p>
+          <p className="font-mono text-xs text-muted-foreground">
+            {payment.patient_mrn}
+          </p>
+        </button>
+      ),
+    },
+    {
+      key: 'invoice',
+      header: 'Invoice',
+      width: '160px',
+      render: (payment) => (
+        <button
+          onClick={() => navigate(`/billing/invoices/${payment.invoice}`)}
+          className="font-mono text-xs text-primary hover:underline"
+        >
+          {payment.invoice_number}
+        </button>
+      ),
+    },
+    {
+      key: 'method',
+      header: 'Method',
+      width: '120px',
+      render: (payment) => (
+        <span className="font-mono text-xs px-2 py-1 rounded bg-muted text-muted-foreground">
+          {formatPaymentMethod(payment.payment_method)}
+        </span>
+      ),
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (payment) => (
+        <span className="font-mono text-sm text-[oklch(0.70_0.17_155)]">
+          +{formatCurrency(payment.amount)}
+        </span>
+      ),
+    },
+    {
+      key: 'receipt',
+      header: 'Receipt',
+      width: '140px',
+      render: (payment) => (
+        payment.receipt_number ? (
+          <div className="flex items-center gap-1">
+            <FileText className="h-3 w-3 text-muted-foreground" />
+            <span className="font-mono text-xs text-muted-foreground">
+              {payment.receipt_number}
+            </span>
+          </div>
+        ) : (
+          <span className="font-mono text-xs text-muted-foreground/50">—</span>
+        )
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (payment) => (
+        payment.receipt_number ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => printReceipt(payment)}
+            disabled={printingId === payment.id}
+            className="font-mono text-xs h-8 px-2"
+          >
+            {printingId === payment.id ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <Printer className="h-3 w-3 mr-1" />
+                Print
+              </>
+            )}
+          </Button>
+        ) : null
+      ),
+    },
+  ]), [navigate, printReceipt, printingId]);
 
   // Pagination calculations
   const payments = paymentsData?.results || [];
@@ -248,144 +364,43 @@ export default function PaymentsPage() {
 
         {/* Payments List */}
         <section className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="px-4 sm:px-6 py-3 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-4 py-3 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Patient
-                  </th>
-                  <th className="px-4 py-3 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Invoice
-                  </th>
-                  <th className="px-4 py-3 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Method
-                  </th>
-                  <th className="px-4 py-3 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-4 py-3 text-left font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Receipt
-                  </th>
-                  <th className="px-4 sm:px-6 py-3 text-right font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {payments.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                          <CreditCard className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <p className="text-muted-foreground">No payments found</p>
-                        {(debouncedSearch || (paymentMethod && paymentMethod !== 'all') || dateFrom || dateTo) && (
-                          <Button
-                            variant="link"
-                            onClick={() => {
-                              setSearch('');
-                              setSearchParams({});
-                            }}
-                            className="font-mono text-xs mt-2"
-                          >
-                            Clear filters
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  payments.map((payment, index) => (
-                    <tr
-                      key={payment.id}
-                      className={cn(
-                        "hover:bg-muted/20 transition-colors animate-chronicle-enter",
-                      )}
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <td className="px-4 sm:px-6 py-4">
-                        <p className="font-mono text-sm text-foreground">
-                          {formatDate(payment.payment_date)}
-                        </p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {formatTime(payment.created_at)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <button
-                          onClick={() => navigate(`/patients/${payment.patient_id}`)}
-                          className="text-left hover:text-primary transition-colors"
-                        >
-                          <p className="text-sm text-foreground">{payment.patient_name}</p>
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {payment.patient_mrn}
-                          </p>
-                        </button>
-                      </td>
-                      <td className="px-4 py-4">
-                        <button
-                          onClick={() => navigate(`/billing/invoices/${payment.invoice}`)}
-                          className="font-mono text-xs text-primary hover:underline"
-                        >
-                          {payment.invoice_number}
-                        </button>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="font-mono text-xs px-2 py-1 rounded bg-muted text-muted-foreground">
-                          {formatPaymentMethod(payment.payment_method)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <span className="font-mono text-sm text-[oklch(0.70_0.17_155)]">
-                          +{formatCurrency(payment.amount)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        {payment.receipt_number ? (
-                          <div className="flex items-center gap-1">
-                            <FileText className="h-3 w-3 text-muted-foreground" />
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {payment.receipt_number}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="font-mono text-xs text-muted-foreground/50">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 text-right">
-                        {payment.receipt_number && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => printReceipt(payment)}
-                            disabled={printingId === payment.id}
-                            className="font-mono text-xs h-8 px-2"
-                          >
-                            {printingId === payment.id ? (
-                              <>
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                Loading...
-                              </>
-                            ) : (
-                              <>
-                                <Printer className="h-3 w-3 mr-1" />
-                                Print
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+          {payments.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <div className="flex flex-col items-center">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <CreditCard className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-muted-foreground">No payments found</p>
+                {(debouncedSearch || (paymentMethod && paymentMethod !== 'all') || dateFrom || dateTo) && (
+                  <Button
+                    variant="link"
+                    onClick={() => {
+                      setSearch('');
+                      setSearchParams({});
+                    }}
+                    className="font-mono text-xs mt-2"
+                  >
+                    Clear filters
+                  </Button>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <VirtualizedTable
+                rows={payments}
+                rowKey={(payment) => payment.id}
+                rowHeight={72}
+                columns={columns}
+                className="min-w-[920px]"
+                headerClassName="font-mono text-xs uppercase tracking-wider text-muted-foreground"
+                rowClassName={cn(
+                  "hover:bg-muted/20 transition-colors",
+                  "animate-chronicle-enter"
+                )}
+              />
+            </div>
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (

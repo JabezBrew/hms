@@ -2,7 +2,6 @@ import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -16,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -176,16 +176,20 @@ export default function ClaimsPage() {
       {/* Claims List */}
       <main className="p-4 sm:p-6">
         {claims.length > 0 ? (
-          <div className="space-y-3">
-            {claims.map((claim, index) => (
+          <VirtualizedList
+            items={claims}
+            estimateSize={150}
+            gap={12}
+            className="space-y-3"
+            getItemKey={(claim) => claim.id}
+            renderItem={(claim, index) => (
               <ClaimCard
-                key={claim.id}
                 claim={claim}
                 index={index}
                 onClick={() => navigate(`/billing/claims/${claim.id}`)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
           <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

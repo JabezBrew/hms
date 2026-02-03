@@ -6,7 +6,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
-import { useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,8 +25,7 @@ import endOfDay from 'date-fns/endOfDay';
 import addDays from 'date-fns/addDays';
 import subDays from 'date-fns/subDays';
 import checkIsToday from 'date-fns/isToday';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-
+import DeferredMount from '@/components/ui/DeferredMount';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -35,6 +34,8 @@ import {
   useFluidBalanceSummary,
   useCreateFluidBalance,
 } from '@/features/nursing/hooks';
+
+const FluidBalanceTrendsChart = lazy(() => import('./FluidBalanceTrendsChart'));
 
 export function FluidBalanceTracker({ patient, admission }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -231,7 +232,7 @@ export function FluidBalanceTracker({ patient, admission }) {
   };
 
   // Calculate daily summaries from records
-  const calculateDailySummaries = () => {
+  const dailySummaries = useMemo(() => {
     const records = Array.isArray(fluidRecords) ? fluidRecords : (fluidRecords?.results || []);
     const summaries = {};
 
@@ -257,18 +258,17 @@ export function FluidBalanceTracker({ patient, admission }) {
     });
 
     return Object.values(summaries).sort((a, b) => new Date(b.date) - new Date(a.date));
-  };
+  }, [fluidRecords]);
 
-  // Prepare chart data
-  const prepareChartData = () => {
-    const summaries = calculateDailySummaries();
-    return summaries.map(summary => ({
+  const chartData = useMemo(
+    () => dailySummaries.map(summary => ({
       date: format(new Date(summary.date), 'MMM d'),
       intake: summary.intake,
       output: summary.output,
       balance: summary.balance
-    })).reverse();
-  };
+    })).reverse(),
+    [dailySummaries]
+  );
 
   // Get display label for category
   const getCategoryLabel = (category) => {
@@ -702,35 +702,11 @@ export function FluidBalanceTracker({ patient, admission }) {
             </CardHeader>
             <CardContent>
               <div className="space-y-8">
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Daily Intake and Output</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="intake" name="Intake (ml)" fill="#3b82f6" />
-                      <Bar dataKey="output" name="Output (ml)" fill="#f59e0b" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Daily Fluid Balance</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <ReferenceLine y={0} stroke="#000" />
-                      <Bar dataKey="balance" name="Balance (ml)" fill="#10b981" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <DeferredMount placeholder={<Skeleton className="h-64 w-full" />}>
+                  <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+                    <FluidBalanceTrendsChart data={chartData} />
+                  </Suspense>
+                </DeferredMount>
 
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Daily Summaries</h3>
@@ -744,7 +720,7 @@ export function FluidBalanceTracker({ patient, admission }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {calculateDailySummaries().map(summary => (
+                      {dailySummaries.map(summary => (
                         <TableRow key={summary.date}>
                           <TableCell>{format(new Date(summary.date), 'MMM d, yyyy')}</TableCell>
                           <TableCell className="text-blue-600 font-medium">{summary.intake}</TableCell>
@@ -758,7 +734,7 @@ export function FluidBalanceTracker({ patient, admission }) {
                         </TableRow>
                       ))}
 
-                      {calculateDailySummaries().length === 0 && (
+                      {dailySummaries.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
                             No data available for trends

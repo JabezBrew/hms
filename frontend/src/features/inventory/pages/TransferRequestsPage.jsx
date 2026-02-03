@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -463,10 +464,14 @@ export default function TransferRequestsPage() {
       </div>
 
       {transfers.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {transfers.map((transfer, index) => (
+        <VirtualizedGrid
+          items={transfers}
+          minItemWidth={280}
+          rowHeight={260}
+          gap={16}
+          getItemKey={(transfer) => transfer.id}
+          renderItem={(transfer, index) => (
             <TransferCard
-              key={transfer.id}
               transfer={transfer}
               index={index}
               onClick={() => handleClick(transfer.id)}
@@ -474,8 +479,8 @@ export default function TransferRequestsPage() {
               onDispatch={() => handleDispatch(transfer.id)}
               onReceive={() => handleReceive(transfer.id)}
             />
-          ))}
-        </div>
+          )}
+        />
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <ArrowRightLeft className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

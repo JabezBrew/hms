@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -34,9 +37,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   InventoryItemCard,
   InventoryItemCardSkeleton,
-  InventoryItemRow,
-  InventoryItemRowSkeleton,
   InventoryItemForm,
+  StockLevelBadge,
+  ExpiryBadge,
 } from '@/components/inventory';
 import {
   useInventoryItems,
@@ -54,9 +57,12 @@ import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Edit from 'lucide-react/dist/esm/icons/edit.js';
+import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 
 const TAB_OPTIONS = [
   { value: 'all', label: 'All Items' },
@@ -284,6 +290,149 @@ export default function ItemsPage() {
       return params;
     });
   };
+
+  const itemColumns = useMemo(() => ([
+    {
+      key: 'select',
+      header: (
+        <Checkbox
+          checked={selectAll}
+          onCheckedChange={handleSelectAll}
+          onClick={(event) => event.stopPropagation()}
+        />
+      ),
+      width: '48px',
+      render: (item) => (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={selectedItems.has(item.id)}
+            onCheckedChange={() => toggleItemSelection(item.id)}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      ),
+    },
+    {
+      key: 'item',
+      header: 'Item',
+      width: '220px',
+      render: (item) => (
+        <div className="truncate">
+          <span className="font-medium">{item.name}</span>
+          {item.is_controlled && (
+            <Badge className="ml-2 bg-purple-500 hover:bg-purple-600 text-white text-xs">
+              Controlled
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'sku',
+      header: 'SKU',
+      width: '140px',
+      render: (item) => (
+        <span className="font-mono text-sm text-muted-foreground">{item.sku}</span>
+      ),
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      width: '160px',
+      render: (item) => (
+        item.category_name ? (
+          <Badge variant="outline" className="text-xs">
+            {item.category_name}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'stock',
+      header: 'Stock',
+      width: '160px',
+      render: (item) => (
+        <StockLevelBadge
+          stockLevel={item.total_stock || 0}
+          reorderLevel={item.reorder_level}
+          showQuantity={true}
+        />
+      ),
+    },
+    {
+      key: 'expiry',
+      header: 'Expiry',
+      width: '140px',
+      render: (item) => (
+        item.nearest_expiry ? (
+          <ExpiryBadge expiryDate={item.nearest_expiry} />
+        ) : (
+          <span className="text-muted-foreground text-sm">-</span>
+        )
+      ),
+    },
+    {
+      key: 'price',
+      header: 'Price',
+      width: '160px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (item) => (
+        <span className="font-mono">
+          {new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+          }).format(item.unit_price || 0)}
+          <span className="text-muted-foreground text-xs ml-1">
+            /{item.unit_of_measure || 'ea'}
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '64px',
+      render: (item) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleItemClick(item.id); }}>
+              <Eye className="h-4 w-4 mr-2" />
+              View Details
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditItem(item.id); }}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(event) => {
+                event.stopPropagation();
+                navigate(`/inventory/requisitions?action=create&items=${item.id}`);
+              }}
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Create Order
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ]), [
+    handleSelectAll,
+    handleItemClick,
+    handleEditItem,
+    navigate,
+    selectAll,
+    selectedItems,
+    toggleItemSelection,
+  ]);
 
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
@@ -537,10 +686,14 @@ export default function ItemsPage() {
       {/* Items Display */}
       {items.length > 0 ? (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {items.map((item, index) => (
+          <VirtualizedGrid
+            items={items}
+            minItemWidth={260}
+            rowHeight={320}
+            gap={16}
+            getItemKey={(item) => item.id}
+            renderItem={(item, index) => (
               <InventoryItemCard
-                key={item.id}
                 item={item}
                 index={index}
                 isSelected={selectedItems.has(item.id)}
@@ -549,49 +702,21 @@ export default function ItemsPage() {
                 onEdit={() => handleEditItem(item.id)}
                 onOrder={() => navigate(`/inventory/requisitions?action=create&items=${item.id}`)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-            <table className="w-full">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="w-10 px-4 py-3">
-                    <Checkbox
-                      checked={selectAll}
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Item
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Category
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Stock
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Price
-                  </th>
-                  <th className="w-10 px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {items.map((item, index) => (
-                  <InventoryItemRow
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    isSelected={selectedItems.has(item.id)}
-                    onSelect={() => toggleItemSelection(item.id)}
-                    onClick={() => handleItemClick(item.id)}
-                    onEdit={() => handleEditItem(item.id)}
-                    onOrder={() => navigate(`/inventory/requisitions?action=create&items=${item.id}`)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={items}
+              rowKey={(item) => item.id}
+              rowHeight={64}
+              columns={itemColumns}
+              onRowClick={(item) => handleItemClick(item.id)}
+              rowClassName="hover:bg-muted/50"
+              getRowClassName={(item) => (selectedItems.has(item.id) ? 'bg-muted/30' : null)}
+              className="min-w-[960px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
           </div>
         )
       ) : (

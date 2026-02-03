@@ -14,6 +14,7 @@ import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -254,22 +255,25 @@ export default function WardsPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredWards.map(ward => {
+          <VirtualizedGrid
+            items={filteredWards}
+            minItemWidth={280}
+            rowHeight={280}
+            gap={24}
+            getItemKey={(ward) => ward.id}
+            renderItem={(ward) => {
               const occupancyStyle = getOccupancyStyle(ward.occupancy_rate);
               const availableBeds = ward.available_beds_count || 0;
               const occupiedBeds = (ward.total_beds || 0) - availableBeds;
 
               return (
                 <article
-                  key={ward.id}
                   onClick={() => navigate(`/wards/${ward.id}`)}
                   className={cn(
                     "group relative bg-card rounded-xl border border-border/50 p-6",
                     "hover:border-border hover:shadow-lg transition-all duration-200 cursor-pointer"
                   )}
                 >
-                  {/* Header */}
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -289,14 +293,12 @@ export default function WardsPage() {
                     </div>
                   </div>
 
-                  {/* Description */}
                   {ward.description && (
                     <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
                       {ward.description}
                     </p>
                   )}
 
-                  {/* Occupancy Bar */}
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-xs mb-1.5">
                       <span className="text-muted-foreground">Occupancy</span>
@@ -312,7 +314,6 @@ export default function WardsPage() {
                     </div>
                   </div>
 
-                  {/* Bed Stats */}
                   <div className="flex items-center justify-between pt-4 border-t border-border/50">
                     <div className="flex items-center gap-4">
                       <div className="text-center">
@@ -332,8 +333,8 @@ export default function WardsPage() {
                   </div>
                 </article>
               );
-            })}
-          </div>
+            }}
+          />
         )}
       </div>
     </PageShell>

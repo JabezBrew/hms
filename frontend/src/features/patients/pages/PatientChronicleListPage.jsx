@@ -39,6 +39,8 @@ import {
 import { PatientChronicleCard } from "@/components/chronicle";
 import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
 import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -905,25 +907,46 @@ const SearchResultsSection = ({
     return acc;
   }, { seen: new Set(), list: [] }).list;
 
+  if (viewMode === 'grid') {
+    return (
+      <VirtualizedGrid
+        items={uniquePatients}
+        minItemWidth={320}
+        rowHeight={320}
+        gap={24}
+        getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
+        renderItem={({ patient, originalIndex }, index) => (
+          <PatientChronicleCard
+            patient={patient}
+            index={index}
+            onStartRound={onStartRound}
+            onStartConsultation={onStartConsultation}
+            onAddToMyPatients={onAddToMyPatients}
+            showMyPatientsActions={showMyPatientsActions}
+          />
+        )}
+      />
+    );
+  }
+
   return (
-    <div className={cn(
-      viewMode === 'grid'
-        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
-        : "space-y-4"
-    )}>
-      {uniquePatients.map(({ patient, originalIndex }, index) => (
+    <VirtualizedList
+      items={uniquePatients}
+      estimateSize={180}
+      gap={16}
+      getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
+      renderItem={({ patient }, index) => (
         <PatientChronicleCard
-          key={`search-${patient?.id || originalIndex}-${index}`}
           patient={patient}
           index={index}
           onStartRound={onStartRound}
           onStartConsultation={onStartConsultation}
           onAddToMyPatients={onAddToMyPatients}
           showMyPatientsActions={showMyPatientsActions}
-          className={viewMode === 'list' ? 'max-w-none' : ''}
+          className="max-w-none"
         />
-      ))}
-    </div>
+      )}
+    />
   );
 };
 

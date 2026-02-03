@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -24,12 +27,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   POCard,
   POCardSkeleton,
-  PORow,
-  PORowSkeleton,
   PurchaseOrderForm,
 } from '@/components/inventory';
+import { getStatusConfig, formatCurrency } from '@/components/inventory/POCard';
 import { usePurchaseOrders, useSuppliers } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
@@ -40,9 +49,15 @@ import List from 'lucide-react/dist/esm/icons/list.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import Printer from 'lucide-react/dist/esm/icons/printer.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import { format, parseISO } from 'date-fns';
 
 const STATUS_TABS = [
   { value: 'all', label: 'All' },
@@ -199,6 +214,155 @@ export default function PurchaseOrdersPage() {
     });
   };
 
+  const poColumns = useMemo(() => ([
+    {
+      key: 'number',
+      header: 'PO #',
+      width: '180px',
+      render: (po) => (
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="font-mono text-sm font-medium text-primary">
+            {po.po_number || po.number}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (po) => {
+        const statusConfig = getStatusConfig(po.status);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-xs',
+              statusConfig.bgColor,
+              statusConfig.textColor,
+              statusConfig.borderColor
+            )}
+          >
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'supplier',
+      header: 'Supplier',
+      width: '220px',
+      render: (po) => (
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm truncate max-w-[200px]">
+            {po.supplier_name || po.supplier}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'order_date',
+      header: 'Order Date',
+      width: '160px',
+      render: (po) => (
+        po.order_date ? (
+          <span className="text-sm font-mono">
+            {format(parseISO(po.order_date), 'MMM d, yyyy')}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'expected',
+      header: 'Expected',
+      width: '160px',
+      render: (po) => (
+        po.expected_delivery_date ? (
+          <span className="text-sm font-mono">
+            {format(parseISO(po.expected_delivery_date), 'MMM d, yyyy')}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '100px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (po) => (
+        <span className="text-sm font-mono">
+          {po.items_count || po.item_count || 0}
+        </span>
+      ),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (po) => (
+        <span className="font-mono text-sm font-semibold text-emerald-500">
+          {formatCurrency(po.total_amount || po.total)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '64px',
+      render: (po) => {
+        const canSend = po.status === 'approved';
+        const canCreateGRN = ['sent', 'acknowledged', 'receiving', 'partially_received'].includes(po.status);
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePOClick(po.id); }}>
+                <Eye className="h-4 w-4 mr-2" />
+                View Details
+              </DropdownMenuItem>
+              {canSend && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleSend(po.id); }}>
+                  <Send className="h-4 w-4 mr-2" />
+                  Send to Supplier
+                </DropdownMenuItem>
+              )}
+              {canCreateGRN && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleCreateGRN(po.id); }}>
+                  <Package className="h-4 w-4 mr-2" />
+                  Create GRN
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePrint(po.id); }}>
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ]), [
+    handleCreateGRN,
+    handlePOClick,
+    handlePrint,
+    handleSend,
+  ]);
+
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -352,10 +516,14 @@ export default function PurchaseOrdersPage() {
       {/* Purchase Orders Display */}
       {purchaseOrders.length > 0 ? (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {purchaseOrders.map((po, index) => (
+          <VirtualizedGrid
+            items={purchaseOrders}
+            minItemWidth={280}
+            rowHeight={280}
+            gap={16}
+            getItemKey={(po) => po.id}
+            renderItem={(po, index) => (
               <POCard
-                key={po.id}
                 po={po}
                 index={index}
                 onClick={() => handlePOClick(po.id)}
@@ -363,51 +531,20 @@ export default function PurchaseOrdersPage() {
                 onCreateGRN={() => handleCreateGRN(po.id)}
                 onPrint={() => handlePrint(po.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-            <table className="w-full">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    PO #
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Supplier
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Order Date
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Expected
-                  </th>
-                  <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Total
-                  </th>
-                  <th className="w-10 px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {purchaseOrders.map((po, index) => (
-                  <PORow
-                    key={po.id}
-                    po={po}
-                    index={index}
-                    onClick={() => handlePOClick(po.id)}
-                    onSend={() => handleSend(po.id)}
-                    onCreateGRN={() => handleCreateGRN(po.id)}
-                    onPrint={() => handlePrint(po.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={purchaseOrders}
+              rowKey={(po) => po.id}
+              rowHeight={64}
+              columns={poColumns}
+              onRowClick={(po) => handlePOClick(po.id)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[980px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
           </div>
         )
       ) : (

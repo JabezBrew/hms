@@ -97,7 +97,7 @@ const TEMP_ZONES = {
 /**
  * Get location type config
  */
-function getLocationConfig(type) {
+export function getLocationConfig(type) {
   return LOCATION_TYPES[type?.toLowerCase()] || {
     label: type || 'Location',
     icon: MapPin,
@@ -110,14 +110,14 @@ function getLocationConfig(type) {
 /**
  * Get temperature zone config
  */
-function getTempZoneConfig(zone) {
+export function getTempZoneConfig(zone) {
   return TEMP_ZONES[zone?.toLowerCase()] || null;
 }
 
 /**
  * Format currency
  */
-function formatCurrency(amount) {
+export function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -129,7 +129,7 @@ function formatCurrency(amount) {
 /**
  * Format number
  */
-function formatNumber(value) {
+export function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(value || 0);
 }
 

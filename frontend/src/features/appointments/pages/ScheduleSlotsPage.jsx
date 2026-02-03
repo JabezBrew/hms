@@ -8,14 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { Badge } from '@/components/ui/badge';
 
 import { useScheduleMappings, useScheduleSlots } from '@/features/appointments/hooks/useAppointmentQueries';
@@ -243,31 +236,33 @@ const ScheduleSlotsPage = () => {
                             </p>
                         </div>
                     ) : (
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Start Time</TableHead>
-                                        <TableHead>End Time</TableHead>
-                                        <TableHead>Status</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {slots.map((slot) => (
-                                        <TableRow key={slot.id}>
-                                            <TableCell>
-                                                <div className="flex items-center">
-                                                    <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
-                                                    {formatDate(slot.start)}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>{formatDate(slot.end)}</TableCell>
-                                            <TableCell>{getStatusBadge(slot.status)}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
+                        <VirtualizedTable
+                            rows={slots}
+                            rowKey={(slot) => slot.id}
+                            rowHeight={56}
+                            columns={[
+                                {
+                                    key: 'start',
+                                    header: 'Start Time',
+                                    render: (slot) => (
+                                        <div className="flex items-center">
+                                            <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                                            {formatDate(slot.start)}
+                                        </div>
+                                    ),
+                                },
+                                {
+                                    key: 'end',
+                                    header: 'End Time',
+                                    render: (slot) => formatDate(slot.end),
+                                },
+                                {
+                                    key: 'status',
+                                    header: 'Status',
+                                    render: (slot) => getStatusBadge(slot.status),
+                                },
+                            ]}
+                        />
                     )}
                 </CardContent>
             </Card>

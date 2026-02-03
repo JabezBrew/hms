@@ -317,6 +317,21 @@ class TestChartEntryViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data['results']) == 2
 
+    def test_list_entries_include_data_caps_page_size(self, api_client, authenticated_user):
+        """Ensure include_data caps page size to 12."""
+        assignment = ChartAssignmentFactory()
+        ChartEntryFactory.create_batch(20, assignment=assignment)
+
+        url = reverse('chart-entry-list')
+        response = api_client.get(url, {
+            'assignment': str(assignment.id),
+            'include_data': 'true',
+            'page_size': 50,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 12
+
     def test_list_entries_query_count(self, api_client, authenticated_user):
         """Entry list should be O(1) queries per page."""
         assignment = ChartAssignmentFactory()

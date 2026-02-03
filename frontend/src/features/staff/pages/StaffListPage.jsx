@@ -21,6 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { useListFilters } from "@/shared/hooks/useListFilters";
@@ -296,21 +298,34 @@ const StaffListPage = () => {
           <LoadingSkeleton viewMode={viewMode} />
         ) : filteredStaff.length === 0 ? (
           <EmptyState hasFilters={hasActiveFilters} onClear={handleClearFilters} />
-        ) : (
-          <div className={cn(
-            viewMode === 'grid'
-              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
-              : "space-y-4"
-          )}>
-            {filteredStaff.map((member, index) => (
+        ) : viewMode === 'grid' ? (
+          <VirtualizedGrid
+            items={filteredStaff}
+            minItemWidth={300}
+            rowHeight={320}
+            gap={24}
+            getItemKey={(member, index) => member?.id || index}
+            renderItem={(member, index) => (
               <StaffChronicleCard
-                key={member?.id || index}
                 staff={member}
                 index={index}
-                className={viewMode === 'list' ? 'max-w-none' : ''}
               />
-            ))}
-          </div>
+            )}
+          />
+        ) : (
+          <VirtualizedList
+            items={filteredStaff}
+            estimateSize={180}
+            gap={16}
+            getItemKey={(member, index) => member?.id || index}
+            renderItem={(member, index) => (
+              <StaffChronicleCard
+                staff={member}
+                index={index}
+                className="max-w-none"
+              />
+            )}
+          />
         )}
       </div>
     </PageShell>

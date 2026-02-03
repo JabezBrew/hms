@@ -7,6 +7,7 @@
  */
 
 import { lazy, Suspense } from 'react';
+import DeferredMount from '@/components/ui/DeferredMount';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -51,9 +52,11 @@ function ChartLoadingSkeleton({ className }) {
  */
 export function LazyChartTrendGraph(props) {
   return (
-    <Suspense fallback={<ChartLoadingSkeleton className={props.className} />}>
-      <ChartTrendGraph {...props} />
-    </Suspense>
+    <DeferredMount placeholder={<ChartLoadingSkeleton className={props.className} />}>
+      <Suspense fallback={<ChartLoadingSkeleton className={props.className} />}>
+        <ChartTrendGraph {...props} />
+      </Suspense>
+    </DeferredMount>
   );
 }
 

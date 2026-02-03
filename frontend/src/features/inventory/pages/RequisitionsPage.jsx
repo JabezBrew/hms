@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -24,11 +27,17 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   RequisitionCard,
   RequisitionCardSkeleton,
-  RequisitionRow,
-  RequisitionRowSkeleton,
 } from '@/components/inventory/RequisitionCard';
+import { getStatusConfig, getPriorityConfig, formatCurrency } from '@/components/inventory/RequisitionCard';
 import { RequisitionForm } from '@/components/inventory';
 import { useRequisitions } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -40,8 +49,12 @@ import List from 'lucide-react/dist/esm/icons/list.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import { format, parseISO } from 'date-fns';
 
 const STATUS_TABS = [
   { value: 'all', label: 'All' },
@@ -199,6 +212,158 @@ export default function RequisitionsPage() {
     });
   };
 
+  const requisitionColumns = useMemo(() => ([
+    {
+      key: 'number',
+      header: 'Requisition #',
+      width: '200px',
+      render: (requisition) => (
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          <span className="font-mono text-sm font-medium text-primary">
+            {requisition.requisition_number || requisition.number}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (requisition) => {
+        const statusConfig = getStatusConfig(requisition.status);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-xs',
+              statusConfig.bgColor,
+              statusConfig.textColor,
+              statusConfig.borderColor
+            )}
+          >
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'requested_by',
+      header: 'Requested By',
+      width: '180px',
+      render: (requisition) => (
+        <span className="text-sm text-muted-foreground">
+          {requisition.requested_by_name || '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'required_by',
+      header: 'Required By',
+      width: '160px',
+      render: (requisition) => (
+        requisition.date_required ? (
+          <span className="text-sm font-mono">
+            {format(parseISO(requisition.date_required), 'MMM d, yyyy')}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '100px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (requisition) => (
+        <span className="text-sm font-mono">
+          {requisition.items_count || requisition.item_count || 0}
+        </span>
+      ),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (requisition) => (
+        <span className="font-mono text-sm font-semibold">
+          {formatCurrency(requisition.total_amount || requisition.total)}
+        </span>
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      width: '120px',
+      render: (requisition) => {
+        const priorityConfig = getPriorityConfig(requisition.priority);
+        return requisition.priority && requisition.priority !== 'normal' ? (
+          <span className={cn('text-xs font-medium', priorityConfig.color)}>
+            {priorityConfig.label}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">-</span>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '64px',
+      render: (requisition) => {
+        const canApprove = requisition.status === 'pending';
+        const canReject = requisition.status === 'pending';
+        const canConvert = requisition.status === 'approved';
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleRequisitionClick(requisition.id); }}>
+                <Eye className="h-4 w-4 mr-2" />
+                View Details
+              </DropdownMenuItem>
+              {canApprove && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleApprove(requisition.id); }}>
+                  <Check className="h-4 w-4 mr-2" />
+                  Approve
+                </DropdownMenuItem>
+              )}
+              {canReject && (
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleReject(requisition.id); }}>
+                  <X className="h-4 w-4 mr-2" />
+                  Reject
+                </DropdownMenuItem>
+              )}
+              {canConvert && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleConvertToPO(requisition.id); }}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Convert to PO
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ]), [
+    handleApprove,
+    handleConvertToPO,
+    handleReject,
+    handleRequisitionClick,
+  ]);
+
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -348,10 +513,14 @@ export default function RequisitionsPage() {
       {/* Requisitions Display */}
       {requisitions.length > 0 ? (
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {requisitions.map((requisition, index) => (
+          <VirtualizedGrid
+            items={requisitions}
+            minItemWidth={280}
+            rowHeight={280}
+            gap={16}
+            getItemKey={(requisition) => requisition.id}
+            renderItem={(requisition, index) => (
               <RequisitionCard
-                key={requisition.id}
                 requisition={requisition}
                 index={index}
                 onClick={() => handleRequisitionClick(requisition.id)}
@@ -359,51 +528,20 @@ export default function RequisitionsPage() {
                 onReject={() => handleReject(requisition.id)}
                 onConvert={() => handleConvertToPO(requisition.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-            <table className="w-full">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Requisition #
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Requested By
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Required By
-                  </th>
-                  <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                    Total
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
-                    Priority
-                  </th>
-                  <th className="w-10 px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {requisitions.map((requisition, index) => (
-                  <RequisitionRow
-                    key={requisition.id}
-                    requisition={requisition}
-                    index={index}
-                    onClick={() => handleRequisitionClick(requisition.id)}
-                    onApprove={() => handleApprove(requisition.id)}
-                    onReject={() => handleReject(requisition.id)}
-                    onConvert={() => handleConvertToPO(requisition.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={requisitions}
+              rowKey={(requisition) => requisition.id}
+              rowHeight={64}
+              columns={requisitionColumns}
+              onRowClick={(requisition) => handleRequisitionClick(requisition.id)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[960px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
           </div>
         )
       ) : (

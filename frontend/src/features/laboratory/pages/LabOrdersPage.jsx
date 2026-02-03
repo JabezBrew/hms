@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -396,24 +398,35 @@ export default function LabOrdersPage() {
               </Button>
             )}
           </div>
-        ) : (
-          // Orders grid/list
-          <div
-            className={cn(
-              viewMode === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                : "flex flex-col gap-3"
-            )}
-          >
-            {filteredOrders.map((order, index) => (
+        ) : viewMode === "grid" ? (
+          <VirtualizedGrid
+            items={filteredOrders}
+            minItemWidth={320}
+            rowHeight={260}
+            gap={16}
+            getItemKey={(order) => order.id}
+            renderItem={(order, index) => (
               <LabOrderCard
-                key={order.id}
                 order={order}
                 index={index}
                 onClick={handleOrderClick}
               />
-            ))}
-          </div>
+            )}
+          />
+        ) : (
+          <VirtualizedList
+            items={filteredOrders}
+            estimateSize={140}
+            gap={12}
+            getItemKey={(order) => order.id}
+            renderItem={(order, index) => (
+              <LabOrderCard
+                order={order}
+                index={index}
+                onClick={handleOrderClick}
+              />
+            )}
+          />
         )}
       </main>
 

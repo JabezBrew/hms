@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PatientChronicleCard } from "@/components/chronicle";
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -248,15 +250,15 @@ const MyPatientsPage = () => {
           <LoadingSkeleton viewMode={viewMode} />
         ) : patients.length === 0 ? (
           <EmptyState hasSearch={!!searchQuery} onClear={handleClearSearch} />
-        ) : (
-          <div className={cn(
-            viewMode === 'grid'
-              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
-              : "space-y-4"
-          )}>
-            {patients.map((patient, index) => (
-              <div key={patient._listEntryId || patient.id || index} className="relative">
-                {/* Pinned indicator */}
+        ) : viewMode === 'grid' ? (
+          <VirtualizedGrid
+            items={patients}
+            minItemWidth={320}
+            rowHeight={320}
+            gap={24}
+            getItemKey={(patient, index) => patient._listEntryId || patient.id || index}
+            renderItem={(patient, index) => (
+              <div className="relative">
                 {patient._isPinned && (
                   <div className="absolute -top-2 -right-2 z-10">
                     <div className="bg-primary text-primary-foreground rounded-full p-1">
@@ -274,11 +276,40 @@ const MyPatientsPage = () => {
                   isInMyPatients={true}
                   onRemoveFromMyPatients={handleRemoveFromMyPatients}
                   onTogglePin={() => handleTogglePin(patient._listEntryId)}
-                  className={viewMode === 'list' ? 'max-w-none' : ''}
                 />
               </div>
-            ))}
-          </div>
+            )}
+          />
+        ) : (
+          <VirtualizedList
+            items={patients}
+            estimateSize={180}
+            gap={16}
+            getItemKey={(patient, index) => patient._listEntryId || patient.id || index}
+            renderItem={(patient, index) => (
+              <div className="relative">
+                {patient._isPinned && (
+                  <div className="absolute -top-2 -right-2 z-10">
+                    <div className="bg-primary text-primary-foreground rounded-full p-1">
+                      <Pin className="h-3 w-3" />
+                    </div>
+                  </div>
+                )}
+
+                <PatientChronicleCard
+                  patient={patient}
+                  index={index}
+                  onStartRound={handleStartRound}
+                  onStartConsultation={handleStartConsultation}
+                  showMyPatientsActions={true}
+                  isInMyPatients={true}
+                  onRemoveFromMyPatients={handleRemoveFromMyPatients}
+                  onTogglePin={() => handleTogglePin(patient._listEntryId)}
+                  className="max-w-none"
+                />
+              </div>
+            )}
+          />
         )}
       </main>
     </PageShell>

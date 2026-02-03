@@ -100,14 +100,14 @@ const STATUS_CONFIG = {
 /**
  * Get status config
  */
-function getStatusConfig(status) {
+export function getStatusConfig(status) {
   return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
 }
 
 /**
  * Format currency
  */
-function formatCurrency(amount) {
+export function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',

@@ -6,15 +6,11 @@
  */
 
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
 
 import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
@@ -31,10 +27,12 @@ const ChartDataGrid = ({
     assignment: assignmentId,
     ...dateRange,
     include_data: true,
+    ordering: '-observation_datetime',
   });
 
   const template = assignment?.template;
   const entries = entriesData?.results || entriesData || [];
+  const totalEntries = entriesData?.count ?? entries.length;
 
   // Sort entries by observation time (most recent first for display)
   const sortedEntries = useMemo(() => {
@@ -135,7 +133,7 @@ const ChartDataGrid = ({
               {template.name}
             </h3>
             <p className="font-mono text-[10px] text-muted-foreground">
-              {entries.length} entries
+              {totalEntries} entries
             </p>
           </div>
         </div>
@@ -260,10 +258,10 @@ const ChartDataGrid = ({
       </ScrollArea>
 
       {/* Footer */}
-      {entries.length > 12 && (
+      {totalEntries > 12 && (
         <div className="px-4 py-2 border-t border-border bg-muted/20">
           <p className="font-mono text-[10px] text-muted-foreground text-center">
-            Showing 12 of {entries.length} entries. Scroll horizontally for more.
+            Showing 12 of {totalEntries} entries. Scroll horizontally for more.
           </p>
         </div>
       )}

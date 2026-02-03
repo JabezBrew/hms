@@ -94,21 +94,21 @@ const PRIORITY_CONFIG = {
 /**
  * Get status config
  */
-function getStatusConfig(status) {
+export function getStatusConfig(status) {
   return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
 }
 
 /**
  * Get priority config
  */
-function getPriorityConfig(priority) {
+export function getPriorityConfig(priority) {
   return PRIORITY_CONFIG[priority?.toLowerCase()] || PRIORITY_CONFIG.normal;
 }
 
 /**
  * Format currency
  */
-function formatCurrency(amount) {
+export function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',

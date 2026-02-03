@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -490,9 +491,12 @@ export default function LabResultsPage() {
             )}
           </div>
         ) : (
-          // Grouped results
-          <div className="space-y-4">
-            {filteredGroups.map((group, groupIndex) => {
+          <VirtualizedList
+            items={filteredGroups}
+            estimateSize={260}
+            gap={16}
+            getItemKey={(group) => group._key}
+            renderItem={(group, groupIndex) => {
               const isExpanded = expandedOrders.has(group._key);
               const unverifiedCount = group.results.filter(
                 (r) => !r.is_verified
@@ -501,7 +505,6 @@ export default function LabResultsPage() {
 
               return (
                 <Card
-                  key={group._key}
                   className={cn(
                     "animate-chronicle-enter overflow-hidden",
                     group.hasCritical && "border-rose-200 bg-rose-50/30"
@@ -768,8 +771,8 @@ export default function LabResultsPage() {
                   )}
                 </Card>
               );
-            })}
-          </div>
+            }}
+          />
         )}
       </main>
 

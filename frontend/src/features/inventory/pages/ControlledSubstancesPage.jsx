@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -372,10 +373,14 @@ export default function ControlledSubstancesPage() {
       </div>
 
       {registers.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {registers.map((register, index) => (
+        <VirtualizedGrid
+          items={registers}
+          minItemWidth={280}
+          rowHeight={260}
+          gap={16}
+          getItemKey={(register) => register.id}
+          renderItem={(register, index) => (
             <ControlledRegisterCard
-              key={register.id}
               register={register}
               index={index}
               onClick={() => handleClick(register.id)}
@@ -383,8 +388,8 @@ export default function ControlledSubstancesPage() {
               onCount={() => handleCount(register.id)}
               onWastage={() => handleWastage(register.id)}
             />
-          ))}
-        </div>
+          )}
+        />
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <Shield className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

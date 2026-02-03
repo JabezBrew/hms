@@ -12,6 +12,8 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -490,25 +492,39 @@ const LabCatalogPage = () => {
                   : "Add your first lab test to get started"}
               </p>
             </div>
-          ) : (
-            <div
-              className={cn(
-                viewMode === "grid"
-                  ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                  : "space-y-3"
-              )}
-            >
-              {filteredTests.map((test, index) => (
+          ) : viewMode === "grid" ? (
+            <VirtualizedGrid
+              items={filteredTests}
+              minItemWidth={300}
+              rowHeight={260}
+              gap={16}
+              getItemKey={(test) => test.id}
+              renderItem={(test, index) => (
                 <LabTestCard
-                  key={test.id}
                   test={test}
                   index={index}
                   onCustomize={() => handleCustomize(test, "test")}
                   onReset={() => handleReset(test, "test")}
                   onDelete={() => handleDeleteInit(test, "test")}
                 />
-              ))}
-            </div>
+              )}
+            />
+          ) : (
+            <VirtualizedList
+              items={filteredTests}
+              estimateSize={140}
+              gap={12}
+              getItemKey={(test) => test.id}
+              renderItem={(test, index) => (
+                <LabTestCard
+                  test={test}
+                  index={index}
+                  onCustomize={() => handleCustomize(test, "test")}
+                  onReset={() => handleReset(test, "test")}
+                  onDelete={() => handleDeleteInit(test, "test")}
+                />
+              )}
+            />
           )}
         </TabsContent>
 
@@ -528,25 +544,39 @@ const LabCatalogPage = () => {
                   : "Add your first lab panel to get started"}
               </p>
             </div>
-          ) : (
-            <div
-              className={cn(
-                viewMode === "grid"
-                  ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                  : "space-y-3"
-              )}
-            >
-              {filteredPanels.map((panel, index) => (
+          ) : viewMode === "grid" ? (
+            <VirtualizedGrid
+              items={filteredPanels}
+              minItemWidth={300}
+              rowHeight={260}
+              gap={16}
+              getItemKey={(panel) => panel.id}
+              renderItem={(panel, index) => (
                 <LabPanelCard
-                  key={panel.id}
                   panel={panel}
                   index={index}
                   onCustomize={() => handleCustomize(panel, "panel")}
                   onReset={() => handleReset(panel, "panel")}
                   onDelete={() => handleDeleteInit(panel, "panel")}
                 />
-              ))}
-            </div>
+              )}
+            />
+          ) : (
+            <VirtualizedList
+              items={filteredPanels}
+              estimateSize={140}
+              gap={12}
+              getItemKey={(panel) => panel.id}
+              renderItem={(panel, index) => (
+                <LabPanelCard
+                  panel={panel}
+                  index={index}
+                  onCustomize={() => handleCustomize(panel, "panel")}
+                  onReset={() => handleReset(panel, "panel")}
+                  onDelete={() => handleDeleteInit(panel, "panel")}
+                />
+              )}
+            />
           )}
         </TabsContent>
       </Tabs>

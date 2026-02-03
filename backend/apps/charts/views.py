@@ -477,6 +477,17 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
         return Response(ChartAssignmentSerializer(assignment).data)
 
 
+class ChartEntryPagination(StandardResultsSetPagination):
+    def get_page_size(self, request):
+        size = super().get_page_size(request)
+        include_data = request.query_params.get('include_data', '').lower() == 'true'
+        if include_data:
+            if size is None:
+                return 12
+            return min(size, 12)
+        return size
+
+
 class ChartEntryViewSet(viewsets.ModelViewSet):
     """
     ViewSet for chart entries (observations).
@@ -491,7 +502,7 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated, FacilityScopedPermission, ChartEntryPermission]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = ChartEntryPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['assignment', 'has_critical_values']
     ordering_fields = ['observation_datetime', 'created_at']

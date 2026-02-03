@@ -3,7 +3,6 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -18,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -273,17 +273,21 @@ export default function InsuranceManagementPage() {
             )}
           </div>
         ) : (
-          <div className="space-y-3">
-            {insurances.map((insurance) => (
+          <VirtualizedList
+            items={insurances}
+            estimateSize={160}
+            gap={12}
+            className="space-y-3"
+            getItemKey={(insurance) => insurance.id}
+            renderItem={(insurance) => (
               <InsuranceCard
-                key={insurance.id}
                 insurance={insurance}
                 onEdit={() => handleEditInsurance(insurance)}
                 onDelete={() => handleDeleteClick(insurance)}
                 formatDate={formatDate}
               />
-            ))}
-          </div>
+            )}
+          />
         )}
 
         {/* Pagination */}

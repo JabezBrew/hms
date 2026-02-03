@@ -4,7 +4,7 @@ import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Wind from 'lucide-react/dist/esm/icons/wind.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -12,22 +12,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  ReferenceLine,
-} from 'recharts';
+import DeferredMount from '@/components/ui/DeferredMount';
 
 import format from 'date-fns/format';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { nursingKeys } from '@/hooks/useNursingQueries';
+
+const VitalsChart = lazy(() => import('./ClinicalAssessmentVitalsChart'));
 
 /**
  * Fetch vital signs for a patient (last 48 hours)
@@ -63,85 +55,6 @@ function prepareChartData(vitals) {
       spo2: v.spo2,
       recorded_at: v.recorded_at,
     }));
-}
-
-/**
- * VitalsChart - Individual vital sign trend chart
- */
-function VitalsChart({ data, dataKey, title, color, domain, unit, referenceLines = [], secondaryKey = null, secondaryColor = null }) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
-        No data available
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-[180px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis
-            dataKey="time"
-            tick={{ fontSize: 10 }}
-            className="text-muted-foreground"
-          />
-          <YAxis
-            domain={domain}
-            tick={{ fontSize: 10 }}
-            className="text-muted-foreground"
-            width={35}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '6px',
-              fontSize: '12px',
-            }}
-            formatter={(value, name) => [`${value} ${unit}`, name === dataKey ? title : name]}
-            labelFormatter={(label, payload) => {
-              if (payload?.[0]?.payload?.date) {
-                return `${payload[0].payload.date} ${label}`;
-              }
-              return label;
-            }}
-          />
-          {referenceLines.map((line, idx) => (
-            <ReferenceLine
-              key={idx}
-              y={line.value}
-              stroke={line.color}
-              strokeDasharray="5 5"
-              label={{ value: line.label, fontSize: 10, fill: line.color }}
-            />
-          ))}
-          <Line
-            type="monotone"
-            dataKey={dataKey}
-            stroke={color}
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 5 }}
-            connectNulls
-          />
-          {secondaryKey && (
-            <Line
-              type="monotone"
-              dataKey={secondaryKey}
-              stroke={secondaryColor}
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-              connectNulls
-            />
-          )}
-          {secondaryKey && <Legend />}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
 }
 
 /**
@@ -270,7 +183,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
     }));
   };
 
-  const chartData = prepareChartData(vitals);
+  const chartData = useMemo(() => prepareChartData(vitals), [vitals]);
 
   return (
     <div className="space-y-6">
@@ -295,88 +208,92 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
               <Skeleton className="h-[180px] w-full" />
             </div>
           ) : (
-            <div className="grid gap-6">
-              {/* Temperature */}
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Thermometer className="h-4 w-4 text-orange-500" />
-                  Temperature (°C)
-                </h4>
-                <VitalsChart
-                  data={chartData}
-                  dataKey="temperature"
-                  title="Temperature"
-                  color="#f97316"
-                  domain={[35, 40]}
-                  unit="°C"
-                  referenceLines={[
-                    { value: 38, color: '#ef4444', label: 'Fever' },
-                    { value: 36, color: '#3b82f6', label: 'Low' },
-                  ]}
-                />
-              </div>
+            <DeferredMount placeholder={<Skeleton className="h-[180px] w-full" />}>
+              <Suspense fallback={<Skeleton className="h-[180px] w-full" />}>
+                <div className="grid gap-6">
+                  {/* Temperature */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Thermometer className="h-4 w-4 text-orange-500" />
+                      Temperature (°C)
+                    </h4>
+                    <VitalsChart
+                      data={chartData}
+                      dataKey="temperature"
+                      title="Temperature"
+                      color="#f97316"
+                      domain={[35, 40]}
+                      unit="°C"
+                      referenceLines={[
+                        { value: 38, color: '#ef4444', label: 'Fever' },
+                        { value: 36, color: '#3b82f6', label: 'Low' },
+                      ]}
+                    />
+                  </div>
 
-              {/* Blood Pressure */}
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-blue-500" />
-                  Blood Pressure (mmHg)
-                </h4>
-                <VitalsChart
-                  data={chartData}
-                  dataKey="systolic"
-                  secondaryKey="diastolic"
-                  title="Systolic"
-                  color="#ef4444"
-                  secondaryColor="#22c55e"
-                  domain={[40, 200]}
-                  unit="mmHg"
-                  referenceLines={[
-                    { value: 140, color: '#ef4444', label: 'High' },
-                    { value: 90, color: '#3b82f6', label: 'Low' },
-                  ]}
-                />
-              </div>
+                  {/* Blood Pressure */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-blue-500" />
+                      Blood Pressure (mmHg)
+                    </h4>
+                    <VitalsChart
+                      data={chartData}
+                      dataKey="systolic"
+                      secondaryKey="diastolic"
+                      title="Systolic"
+                      color="#ef4444"
+                      secondaryColor="#22c55e"
+                      domain={[40, 200]}
+                      unit="mmHg"
+                      referenceLines={[
+                        { value: 140, color: '#ef4444', label: 'High' },
+                        { value: 90, color: '#3b82f6', label: 'Low' },
+                      ]}
+                    />
+                  </div>
 
-              {/* Heart Rate */}
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Heart className="h-4 w-4 text-red-500" />
-                  Heart Rate (bpm)
-                </h4>
-                <VitalsChart
-                  data={chartData}
-                  dataKey="heart_rate"
-                  title="Heart Rate"
-                  color="#ef4444"
-                  domain={[40, 150]}
-                  unit="bpm"
-                  referenceLines={[
-                    { value: 100, color: '#f97316', label: 'Tachy' },
-                    { value: 60, color: '#3b82f6', label: 'Brady' },
-                  ]}
-                />
-              </div>
+                  {/* Heart Rate */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Heart className="h-4 w-4 text-red-500" />
+                      Heart Rate (bpm)
+                    </h4>
+                    <VitalsChart
+                      data={chartData}
+                      dataKey="heart_rate"
+                      title="Heart Rate"
+                      color="#ef4444"
+                      domain={[40, 150]}
+                      unit="bpm"
+                      referenceLines={[
+                        { value: 100, color: '#f97316', label: 'Tachy' },
+                        { value: 60, color: '#3b82f6', label: 'Brady' },
+                      ]}
+                    />
+                  </div>
 
-              {/* SpO2 */}
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Droplets className="h-4 w-4 text-purple-500" />
-                  Oxygen Saturation (%)
-                </h4>
-                <VitalsChart
-                  data={chartData}
-                  dataKey="spo2"
-                  title="SpO2"
-                  color="#8b5cf6"
-                  domain={[85, 100]}
-                  unit="%"
-                  referenceLines={[
-                    { value: 92, color: '#ef4444', label: 'Low' },
-                  ]}
-                />
-              </div>
-            </div>
+                  {/* SpO2 */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Droplets className="h-4 w-4 text-purple-500" />
+                      Oxygen Saturation (%)
+                    </h4>
+                    <VitalsChart
+                      data={chartData}
+                      dataKey="spo2"
+                      title="SpO2"
+                      color="#8b5cf6"
+                      domain={[85, 100]}
+                      unit="%"
+                      referenceLines={[
+                        { value: 92, color: '#ef4444', label: 'Low' },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </Suspense>
+            </DeferredMount>
           )}
         </CardContent>
       </Card>

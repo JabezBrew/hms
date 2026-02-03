@@ -507,11 +507,13 @@ export function useChartEntries(filters = {}) {
   if (filters.assignment) params.append('assignment', filters.assignment);
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
+  if (filters.ordering) params.append('ordering', filters.ordering);
   if (filters.has_critical_values !== undefined) {
     params.append('has_critical_values', filters.has_critical_values);
   }
   if (filters.include_data) {
     params.append('include_data', 'true');
+    params.append('page_size', '12');
   }
 
   return useQuery({

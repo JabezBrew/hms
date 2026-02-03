@@ -10,11 +10,12 @@ import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import { cn } from '@/lib/utils';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -132,9 +133,11 @@ const AppointmentList = () => {
   }
 
   // Show error toast if query fails
-  if (isError) {
-    toast.error(error?.message || 'Failed to load appointments. Please try again.');
-  }
+  useEffect(() => {
+    if (isError) {
+      toast.error(error?.message || 'Failed to load appointments. Please try again.');
+    }
+  }, [isError, error]);
 
   // Handle search
   const handleSearch = (e) => {
@@ -339,10 +342,13 @@ const AppointmentList = () => {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {appointments.map((appointment, index) => (
+        <VirtualizedList
+          items={appointments}
+          estimateSize={140}
+          gap={12}
+          getItemKey={(appointment) => appointment.id}
+          renderItem={(appointment, index) => (
             <AppointmentCard
-              key={appointment.id}
               appointment={appointment}
               index={index}
               formatDateTime={formatDateTime}
@@ -351,8 +357,8 @@ const AppointmentList = () => {
               onClick={() => viewAppointmentDetail(appointment.id)}
               onPatientContext={canOpenContext ? handlePatientContext : null}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {/* Pagination */}

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -403,18 +404,22 @@ export default function InternalRequisitionsPage() {
       </div>
 
       {requisitions.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {requisitions.map((req, index) => (
+        <VirtualizedGrid
+          items={requisitions}
+          minItemWidth={280}
+          rowHeight={260}
+          gap={16}
+          getItemKey={(req) => req.id}
+          renderItem={(req, index) => (
             <InternalRequisitionCard
-              key={req.id}
               requisition={req}
               index={index}
               onClick={() => handleClick(req.id)}
               onApprove={() => handleApprove(req.id)}
               onFulfill={() => handleFulfill(req.id)}
             />
-          ))}
-        </div>
+          )}
+        />
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <ClipboardList className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
