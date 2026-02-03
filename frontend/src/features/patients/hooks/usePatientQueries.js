@@ -207,6 +207,23 @@ export function useSearchPatients(options = {}) {
 }
 
 /**
+ * Advanced patient search with explicit params.
+ * Use when filters should apply even without a text query.
+ * @param {Object} params - Query parameters for search
+ * @param {Object} options - Query options
+ * @returns {Object} Query result
+ */
+export function usePatientSearch(params = {}, options = {}) {
+  const { enabled = true, staleTime = 60 * 1000 } = options;
+  return useQuery({
+    queryKey: [...patientKeys.lists(), 'search', params],
+    queryFn: () => patientsApi.searchPatients(params),
+    enabled,
+    staleTime,
+  });
+}
+
+/**
  * Get recent patients (limited to 10 by default)
  * @param {number} limit - Maximum number of results (default: 10, max: 20)
  * @returns {Object} Query result

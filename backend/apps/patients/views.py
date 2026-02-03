@@ -3,6 +3,7 @@ from rest_framework.exceptions import PermissionDenied
 import time
 import logging
 import hashlib
+import json
 from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -375,17 +376,81 @@ class PatientViewSet(viewsets.ViewSet):
         - FHIR calls are opt-in via include_fhir=true query param
         """
         query = request.query_params.get('query', '').strip()
-        ward_id = request.query_params.get('ward', '')
-        admission_date = request.query_params.get('admission_date', '')
+        ward_id = request.query_params.get('ward', '').strip()
+        admission_start = request.query_params.get('admission_start', '').strip()
+        admission_end = request.query_params.get('admission_end', '').strip()
+        department_id = request.query_params.get('department_id', '').strip()
+        admission_status = request.query_params.get('admission_status', '').strip()
+        admission_type = request.query_params.get('admission_type', '').strip()
+        encounter_type = request.query_params.get('encounter_type', '').strip()
+        attending_id = request.query_params.get('attending_id', '').strip()
+        age_min = request.query_params.get('age_min', '').strip()
+        age_max = request.query_params.get('age_max', '').strip()
+        my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+
+        allowed_admission_statuses = {'admitted', 'waiting', 'discharged', 'transferred', 'deceased'}
+        allowed_admission_types = {'emergency', 'elective', 'maternity', 'newborn'}
+        allowed_encounter_types = {'inpatient', 'outpatient', 'emergency'}
+
+        if admission_status and admission_status not in allowed_admission_statuses:
+            return Response(
+                {"error": "Invalid admission_status value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if admission_type and admission_type not in allowed_admission_types:
+            return Response(
+                {"error": "Invalid admission_type value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if encounter_type and encounter_type not in allowed_encounter_types:
+            return Response(
+                {"error": "Invalid encounter_type value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            age_min_value = int(age_min) if age_min else None
+            age_max_value = int(age_max) if age_max else None
+            if age_min_value is not None and age_min_value < 0:
+                raise ValueError("age_min must be non-negative")
+            if age_max_value is not None and age_max_value < 0:
+                raise ValueError("age_max must be non-negative")
+            if age_min_value is not None and age_max_value is not None and age_min_value > age_max_value:
+                raise ValueError("age_min cannot be greater than age_max")
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Invalid age range. Use non-negative integers."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        has_other_filters = bool(
+            ward_id or admission_start or admission_end or department_id or admission_status or
+            admission_type or encounter_type or attending_id or age_min_value is not None or
+            age_max_value is not None or my_patients
+        )
+
+        if include_fhir and (not query or has_other_filters):
+            return Response(
+                {"error": "FHIR search requires a query and cannot be combined with filters."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if include_fhir and request.user.user_type not in ['admin', 'doctor', 'nurse']:
             return Response(
                 {"error": "FHIR search is restricted to clinical staff."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        if my_patients and request.user.user_type not in ['doctor', 'nurse', 'lab_technician', 'pharmacist']:
+            return Response(
+                {"error": "My Patients filter is restricted to clinical staff."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         # Require minimum 2 characters for search query when no other filters
-        has_other_filters = bool(ward_id or admission_date)
         if not has_other_filters and len(query) < 2:
             return Response(
                 {
@@ -400,10 +465,23 @@ class PatientViewSet(viewsets.ViewSet):
         logger = logging.getLogger(__name__)
         start_time = time.time()
 
-        # Generate cache key based on search parameters
-        cache_params = f"{query}:{ward_id}:{admission_date}"
+        cache_params = {
+            "query": query,
+            "ward": ward_id,
+            "admission_start": admission_start,
+            "admission_end": admission_end,
+            "department_id": department_id,
+            "admission_status": admission_status,
+            "admission_type": admission_type,
+            "encounter_type": encounter_type,
+            "attending_id": attending_id,
+            "age_min": age_min_value,
+            "age_max": age_max_value,
+            "my_patients": my_patients,
+            "user_id": str(request.user.id),
+        }
         cache_key = facility_cache_key(
-            f"patient_search_{hashlib.md5(cache_params.encode()).hexdigest()}"
+            f"patient_search_{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
         )
 
         # Try to get from cache first (skip cache if include_fhir is requested)
@@ -411,8 +489,30 @@ class PatientViewSet(viewsets.ViewSet):
             cached_result = cache.get(cache_key)
             if cached_result is not None:
                 logger.info("Search cache hit for user %s", request.user.id)
-                # Log search for cache hits
-                search_desc = f"Query: {query}" + (f", Ward: {ward_id}" if ward_id else "") + (f", Date: {admission_date}" if admission_date else "")
+                search_parts = [f"Query: {query}" if query else "Query: (none)"]
+                if ward_id:
+                    search_parts.append(f"Ward: {ward_id}")
+                if admission_start:
+                    search_parts.append(f"Admission Start: {admission_start}")
+                if admission_end:
+                    search_parts.append(f"Admission End: {admission_end}")
+                if department_id:
+                    search_parts.append(f"Department: {department_id}")
+                if admission_status:
+                    search_parts.append(f"Admission Status: {admission_status}")
+                if admission_type:
+                    search_parts.append(f"Admission Type: {admission_type}")
+                if encounter_type:
+                    search_parts.append(f"Encounter Type: {encounter_type}")
+                if attending_id:
+                    search_parts.append(f"Attending: {attending_id}")
+                if age_min_value is not None:
+                    search_parts.append(f"Age Min: {age_min_value}")
+                if age_max_value is not None:
+                    search_parts.append(f"Age Max: {age_max_value}")
+                if my_patients:
+                    search_parts.append("My Patients: true")
+                search_desc = ", ".join(search_parts)
                 facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
                 log_patient_search.delay(
                     str(request.user.id),
@@ -422,11 +522,30 @@ class PatientViewSet(viewsets.ViewSet):
                 return Response(cached_result)
 
         # Log search for auditing/history
-        search_desc = f"Query: {query}"
+        search_parts = [f"Query: {query}" if query else "Query: (none)"]
         if ward_id:
-            search_desc += f", Ward: {ward_id}"
-        if admission_date:
-            search_desc += f", Date: {admission_date}"
+            search_parts.append(f"Ward: {ward_id}")
+        if admission_start:
+            search_parts.append(f"Admission Start: {admission_start}")
+        if admission_end:
+            search_parts.append(f"Admission End: {admission_end}")
+        if department_id:
+            search_parts.append(f"Department: {department_id}")
+        if admission_status:
+            search_parts.append(f"Admission Status: {admission_status}")
+        if admission_type:
+            search_parts.append(f"Admission Type: {admission_type}")
+        if encounter_type:
+            search_parts.append(f"Encounter Type: {encounter_type}")
+        if attending_id:
+            search_parts.append(f"Attending: {attending_id}")
+        if age_min_value is not None:
+            search_parts.append(f"Age Min: {age_min_value}")
+        if age_max_value is not None:
+            search_parts.append(f"Age Max: {age_max_value}")
+        if my_patients:
+            search_parts.append("My Patients: true")
+        search_desc = ", ".join(search_parts)
         facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
         log_patient_search.delay(
             str(request.user.id),
@@ -437,6 +556,12 @@ class PatientViewSet(viewsets.ViewSet):
         try:
             from django.db.models import Q
             from apps.wards.models import Admission
+            from apps.encounters.models import Encounter
+            from apps.users.models import UserPatientList
+            from apps.laboratory.models import LabOrder
+            from apps.clinical_notes.models import Prescription
+            from apps.billing.models import Invoice
+            from apps.core.security import ACTIVE_ADMISSION_STATUSES, ACTIVE_ENCOUNTER_STATUSES
             facility = get_user_facility(request)
             if not facility:
                 raise PermissionDenied("Facility context is required.")
@@ -446,11 +571,57 @@ class PatientViewSet(viewsets.ViewSet):
                 Prefetch(
                     'admissions',
                     queryset=Admission.objects.filter(
-                        status__in=['admitted', 'waiting']
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
                 )
             ).filter(facility=facility)
+
+            user_type = request.user.user_type
+            if user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
+                pass
+            elif user_type == 'lab_technician':
+                lab_order_exists = LabOrder.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(lab_order_exists))
+            elif user_type == 'pharmacist':
+                prescription_exists = Prescription.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(prescription_exists))
+            elif user_type == 'billing':
+                invoice_exists = Invoice.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(invoice_exists))
+            elif user_type == 'patient':
+                local_patients_qs = local_patients_qs.filter(user=request.user)
+            else:
+                raise PermissionDenied("You do not have access to patient search.")
+
+            admission_start_date = parse_date(admission_start) if admission_start else None
+            if admission_start and not admission_start_date:
+                return Response(
+                    {"error": "Invalid admission_start format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            admission_end_date = parse_date(admission_end) if admission_end else None
+            if admission_end and not admission_end_date:
+                return Response(
+                    {"error": "Invalid admission_end format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if admission_start_date and admission_end_date and admission_start_date > admission_end_date:
+                return Response(
+                    {"error": "admission_start must be on or before admission_end."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             # Filter by text query (Name, MRN, NHIS)
             if query:
@@ -461,37 +632,106 @@ class PatientViewSet(viewsets.ViewSet):
                     Q(nhis_id__icontains=query)
                 )
 
-            # Filter by Ward (via active Admission)
-            if ward_id:
-                ward_admission_exists = Admission.objects.filter(
+            if my_patients:
+                my_patients_exists = UserPatientList.objects.filter(
+                    user=request.user,
+                    patient=OuterRef('pk')
+                )
+                local_patients_qs = local_patients_qs.filter(Exists(my_patients_exists))
+
+            admission_filters_active = bool(
+                ward_id or admission_start_date or admission_end_date or admission_status or admission_type
+            )
+            if admission_filters_active:
+                admission_qs = Admission.objects.filter(
                     patient=OuterRef('pk'),
                     facility=facility,
-                    status='admitted',
-                    bed__ward_id=ward_id,
                 )
-                local_patients_qs = local_patients_qs.filter(Exists(ward_admission_exists))
+                if admission_status:
+                    admission_qs = admission_qs.filter(status=admission_status)
+                else:
+                    admission_qs = admission_qs.filter(status__in=ACTIVE_ADMISSION_STATUSES)
 
-            # Filter by Admission Date
-            if admission_date:
-                parsed_admission_date = parse_date(admission_date)
-                if not parsed_admission_date:
-                    return Response(
-                        {"error": "Invalid admission_date format. Use YYYY-MM-DD."},
-                        status=status.HTTP_400_BAD_REQUEST
+                if admission_type:
+                    admission_qs = admission_qs.filter(admission_type=admission_type)
+
+                if ward_id:
+                    admission_qs = admission_qs.filter(bed__ward_id=ward_id)
+
+                if admission_start_date:
+                    start_dt = timezone.make_aware(
+                        datetime.combine(admission_start_date, datetime.min.time()),
+                        timezone.get_current_timezone()
+                    )
+                    admission_qs = admission_qs.filter(admission_date__gte=start_dt)
+
+                if admission_end_date:
+                    end_dt = timezone.make_aware(
+                        datetime.combine(admission_end_date, datetime.min.time()),
+                        timezone.get_current_timezone()
+                    ) + timedelta(days=1)
+                    admission_qs = admission_qs.filter(admission_date__lt=end_dt)
+
+                local_patients_qs = local_patients_qs.filter(Exists(admission_qs))
+
+            encounter_filters_active = bool(department_id or encounter_type)
+            if encounter_filters_active:
+                encounter_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=ACTIVE_ENCOUNTER_STATUSES,
+                )
+                if encounter_type:
+                    encounter_qs = encounter_qs.filter(encounter_type=encounter_type)
+                if department_id:
+                    encounter_qs = encounter_qs.filter(
+                        Q(department_id=department_id) | Q(primary_team_id=department_id)
+                    )
+                local_patients_qs = local_patients_qs.filter(Exists(encounter_qs))
+
+            if attending_id:
+                admission_attending_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    admitting_doctor_id=attending_id,
+                )
+                if admission_status:
+                    admission_attending_qs = admission_attending_qs.filter(status=admission_status)
+                else:
+                    admission_attending_qs = admission_attending_qs.filter(
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     )
 
-                start_dt = timezone.make_aware(
-                    datetime.combine(parsed_admission_date, datetime.min.time()),
-                    timezone.get_current_timezone()
-                )
-                end_dt = start_dt + timedelta(days=1)
-                date_admission_exists = Admission.objects.filter(
+                encounter_attending_qs = Encounter.objects.filter(
                     patient=OuterRef('pk'),
                     facility=facility,
-                    admission_date__gte=start_dt,
-                    admission_date__lt=end_dt,
+                    practitioner_id=attending_id,
+                    status__in=ACTIVE_ENCOUNTER_STATUSES,
                 )
-                local_patients_qs = local_patients_qs.filter(Exists(date_admission_exists))
+                if encounter_type:
+                    encounter_attending_qs = encounter_attending_qs.filter(encounter_type=encounter_type)
+
+                local_patients_qs = local_patients_qs.filter(
+                    Q(Exists(admission_attending_qs)) | Q(Exists(encounter_attending_qs))
+                )
+
+            if age_min_value is not None or age_max_value is not None:
+                local_patients_qs = local_patients_qs.filter(user__date_of_birth__isnull=False)
+                today = timezone.localdate()
+
+                def years_ago(years):
+                    try:
+                        return today.replace(year=today.year - years)
+                    except ValueError:
+                        return today.replace(year=today.year - years, month=2, day=28)
+
+                if age_min_value is not None:
+                    latest_dob = years_ago(age_min_value)
+                    local_patients_qs = local_patients_qs.filter(user__date_of_birth__lte=latest_dob)
+
+                if age_max_value is not None:
+                    earliest_dob = years_ago(age_max_value)
+                    local_patients_qs = local_patients_qs.filter(user__date_of_birth__gte=earliest_dob)
 
             # Limit to 20 results and serialize with lightweight serializer
             patients_list = list(local_patients_qs[:20])
@@ -512,7 +752,7 @@ class PatientViewSet(viewsets.ViewSet):
                 cache.set(cache_key, response_data, timeout=30)
 
             # Optional: Include FHIR results if explicitly requested and local results are sparse
-            if include_fhir and query and not ward_id and not admission_date and len(results) < 10:
+            if include_fhir and query and not has_other_filters and len(results) < 10:
                 fhir_results, fhir_status = self._search_fhir(
                     query,
                     results,

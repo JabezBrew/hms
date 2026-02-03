@@ -374,6 +374,14 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
 
+        unit_type_code = self.request.query_params.get('unit_type_code')
+        if unit_type_code:
+            queryset = queryset.filter(unit_type__code=unit_type_code)
+
+        unit_category = self.request.query_params.get('unit_category')
+        if unit_category:
+            queryset = queryset.filter(unit_category=unit_category)
+
         # Scope to the active facility context
         queryset = queryset.filter(root_unit__code=facility.code)
 

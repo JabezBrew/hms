@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.conf import settings
-from datetime import timedelta, time
+from datetime import timedelta, time, datetime
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
 
@@ -31,9 +31,15 @@ from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
     NurseUserFactory, PatientUserFactory, PatientProfileFactory,
-    UserPatientListFactory
+    UserPatientListFactory, PractitionerProfileFactory,
+    LabTechnicianUserFactory, PharmacistUserFactory
 )
 from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig, ClinicSchedule
+from apps.wards.tests.factories import AdmissionFactory, WardFactory
+from apps.encounters.tests.factories import EncounterFactory
+from apps.laboratory.tests.factories import LabOrderFactory
+from apps.clinical_notes.tests.factories import PrescriptionFactory
+from apps.billing.tests.factories import InvoiceFactory
 from .factories import (
     PatientFHIRMappingFactory, PatientSearchFactory,
     RecentPatientFactory, PatientRegistrationValidationFactory,
@@ -551,6 +557,239 @@ class TestPatientViewSet:
         assert 'results' in response.data
         assert 'total' in response.data
 
+    def test_search_filters_admission_date_range(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        ward = WardFactory(department__facility=facility)
+
+        in_range_patient = PatientProfileFactory(facility=facility)
+        out_range_patient = PatientProfileFactory(facility=facility)
+
+        in_range_date = timezone.localdate()
+        out_range_date = in_range_date - timedelta(days=30)
+
+        AdmissionFactory(
+            patient=in_range_patient,
+            bed__ward=ward,
+            admission_date=timezone.make_aware(datetime.combine(in_range_date, datetime.min.time()))
+        )
+        AdmissionFactory(
+            patient=out_range_patient,
+            bed__ward=ward,
+            admission_date=timezone.make_aware(datetime.combine(out_range_date, datetime.min.time()))
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'admission_start': in_range_date.isoformat(),
+            'admission_end': in_range_date.isoformat(),
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(in_range_patient.id) in ids
+        assert str(out_range_patient.id) not in ids
+
+    def test_search_filters_ward(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        ward_a = WardFactory(department__facility=facility)
+        ward_b = WardFactory(department__facility=facility)
+
+        patient_a = PatientProfileFactory(facility=facility)
+        patient_b = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=patient_a, bed__ward=ward_a)
+        AdmissionFactory(patient=patient_b, bed__ward=ward_b)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'ward': str(ward_a.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(patient_a.id) in ids
+        assert str(patient_b.id) not in ids
+
+    def test_search_filters_department_and_encounter_type(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        clinic = create_clinic(facility)
+
+        other_department = ClinicalUnit.objects.create(
+            unit_type=UnitTypeConfig.objects.get(code='department'),
+            parent=ClinicalUnit.objects.get(code=facility.code),
+            code='OPD-ALT',
+            name='Alternate Department',
+            is_active=True,
+        )
+
+        patient_match = PatientProfileFactory(facility=facility)
+        patient_other = PatientProfileFactory(facility=facility)
+
+        EncounterFactory(
+            patient=patient_match,
+            facility=facility,
+            department=clinic.department,
+            encounter_type='outpatient',
+            status='in-progress',
+        )
+        EncounterFactory(
+            patient=patient_other,
+            facility=facility,
+            department=other_department,
+            encounter_type='emergency',
+            status='in-progress',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'department_id': str(clinic.department_id),
+            'encounter_type': 'outpatient',
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(patient_match.id) in ids
+        assert str(patient_other.id) not in ids
+
+    def test_search_filters_attending_matches_admission_or_encounter(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        practitioner = PractitionerProfileFactory()
+
+        patient_admission = PatientProfileFactory(facility=facility)
+        patient_encounter = PatientProfileFactory(facility=facility)
+        patient_other = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=patient_admission, admitting_doctor=practitioner)
+        EncounterFactory(
+            patient=patient_encounter,
+            facility=facility,
+            practitioner=practitioner,
+            encounter_type='emergency',
+            status='in-progress',
+        )
+        EncounterFactory(
+            patient=patient_other,
+            facility=facility,
+            encounter_type='outpatient',
+            status='in-progress',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'attending_id': str(practitioner.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(patient_admission.id) in ids
+        assert str(patient_encounter.id) in ids
+        assert str(patient_other.id) not in ids
+
+    def test_search_filters_age_range(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        today = timezone.localdate()
+
+        younger_user = PatientUserFactory(date_of_birth=today.replace(year=today.year - 25))
+        older_user = PatientUserFactory(date_of_birth=today.replace(year=today.year - 70))
+
+        younger_patient = PatientProfileFactory(user=younger_user, facility=facility)
+        older_patient = PatientProfileFactory(user=older_user, facility=facility)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'age_min': 20,
+            'age_max': 40,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(younger_patient.id) in ids
+        assert str(older_patient.id) not in ids
+
+    def test_search_filters_my_patients(self, db):
+        doctor = DoctorUserFactory()
+        facility = doctor.primary_facility
+        patient_in_list = PatientProfileFactory(facility=facility)
+        patient_outside = PatientProfileFactory(facility=facility)
+
+        UserPatientListFactory(user=doctor, patient=patient_in_list)
+
+        client = get_authenticated_client(doctor, facility=facility)
+        response = client.get('/api/patients/search/', {'my_patients': 'true'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(patient_in_list.id) in ids
+        assert str(patient_outside.id) not in ids
+
+    def test_search_filters_my_patients_forbidden_for_billing(self, db):
+        billing_user = UserFactory(user_type='billing')
+        client = get_authenticated_client(billing_user)
+        response = client.get('/api/patients/search/', {'my_patients': 'true'})
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_search_include_fhir_with_filters_returns_400(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        ward = WardFactory(department__facility=facility)
+        client = get_authenticated_client(admin, facility=facility)
+
+        response = client.get('/api/patients/search/', {
+            'query': 'John',
+            'include_fhir': 'true',
+            'ward': str(ward.id),
+        })
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_search_role_scoping_lab_pharmacy_billing(self, db):
+        facility = DefaultFacilityFactory()
+
+        lab_user = LabTechnicianUserFactory(primary_facility=facility)
+        pharm_user = PharmacistUserFactory(primary_facility=facility)
+        billing_user = UserFactory(user_type='billing', primary_facility=facility)
+
+        patient_lab = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Lab', primary_facility=facility)
+        )
+        patient_pharm = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Pharm', primary_facility=facility)
+        )
+        patient_billing = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Bill', primary_facility=facility)
+        )
+        PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Other', primary_facility=facility)
+        )
+
+        LabOrderFactory(patient=patient_lab, facility=facility)
+        PrescriptionFactory(patient=patient_pharm, facility=facility)
+        InvoiceFactory(patient=patient_billing, facility=facility)
+
+        lab_client = get_authenticated_client(lab_user, facility=facility)
+        lab_response = lab_client.get('/api/patients/search/', {'query': 'Alpha'})
+        lab_ids = {item['id'] for item in lab_response.data.get('results', [])}
+        assert str(patient_lab.id) in lab_ids
+        assert str(patient_pharm.id) not in lab_ids
+        assert str(patient_billing.id) not in lab_ids
+
+        pharm_client = get_authenticated_client(pharm_user, facility=facility)
+        pharm_response = pharm_client.get('/api/patients/search/', {'query': 'Alpha'})
+        pharm_ids = {item['id'] for item in pharm_response.data.get('results', [])}
+        assert str(patient_pharm.id) in pharm_ids
+        assert str(patient_lab.id) not in pharm_ids
+
+        billing_client = get_authenticated_client(billing_user, facility=facility)
+        billing_response = billing_client.get('/api/patients/search/', {'query': 'Alpha'})
+        billing_ids = {item['id'] for item in billing_response.data.get('results', [])}
+        assert str(patient_billing.id) in billing_ids
+        assert str(patient_lab.id) not in billing_ids
     @patch('apps.patients.tasks.log_patient_search.delay')
     def test_search_query_count(self, mock_log_task, db):
         """Search should be O(1) queries per page."""

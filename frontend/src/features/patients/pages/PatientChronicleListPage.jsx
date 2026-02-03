@@ -4,13 +4,14 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
 import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import Filter from 'lucide-react/dist/esm/icons/filter.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useSearchPatients,
+  usePatientSearch,
   useRecentPatients,
   useContextPatients,
 } from "@/features/patients/hooks/usePatientQueries";
@@ -24,15 +25,126 @@ import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Combobox } from "@/components/ui/combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PatientChronicleCard } from "@/components/chronicle";
 import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
 import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
+import { useDebounce } from "@/hooks/use-debounce";
+import { useWards } from "@/features/wards/hooks/useWardQueries";
+import { useClinicalUnits } from "@/hooks/useOrganization";
+import { useSearchPractitioners } from "@/hooks/useStaffQueries";
+import { format } from "date-fns";
 
 // Clinical provider roles that can access "My Patients" feature
 const CLINICAL_PROVIDER_ROLES = ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'lab_technician', 'pharmacist'];
+
+const ADMISSION_STATUS_OPTIONS = [
+  { value: 'all', label: 'Any status' },
+  { value: 'admitted', label: 'Admitted' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'discharged', label: 'Discharged' },
+  { value: 'transferred', label: 'Transferred' },
+  { value: 'deceased', label: 'Deceased' },
+];
+
+const ADMISSION_TYPE_OPTIONS = [
+  { value: 'all', label: 'Any admission type' },
+  { value: 'emergency', label: 'Emergency' },
+  { value: 'elective', label: 'Elective' },
+  { value: 'maternity', label: 'Maternity' },
+  { value: 'newborn', label: 'Newborn' },
+];
+
+const ENCOUNTER_TYPE_OPTIONS = [
+  { value: 'all', label: 'Any encounter type' },
+  { value: 'inpatient', label: 'Inpatient' },
+  { value: 'outpatient', label: 'Outpatient' },
+  { value: 'emergency', label: 'Emergency' },
+];
+
+const createEmptyFilters = () => ({
+  admissionStart: null,
+  admissionEnd: null,
+  departmentId: '',
+  wardId: '',
+  admissionStatus: 'all',
+  admissionType: 'all',
+  encounterType: 'all',
+  attending: null,
+  ageMin: '',
+  ageMax: '',
+  myPatients: false,
+});
+
+const countActiveFilters = (filters) => {
+  let count = 0;
+  if (filters.admissionStart || filters.admissionEnd) count += 1;
+  if (filters.departmentId) count += 1;
+  if (filters.wardId) count += 1;
+  if (filters.admissionStatus && filters.admissionStatus !== 'all') count += 1;
+  if (filters.admissionType && filters.admissionType !== 'all') count += 1;
+  if (filters.encounterType && filters.encounterType !== 'all') count += 1;
+  if (filters.attending?.id) count += 1;
+  if (filters.ageMin || filters.ageMax) count += 1;
+  if (filters.myPatients) count += 1;
+  return count;
+};
+
+const buildSearchParams = (query, filters) => {
+  const params = {};
+  if (query && query.trim().length >= 2) {
+    params.query = query.trim();
+  }
+
+  if (filters.admissionStart) {
+    params.admission_start = format(filters.admissionStart, 'yyyy-MM-dd');
+  }
+  if (filters.admissionEnd) {
+    params.admission_end = format(filters.admissionEnd, 'yyyy-MM-dd');
+  }
+  if (filters.departmentId) {
+    params.department_id = filters.departmentId;
+  }
+  if (filters.wardId) {
+    params.ward = filters.wardId;
+  }
+  if (filters.admissionStatus && filters.admissionStatus !== 'all') {
+    params.admission_status = filters.admissionStatus;
+  }
+  if (filters.admissionType && filters.admissionType !== 'all') {
+    params.admission_type = filters.admissionType;
+  }
+  if (filters.encounterType && filters.encounterType !== 'all') {
+    params.encounter_type = filters.encounterType;
+  }
+  if (filters.attending?.id) {
+    params.attending_id = filters.attending.id;
+  }
+  if (filters.ageMin) {
+    params.age_min = filters.ageMin;
+  }
+  if (filters.ageMax) {
+    params.age_max = filters.ageMax;
+  }
+  if (filters.myPatients) {
+    params.my_patients = 'true';
+  }
+
+  return params;
+};
 
 /**
  * PatientChronicleListPage - Search-first patient registry
@@ -50,6 +162,9 @@ const PatientChronicleListPage = () => {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
+  const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
   const pageMeta = usePageMeta({
     title: 'Patients | Hospital Management System',
     breadcrumbs: [{ label: 'Patients', path: '/patients' }],
@@ -58,13 +173,20 @@ const PatientChronicleListPage = () => {
   // Check if user is a clinical provider
   const isClinicalProvider = CLINICAL_PROVIDER_ROLES.includes(user?.role);
 
-  // Search patients (only when query has 2+ characters)
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
+  const hasActiveFilters = activeFilterCount > 0;
+  const isSearchEnabled = debouncedSearchQuery.length >= 2 || hasActiveFilters;
+  const searchParams = useMemo(
+    () => buildSearchParams(debouncedSearchQuery, appliedFilters),
+    [debouncedSearchQuery, appliedFilters]
+  );
+
   const {
     data: searchResults,
     isLoading: isSearchLoading,
-    setSearchTerm,
-    debouncedSearchTerm,
-  } = useSearchPatients();
+    refetch: refetchSearch,
+  } = usePatientSearch(searchParams, { enabled: isSearchEnabled });
 
   // Recent patients (limited to 10)
   const {
@@ -80,6 +202,20 @@ const PatientChronicleListPage = () => {
     refetch: refetchContext,
   } = useContextPatients();
 
+  const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
+    unit_type_code: 'department',
+    unit_category: 'clinical',
+    is_active: true,
+  });
+
+  const { data: wardsData, isLoading: isWardsLoading } = useWards({ is_active: true });
+
+  const {
+    data: practitionerResults = [],
+    isLoading: isPractitionersLoading,
+    setSearchTerm: setPractitionerSearch,
+  } = useSearchPractitioners(false, { minLength: 2 });
+
   // My Patients mutations
   const addToMyPatients = useAddToMyPatients();
 
@@ -94,17 +230,60 @@ const PatientChronicleListPage = () => {
     }
   }, [isClinicalProvider, queryClient]);
 
-  // Determine if we're showing search results
-  const isSearching = debouncedSearchTerm && debouncedSearchTerm.length >= 2;
+  const isSearching = isSearchEnabled;
   const hasSearchQuery = searchQuery.length > 0;
 
-  // Get search results
   const searchPatients = useMemo(() => {
     if (!isSearching) return [];
     return normalizeApiResults(searchResults);
   }, [searchResults, isSearching]);
 
-  // Get recent patients array
+  const searchTotal = searchResults?.total ?? searchPatients.length;
+
+  const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
+  const searchSummary = isSearching
+    ? (effectiveSearchQuery
+      ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
+      : `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`)
+    : '';
+
+  const departments = useMemo(() => normalizeApiResults(departmentsData), [departmentsData]);
+  const wards = useMemo(() => normalizeApiResults(wardsData), [wardsData]);
+
+  const departmentOptions = useMemo(
+    () => departments
+      .map((unit) => ({ value: unit.id, label: unit.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [departments]
+  );
+
+  const wardOptions = useMemo(
+    () => wards
+      .map((ward) => ({ value: ward.id, label: ward.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [wards]
+  );
+
+  const departmentLabels = useMemo(
+    () => new Map(departmentOptions.map((opt) => [opt.value, opt.label])),
+    [departmentOptions]
+  );
+
+  const wardLabels = useMemo(
+    () => new Map(wardOptions.map((opt) => [opt.value, opt.label])),
+    [wardOptions]
+  );
+
+  const practitionerOptions = useMemo(
+    () => (practitionerResults || []).map((practitioner) => ({
+      value: practitioner.id,
+      label: practitioner.specialization
+        ? `${practitioner.name} · ${practitioner.specialization}`
+        : practitioner.name,
+    })),
+    [practitionerResults]
+  );
+
   const recentPatients = useMemo(() => {
     return normalizeApiResults(recentPatientsData);
   }, [recentPatientsData]);
@@ -113,17 +292,52 @@ const PatientChronicleListPage = () => {
   const handleSearchChange = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
-    setSearchTerm(query);
   };
 
   const handleClearSearch = () => {
     setSearchQuery("");
-    setSearchTerm("");
   };
 
   const handleRefresh = () => {
+    if (isSearching) {
+      refetchSearch();
+      return;
+    }
     refetchRecent();
     refetchContext();
+  };
+
+  const handleApplyFilters = () => {
+    setAppliedFilters(draftFilters);
+    setFiltersOpen(false);
+  };
+
+  const handleClearFilters = () => {
+    setDraftFilters(createEmptyFilters());
+    setAppliedFilters(createEmptyFilters());
+  };
+
+  const handleClearAll = () => {
+    setSearchQuery("");
+    setDraftFilters(createEmptyFilters());
+    setAppliedFilters(createEmptyFilters());
+  };
+
+  const handleRemoveFilter = (key) => {
+    const cleared = {
+      ...appliedFilters,
+      ...(key === 'admissionRange' ? { admissionStart: null, admissionEnd: null } : {}),
+      ...(key === 'ageRange' ? { ageMin: '', ageMax: '' } : {}),
+      ...(key === 'departmentId' ? { departmentId: '' } : {}),
+      ...(key === 'wardId' ? { wardId: '' } : {}),
+      ...(key === 'admissionStatus' ? { admissionStatus: 'all' } : {}),
+      ...(key === 'admissionType' ? { admissionType: 'all' } : {}),
+      ...(key === 'encounterType' ? { encounterType: 'all' } : {}),
+      ...(key === 'attending' ? { attending: null } : {}),
+      ...(key === 'myPatients' ? { myPatients: false } : {}),
+    };
+    setAppliedFilters(cleared);
+    setDraftFilters(cleared);
   };
 
   const handleAddPatient = () => {
@@ -250,32 +464,327 @@ const PatientChronicleListPage = () => {
 
         {/* Search Bar */}
         <div className="flex flex-col gap-3 mt-4">
-          <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
-            <Input
-              id="patient-search"
-              placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              className="pl-10 pr-10 font-mono text-sm bg-background"
-            />
-            {hasSearchQuery && (
-              <button
-                onClick={handleClearSearch}
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
+              <Input
+                id="patient-search"
+                placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="pl-10 pr-10 font-mono text-sm bg-background"
+              />
+              {hasSearchQuery && (
+                <button
+                  onClick={handleClearSearch}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFiltersOpen((open) => !open)}
+                className="font-mono text-xs"
               >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            )}
+                <Filter className="h-4 w-4 mr-2" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+              {(hasSearchQuery || hasActiveFilters) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearAll}
+                  className="font-mono text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear all
+                </Button>
+              )}
+            </div>
           </div>
 
-          <div className="text-xs text-muted-foreground">
-            {isSearching && (
-              <span>{searchPatients.length} results for "{debouncedSearchTerm}"</span>
-            )}
-          </div>
+          {filtersOpen && (
+            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Admission Date</Label>
+                  <DateRangePicker
+                    from={draftFilters.admissionStart}
+                    to={draftFilters.admissionEnd}
+                    onChange={({ from, to }) => setDraftFilters((prev) => ({
+                      ...prev,
+                      admissionStart: from,
+                      admissionEnd: to,
+                    }))}
+                    pickerClassName="w-[140px] font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Admission Status</Label>
+                  <Select
+                    value={draftFilters.admissionStatus}
+                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, admissionStatus: value }))}
+                  >
+                    <SelectTrigger className="w-full font-mono text-xs">
+                      <SelectValue placeholder="Any status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ADMISSION_STATUS_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Admission Type</Label>
+                  <Select
+                    value={draftFilters.admissionType}
+                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, admissionType: value }))}
+                  >
+                    <SelectTrigger className="w-full font-mono text-xs">
+                      <SelectValue placeholder="Any type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ADMISSION_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Department</Label>
+                  <Select
+                    value={draftFilters.departmentId || 'all'}
+                    onValueChange={(value) => setDraftFilters((prev) => ({
+                      ...prev,
+                      departmentId: value === 'all' ? '' : value,
+                    }))}
+                  >
+                    <SelectTrigger className="w-full font-mono text-xs">
+                      <SelectValue placeholder={isDepartmentsLoading ? "Loading..." : "Any department"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="font-mono text-xs">Any department</SelectItem>
+                      {departmentOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Ward</Label>
+                  <Select
+                    value={draftFilters.wardId || 'all'}
+                    onValueChange={(value) => setDraftFilters((prev) => ({
+                      ...prev,
+                      wardId: value === 'all' ? '' : value,
+                    }))}
+                  >
+                    <SelectTrigger className="w-full font-mono text-xs">
+                      <SelectValue placeholder={isWardsLoading ? "Loading..." : "Any ward"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="font-mono text-xs">Any ward</SelectItem>
+                      {wardOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Encounter Type</Label>
+                  <Select
+                    value={draftFilters.encounterType}
+                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, encounterType: value }))}
+                  >
+                    <SelectTrigger className="w-full font-mono text-xs">
+                      <SelectValue placeholder="Any encounter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ENCOUNTER_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Attending Clinician</Label>
+                  <Combobox
+                    options={practitionerOptions}
+                    value={draftFilters.attending?.id || null}
+                    onChange={(value) => {
+                      const selected = practitionerOptions.find((option) => option.value === value);
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        attending: selected ? { id: selected.value, name: selected.label } : null,
+                      }));
+                      setPractitionerSearch("");
+                    }}
+                    onInputChange={(value) => setPractitionerSearch(value)}
+                    displayValue={() => draftFilters.attending?.name || "Select clinician"}
+                    searchPlaceholder="Search clinicians..."
+                    emptyMessage="No clinicians found."
+                    isLoading={isPractitionersLoading}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-mono text-muted-foreground">Age Range</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Min"
+                      value={draftFilters.ageMin}
+                      onChange={(e) => setDraftFilters((prev) => ({
+                        ...prev,
+                        ageMin: e.target.value.replace(/[^\d]/g, ''),
+                      }))}
+                      className="w-20 font-mono text-xs"
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Max"
+                      value={draftFilters.ageMax}
+                      onChange={(e) => setDraftFilters((prev) => ({
+                        ...prev,
+                        ageMax: e.target.value.replace(/[^\d]/g, ''),
+                      }))}
+                      className="w-20 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                {isClinicalProvider && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono text-muted-foreground">My Patients</Label>
+                    <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+                      <span className="text-xs text-muted-foreground">Only patients in my list</span>
+                      <Switch
+                        checked={draftFilters.myPatients}
+                        onCheckedChange={(checked) => setDraftFilters((prev) => ({
+                          ...prev,
+                          myPatients: checked,
+                        }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">
+                  {activeFilterCount > 0 ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No active filters'}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearFilters}
+                    className="font-mono text-xs"
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleApplyFilters}
+                    className="font-mono text-xs"
+                  >
+                    Apply Filters
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2">
+              {(appliedFilters.admissionStart || appliedFilters.admissionEnd) && (
+                <FilterChip
+                  label={appliedFilters.admissionStart && appliedFilters.admissionEnd
+                    ? `Admission ${format(appliedFilters.admissionStart, 'MMM d')}–${format(appliedFilters.admissionEnd, 'MMM d')}`
+                    : appliedFilters.admissionStart
+                      ? `Admission after ${format(appliedFilters.admissionStart, 'MMM d')}`
+                      : `Admission before ${format(appliedFilters.admissionEnd, 'MMM d')}`}
+                  onRemove={() => handleRemoveFilter('admissionRange')}
+                />
+              )}
+              {appliedFilters.departmentId && (
+                <FilterChip
+                  label={`Department: ${departmentLabels.get(appliedFilters.departmentId) || 'Selected'}`}
+                  onRemove={() => handleRemoveFilter('departmentId')}
+                />
+              )}
+              {appliedFilters.wardId && (
+                <FilterChip
+                  label={`Ward: ${wardLabels.get(appliedFilters.wardId) || 'Selected'}`}
+                  onRemove={() => handleRemoveFilter('wardId')}
+                />
+              )}
+              {appliedFilters.admissionStatus !== 'all' && (
+                <FilterChip
+                  label={`Status: ${ADMISSION_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.admissionStatus)?.label || appliedFilters.admissionStatus}`}
+                  onRemove={() => handleRemoveFilter('admissionStatus')}
+                />
+              )}
+              {appliedFilters.admissionType !== 'all' && (
+                <FilterChip
+                  label={`Admission Type: ${ADMISSION_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.admissionType)?.label || appliedFilters.admissionType}`}
+                  onRemove={() => handleRemoveFilter('admissionType')}
+                />
+              )}
+              {appliedFilters.encounterType !== 'all' && (
+                <FilterChip
+                  label={`Encounter: ${ENCOUNTER_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.encounterType)?.label || appliedFilters.encounterType}`}
+                  onRemove={() => handleRemoveFilter('encounterType')}
+                />
+              )}
+              {appliedFilters.attending?.id && (
+                <FilterChip
+                  label={`Attending: ${appliedFilters.attending.name}`}
+                  onRemove={() => handleRemoveFilter('attending')}
+                />
+              )}
+              {(appliedFilters.ageMin || appliedFilters.ageMax) && (
+                <FilterChip
+                  label={`Age ${appliedFilters.ageMin || '0'}–${appliedFilters.ageMax || '∞'}`}
+                  onRemove={() => handleRemoveFilter('ageRange')}
+                />
+              )}
+              {appliedFilters.myPatients && (
+                <FilterChip
+                  label="My Patients"
+                  onRemove={() => handleRemoveFilter('myPatients')}
+                />
+              )}
+            </div>
+          )}
+
+          {isSearching && (
+            <div className="text-xs text-muted-foreground">
+              <span>{searchSummary}</span>
+            </div>
+          )}
         </div>
       </PageHeader>
 
@@ -286,7 +795,8 @@ const PatientChronicleListPage = () => {
           <SearchResultsSection
             patients={searchPatients}
             isLoading={isSearchLoading}
-            searchQuery={debouncedSearchTerm}
+            searchQuery={effectiveSearchQuery}
+            hasActiveFilters={hasActiveFilters}
             viewMode={viewMode}
             onStartRound={handleStartRound}
             onStartConsultation={handleStartConsultation}
@@ -317,6 +827,20 @@ const PatientChronicleListPage = () => {
   );
 };
 
+const FilterChip = ({ label, onRemove }) => (
+  <Badge variant="secondary" className="gap-1 pr-1 text-[10px] font-mono">
+    <span className="truncate max-w-[220px]">{label}</span>
+    <button
+      type="button"
+      onClick={onRemove}
+      className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      aria-label={`Remove ${label}`}
+    >
+      <X className="h-3 w-3" aria-hidden="true" />
+    </button>
+  </Badge>
+);
+
 /**
  * SearchResultsSection - Display search results
  */
@@ -324,6 +848,7 @@ const SearchResultsSection = ({
   patients,
   isLoading,
   searchQuery,
+  hasActiveFilters,
   viewMode,
   onStartRound,
   onStartConsultation,
@@ -345,6 +870,12 @@ const SearchResultsSection = ({
   }
 
   if (patients.length === 0) {
+    const emptyDescription = searchQuery
+      ? `No patients match "${searchQuery}". Try a different search term.`
+      : hasActiveFilters
+        ? 'No patients match these filters. Try adjusting your criteria.'
+        : 'No patients found.';
+
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -354,7 +885,7 @@ const SearchResultsSection = ({
           No patients found
         </h3>
         <p className="text-muted-foreground text-sm max-w-md">
-          No patients match "{searchQuery}". Try a different search term.
+          {emptyDescription}
         </p>
       </div>
     );
