@@ -74,7 +74,9 @@ import {
   useUpdateChartField,
   useDeleteChartField,
   useReorderChartFields,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
 
 // Category icons
 const CATEGORY_ICONS = {
@@ -457,34 +459,36 @@ const ChartTemplateBuilder = ({
   }, [fields]);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+    <PageShell className="fixed inset-0 z-[100] flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <h1 className="font-display text-xl text-foreground">
-              {templateId ? "Edit Chart Template" : "New Chart Template"}
-            </h1>
-            {formData.name && (
-              <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                {formData.name}
-              </p>
+      <header className="border-b border-border bg-card">
+        <div className="px-6 py-4">
+          <PageHeader
+            wrap={false}
+            title={(
+              <span className="flex items-center gap-3">
+                <span className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </span>
+                {templateId ? "Edit Chart Template" : "New Chart Template"}
+              </span>
             )}
-          </div>
+            description={formData.name || null}
+            descriptionClassName="font-mono text-xs text-muted-foreground mt-0.5"
+            titleClassName="text-xl"
+            actions={(
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onClose}
+                className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+              >
+                <X className="h-4 w-4 mr-1.5" />
+                Close
+              </Button>
+            )}
+          />
         </div>
-
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
-        >
-          <X className="h-4 w-4 mr-1.5" />
-          Close
-        </Button>
       </header>
 
       {/* Step indicator */}
@@ -900,7 +904,7 @@ const ChartTemplateBuilder = ({
         onSave={handleSaveField}
         existingFieldKeys={fields.map((f) => f.field_key).filter((k) => k !== editingField?.field_key)}
       />
-    </div>
+    </PageShell>
   );
 };
 

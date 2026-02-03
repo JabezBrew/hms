@@ -27,8 +27,8 @@ import {
   useLeadershipRoles,
   useCreateLeadershipAssignment,
   useDeleteLeadershipAssignment,
-} from '@/hooks/useOrganization';
-import { useSearchStaff } from '@/hooks/useStaffQueries';
+} from '@/features/admin/hooks';
+import { useSearchStaff } from '@/features/staff/hooks';
 
 import format from 'date-fns/format';
 import { toast } from 'sonner';

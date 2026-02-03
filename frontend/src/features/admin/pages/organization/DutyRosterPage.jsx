@@ -4,7 +4,6 @@
  * Chronicle Design System styling
  */
 import { useState, useMemo, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -45,9 +44,12 @@ import {
   useRosterOnDutyAll,
   useRosterOnDutyDepartment,
   useRosterEntries,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { flattenUnitTree, toList } from './duty-roster/utils';
 import { EmptyState } from './duty-roster/components';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 /**
  * OnDutyCard - Shows a single on-duty entry
@@ -389,41 +391,40 @@ export default function DutyRosterPage() {
     [flatUnits]
   );
 
-  return (
-    <>
-      <Helmet>
-        <title>Duty Roster | Organization</title>
-      </Helmet>
+  const pageMeta = usePageMeta({
+    title: 'Duty Roster | Organization',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization', href: '/admin/organization' },
+      { label: 'Duty Roster' },
+    ],
+  });
 
-      <div className="min-h-screen bg-background">
-        <div className="container max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-          {/* Header */}
-          <header className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
-                <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
-                  Duty Roster
-                </h1>
-                <p className="mt-2 text-muted-foreground text-sm">
-                  View who's on duty and manage roster operations.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link to="/admin/organization/roster-setup">
-                    <Wrench className="h-4 w-4 mr-1" />
-                    Setup
-                  </Link>
-                </Button>
-                <Button size="sm" asChild>
-                  <Link to="/admin/organization/roster-builder">
-                    <CalendarIcon className="h-4 w-4 mr-1" />
-                    Build Roster
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </header>
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Duty Roster"
+        description="View who's on duty and manage roster operations."
+        actions={(
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/admin/organization/roster-setup">
+                <Wrench className="h-4 w-4 mr-1" />
+                Setup
+              </Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/admin/organization/roster-builder">
+                <CalendarIcon className="h-4 w-4 mr-1" />
+                Build Roster
+              </Link>
+            </Button>
+          </div>
+        )}
+      />
+
+      <div className="container max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
 
           {/* Quick Stats */}
           <div className="grid gap-4 md:grid-cols-3 mb-8">
@@ -589,7 +590,6 @@ export default function DutyRosterPage() {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
-    </>
+      </PageShell>
   );
 }

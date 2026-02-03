@@ -23,7 +23,7 @@ import {
   useUnitWards,
   useCreateWardAllocation,
   useDeleteWardAllocation,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { useWardSearch } from '@/features/wards/hooks/useWardQueries';
 
 import { toast } from 'sonner';

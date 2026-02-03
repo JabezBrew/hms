@@ -16,7 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { VitalSignsForm } from '../VitalSignsForm'
 
 // Mock the nursing queries hook
-vi.mock('@/hooks/useNursingQueries', () => ({
+vi.mock('@/features/nursing/hooks', () => ({
   useCreateVitalSigns: vi.fn(),
 }))
 
@@ -28,7 +28,7 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { useCreateVitalSigns } from '@/hooks/useNursingQueries'
+import { useCreateVitalSigns } from '@/features/nursing/hooks'
 import { toast } from 'sonner'
 
 // Helper to create test query client

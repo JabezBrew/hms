@@ -26,10 +26,12 @@ import {
   useNursingTasks,
   useNursingAlerts,
   useMedicationsDueNow
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 import { useWardStaff } from '@/features/wards/hooks/useWardQueries';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Layout } from '@/components/layout/layout';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 // Config and utilities
 import { getShiftTypeFromTime, getShiftOptions } from '@/config/shiftConfig';
@@ -278,35 +280,29 @@ export default function ShiftHandoffPage() {
 
   const currentStepDef = STEPS.find(s => s.id === currentStep);
 
+  const pageMeta = usePageMeta({
+    title: 'Shift Handoff | HMS',
+    breadcrumbs: [
+      { label: 'Nursing', href: '/dashboards/nurse' },
+      { label: 'Shift Handoff' },
+    ],
+  });
+
   return (
     <Layout>
-      <div className="min-h-screen bg-background">
-        {/* Header */}
-        <div className="border-b border-border bg-card/50">
-          <div className="container mx-auto px-4 py-6">
-            <PageBreadcrumb
-              items={[
-                { label: 'Nursing', href: '/dashboards/nurse' },
-                { label: 'Shift Handoff' },
-              ]}
-            />
-
-            <div className="flex justify-between items-center mt-4">
-              <div>
-                <h1 className="font-display text-3xl font-bold tracking-tight">
-                  Shift Handoff
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                  Document and transfer patient care to the next shift
-                </p>
-              </div>
-              <Badge variant="outline" className="font-mono text-sm px-4 py-2">
-                <Calendar className="mr-2 h-4 w-4" />
-                {format(new Date(), 'MMMM d, yyyy')}
-              </Badge>
-            </div>
-          </div>
-        </div>
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Shift Handoff"
+          description="Document and transfer patient care to the next shift"
+          actions={(
+            <Badge variant="outline" className="font-mono text-sm px-4 py-2">
+              <Calendar className="mr-2 h-4 w-4" />
+              {format(new Date(), 'MMMM d, yyyy')}
+            </Badge>
+          )}
+          size="lg"
+        />
 
         <div className="container mx-auto px-4 py-6 max-w-4xl">
           {/* Step Progress - Clickable */}
@@ -417,7 +413,7 @@ export default function ShiftHandoffPage() {
             )}
           </div>
         </div>
-      </div>
-    </Layout>
+      </PageShell>
+  </Layout>
   );
 }

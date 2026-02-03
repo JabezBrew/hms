@@ -41,7 +41,7 @@ import {
   useCreateDepartmentDutyType,
   useUpdateDepartmentDutyType,
   useDeleteDepartmentDutyType,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName } from './utils';
 import { DUTY_CONTEXT_OPTIONS, DUTY_ROLE_OPTIONS, SELECT_ALL } from './constants';
 import { useUnitOptions } from './useUnitOptions';

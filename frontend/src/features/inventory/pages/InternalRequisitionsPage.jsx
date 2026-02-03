@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -20,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useInternalRequisitions, useStorageLocations } from '@/hooks/useInventoryQueries';
+import { useInternalRequisitions, useStorageLocations } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
@@ -303,7 +306,7 @@ export default function InternalRequisitionsPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-9 w-56" />
           <Skeleton className="h-10 w-40" />
@@ -321,46 +324,41 @@ export default function InternalRequisitionsPage() {
             </Card>
           ))}
         </div>
-      </div>
+      </PageState>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl">Error Loading Requisitions</h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Requisitions"
+        description={error.message}
+        action={() => refetch()}
+      />
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Internal Requisitions</h1>
-          <p className="text-muted-foreground mt-1">{totalCount} requisition{totalCount !== 1 ? 's' : ''}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => refetch()}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
-            Refresh
-          </Button>
-          <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Request
-          </Button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Internal Requisitions"
+        description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
+        actions={(
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+            <Button onClick={handleCreate}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Request
+            </Button>
+          </div>
+        )}
+      />
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       <Tabs value={status} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto">
@@ -450,6 +448,7 @@ export default function InternalRequisitionsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </PageShell>
   );
 }

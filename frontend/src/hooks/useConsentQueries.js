@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { consentApi } from '@/lib/api/consent';
+import { consentApi } from '@/shared/api/consent';
 
 export function useCreateCrossFacilityReferral() {
   return useMutation({

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { wardsApi } from '@/lib/api/wards';
+import { wardsApi } from '@/features/wards/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 

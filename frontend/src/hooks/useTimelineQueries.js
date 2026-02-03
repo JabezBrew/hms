@@ -1,12 +1,15 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys for timeline data
+const timelineKeyFactory = createKeyFactory('timeline');
+
 export const timelineKeys = {
-  all: ['timeline'],
-  list: (patientId) => [...timelineKeys.all, 'list', patientId],
-  filtered: (patientId, filters) => [...timelineKeys.list(patientId), { filters }],
-  stats: (patientId) => [...timelineKeys.all, 'stats', patientId],
+  all: timelineKeyFactory.all,
+  list: (patientId) => keyWith('timeline', 'list', patientId),
+  filtered: (patientId, filters) => keyWith('timeline', 'list', patientId, { filters }),
+  stats: (patientId) => keyWith('timeline', 'stats', patientId),
 };
 
 /**

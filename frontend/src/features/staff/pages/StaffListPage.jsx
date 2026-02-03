@@ -8,7 +8,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useStaff } from "@/hooks/useStaffQueries";
+import { useStaff } from "@/features/staff/hooks";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
+import { useListFilters } from "@/shared/hooks/useListFilters";
 
 /**
  * StaffListPage - Chronicle-style staff directory
@@ -34,7 +37,7 @@ import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
  */
 const StaffListPage = () => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { search: searchQuery, updateSearch, hasActiveFilters: hasBaseFilters } = useListFilters();
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [viewMode, setViewMode] = useState("grid");
@@ -133,11 +136,11 @@ const StaffListPage = () => {
   // ============================================
 
   const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
+    updateSearch(e.target.value);
   };
 
   const handleClearFilters = () => {
-    setSearchQuery("");
+    updateSearch("");
     setSelectedRole("all");
     setSelectedDepartment("all");
   };
@@ -146,7 +149,7 @@ const StaffListPage = () => {
     navigate('/staff/create');
   };
 
-  const hasActiveFilters = searchQuery || selectedRole !== "all" || selectedDepartment !== "all";
+  const hasActiveFilters = hasBaseFilters || selectedRole !== "all" || selectedDepartment !== "all";
 
   // Format role label
   const formatRoleLabel = (role) => {
@@ -157,40 +160,40 @@ const StaffListPage = () => {
       .join(' ');
   };
 
+  const headerDescription = (
+    <span>
+      {stats.total} staff members
+      {stats.practitioners > 0 && (
+        <span className="text-primary ml-2">
+          · {stats.practitioners} practitioners
+        </span>
+      )}
+      {stats.active !== stats.total && (
+        <span className="text-muted-foreground ml-2">
+          · {stats.active} active
+        </span>
+      )}
+    </span>
+  );
+
   // ============================================
   // Render
   // ============================================
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-              Staff Directory
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {stats.total} staff members
-              {stats.practitioners > 0 && (
-                <span className="text-primary ml-2">
-                  · {stats.practitioners} practitioners
-                </span>
-              )}
-              {stats.active !== stats.total && (
-                <span className="text-muted-foreground ml-2">
-                  · {stats.active} active
-                </span>
-              )}
-            </p>
-          </div>
-
+    <PageShell>
+      <PageHeader
+        title="Staff Directory"
+        description={headerDescription}
+        actions={(
           <Button onClick={handleAddStaff} size="sm" className="font-mono text-xs w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Add Staff Member
           </Button>
-        </div>
+        )}
+      />
 
+      <div className="p-4 sm:p-6 space-y-4">
         {/* Search and Filters */}
         <div className="flex flex-col gap-3">
           {/* Search - Full Width */}
@@ -287,10 +290,8 @@ const StaffListPage = () => {
             )}
           </div>
         </div>
-      </header>
 
-      {/* Staff List */}
-      <main className="p-4 sm:p-6">
+        {/* Staff List */}
         {isLoading ? (
           <LoadingSkeleton viewMode={viewMode} />
         ) : filteredStaff.length === 0 ? (
@@ -311,8 +312,8 @@ const StaffListPage = () => {
             ))}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </PageShell>
   );
 };
 

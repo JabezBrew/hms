@@ -15,6 +15,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import {
   Select,
   SelectContent,
@@ -23,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { usePayments } from '@/hooks/useBillingQueries';
+import { usePayments } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 
@@ -117,7 +120,7 @@ export default function PaymentsPage() {
   // Loading state
   if (isLoading && !paymentsData) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <Skeleton className="h-12 w-64" />
         <div className="flex gap-4">
           <Skeleton className="h-10 w-64" />
@@ -128,34 +131,45 @@ export default function PaymentsPage() {
             <Skeleton key={i} className="h-16 rounded-lg" />
           ))}
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Payments</h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Payments"
+        description={error.message}
+        action={() => refetch()}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col gap-4">
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <CreditCard className="h-8 w-8 text-primary" />
+            Payment History
+          </span>
+        )}
+        description={`${totalCount} payment${totalCount !== 1 ? 's' : ''} found`}
+        actions={(
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="font-mono text-xs"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        )}
+      >
+        <div className="mb-3">
           <Button
             variant="ghost"
             size="sm"
@@ -165,29 +179,8 @@ export default function PaymentsPage() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Billing
           </Button>
-
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
-              <h1 className="font-display text-3xl sm:text-4xl text-foreground tracking-tight flex items-center gap-3">
-                <CreditCard className="h-8 w-8 text-primary" />
-                Payment History
-              </h1>
-              <p className="text-muted-foreground mt-2">
-                {totalCount} payment{totalCount !== 1 ? 's' : ''} found
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="font-mono text-xs"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
         </div>
-      </header>
+      </PageHeader>
 
       <main className="p-4 sm:p-6 space-y-6">
         {/* Filters */}
@@ -426,7 +419,7 @@ export default function PaymentsPage() {
           )}
         </section>
       </main>
-    </div>
+    </PageShell>
   );
 }
 

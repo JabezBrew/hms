@@ -2,6 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import {
   InventoryStatsRow,
   LowStockAlert,
@@ -11,7 +13,7 @@ import {
   useInventoryDashboardMetrics,
   useLowStockAlerts,
   useExpiringItems,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { cn } from '@/lib/utils';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
@@ -274,61 +276,58 @@ export default function InventoryDashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">
-            Inventory Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor stock levels, manage procurement, and track inventory health
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
-            Refresh
-          </Button>
-          <Button onClick={() => navigate('/inventory/items?action=create')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Item
-          </Button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Inventory Dashboard"
+        description="Monitor stock levels, manage procurement, and track inventory health"
+        actions={(
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleRefresh}>
+              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+            <Button onClick={() => navigate('/inventory/items?action=create')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Item
+            </Button>
+          </div>
+        )}
+      />
 
-      {/* Stats Row */}
-      <InventoryStatsRow stats={metrics} isLoading={metricsLoading} />
+      <div className="p-4 sm:p-6 space-y-6">
+        {/* Stats Row */}
+        <InventoryStatsRow stats={metrics} isLoading={metricsLoading} />
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Alerts */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <LowStockAlert
-              items={lowStockItems?.results || lowStockItems || []}
-              limit={5}
-              isLoading={lowStockLoading}
-              onCreateRequisition={handleCreateRequisition}
-            />
-            <ExpiringItemsWidget
-              items={expiringItems?.results || expiringItems || []}
-              limit={5}
-              isLoading={expiringLoading}
-            />
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Alerts */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <LowStockAlert
+                items={lowStockItems?.results || lowStockItems || []}
+                limit={5}
+                isLoading={lowStockLoading}
+                onCreateRequisition={handleCreateRequisition}
+              />
+              <ExpiringItemsWidget
+                items={expiringItems?.results || expiringItems || []}
+                limit={5}
+                isLoading={expiringLoading}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <PendingActionsWidget isLoading={isLoading} metrics={metrics} />
+              <RecentActivityWidget isLoading={isLoading} activities={[]} />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <PendingActionsWidget isLoading={isLoading} metrics={metrics} />
-            <RecentActivityWidget isLoading={isLoading} activities={[]} />
+          {/* Right Column - Quick Actions */}
+          <div className="space-y-6">
+            <QuickActionsWidget />
           </div>
         </div>
-
-        {/* Right Column - Quick Actions */}
-        <div className="space-y-6">
-          <QuickActionsWidget />
-        </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

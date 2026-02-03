@@ -16,12 +16,12 @@ import {
   usePatientValidationRules
 } from "@/features/patients/hooks/usePatientQueries";
 import { useWards, useWardBeds } from "@/features/wards/hooks/useWardQueries";
-import { useDepartments, useRosterOnDutyDepartment } from "@/hooks/useOrganization";
+import { useDepartments, useRosterOnDutyDepartment } from "@/features/admin/hooks";
 import {
   useInsuranceProviders,
   useInsurancePlans,
   useCreatePatientInsurance,
-} from "@/hooks/useBillingQueries";
+} from "@/features/billing/hooks";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import {

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { encountersApi } from '@/lib/api/encounters';
+import { encountersApi } from '@/features/encounters/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 

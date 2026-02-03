@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { useCreateInvoice, useServices } from '@/hooks/useBillingQueries';
+import { useCreateInvoice, useServices } from '@/features/billing/hooks';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
 

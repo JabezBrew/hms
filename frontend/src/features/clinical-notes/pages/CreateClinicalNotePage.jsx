@@ -1,25 +1,25 @@
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState, useEffect, useCallback } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { 
   useNoteEntriesForEncounter, 
   useActiveNoteTemplates,
   useCreateNoteTemplate 
-} from '@/hooks/useClinicalNotesQueries';
+} from '@/features/clinical-notes/hooks';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 import TemplateSelector from '@/components/clinical-notes/TemplateSelector';
 import DynamicNoteForm from '@/components/clinical-notes/DynamicNoteForm';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 export default function CreateClinicalNotePage() {
   const { id: encounterId } = useParams();
@@ -58,30 +58,20 @@ export default function CreateClinicalNotePage() {
     isError: isErrorTemplates
   } = useActiveNoteTemplates();
 
-  // Set breadcrumb
-  const { updateBreadcrumbs } = useBreadcrumb();
+  const encounterLabel = encounter?.patient_name
+    ? `Encounter for ${encounter.patient_name}`
+    : `Encounter ${encounterId}`;
 
-  // Update breadcrumbs when data is loaded
-  useEffect(() => {
-    if (encounter) {
-      updateBreadcrumbs([
-        { label: 'Encounters', path: '/encounters' },
-        { 
-          label: encounter.patient_name 
-            ? `Encounter for ${encounter.patient_name}` 
-            : `Encounter ${encounterId}`, 
-          path: `/encounters/${encounterId}` 
-        },
-        { label: 'Clinical Notes', path: `/encounters/${encounterId}/clinical-notes` }
-      ]);
-    } else {
-      updateBreadcrumbs([
-        { label: 'Encounters', path: '/encounters' },
-        { label: 'Encounter Details', path: `/encounters/${encounterId}` },
-        { label: 'Clinical Notes', path: `/encounters/${encounterId}/clinical-notes` }
-      ]);
-    }
-  }, [encounter, encounterId, updateBreadcrumbs]);
+  const pageMeta = usePageMeta({
+    title: encounter?.patient_name
+      ? `Clinical Notes · ${encounter.patient_name} | HMS`
+      : 'Clinical Notes | HMS',
+    breadcrumbs: [
+      { label: 'Encounters', href: '/encounters' },
+      { label: encounterLabel, href: `/encounters/${encounterId}` },
+      { label: 'Clinical Notes', href: `/encounters/${encounterId}/clinical-notes` },
+    ],
+  });
 
   // Show error toast if encounter query fails
   useEffect(() => {
@@ -204,163 +194,156 @@ export default function CreateClinicalNotePage() {
   const isEncounterValid = encounter && 
     (encounter.status === 'in-progress' || encounter.status === 'planned');
 
+  const encounterDate = encounter?.start_time
+    ? new Date(encounter.start_time).toLocaleDateString()
+    : null;
+  const headerDescription = encounter
+    ? `${encounter.patient_name || 'Patient'}${encounterDate ? ` · ${encounterDate}` : ''}`
+    : 'Create and manage clinical notes';
+
   return (
-    <>
-      <Helmet>
-        <title>
-          {encounter 
-            ? `Clinical Notes for ${encounter.patient_name || 'Patient'} | HMS` 
-            : 'Clinical Notes | HMS'}
-        </title>
-        <meta name="description" content="Create and manage clinical notes" />
-      </Helmet>
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title="Clinical Notes"
+          description={headerDescription}
+          actions={(
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/encounters/${encounterId}`)}
+            >
+              Back to Encounter
+            </Button>
+          )}
+          contentClassName="max-w-5xl mx-auto w-full"
+        />
 
-      <div className="container mx-auto py-6 space-y-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clinical Notes</h1>
-            {encounter && (
-              <p className="text-muted-foreground">
-                {encounter.patient_name} - {new Date(encounter.start_time).toLocaleDateString()}
-              </p>
-            )}
-          </div>
+        <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto">
+          {isLoadingEncounter ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Loading encounter details...</CardTitle>
+              </CardHeader>
+            </Card>
+          ) : isErrorEncounter ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>
+                Failed to load encounter details. Please try again later.
+              </AlertDescription>
+            </Alert>
+          ) : !isEncounterValid ? (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Note</AlertTitle>
+              <AlertDescription>
+                Clinical notes can only be added to active or planned encounters.
+                This encounter is currently marked as {encounter?.status}.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="new">New Note</TabsTrigger>
+                <TabsTrigger value="history">Note History</TabsTrigger>
+                <TabsTrigger value="template">Create Template</TabsTrigger>
+              </TabsList>
 
-          <Button 
-            variant="outline" 
-            onClick={() => navigate(`/encounters/${encounterId}`)}
-          >
-            Back to Encounter
-          </Button>
-        </div>
+              <TabsContent value="new" className="space-y-4">
+                {!selectedTemplate ? (
+                  <div className="space-y-6">
+                    {isNurse && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Nursing Activities</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="mb-4">
+                            <p className="text-muted-foreground">
+                              Select the nursing activity you want to record. Each activity is tracked separately for better time management.
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
+                              // Find the nursing vitals template
+                              const vitalsTemplate = activeTemplates?.find(template => 
+                                template.title.toLowerCase().includes('nursing vitals')
+                              );
+                              if (vitalsTemplate) {
+                                handleSelectTemplate(vitalsTemplate);
+                              } else {
+                                toast.info("Please create a Nursing Vitals template first");
+                              }
+                            }}>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Vitals Chart</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm text-muted-foreground">Record patient vital signs</p>
+                              </CardContent>
+                            </Card>
 
-        <Separator />
+                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
+                              // Find the nursing I/O template
+                              const ioTemplate = activeTemplates?.find(template => 
+                                template.title.toLowerCase().includes('nursing i/o')
+                              );
+                              if (ioTemplate) {
+                                handleSelectTemplate(ioTemplate);
+                              } else {
+                                toast.info("Please create a Nursing I/O template first");
+                              }
+                            }}>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">I/O Chart</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm text-muted-foreground">Record fluid intake and output</p>
+                              </CardContent>
+                            </Card>
 
-        {isLoadingEncounter ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Loading encounter details...</CardTitle>
-            </CardHeader>
-          </Card>
-        ) : isErrorEncounter ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              Failed to load encounter details. Please try again later.
-            </AlertDescription>
-          </Alert>
-        ) : !isEncounterValid ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Note</AlertTitle>
-            <AlertDescription>
-              Clinical notes can only be added to active or planned encounters.
-              This encounter is currently marked as {encounter?.status}.
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="new">New Note</TabsTrigger>
-              <TabsTrigger value="history">Note History</TabsTrigger>
-              <TabsTrigger value="template">Create Template</TabsTrigger>
-            </TabsList>
+                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
+                              // Find the nursing meds template
+                              const medsTemplate = activeTemplates?.find(template => 
+                                template.title.toLowerCase().includes('nursing meds')
+                              );
+                              if (medsTemplate) {
+                                handleSelectTemplate(medsTemplate);
+                              } else {
+                                toast.info("Please create a Nursing Meds template first");
+                              }
+                            }}>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Medications</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm text-muted-foreground">Record medications administered</p>
+                              </CardContent>
+                            </Card>
 
-            <TabsContent value="new" className="space-y-4">
-              {!selectedTemplate ? (
-                <div className="space-y-6">
-                  {isNurse && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Nursing Activities</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="mb-4">
-                          <p className="text-muted-foreground">
-                            Select the nursing activity you want to record. Each activity is tracked separately for better time management.
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                            // Find the nursing vitals template
-                            const vitalsTemplate = activeTemplates?.find(template => 
-                              template.title.toLowerCase().includes('nursing vitals')
-                            );
-                            if (vitalsTemplate) {
-                              handleSelectTemplate(vitalsTemplate);
-                            } else {
-                              toast.info("Please create a Nursing Vitals template first");
-                            }
-                          }}>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-lg">Vitals Chart</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <p className="text-sm text-muted-foreground">Record patient vital signs</p>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                            // Find the nursing I/O template
-                            const ioTemplate = activeTemplates?.find(template => 
-                              template.title.toLowerCase().includes('nursing i/o')
-                            );
-                            if (ioTemplate) {
-                              handleSelectTemplate(ioTemplate);
-                            } else {
-                              toast.info("Please create a Nursing I/O template first");
-                            }
-                          }}>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-lg">I/O Chart</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <p className="text-sm text-muted-foreground">Record fluid intake and output</p>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                            // Find the nursing meds template
-                            const medsTemplate = activeTemplates?.find(template => 
-                              template.title.toLowerCase().includes('nursing meds')
-                            );
-                            if (medsTemplate) {
-                              handleSelectTemplate(medsTemplate);
-                            } else {
-                              toast.info("Please create a Nursing Meds template first");
-                            }
-                          }}>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-lg">Medications</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <p className="text-sm text-muted-foreground">Record medications administered</p>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                            // Find the nursing note template
-                            const noteTemplate = activeTemplates?.find(template => 
-                              template.title.toLowerCase().includes('nursing note')
-                            );
-                            if (noteTemplate) {
-                              handleSelectTemplate(noteTemplate);
-                            } else {
-                              toast.info("Please create a Nursing Note template first");
-                            }
-                          }}>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-lg">Nurse Note</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <p className="text-sm text-muted-foreground">Record general nursing notes</p>
-                            </CardContent>
-                          </Card>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
+                              // Find the nursing note template
+                              const noteTemplate = activeTemplates?.find(template => 
+                                template.title.toLowerCase().includes('nursing note')
+                              );
+                              if (noteTemplate) {
+                                handleSelectTemplate(noteTemplate);
+                              } else {
+                                toast.info("Please create a Nursing Note template first");
+                              }
+                            }}>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">Nurse Note</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm text-muted-foreground">Record general nursing notes</p>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                   <TemplateSelector onSelectTemplate={handleSelectTemplate} />
                 </div>
@@ -451,6 +434,6 @@ export default function CreateClinicalNotePage() {
           </Tabs>
         )}
       </div>
-    </>
+    </PageShell>
   );
 }

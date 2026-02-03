@@ -7,10 +7,12 @@ import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 /**
  * SettingsHubPage - Central hub for user settings with role-based category cards
@@ -20,6 +22,13 @@ const SettingsHubPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const userRole = user?.role;
+
+  const pageMeta = usePageMeta({
+    title: 'Settings | HMS',
+    breadcrumbs: [
+      { label: 'Settings' },
+    ],
+  });
 
   // Define all settings categories with role visibility
   const categories = [
@@ -94,31 +103,21 @@ const SettingsHubPage = () => {
   };
 
   return (
-    <>
-      <Helmet>
-        <title>Settings | HMS</title>
-        <meta name="description" content="Manage your account settings" />
-      </Helmet>
-
-      <div className="min-h-screen bg-background">
-        {/* Page Header - Chronicle style */}
-        <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center gap-3 sm:gap-4 mb-2">
-              <div className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-3 sm:gap-4">
+              <span className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
                 <Settings className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
-              </div>
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight">
-                  Settings
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground font-mono mt-0.5">
-                  Manage your account and preferences
-                </p>
-              </div>
-            </div>
-          </div>
-        </header>
+              </span>
+              Settings
+            </span>
+          )}
+          description="Manage your account and preferences"
+          contentClassName="max-w-4xl mx-auto w-full"
+          descriptionClassName="text-xs sm:text-sm text-muted-foreground font-mono"
+        />
 
         {/* Settings Categories Grid */}
         <main className="p-4 sm:p-6 lg:p-8">
@@ -135,8 +134,7 @@ const SettingsHubPage = () => {
             </div>
           </div>
         </main>
-      </div>
-    </>
+      </PageShell>
   );
 };
 

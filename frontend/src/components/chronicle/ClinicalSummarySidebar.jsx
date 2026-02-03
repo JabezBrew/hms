@@ -9,7 +9,7 @@ import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import { cn } from "@/lib/utils";
 
-import { useTodayFluidBalance } from "@/hooks/useNursingQueries";
+import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { InvoiceChronicleCard } from "@/components/billing";
 
 /**

@@ -15,7 +15,7 @@ import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Folder from 'lucide-react/dist/esm/icons/folder.js';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/hooks/useClinicalNotesQueries';
+import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/features/clinical-notes/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';

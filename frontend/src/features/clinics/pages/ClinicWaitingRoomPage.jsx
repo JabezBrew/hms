@@ -8,20 +8,17 @@ import React, { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import {
-  ChroniclePageHeader,
-  StatCard,
-  DashboardSection,
-  DashboardGrid,
-} from '@/components/dashboard';
+import { StatCard, DashboardSection, DashboardGrid } from '@/components/dashboard';
 import { WaitingRoomQueue } from '@/components/visits/WaitingRoomQueue';
 import { useWaitingRoom } from '@/hooks/useVisitQueries';
-import { clinicsApi } from '@/lib/api/organization';
+import { clinicsApi } from '@/features/clinics/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 export default function ClinicWaitingRoomPage() {
   const { clinicId } = useParams();
@@ -61,17 +58,28 @@ export default function ClinicWaitingRoomPage() {
     };
   }, [queue]);
 
-  const breadcrumbItems = [
-    { label: 'Clinics', href: '/admin/organization' },
-    { label: clinic?.name || 'Clinic', href: `/clinics/${clinicId}` },
-    { label: 'Waiting Room' },
-  ];
-
   if (!facilityCode) {
     return (
       <Layout>
-        <PageBreadcrumb items={breadcrumbItems} />
-        <FacilityRequiredPanel />
+        <PageShell>
+          <PageHeader
+            title={clinicLoading ? 'Loading...' : `${clinic?.name || 'Clinic'} Waiting Room`}
+            description={clinic?.department?.name || 'Outpatient Clinic'}
+            actions={(
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
+          />
+          <div className="p-4 sm:p-6">
+            <FacilityRequiredPanel />
+          </div>
+        </PageShell>
       </Layout>
     );
   }
@@ -79,16 +87,30 @@ export default function ClinicWaitingRoomPage() {
   if (clinicError) {
     return (
       <Layout>
-        <PageBreadcrumb items={breadcrumbItems} />
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
-            <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
-              Failed to load clinic
-            </h3>
-            <p className="text-sm text-muted-foreground">{clinicError.message}</p>
-          </div>
-        </div>
+        <PageShell>
+          <PageHeader
+            title={clinicLoading ? 'Loading...' : `${clinic?.name || 'Clinic'} Waiting Room`}
+            description={clinic?.department?.name || 'Outpatient Clinic'}
+            actions={(
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
+          />
+          <PageState
+            variant="error"
+            title="Failed to load clinic"
+            description={clinicError.message}
+            action={() => refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
       </Layout>
     );
   }
@@ -99,70 +121,69 @@ export default function ClinicWaitingRoomPage() {
 
   return (
     <Layout>
-      <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        <PageHeader
+          title={clinicLoading ? 'Loading...' : `${clinic?.name || 'Clinic'} Waiting Room`}
+          description={clinic?.department?.name || 'Outpatient Clinic'}
+          actions={(
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
+        />
 
-      <ChroniclePageHeader
-        title={clinicLoading ? 'Loading...' : `${clinic?.name} Waiting Room`}
-        role="clinic"
-        subtitle={clinic?.department?.name || 'Outpatient Clinic'}
-        actions={
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => refetch()}
-            disabled={isFetching}
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
+          {/* Statistics */}
+          {queueLoading ? (
+            <DashboardGrid columns="3">
+              {[...Array(3)].map((_, i) => (
+                <Skeleton key={i} className="h-32" />
+              ))}
+            </DashboardGrid>
+          ) : (
+            <DashboardGrid columns="3">
+              <StatCard
+                title="Total in Queue"
+                value={stats.total}
+                subtitle="Patients waiting today"
+                icon={Users}
+                color="sky"
+              />
+              <StatCard
+                title="Waiting"
+                value={stats.waiting}
+                subtitle="Ready to be called"
+                icon={Clock}
+                color="amber"
+              />
+              <StatCard
+                title="Called"
+                value={stats.called}
+                subtitle="Awaiting consultation"
+                icon={Phone}
+                color="emerald"
+              />
+            </DashboardGrid>
+          )}
+
+          {/* Waiting Room Queue */}
+          <DashboardSection
+            title="Patient Queue"
+            subtitle="Patients in order of check-in"
           >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          </Button>
-        }
-      />
-
-      <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
-        {/* Statistics */}
-        {queueLoading ? (
-          <DashboardGrid columns="3">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </DashboardGrid>
-        ) : (
-          <DashboardGrid columns="3">
-            <StatCard
-              title="Total in Queue"
-              value={stats.total}
-              subtitle="Patients waiting today"
-              icon={Users}
-              color="sky"
+            <WaitingRoomQueue
+              clinicId={clinicId}
+              showActions={true}
+              onPatientClick={handlePatientClick}
             />
-            <StatCard
-              title="Waiting"
-              value={stats.waiting}
-              subtitle="Ready to be called"
-              icon={Clock}
-              color="amber"
-            />
-            <StatCard
-              title="Called"
-              value={stats.called}
-              subtitle="Awaiting consultation"
-              icon={Phone}
-              color="emerald"
-            />
-          </DashboardGrid>
-        )}
-
-        {/* Waiting Room Queue */}
-        <DashboardSection
-          title="Patient Queue"
-          subtitle="Patients in order of check-in"
-        >
-          <WaitingRoomQueue
-            clinicId={clinicId}
-            showActions={true}
-            onPatientClick={handlePatientClick}
-          />
-        </DashboardSection>
-      </div>
+          </DashboardSection>
+        </div>
+      </PageShell>
     </Layout>
   );
 }

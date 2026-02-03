@@ -34,7 +34,7 @@ import {
   useTodayFluidBalance,
   useFluidBalanceSummary,
   useCreateFluidBalance,
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 export function FluidBalanceTracker({ patient, admission }) {
   const [selectedDate, setSelectedDate] = useState(new Date());

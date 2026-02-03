@@ -1,16 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { dashboardsApi } from '@/lib/api/dashboards';
+import { dashboardsApi } from '@/features/dashboards/api';
 import { useAuth } from '@/lib/auth';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const dashboardKeyFactory = createKeyFactory('dashboards');
+
 export const dashboardKeys = {
-  all: ['dashboards'],
-  nurse: (filters) => [...dashboardKeys.all, 'nurse', { filters }],
-  inpatient: () => [...dashboardKeys.all, 'inpatient'],
-  receptionist: () => [...dashboardKeys.all, 'receptionist'],
-  admin: () => [...dashboardKeys.all, 'admin'],
-  myWork: (filters) => [...dashboardKeys.all, 'my-work', { filters }],
-  clinic: (filters) => [...dashboardKeys.all, 'clinic', { filters }],
+  all: dashboardKeyFactory.all,
+  nurse: (filters) => keyWith('dashboards', 'nurse', { filters }),
+  inpatient: () => keyWith('dashboards', 'inpatient'),
+  receptionist: () => keyWith('dashboards', 'receptionist'),
+  admin: () => keyWith('dashboards', 'admin'),
+  myWork: (filters) => keyWith('dashboards', 'my-work', { filters }),
+  clinic: (filters) => keyWith('dashboards', 'clinic', { filters }),
 };
 
 // Default polling interval (30 seconds)

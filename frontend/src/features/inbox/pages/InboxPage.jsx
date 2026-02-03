@@ -10,10 +10,12 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import format from 'date-fns/format';
 import isToday from 'date-fns/isToday';
 import isYesterday from 'date-fns/isYesterday';
-import { useInboxItems } from '@/hooks/useInboxQueries';
+import { useInboxItems } from '@/features/inbox/hooks';
 
 /**
  * Notification type configurations - Chronicle color palette
@@ -156,64 +158,52 @@ const InboxPage = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Chronicle-style Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-            <div>
-              <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-                Inbox
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Notifications and items requiring your attention
-              </p>
-            </div>
-
-            {unreadCount > 0 && (
-              <span className="badge-chronicle-amber px-3 py-1 rounded-full text-xs font-mono">
-                {unreadCount} unread
-              </span>
-            )}
-          </div>
-
-          {/* Filter Pills */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {filters.map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                className={cn(
-                  "px-4 py-2 rounded-full text-sm font-mono transition-all",
-                  activeFilter === filter.id
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                )}
-              >
-                {filter.label}
-                {filter.count > 0 && (
-                  <span className={cn(
-                    "ml-2 px-1.5 py-0.5 rounded-full text-[10px]",
-                    activeFilter === filter.id
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-background"
-                  )}>
-                    {filter.count}
-                  </span>
-                )}
-              </button>
-            ))}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              className="shrink-0 h-8 w-8"
+    <PageShell>
+      <PageHeader
+        title="Inbox"
+        description="Notifications and items requiring your attention"
+        actions={unreadCount > 0 ? (
+          <span className="badge-chronicle-amber px-3 py-1 rounded-full text-xs font-mono">
+            {unreadCount} unread
+          </span>
+        ) : null}
+        contentClassName="max-w-4xl mx-auto w-full"
+      >
+        <div className="flex items-center gap-2 flex-wrap mt-4 sm:mt-6">
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => setActiveFilter(filter.id)}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-mono transition-all",
+                activeFilter === filter.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
+              )}
             >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
+              {filter.label}
+              {filter.count > 0 && (
+                <span className={cn(
+                  "ml-2 px-1.5 py-0.5 rounded-full text-[10px]",
+                  activeFilter === filter.id
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-background"
+                )}>
+                  {filter.count}
+                </span>
+              )}
+            </button>
+          ))}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            className="shrink-0 h-8 w-8"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
         </div>
-      </header>
+      </PageHeader>
 
       {/* Main Content - Timeline */}
       <main className="max-w-4xl mx-auto p-4 sm:p-6">
@@ -397,7 +387,7 @@ const InboxPage = () => {
           </div>
         )}
       </main>
-    </div>
+    </PageShell>
   );
 };
 

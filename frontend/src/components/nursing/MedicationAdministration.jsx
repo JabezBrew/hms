@@ -32,7 +32,7 @@ import {
   useAdministerMedication,
   useMedicationsDueNow,
   useOverdueMedications
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 export function MedicationAdministration({ patient }) {
   const [searchTerm, setSearchTerm] = useState('');

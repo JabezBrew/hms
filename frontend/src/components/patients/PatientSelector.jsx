@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
 import { normalizeApiResults } from "@/lib/utils";
-import { patientsApi } from "@/lib/api/patients";
+import { patientsApi } from '@/features/patients/api';
 import { Button } from "@/components/ui/button";
 import {
   Command,

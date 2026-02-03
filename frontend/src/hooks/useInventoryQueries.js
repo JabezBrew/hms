@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { inventoryApi } from '@/lib/api/inventory';
+import { inventoryApi } from '@/features/inventory/api';
+import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
+const inventoryKeyFactory = createKeyFactory('inventory');
+
 export const inventoryKeys = {
-  all: ['inventory'],
+  all: inventoryKeyFactory.all,
 
   // Dashboard
   dashboard: () => [...inventoryKeys.all, 'dashboard'],

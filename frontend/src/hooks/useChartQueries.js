@@ -9,30 +9,33 @@ import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // =============================================================================
 // Query Keys
 // =============================================================================
 
+const chartKeyFactory = createKeyFactory('charts');
+
 export const chartKeys = {
-  all: ['charts'],
-  templates: () => [...chartKeys.all, 'templates'],
-  templateList: (filters) => [...chartKeys.templates(), 'list', filters],
-  templateDetail: (id) => [...chartKeys.templates(), 'detail', id],
-  categories: () => [...chartKeys.templates(), 'categories'],
-  intervals: () => [...chartKeys.templates(), 'intervals'],
+  all: chartKeyFactory.all,
+  templates: () => keyWith('charts', 'templates'),
+  templateList: (filters) => keyWith('charts', 'templates', 'list', filters),
+  templateDetail: (id) => keyWith('charts', 'templates', 'detail', id),
+  categories: () => keyWith('charts', 'templates', 'categories'),
+  intervals: () => keyWith('charts', 'templates', 'intervals'),
 
-  assignments: () => [...chartKeys.all, 'assignments'],
-  assignmentList: (filters) => [...chartKeys.assignments(), 'list', filters],
-  assignmentDetail: (id) => [...chartKeys.assignments(), 'detail', id],
-  assignmentsByPatient: (patientId, status) => [...chartKeys.assignments(), 'patient', patientId, status],
+  assignments: () => keyWith('charts', 'assignments'),
+  assignmentList: (filters) => keyWith('charts', 'assignments', 'list', filters),
+  assignmentDetail: (id) => keyWith('charts', 'assignments', 'detail', id),
+  assignmentsByPatient: (patientId, status) => keyWith('charts', 'assignments', 'patient', patientId, status),
 
-  entries: () => [...chartKeys.all, 'entries'],
-  entryList: (filters) => [...chartKeys.entries(), 'list', filters],
-  entryDetail: (id) => [...chartKeys.entries(), 'detail', id],
-  entrySummary: (assignmentId) => [...chartKeys.entries(), 'summary', assignmentId],
-  entryTrends: (assignmentId, fieldKey) => [...chartKeys.entries(), 'trends', assignmentId, fieldKey],
-  entriesByPatient: (patientId) => [...chartKeys.entries(), 'patient', patientId],
+  entries: () => keyWith('charts', 'entries'),
+  entryList: (filters) => keyWith('charts', 'entries', 'list', filters),
+  entryDetail: (id) => keyWith('charts', 'entries', 'detail', id),
+  entrySummary: (assignmentId) => keyWith('charts', 'entries', 'summary', assignmentId),
+  entryTrends: (assignmentId, fieldKey) => keyWith('charts', 'entries', 'trends', assignmentId, fieldKey),
+  entriesByPatient: (patientId) => keyWith('charts', 'entries', 'patient', patientId),
 };
 
 // =============================================================================
@@ -55,7 +58,7 @@ export function useChartTemplates(filters = {}) {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: ['charts', 'templates', 'list', category, visibility, search, is_active],
+    queryKey: keyWith('charts', 'templates', 'list', category, visibility, search, is_active),
     queryFn: async () => {
       return await apiClient.get(`/charts/templates/?${params.toString()}`);
     },

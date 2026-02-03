@@ -1,24 +1,27 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { laboratoryApi } from '@/lib/api/laboratory';
+import { laboratoryApi } from '@/features/laboratory/api';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const labKeyFactory = createKeyFactory('laboratory');
+
 export const labKeys = {
-  all: ['laboratory'],
-  tests: () => [...labKeys.all, 'tests'],
-  testsList: (filters) => [...labKeys.tests(), 'list', { filters }],
-  test: (id) => [...labKeys.tests(), id],
-  panels: () => [...labKeys.all, 'panels'],
-  panelsList: (filters) => [...labKeys.panels(), 'list', { filters }],
-  panel: (id) => [...labKeys.panels(), id],
-  orders: () => [...labKeys.all, 'orders'],
-  ordersList: (filters) => [...labKeys.orders(), 'list', { filters }],
-  order: (id) => [...labKeys.orders(), id],
-  specimens: () => [...labKeys.all, 'specimens'],
-  specimensList: (filters) => [...labKeys.specimens(), 'list', { filters }],
-  specimen: (id) => [...labKeys.specimens(), id],
-  results: () => [...labKeys.all, 'results'],
-  resultsList: (filters) => [...labKeys.results(), 'list', { filters }],
-  result: (id) => [...labKeys.results(), id],
+  all: labKeyFactory.all,
+  tests: () => keyWith('laboratory', 'tests'),
+  testsList: (filters) => keyWith('laboratory', 'tests', 'list', { filters }),
+  test: (id) => keyWith('laboratory', 'tests', id),
+  panels: () => keyWith('laboratory', 'panels'),
+  panelsList: (filters) => keyWith('laboratory', 'panels', 'list', { filters }),
+  panel: (id) => keyWith('laboratory', 'panels', id),
+  orders: () => keyWith('laboratory', 'orders'),
+  ordersList: (filters) => keyWith('laboratory', 'orders', 'list', { filters }),
+  order: (id) => keyWith('laboratory', 'orders', id),
+  specimens: () => keyWith('laboratory', 'specimens'),
+  specimensList: (filters) => keyWith('laboratory', 'specimens', 'list', { filters }),
+  specimen: (id) => keyWith('laboratory', 'specimens', id),
+  results: () => keyWith('laboratory', 'results'),
+  resultsList: (filters) => keyWith('laboratory', 'results', 'list', { filters }),
+  result: (id) => keyWith('laboratory', 'results', id),
 };
 
 // ========== Lab Tests ==========

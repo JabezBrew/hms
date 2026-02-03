@@ -14,7 +14,6 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +44,7 @@ import {
   useCreateClinicalUnit,
   useUpdateClinicalUnit,
   useDeleteClinicalUnit,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { UnitBreadcrumb } from '@/components/organization';
 import { UnitForm } from './components/UnitForm';
 import { LeadershipPanel } from './components/LeadershipPanel';
@@ -53,6 +52,8 @@ import { StaffPanel } from './components/StaffPanel';
 import { OpsStaffPanel } from './components/OpsStaffPanel';
 import { WardAllocationPanel } from './components/WardAllocationPanel';
 import { ClinicsPanel } from './components/ClinicsPanel';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { toast } from 'sonner';
 
@@ -621,12 +622,17 @@ export default function OrganizationPage() {
     }
   };
 
-  return (
-    <>
-      <Helmet>
-        <title>Organization | HMS Admin</title>
-      </Helmet>
+  const pageMeta = usePageMeta({
+    title: 'Organization | HMS Admin',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization' },
+    ],
+  });
 
+  return (
+    <PageShell>
+      {pageMeta}
       <div className="flex h-[calc(100vh-4rem)]">
         {/* Left Panel - Tree View */}
         <div className="w-[420px] border-r flex flex-col bg-card">
@@ -827,6 +833,6 @@ export default function OrganizationPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </PageShell>
   );
 }

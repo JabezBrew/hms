@@ -43,7 +43,7 @@ import {
   useTodayFluidBalance,
   useCreateFluidBalance,
   useDeleteFluidBalance
-} from "@/hooks/useNursingQueries";
+} from "@/features/nursing/hooks";
 
 /**
  * AddFluidBalanceSlideOver - Chronicle-styled split-screen panel for fluid balance

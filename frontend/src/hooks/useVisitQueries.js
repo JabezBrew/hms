@@ -2,24 +2,28 @@
  * React Query hooks for outpatient visit lifecycle and triage queue management.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { visitsApi, triageApi } from '@/lib/api/visits';
+import { visitsApi, triageApi } from '@/features/triage/api';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // =============================================================================
 // Query Keys
 // =============================================================================
 
+const visitKeyFactory = createKeyFactory('visits');
+const triageKeyFactory = createKeyFactory('triage');
+
 export const visitKeys = {
-  all: ['visits'],
-  waitingRoom: (clinicId) => ['visits', 'waiting-room', clinicId],
-  detail: (encounterId) => ['visits', 'detail', encounterId],
+  all: visitKeyFactory.all,
+  waitingRoom: (clinicId) => keyWith('visits', 'waiting-room', clinicId),
+  detail: (encounterId) => visitKeyFactory.detail(encounterId),
 };
 
 export const triageKeys = {
-  all: ['triage'],
-  list: (filters) => ['triage', 'list', { filters }],
-  detail: (id) => ['triage', 'detail', id],
+  all: triageKeyFactory.all,
+  list: (filters) => triageKeyFactory.list(filters),
+  detail: (id) => triageKeyFactory.detail(id),
 };
 
 // =============================================================================

@@ -36,7 +36,7 @@ import {
   useSuppliers,
   useCreateInventoryItem,
   useUpdateInventoryItem,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { toast } from 'sonner';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';

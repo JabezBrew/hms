@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -35,7 +38,7 @@ import {
   useUpdateGRNItem,
   useInspectGRN,
   useAcceptGRN,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
@@ -317,7 +320,7 @@ export default function GRNDetailPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <div>
@@ -331,20 +334,18 @@ export default function GRNDetailPage() {
           </div>
           <Skeleton className="h-80" />
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl">Error Loading GRN</h2>
-          <p className="text-muted-foreground">{error.message}</p>
+      <PageState
+        variant="error"
+        title="Error Loading GRN"
+        description={error.message}
+        action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -355,29 +356,25 @@ export default function GRNDetailPage() {
               Retry
             </Button>
           </div>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
   // Not found
   if (!grn) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
-            <Package className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h2 className="font-display text-2xl">GRN Not Found</h2>
-          <p className="text-muted-foreground">
-            The requested GRN does not exist or has been deleted.
-          </p>
+      <PageState
+        variant="empty"
+        title="GRN Not Found"
+        description="The requested GRN does not exist or has been deleted."
+        action={(
           <Button variant="outline" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to GRNs
           </Button>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
@@ -397,51 +394,39 @@ export default function GRNDetailPage() {
   const canAccept = grn.status === 'inspecting';
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          onClick={handleBack}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to GRNs
-        </Button>
-
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="font-display text-3xl font-semibold">
-                {grn.grn_number || `GRN-${id}`}
-              </h1>
-              <Badge className={cn('text-xs', statusConfig.bgColor, statusConfig.color)}>
-                {statusConfig.label}
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span>{grn.grn_number || `GRN-${id}`}</span>
+            <Badge className={cn('text-xs', statusConfig.bgColor, statusConfig.color)}>
+              {statusConfig.label}
+            </Badge>
+            {hasQualityIssues && (
+              <Badge variant="destructive" className="text-xs">
+                <AlertOctagon className="h-3 w-3 mr-1" />
+                Quality Issues
               </Badge>
-              {hasQualityIssues && (
-                <Badge variant="destructive" className="text-xs">
-                  <AlertOctagon className="h-3 w-3 mr-1" />
-                  Quality Issues
-                </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Building2 className="h-4 w-4" />
-                <span className="text-sm">{grn.supplier_name || 'Unknown Supplier'}</span>
+            )}
+          </span>
+        )}
+        description={(
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Building2 className="h-4 w-4" />
+              <span className="text-sm">{grn.supplier_name || 'Unknown Supplier'}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4" />
+              <span className="text-sm">
+                {grn.received_date
+                  ? format(parseISO(grn.received_date), 'MMM d, yyyy')
+                  : 'N/A'}
               </span>
-              <span className="flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" />
-                <span className="text-sm">
-                  {grn.received_date
-                    ? format(parseISO(grn.received_date), 'MMM d, yyyy')
-                    : 'N/A'}
-                </span>
-              </span>
-            </div>
+            </span>
           </div>
-
+        )}
+        actions={(
           <div className="flex items-center gap-2 shrink-0">
             {canInspect && (
               <Button onClick={handleStartInspection} disabled={inspectMutation.isPending}>
@@ -478,9 +463,20 @@ export default function GRNDetailPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-      </div>
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit -ml-2"
+          onClick={handleBack}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to GRNs
+        </Button>
+      </PageHeader>
 
+      <div className="p-4 sm:p-6 space-y-6">
       {/* Acceptance Progress */}
       {grn.status === 'inspecting' && (
         <Card className="bg-card/30 border-border/50">
@@ -797,6 +793,7 @@ export default function GRNDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageShell>
   );
 }

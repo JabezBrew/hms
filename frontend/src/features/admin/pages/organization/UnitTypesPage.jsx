@@ -5,7 +5,6 @@ import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +27,10 @@ import {
 } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useUnitTypes } from '@/hooks/useOrganization';
+import { useUnitTypes } from '@/features/admin/hooks';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Link } from 'react-router-dom';
 
@@ -48,6 +50,15 @@ export default function UnitTypesPage() {
     type.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const pageMeta = usePageMeta({
+    title: 'Unit Types | HMS Admin',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization', href: '/admin/organization' },
+      { label: 'Unit Types' },
+    ],
+  });
+
   const CapabilityBadge = ({ enabled, label }) => (
     <div className="flex items-center gap-1.5">
       {enabled ? (
@@ -65,31 +76,28 @@ export default function UnitTypesPage() {
   );
 
   return (
-    <>
-      <Helmet>
-        <title>Unit Types | HMS Admin</title>
-      </Helmet>
-
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title={(
+          <span className="inline-flex items-center gap-3">
+            <span className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Settings2 className="h-5 w-5 text-amber-700" />
+            </span>
+            <span>Unit Types</span>
+          </span>
+        )}
+        description="Configure organizational unit types and their capabilities"
+        actions={(
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/admin/organization">
+            <Link to="/admin/organization" aria-label="Back to organization">
               <ChevronLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Settings2 className="h-5 w-5 text-amber-700" />
-            </div>
-            <div>
-              <h1 className="text-xl font-display font-semibold">Unit Types</h1>
-              <p className="text-sm text-muted-foreground">
-                Configure organizational unit types and their capabilities
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
+      />
+
+      <div className="p-6 max-w-6xl mx-auto">
 
         {/* Search */}
         <div className="relative mb-6">
@@ -240,6 +248,6 @@ export default function UnitTypesPage() {
           )}
         </SheetContent>
       </Sheet>
-    </>
+    </PageShell>
   );
 }

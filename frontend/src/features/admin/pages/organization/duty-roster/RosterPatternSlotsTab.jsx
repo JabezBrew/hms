@@ -36,7 +36,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Grid from 'lucide-react/dist/esm/icons/grid-3x3.js';
 import { toast } from 'sonner';
-import { rosterPatternSlotsApi } from '@/lib/api/organization';
+import { rosterPatternSlotsApi } from '@/features/admin/api';
 import {
   useDepartmentRosterPlans,
   useDepartmentRosterPatterns,
@@ -45,7 +45,7 @@ import {
   useCreateRosterPatternSlot,
   useUpdateRosterPatternSlot,
   useDeleteRosterPatternSlot,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName, formatRosterTime } from './utils';
 import { DUTY_CONTEXT_OPTIONS, DUTY_ROLE_OPTIONS, DEFAULT_CYCLE_LENGTH, SELECT_ALL, SELECT_DEFAULT } from './constants';
 import { useUnitOptions } from './useUnitOptions';

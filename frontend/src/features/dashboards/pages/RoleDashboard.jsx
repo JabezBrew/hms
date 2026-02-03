@@ -9,9 +9,9 @@ const NurseDashboard = lazy(() => import('./NurseDashboard'))
 const ReceptionistDashboard = lazy(() => import('./ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./AdminDashboard'))
 const InpatientDoctorDashboard = lazy(() => import('./InpatientDoctorDashboard'))
-const BillingDashboardPage = lazy(() => import('../billing/BillingDashboardPage'))
-const LabDashboardPage = lazy(() => import('../laboratory/LabDashboardPage'))
-const PharmacyDispensingPage = lazy(() => import('../pharmacy/PharmacyDispensingPage'))
+const BillingDashboardPage = lazy(() => import('../../billing/pages/BillingDashboardPage'))
+const LabDashboardPage = lazy(() => import('../../laboratory/pages/LabDashboardPage'))
+const PharmacyDispensingPage = lazy(() => import('../../pharmacy/pages/PharmacyDispensingPage'))
 
 // Loading fallback for dashboards
 function DashboardLoader() {

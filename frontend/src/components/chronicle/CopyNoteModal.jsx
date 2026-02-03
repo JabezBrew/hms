@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { useNoteEntrySections } from "@/hooks/useClinicalNotesQueries";
+import { useNoteEntrySections } from "@/features/clinical-notes/hooks";
 
 /**
  * CopyNoteModal - Dialog for copying clinical notes with section selection

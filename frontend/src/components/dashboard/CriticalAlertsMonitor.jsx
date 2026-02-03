@@ -5,7 +5,7 @@ import {
   useNurseDashboard,
   useAdminDashboard,
   useInpatientDashboard,
-} from '@/hooks/useDashboardQueries';
+} from '@/features/dashboards/hooks';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';

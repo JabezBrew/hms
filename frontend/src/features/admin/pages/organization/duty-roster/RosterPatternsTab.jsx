@@ -42,7 +42,7 @@ import {
   useCreateDepartmentRosterPattern,
   useUpdateDepartmentRosterPattern,
   useDeleteDepartmentRosterPattern,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName } from './utils';
 import { SELECT_ALL } from './constants';
 import { useUnitOptions } from './useUnitOptions';

@@ -18,6 +18,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import {
   Select,
   SelectContent,
@@ -39,7 +42,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   usePatientInsurances,
   useDeletePatientInsurance,
-} from '@/hooks/useBillingQueries';
+} from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
@@ -163,7 +166,7 @@ export default function InsuranceManagementPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <Skeleton className="h-12 w-64" />
         <div className="flex gap-4">
           <Skeleton className="h-10 flex-1 max-w-md" />
@@ -174,49 +177,39 @@ export default function InsuranceManagementPage() {
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Insurance Records</h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Insurance Records"
+        description={error.message}
+        action={() => refetch()}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight flex items-center gap-3">
-              <Shield className="h-7 w-7 text-[oklch(0.70_0.15_230)]" />
-              Patient Insurance
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage patient insurance records and coverage
-            </p>
-          </div>
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <Shield className="h-7 w-7 text-[oklch(0.70_0.15_230)]" />
+            Patient Insurance
+          </span>
+        )}
+        description="Manage patient insurance records and coverage"
+        actions={(
           <Button onClick={handleAddInsurance} className="font-mono text-xs">
             <Plus className="h-4 w-4 mr-2" />
             Add Insurance
           </Button>
-        </div>
-      </header>
+        )}
+      />
 
       <main className="p-4 sm:p-6 space-y-6">
         {/* Filters */}
@@ -356,7 +349,7 @@ export default function InsuranceManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }
 

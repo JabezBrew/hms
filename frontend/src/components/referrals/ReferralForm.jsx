@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useCreateReferral, useSubmitReferral } from "@/hooks/useReferralQueries";
+import { useCreateReferral, useSubmitReferral } from "@/features/referrals/hooks";
 import { toast } from "sonner";
 
 /**

@@ -4,7 +4,6 @@
  * Chronicle Design System styling
  */
 import { useState, useMemo } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -37,6 +36,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import {
   Select,
   SelectContent,
@@ -85,7 +87,7 @@ import {
   useUpdateValidationRule,
   useDeleteValidationRule,
   useClinics,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { flattenUnitTree, toList } from './duty-roster/utils';
 import { EmptyState } from './duty-roster/components';
 
@@ -1923,35 +1925,32 @@ export default function RosterSetupPage() {
   );
   const dutyTypes = toList(dutyTypeData);
 
-  return (
-    <>
-      <Helmet>
-        <title>Roster Setup | Organization</title>
-      </Helmet>
+  const pageMeta = usePageMeta({
+    title: 'Roster Setup | Organization',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization', href: '/admin/organization' },
+      { label: 'Roster Setup' },
+    ],
+  });
 
-      <div className="min-h-screen bg-background">
-        <div className="container max-w-5xl mx-auto py-8 pb-24 px-4 sm:px-6 lg:px-8">
-          {/* Header */}
-          <header className="mb-8">
-            <div className="flex items-center gap-4 mb-4">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/admin/organization/duty-roster">
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  Back to Roster
-                </Link>
-              </Button>
-            </div>
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
-                  Roster Setup
-                </h1>
-                <p className="mt-2 text-muted-foreground text-sm">
-                  Configure teams, duty types, and rotation rules for each department or division.
-                </p>
-              </div>
-            </div>
-          </header>
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Roster Setup"
+        description="Configure teams, duty types, and rotation rules for each department or division."
+        actions={(
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/admin/organization/duty-roster">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to Roster
+            </Link>
+          </Button>
+        )}
+      />
+
+      <div className="container max-w-5xl mx-auto py-8 pb-24 px-4 sm:px-6 lg:px-8">
 
           {/* Department Selector */}
           <Card className="mb-6 border-border">
@@ -2086,7 +2085,6 @@ export default function RosterSetupPage() {
             </Card>
           )}
         </div>
-      </div>
-    </>
+      </PageShell>
   );
 }

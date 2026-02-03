@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Select,
@@ -49,7 +51,7 @@ import {
   useLabResults,
   useVerifyLabResult,
   useBulkVerifyLabResults,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**
@@ -308,24 +310,20 @@ export default function LabResultsPage() {
   const isSubmitting = verifyMutation.isPending || bulkVerifyMutation.isPending;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-              Lab Results
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {stats.orders} orders · {stats.total} results
-              {stats.critical > 0 && (
-                <span className="text-rose-600 ml-2">
-                  ({stats.critical} critical)
-                </span>
-              )}
-            </p>
-          </div>
-
+    <PageShell>
+      <PageHeader
+        title="Lab Results"
+        description={(
+          <span>
+            {stats.orders} orders · {stats.total} results
+            {stats.critical > 0 && (
+              <span className="text-rose-600 ml-2">
+                ({stats.critical} critical)
+              </span>
+            )}
+          </span>
+        )}
+        actions={(
           <Button
             variant="outline"
             size="sm"
@@ -335,10 +333,10 @@ export default function LabResultsPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-        </div>
-
+        )}
+      >
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6">
           <StatCard
             title="Total Results"
             value={stats.total}
@@ -364,7 +362,7 @@ export default function LabResultsPage() {
             color="rose"
           />
         </div>
-      </header>
+      </PageHeader>
 
       {/* Tabs */}
       <div className="bg-card/50 border-b border-border px-4 sm:px-6">
@@ -855,6 +853,6 @@ export default function LabResultsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

@@ -8,6 +8,7 @@
 
 import { useParams, useNavigate } from "react-router-dom";
 import { ChartTemplateBuilder } from "@/components/charts";
+import { PageShell } from "@/shared/components/page/PageShell";
 
 const ChartBuilderPage = () => {
   const { id } = useParams();
@@ -22,11 +23,13 @@ const ChartBuilderPage = () => {
   };
 
   return (
-    <ChartTemplateBuilder
-      templateId={id}
-      onClose={handleClose}
-      onSaved={handleSaved}
-    />
+    <PageShell>
+      <ChartTemplateBuilder
+        templateId={id}
+        onClose={handleClose}
+        onSaved={handleSaved}
+      />
+    </PageShell>
   );
 };
 

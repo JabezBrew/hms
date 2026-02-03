@@ -12,22 +12,23 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import {
-  ChroniclePageHeader,
   StatCard,
   ActionCard,
   DashboardSection,
   DashboardGrid,
 } from '@/components/dashboard';
-import { useReceptionistDashboard } from '@/hooks/useDashboardQueries';
-import { useDashboardActions } from '@/hooks/useDashboardActions';
+import { useReceptionistDashboard } from '@/features/dashboards/hooks';
+import { useDashboardActions } from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import format from 'date-fns/format';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 export default function ReceptionistDashboard() {
   const navigate = useNavigate();
@@ -45,16 +46,18 @@ export default function ReceptionistDashboard() {
   // Action handlers
   const { checkInPatient, scheduleAppointment } = useDashboardActions();
 
-  const breadcrumbItems = [
-    { label: 'Dashboards', href: '/dashboards' },
-    { label: 'Reception Dashboard', href: '/dashboards/reception' },
-  ];
-
   if (!facilityCode) {
     return (
       <Layout>
-        <PageBreadcrumb items={breadcrumbItems} />
-        <FacilityRequiredPanel />
+        <PageShell>
+          <PageHeader
+            title="Reception Dashboard"
+            description="Manage check-ins, scheduling, and front desk operations"
+          />
+          <div className="p-4 sm:p-6">
+            <FacilityRequiredPanel />
+          </div>
+        </PageShell>
       </Layout>
     );
   }
@@ -62,15 +65,20 @@ export default function ReceptionistDashboard() {
   if (error) {
     return (
       <Layout>
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
-            <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
-              Failed to load dashboard
-            </h3>
-            <p className="text-sm text-muted-foreground">{error.message}</p>
-          </div>
-        </div>
+        <PageShell>
+          <PageHeader
+            title="Reception Dashboard"
+            description="Manage check-ins, scheduling, and front desk operations"
+          />
+          <PageState
+            variant="error"
+            title="Failed to load dashboard"
+            description={error.message}
+            action={() => refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
       </Layout>
     );
   }
@@ -82,44 +90,42 @@ export default function ReceptionistDashboard() {
 
   return (
     <Layout>
-      <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        <PageHeader
+          title="Reception Dashboard"
+          description="Manage patient check-ins, registrations, and appointments"
+          actions={(
+            <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => navigate('/patients/create')}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Register Patient
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/triage')}
+              >
+                <ClipboardList className="h-4 w-4 mr-2" />
+                Triage Queue
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                aria-label="Refresh dashboard"
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        />
 
-      <ChroniclePageHeader
-        title="Reception Dashboard"
-        role="receptionist"
-        subtitle="Manage patient check-ins, registrations, and appointments"
-        actions={
-          <>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => navigate('/patients/create')}
-            >
-              <UserPlus className="h-4 w-4 mr-2" />
-              Register Patient
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/triage')}
-            >
-              <ClipboardList className="h-4 w-4 mr-2" />
-              Triage Queue
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              aria-label="Refresh dashboard"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-            </Button>
-          </>
-        }
-      />
-
-      <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
         {/* Statistics */}
         {isLoading ? (
           <DashboardGrid columns="4">
@@ -368,7 +374,8 @@ export default function ReceptionistDashboard() {
             </div>
           )}
         </DashboardSection>
-      </div>
+        </div>
+      </PageShell>
     </Layout>
   );
 }

@@ -49,7 +49,7 @@ import {
   useUpdateStaffAssignment,
   useDeleteStaffAssignment,
 } from '@/features/wards/hooks/useWardQueries';
-import { useSearchPractitioners } from '@/hooks/useStaffQueries';
+import { useSearchPractitioners } from '@/features/staff/hooks';
 import { toast } from 'sonner';
 
 /**

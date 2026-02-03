@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 
 import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
-import { useChartEntries, useChartAssignment } from "@/hooks/useChartQueries";
+import { useChartEntries, useChartAssignment } from "@/features/charts/hooks";
 
 const ChartDataGrid = ({
   assignmentId,

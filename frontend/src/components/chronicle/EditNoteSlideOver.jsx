@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-import { useUpdateNoteEntry } from "@/hooks/useClinicalNotesQueries";
+import { useUpdateNoteEntry } from "@/features/clinical-notes/hooks";
 import { toast } from "sonner";
 
 /**

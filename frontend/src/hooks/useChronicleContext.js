@@ -6,12 +6,15 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const chronicleKeyFactory = createKeyFactory('chronicle');
+
 export const chronicleKeys = {
-  all: ['chronicle'],
-  context: (patientId) => [...chronicleKeys.all, 'context', patientId],
-  timeline: (patientId, filters) => [...chronicleKeys.all, 'timeline', patientId, filters],
+  all: chronicleKeyFactory.all,
+  context: (patientId) => keyWith('chronicle', 'context', patientId),
+  timeline: (patientId, filters) => keyWith('chronicle', 'timeline', patientId, filters),
 };
 
 /**
@@ -69,7 +72,7 @@ export function useTimelineV2(patientId, filters = {}, options = {}) {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['chronicle', 'timeline', patientId, type, search, page, pageSize, startDate, endDate, encounterId],
+    queryKey: keyWith('chronicle', 'timeline', patientId, type, search, page, pageSize, startDate, endDate, encounterId),
     queryFn: async () => {
       const params = new URLSearchParams();
       if (type && type !== 'all') params.append('type', type);

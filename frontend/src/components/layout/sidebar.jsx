@@ -43,7 +43,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 import { useAuth } from "@/lib/auth"
-import { useInboxCount } from "@/hooks/useInboxCount"
+import { useInboxCount } from "@/features/inbox/hooks"
 import { useSidebarState } from "@/hooks/useSidebarState"
 
 // Helper function to check if a user has access to a menu item

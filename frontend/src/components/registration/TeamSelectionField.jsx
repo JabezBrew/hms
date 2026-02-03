@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { rosterEntriesApi, clinicalUnitsApi } from '@/lib/api/organization';
+import { rosterEntriesApi, clinicalUnitsApi } from '@/features/admin/api';
 import { cn } from '@/lib/utils';
 
 /**

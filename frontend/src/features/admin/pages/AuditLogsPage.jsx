@@ -9,7 +9,6 @@ import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import { useState, useMemo, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +29,11 @@ import {
   useAuditStats,
   useAuditFilters,
   exportAuditLogs,
-} from '@/hooks/useAuditLogs';
+} from '@/features/admin/hooks';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { useListFilters } from '@/shared/hooks/useListFilters';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { toast } from 'sonner';
 import format from 'date-fns/format';
@@ -40,7 +43,13 @@ import format from 'date-fns/format';
  */
 const AuditLogsPage = () => {
   // Filter state
-  const [searchQuery, setSearchQuery] = useState('');
+  const {
+    search: searchQuery,
+    updateSearch,
+    page: currentPage,
+    setPage: setCurrentPage,
+    hasActiveFilters: hasBaseFilters,
+  } = useListFilters({ pageSize: 35 });
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedAction, setSelectedAction] = useState('all');
   const [dateFrom, setDateFrom] = useState(null);
@@ -73,9 +82,6 @@ const AuditLogsPage = () => {
     if (sortBy) f.ordering = sortBy;
     return f;
   }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo, sortBy]);
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
 
   // Fetch data
   const {
@@ -111,7 +117,7 @@ const AuditLogsPage = () => {
 
   // Handlers
   const handleClearFilters = () => {
-    setSearchQuery('');
+    updateSearch('');
     setSelectedCategory('all');
     setSelectedAction('all');
     setDateFrom(null);
@@ -135,35 +141,32 @@ const AuditLogsPage = () => {
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedCategory !== 'all' || selectedAction !== 'all' || dateFrom || dateTo;
+  const hasActiveFilters = hasBaseFilters || selectedCategory !== 'all' || selectedAction !== 'all' || dateFrom || dateTo;
+
+  const pageMeta = usePageMeta({
+    title: 'Audit Logs | HMS Admin',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Audit Logs' },
+    ],
+  });
 
   // ============================================
   // Render
   // ============================================
 
   return (
-    <>
-      <Helmet>
-        <title>Audit Logs | HMS Admin</title>
-        <meta name="description" content="View system audit logs" />
-      </Helmet>
-
-      <div className="min-h-screen bg-background">
-        {/* Page Header */}
-        <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Shield className="h-6 w-6 text-primary" />
-                <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight">
-                  Audit Logs
-                </h1>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Track system activity and user actions
-              </p>
-            </div>
-
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-2">
+              <Shield className="h-6 w-6 text-primary" />
+              Audit Logs
+            </span>
+          )}
+          description="Track system activity and user actions"
+          actions={(
             <Button
               onClick={handleExport}
               variant="outline"
@@ -173,11 +176,14 @@ const AuditLogsPage = () => {
               <Download className="h-4 w-4 mr-2" />
               Export CSV
             </Button>
-          </div>
+          )}
+        />
 
+        {/* Logs List */}
+        <main className="p-4 sm:p-6 space-y-6">
           {/* Stats Row */}
           {stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 sm:mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard
                 icon={Activity}
                 label="Total Logs"
@@ -215,7 +221,7 @@ const AuditLogsPage = () => {
                 id="audit-search"
                 placeholder="Search logs by description, user, or resource..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => updateSearch(e.target.value)}
                 className="pl-10 font-mono text-sm bg-background"
               />
             </div>
@@ -290,10 +296,7 @@ const AuditLogsPage = () => {
               )}
             </div>
           </div>
-        </header>
 
-        {/* Logs List */}
-        <main className="p-4 sm:p-6">
           {isLoading ? (
             <LoadingSkeleton />
           ) : isError ? (
@@ -322,8 +325,7 @@ const AuditLogsPage = () => {
             </div>
           )}
         </main>
-      </div>
-    </>
+      </PageShell>
   );
 };
 

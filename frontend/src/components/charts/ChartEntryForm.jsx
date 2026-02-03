@@ -25,7 +25,7 @@ import { ChartFieldRenderer } from "./ChartFieldRenderer";
 import {
   useChartAssignment,
   useCreateChartEntry,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
 
 /**
  * ChartEntryForm - Slide-over for recording chart observations

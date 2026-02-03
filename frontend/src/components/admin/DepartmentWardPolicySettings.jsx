@@ -19,8 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { clinicalUnitsApi } from '@/lib/api/organization';
-import { organizationKeys } from '@/hooks/useOrganization';
+import { clinicalUnitsApi } from '@/features/admin/api';
+import { organizationKeys } from '@/features/admin/hooks';
 import { cn } from '@/lib/utils';
 
 const POLICY_OPTIONS = [

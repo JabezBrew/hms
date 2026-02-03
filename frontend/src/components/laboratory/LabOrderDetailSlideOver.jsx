@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import format from "date-fns/format";
-import { useLabOrder } from "@/hooks/useLabQueries";
+import { useLabOrder } from "@/features/laboratory/hooks";
 import { CancelOrderDialog } from "./CancelOrderDialog";
 import { SpecimenCollectionDialog } from "./SpecimenCollectionDialog";
 import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";

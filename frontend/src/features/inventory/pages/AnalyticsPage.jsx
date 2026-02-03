@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import {
   Select,
   SelectContent,
@@ -17,7 +19,7 @@ import {
   useABCAnalysis,
   useSupplierPerformance,
   useStockValuation,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/bar-chart-3.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
@@ -549,18 +551,11 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">
-            Inventory Analytics
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Consumption trends, ABC analysis, and stock valuation
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell>
+      <PageHeader
+        title="Inventory Analytics"
+        description="Consumption trends, ABC analysis, and stock valuation"
+        actions={(
           <Select value={period} onValueChange={handlePeriodChange}>
             <SelectTrigger className="w-[150px] font-mono text-sm">
               <SelectValue />
@@ -573,8 +568,10 @@ export default function AnalyticsPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-      </div>
+        )}
+      />
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -613,6 +610,7 @@ export default function AnalyticsPage() {
           <ValuationTab />
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </PageShell>
   );
 }

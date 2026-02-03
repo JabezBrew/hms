@@ -29,15 +29,18 @@ import {
   rotationRulesApi,
   rosterEntriesApi,
   validationRulesApi,
-} from '@/lib/api/organization';
+} from '@/features/admin/api';
 import { usePaginatedQuery } from './usePaginatedQuery';
+import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // =============================================================================
 // Query Keys
 // =============================================================================
 
+const organizationKeyFactory = createKeyFactory('organization');
+
 export const organizationKeys = {
-  all: ['organization'],
+  all: organizationKeyFactory.all,
 
   // Unit Types
   unitTypes: () => [...organizationKeys.all, 'unit-types'],

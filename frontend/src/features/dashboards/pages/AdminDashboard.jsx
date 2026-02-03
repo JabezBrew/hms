@@ -11,15 +11,13 @@ import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import {
-  ChroniclePageHeader,
   StatCard,
   DashboardSection,
   DashboardGrid,
   OccupancyTrendChart,
 } from '@/components/dashboard';
-import { useAdminDashboard } from '@/hooks/useDashboardQueries';
+import { useAdminDashboard } from '@/features/dashboards/hooks';
 import { useFacilities } from '@/hooks/useFacilityQueries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +26,9 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -48,16 +49,39 @@ export default function AdminDashboard() {
     error: facilitiesError,
   } = useFacilities({ includeInactive: true });
 
-  const breadcrumbItems = [
-    { label: 'Dashboards', href: '/dashboards' },
-    { label: 'Admin Dashboard', href: '/dashboards/admin' },
-  ];
-
   if (!facilityCode) {
     return (
       <Layout>
-        <PageBreadcrumb items={breadcrumbItems} />
-        <FacilityRequiredPanel />
+        <PageShell>
+          <PageHeader
+            title="Admin Dashboard"
+            description="System overview and facility management"
+            actions={(
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/admin/settings')}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  aria-label="Refresh dashboard"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                </Button>
+              </div>
+            )}
+          />
+          <div className="p-4 sm:p-6">
+            <FacilityRequiredPanel />
+          </div>
+        </PageShell>
       </Layout>
     );
   }
@@ -65,15 +89,41 @@ export default function AdminDashboard() {
   if (error) {
     return (
       <Layout>
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
-            <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
-              Failed to load dashboard
-            </h3>
-            <p className="text-sm text-muted-foreground">{error.message}</p>
-          </div>
-        </div>
+        <PageShell>
+          <PageHeader
+            title="Admin Dashboard"
+            description="System overview and facility management"
+            actions={(
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/admin/settings')}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  aria-label="Refresh dashboard"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                </Button>
+              </div>
+            )}
+          />
+          <PageState
+            variant="error"
+            title="Failed to load dashboard"
+            description={error.message}
+            action={() => refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
       </Layout>
     );
   }
@@ -91,36 +141,34 @@ export default function AdminDashboard() {
 
   return (
     <Layout>
-      <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        <PageHeader
+          title="Admin Dashboard"
+          description="System overview and facility management"
+          actions={(
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/admin/settings')}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                aria-label="Refresh dashboard"
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        />
 
-      <ChroniclePageHeader
-        title="Admin Dashboard"
-        role="admin"
-        subtitle="System overview and facility management"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/admin/settings')}
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Settings
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              aria-label="Refresh dashboard"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-            </Button>
-          </>
-        }
-      />
-
-      <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
         {/* System Health Banner */}
         {!isLoading && systemHealth !== 'good' && (
           <div
@@ -516,7 +564,8 @@ export default function AdminDashboard() {
             </DashboardGrid>
           )}
         </DashboardSection>
-      </div>
+        </div>
+      </PageShell>
     </Layout>
   );
 }

@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { usePractitioners } from '@/hooks/useStaffQueries';
+import { usePractitioners } from '@/features/staff/hooks';
 import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/features/appointments/hooks/useAppointmentQueries';
 
 const formSchema = z.object({

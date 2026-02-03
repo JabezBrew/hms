@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import {
   Select,
   SelectContent,
@@ -23,12 +26,12 @@ import {
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useInvoices } from '@/hooks/useBillingQueries';
+import { useInvoices } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 
-import { patientsApi } from '@/lib/api/patients';
+import { patientsApi } from '@/features/patients/api';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 
 const STATUS_OPTIONS = [
@@ -165,7 +168,7 @@ export default function InvoicesPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <Skeleton className="h-12 w-64" />
         <div className="flex gap-4">
           <Skeleton className="h-10 flex-1 max-w-md" />
@@ -176,57 +179,47 @@ export default function InvoicesPage() {
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Invoices</h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Invoices"
+        description={error.message}
+        action={() => refetch()}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl sm:text-4xl text-foreground tracking-tight">
-              Invoices
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <p className="text-muted-foreground">
-                {totalCount} invoice{totalCount !== 1 ? 's' : ''} found
-              </p>
-              {patientId && patientName && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-mono">
-                  <User className="h-3 w-3" />
-                  {patientName}
-                  <button
-                    onClick={clearPatientFilter}
-                    className="ml-0.5 hover:bg-primary/20 rounded-full p-0.5 transition-colors"
-                    title="Clear patient filter"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-            </div>
+    <PageShell>
+      <PageHeader
+        title="Invoices"
+        description={(
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-muted-foreground">
+              {totalCount} invoice{totalCount !== 1 ? 's' : ''} found
+            </p>
+            {patientId && patientName && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-mono">
+                <User className="h-3 w-3" />
+                {patientName}
+                <button
+                  onClick={clearPatientFilter}
+                  className="ml-0.5 hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                  title="Clear patient filter"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
           </div>
+        )}
+        actions={(
           <Button
             onClick={() => navigate('/billing/invoices/new')}
             className="font-mono text-xs w-full sm:w-auto"
@@ -234,8 +227,8 @@ export default function InvoicesPage() {
             <Plus className="h-4 w-4 mr-2" />
             New Invoice
           </Button>
-        </div>
-      </header>
+        )}
+      />
 
       {/* Filters */}
       <div className="px-4 sm:px-6 py-4 bg-card/50 border-b border-border">
@@ -365,7 +358,7 @@ export default function InvoicesPage() {
         patientName={contextInvoice?.patient_name}
         patientMrn={contextInvoice?.patient_mrn}
       />
-    </div>
+    </PageShell>
   );
 }
 

@@ -14,12 +14,15 @@ import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoctorDashboard } from '@/hooks/useDoctorDashboard';
+import { useDoctorDashboard } from '@/features/dashboards/hooks';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { useNavigate } from 'react-router-dom';
 
 import { useVisitActions } from '@/hooks/useVisitQueries';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 export default function DoctorDashboard() {
   const { facilityCode } = useAuth();
@@ -29,9 +32,15 @@ export default function DoctorDashboard() {
 
   if (!facilityCode) {
     return (
-      <div className="min-h-screen bg-background">
-        <FacilityRequiredPanel className="max-w-4xl mx-auto" />
-      </div>
+      <PageShell>
+        <PageHeader
+          title="Today's Clinic"
+          description="Clinic overview"
+        />
+        <div className="p-6">
+          <FacilityRequiredPanel className="max-w-4xl mx-auto" />
+        </div>
+      </PageShell>
     );
   }
 
@@ -51,33 +60,30 @@ export default function DoctorDashboard() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-6 space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-12 w-64" />
-          <Skeleton className="h-4 w-48" />
+      <PageShell>
+        <div className="p-6 space-y-6">
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-64" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-48 w-full rounded-2xl" />
+          <Skeleton className="h-64 w-full rounded-2xl" />
         </div>
-        <Skeleton className="h-48 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      </div>
+      </PageShell>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Dashboard</h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageShell>
+        <PageState
+          variant="error"
+          title="Error Loading Dashboard"
+          description={error.message}
+          action={() => refetch()}
+        />
+      </PageShell>
     );
   }
 
@@ -96,26 +102,21 @@ export default function DoctorDashboard() {
   const totalAppointments = (data.upcoming?.length || 0) + (data.completed?.length || 0) + (data.current_patient ? 1 : 0);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-6 py-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
-              {todayDate}
-            </p>
-            <h1 className="font-display text-4xl text-foreground tracking-tight">
-              Today's Clinic
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              {data.user_name && `Dr. ${data.user_name}`}
-              {totalAppointments > 0 && (
-                <span className="ml-2">
-                  · {totalAppointments} appointment{totalAppointments !== 1 ? 's' : ''} scheduled
-                </span>
-              )}
-            </p>
-          </div>
+    <PageShell>
+      <PageHeader
+        meta={todayDate}
+        title="Today's Clinic"
+        description={(
+          <span>
+            {data.user_name && `Dr. ${data.user_name}`}
+            {totalAppointments > 0 && (
+              <span className="ml-2">
+                · {totalAppointments} appointment{totalAppointments !== 1 ? 's' : ''} scheduled
+              </span>
+            )}
+          </span>
+        )}
+        actions={(
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -145,8 +146,9 @@ export default function DoctorDashboard() {
               Refresh
             </Button>
           </div>
-        </div>
-      </header>
+        )}
+        descriptionClassName="text-muted-foreground mt-2"
+      />
 
       <main className="p-6 space-y-6">
         {/* Current Patient - Hero Card */}
@@ -310,7 +312,7 @@ export default function DoctorDashboard() {
           </section>
         )}
       </main>
-    </div>
+    </PageShell>
   );
 }
 

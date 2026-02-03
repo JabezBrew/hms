@@ -29,7 +29,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
-import { useUpdateStaff, staffKeys } from '@/hooks/useStaffQueries';
+import { useUpdateStaff, staffKeys } from '@/features/staff/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -55,8 +55,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { DatePicker } from '@/components/ui/date-picker';
-import { staffApi } from '@/lib/api/staff';
-import { authApi } from '@/lib/api/auth';
+import { staffApi } from '@/features/staff/api';
+import { authApi } from '@/shared/api/auth';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 import StaffActivityLog from './StaffActivityLog';
 import { StaffWardAssignments } from './StaffWardAssignments';
@@ -261,86 +263,87 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
     navigate(`/staff/${staff.id}/schedule`);
   };
 
+  const headerDescription = (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium", roleConfig.badgeClass)}>
+          <RoleIcon className="h-3 w-3" />
+          {roleConfig.label}
+        </span>
+        <span className="font-mono text-xs text-muted-foreground">{employeeId}</span>
+      </div>
+      <p className="text-sm text-muted-foreground">{roleConfig.description}</p>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card border-b border-border">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
-          {/* Navigation */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-            <Button variant="ghost" size="sm" onClick={onBack} className="self-start -ml-2">
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Staff Directory
-            </Button>
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              {isEditing ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                    <X className="h-4 w-4 mr-2" />
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={updateMutation.isPending}>
-                    <Save className="h-4 w-4 mr-2" />
-                    {updateMutation.isPending ? 'Saving...' : 'Save'}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    <span className="hidden sm:inline">Edit</span>
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                        <Trash2 className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Delete</span>
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete {fullName}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete the staff member and remove their data from the system.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                          {isDeleting ? 'Deleting...' : 'Delete'}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Identity Hero */}
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-            <div className={cn("w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0", roleConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20'))}>
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-4">
+            <span className={cn("w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0", roleConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20'))}>
               <RoleIcon className="h-8 w-8 sm:h-10 sm:w-10 text-foreground/70" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">{fullName}</h1>
-                {!isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium", roleConfig.badgeClass)}>
-                  <RoleIcon className="h-3 w-3" />
-                  {roleConfig.label}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">{employeeId}</span>
-              </div>
-              <p className="text-sm text-muted-foreground">{roleConfig.description}</p>
-            </div>
+            </span>
+            <span className="flex flex-wrap items-center gap-2">
+              {fullName}
+              {!isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+            </span>
+          </span>
+        )}
+        description={headerDescription}
+        descriptionClassName="mt-2"
+        actions={(
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={updateMutation.isPending}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {updateMutation.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  <span className="hidden sm:inline">Edit</span>
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                      <Trash2 className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {fullName}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the staff member and remove their data from the system.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        {isDeleting ? 'Deleting...' : 'Delete'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
-        </div>
-      </header>
+        )}
+        contentClassName="max-w-4xl mx-auto w-full"
+      >
+        <Button variant="ghost" size="sm" onClick={onBack} className="self-start -ml-2">
+          <ChevronLeft className="h-4 w-4 mr-1" />
+          Staff Directory
+        </Button>
+      </PageHeader>
 
       {/* Content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
@@ -582,7 +585,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
           </section>
         )}
       </main>
-    </div>
+    </PageShell>
   );
 };
 

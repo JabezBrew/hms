@@ -1,6 +1,10 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import StaffForm from '@/components/staff/StaffForm';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 const StaffCreatePage = () => {
   const navigate = useNavigate();
@@ -29,21 +33,29 @@ const StaffCreatePage = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center">
-        <button 
-          className="text-sm text-muted-foreground hover:text-foreground flex items-center"
+    <PageShell>
+      <PageHeader
+        title="Add Staff Member"
+        description="Create a new staff profile"
+        contentClassName="max-w-4xl mx-auto w-full"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => navigate('/staff')}
+          className="-ml-2 font-mono text-xs"
         >
-          ← Back to Staff List
-        </button>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Staff List
+        </Button>
+      </PageHeader>
+
+      <div className="p-4 sm:p-6">
+        <div className="max-w-4xl mx-auto">
+          <StaffForm onSuccess={handleSuccess} />
+        </div>
       </div>
-      <div className="max-w-4xl mx-auto">
-        <StaffForm 
-          onSuccess={handleSuccess} 
-        />
-      </div>
-    </div>
+    </PageShell>
   );
 };
 

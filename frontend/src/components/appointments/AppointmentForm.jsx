@@ -45,7 +45,7 @@ import {
   createAppointment,
 } from '@/features/appointments/api';
 import { patientsApi } from '@/features/patients/api';
-import { staffApi } from '@/lib/api/staff';
+import { staffApi } from '@/features/staff/api';
 import { SearchBar } from "@/components/ui/search-bar";
 import DoctorAvailability from './DoctorAvailability';
 

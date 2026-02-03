@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { useRecordPayment } from '@/hooks/useBillingQueries';
+import { useRecordPayment } from '@/features/billing/hooks';
 import { toast } from 'sonner';
 
 const PAYMENT_METHODS = [

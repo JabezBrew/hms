@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useNoteEntriesForEncounter } from '@/hooks/useClinicalNotesQueries';
+import { useNoteEntriesForEncounter } from '@/features/clinical-notes/hooks';
 import { fetchEncounter, dischargeEncounter, cancelEncounter } from '@/lib/api';
 import { TimelineEntry } from '@/components/chronicle';
 import {

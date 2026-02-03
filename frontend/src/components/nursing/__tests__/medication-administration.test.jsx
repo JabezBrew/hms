@@ -16,7 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MedicationAdministration } from '../MedicationAdministration'
 
 // Mock the nursing queries hooks
-vi.mock('@/hooks/useNursingQueries', () => ({
+vi.mock('@/features/nursing/hooks', () => ({
   usePatientMAR: vi.fn(),
   useReadyForAdmin: vi.fn(),
   useAdministerMedication: vi.fn(),
@@ -36,7 +36,7 @@ import {
   usePatientMAR,
   useReadyForAdmin,
   useAdministerMedication,
-} from '@/hooks/useNursingQueries'
+} from '@/features/nursing/hooks'
 import { toast } from 'sonner'
 
 // Helper to create test query client

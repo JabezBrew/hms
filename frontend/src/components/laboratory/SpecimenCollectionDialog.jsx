@@ -25,7 +25,7 @@ import {
 
 import format from "date-fns/format";
 import { toast } from "sonner";
-import { useCreateLabSpecimen, useCollectLabOrder } from "@/hooks/useLabQueries";
+import { useCreateLabSpecimen, useCollectLabOrder } from "@/features/laboratory/hooks";
 
 /**
  * SpecimenCollectionDialog - Dialog for recording specimen collection

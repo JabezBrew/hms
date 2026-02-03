@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { wardsApi } from '@/lib/api/wards';
+import { wardsApi } from '@/features/wards/api';
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
 import differenceInDays from 'date-fns/differenceInDays';

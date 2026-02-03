@@ -2,19 +2,20 @@ import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
-import { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
-import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { useNoteTemplates, useDeleteNoteTemplate } from '@/hooks/useClinicalNotesQueries';
+import { useState } from 'react';
+import { useNoteTemplates, useDeleteNoteTemplate } from '@/features/clinical-notes/hooks';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 export default function TemplateListPage() {
   const [activeTab, setActiveTab] = useState('list');
@@ -27,16 +28,13 @@ export default function TemplateListPage() {
   // Delete template mutation
   const deleteTemplate = useDeleteNoteTemplate();
 
-  // Set breadcrumb
-  const { updateBreadcrumbs } = useBreadcrumb();
-
-  // Update breadcrumbs
-  useEffect(() => {
-    updateBreadcrumbs([
-      { label: 'Clinical Notes', path: '/clinical-notes' },
-      { label: 'Templates', path: '/clinical-notes/templates' }
-    ]);
-  }, [updateBreadcrumbs]);
+  const pageMeta = usePageMeta({
+    title: 'Clinical Note Templates | HMS',
+    breadcrumbs: [
+      { label: 'Clinical Notes', href: '/clinical-notes' },
+      { label: 'Templates', href: '/clinical-notes/templates' },
+    ],
+  });
 
   // Handle template creation success
   const handleTemplateCreationSuccess = () => {
@@ -73,41 +71,31 @@ export default function TemplateListPage() {
   };
 
   return (
-    <>
-      <Helmet>
-        <title>Clinical Note Templates | HMS</title>
-        <meta name="description" content="Manage clinical note templates" />
-      </Helmet>
-
-      <div className="container mx-auto py-6 space-y-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clinical Note Templates</h1>
-            <p className="text-muted-foreground">
-              Create and manage templates for clinical documentation
-            </p>
-          </div>
-
-          {activeTab === 'list' && (
-            <Button onClick={() => setActiveTab('create')}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Template
-            </Button>
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title="Clinical Note Templates"
+          description="Create and manage templates for clinical documentation"
+          actions={(
+            activeTab === 'list' ? (
+              <Button onClick={() => setActiveTab('create')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Template
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => {
+                setActiveTab('list');
+                setSelectedTemplate(null);
+              }}>
+                Back to Templates
+              </Button>
+            )
           )}
+          contentClassName="max-w-6xl mx-auto w-full"
+        />
 
-          {activeTab !== 'list' && (
-            <Button variant="outline" onClick={() => {
-              setActiveTab('list');
-              setSelectedTemplate(null);
-            }}>
-              Back to Templates
-            </Button>
-          )}
-        </div>
-
-        <Separator />
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="hidden">
             <TabsTrigger value="list">Templates</TabsTrigger>
             <TabsTrigger value="create">Create Template</TabsTrigger>
@@ -342,6 +330,6 @@ export default function TemplateListPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </>
+    </PageShell>
   );
 }

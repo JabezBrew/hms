@@ -18,6 +18,9 @@ import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -112,13 +115,9 @@ export default function ProviderDashboard() {
   const [selectedTask, setSelectedTask] = useState(null);
   const { facilityCode } = useAuth();
 
-  if (!facilityCode) {
-    return (
-      <div className="min-h-screen bg-background">
-        <FacilityRequiredPanel className="max-w-4xl mx-auto" />
-      </div>
-    );
-  }
+  const pageMeta = usePageMeta({
+    title: 'Command Center | HMS',
+  });
 
   const todayDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -126,24 +125,34 @@ export default function ProviderDashboard() {
     day: 'numeric'
   });
 
+  if (!facilityCode) {
+    return (
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Command Center"
+          description="Facility access is required to load your schedule."
+          meta={todayDate}
+          size="lg"
+        />
+        <div className="p-6">
+          <FacilityRequiredPanel className="max-w-4xl mx-auto" />
+        </div>
+      </PageShell>
+    );
+  }
+
   const urgentTasks = mockTasks.filter(t => t.priority === 'Urgent');
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-6 py-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
-              {todayDate}
-            </p>
-            <h1 className="font-display text-4xl text-foreground tracking-tight">
-              Command Center
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              {mockAppointments.length} appointments · {mockTasks.length} tasks pending
-            </p>
-          </div>
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Command Center"
+        description={`${mockAppointments.length} appointments · ${mockTasks.length} tasks pending`}
+        meta={todayDate}
+        size="lg"
+        actions={(
           <Button
             onClick={() => navigate('/appointments/create')}
             className="font-mono text-xs"
@@ -151,8 +160,8 @@ export default function ProviderDashboard() {
             <Plus className="h-4 w-4 mr-2" />
             New Appointment
           </Button>
-        </div>
-      </header>
+        )}
+      />
 
       <main className="p-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -284,7 +293,7 @@ export default function ProviderDashboard() {
           </div>
         )}
       </SlideOver>
-    </div>
+    </PageShell>
   );
 }
 

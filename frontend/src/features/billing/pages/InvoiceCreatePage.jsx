@@ -12,6 +12,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import {
   Select,
   SelectContent,
@@ -20,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useCreateInvoice, useServices } from '@/hooks/useBillingQueries';
+import { useCreateInvoice, useServices } from '@/features/billing/hooks';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
@@ -188,43 +191,37 @@ export default function InvoiceCreatePage() {
 
   if (servicesLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <Skeleton className="h-10 w-48" />
         <Skeleton className="h-64 rounded-2xl" />
-      </div>
+      </PageState>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="max-w-4xl mx-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/billing/invoices')}
-            className="font-mono text-xs -ml-2 mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Invoices
-          </Button>
-
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-primary/10">
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span className="p-3 rounded-xl bg-primary/10">
               <FileText className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                Create Invoice
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Add services and generate a new invoice
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+            </span>
+            Create Invoice
+          </span>
+        )}
+        description="Add services and generate a new invoice"
+        contentClassName="max-w-4xl mx-auto w-full"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/billing/invoices')}
+          className="font-mono text-xs -ml-2 mb-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Invoices
+        </Button>
+      </PageHeader>
 
       {/* Form Content */}
       <main className="p-4 sm:p-6">
@@ -475,7 +472,7 @@ export default function InvoiceCreatePage() {
           </form>
         </div>
       </main>
-    </div>
+    </PageShell>
   );
 }
 

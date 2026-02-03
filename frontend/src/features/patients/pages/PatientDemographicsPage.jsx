@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
 import { usePatientDemographics, useUpdatePatient, patientKeys } from '@/features/patients/hooks/usePatientQueries';
-import { usePatientInsurance } from '@/hooks/useBillingQueries';
+import { usePatientInsurance } from '@/features/billing/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

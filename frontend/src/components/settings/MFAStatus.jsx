@@ -6,7 +6,7 @@ import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 
 import { cn } from '@/lib/utils';
-import { useMfaStatus } from '@/hooks/useSettingsQueries';
+import { useMfaStatus } from '@/features/settings/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 

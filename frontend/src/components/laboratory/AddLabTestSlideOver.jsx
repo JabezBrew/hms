@@ -25,7 +25,7 @@ import {
   useCreateLabTest,
   useCreateLabPanel,
   useLabTests,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**

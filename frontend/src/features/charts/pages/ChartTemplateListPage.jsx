@@ -18,7 +18,6 @@ import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,7 +46,6 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { toast } from "sonner";
-import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { ChartTemplateCard } from "@/components/charts";
 import {
   useChartTemplates,
@@ -55,7 +53,9 @@ import {
   useDeleteChartTemplate,
   useCloneChartTemplate,
   useUpdateChartTemplate,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
 
 const ChartTemplateListPage = () => {
   const navigate = useNavigate();
@@ -192,42 +192,29 @@ const ChartTemplateListPage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page header */}
-      <div className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <PageBreadcrumb
-            items={[
-              { label: "Charts", href: "/charts/templates" },
-              { label: "Templates" },
-            ]}
-          />
-
-          <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <h1 className="font-display text-2xl text-foreground">
-                  Chart Templates
-                </h1>
-                <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                  Create and manage clinical monitoring charts
-                </p>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleCreate}
-              className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-            >
-              <Plus className="h-4 w-4 mr-1.5" />
-              New Template
-            </Button>
-          </div>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+            </span>
+            Chart Templates
+          </span>
+        )}
+        description="Create and manage clinical monitoring charts"
+        descriptionClassName="font-mono text-xs text-muted-foreground"
+        actions={(
+          <Button
+            onClick={handleCreate}
+            className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Template
+          </Button>
+        )}
+        contentClassName="max-w-7xl mx-auto w-full"
+      />
 
       {/* Filters */}
       <div className="border-b border-border bg-muted/30">
@@ -395,7 +382,7 @@ const ChartTemplateListPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 };
 

@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useUnitTypes } from '@/hooks/useOrganization';
+import { useUnitTypes } from '@/features/admin/hooks';
 
 const unitSchema = z.object({
   code: z.string().min(1, 'Code is required').max(50),

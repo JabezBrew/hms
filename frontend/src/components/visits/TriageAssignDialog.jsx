@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTriageActions } from '@/hooks/useVisitQueries';
-import { clinicsApi } from '@/lib/api/organization';
+import { clinicsApi } from '@/features/clinics/api';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
 

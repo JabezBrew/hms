@@ -54,11 +54,13 @@ import {
   useCreateNursingTask,
   useCompleteTask,
   useUpdateTask,
-} from '@/hooks/useNursingQueries';
-import { usePatientMonitoring } from '@/hooks/useNursingQueries';
-import { useStaff } from '@/hooks/useStaffQueries';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
+} from '@/features/nursing/hooks';
+import { usePatientMonitoring } from '@/features/nursing/hooks';
+import { useStaff } from '@/features/staff/hooks';
 import { Layout } from '@/components/layout/layout';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 const TASK_TYPES = [
   { value: 'medication', label: 'Medication' },
@@ -248,101 +250,100 @@ export default function NursingTasksPage() {
     completed: tasks.filter(t => t.status === 'completed').length,
   };
 
+  const pageMeta = usePageMeta({
+    title: 'Nursing Tasks | HMS',
+    breadcrumbs: [
+      { label: 'Nursing', href: '/nursing/dashboard' },
+      { label: 'Tasks' },
+    ],
+  });
+
   return (
     <Layout>
-      <div className="container mx-auto py-6 space-y-6">
-        <PageBreadcrumb
-          items={[
-            { label: 'Nursing', href: '/nursing/dashboard' },
-            { label: 'Tasks' },
-          ]}
-        />
-
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Nursing Tasks</h1>
-            <p className="text-muted-foreground">
-              Manage and track nursing tasks for patients
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Task
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Create New Task</DialogTitle>
-                  <DialogDescription>
-                    Assign a new nursing task to a patient
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="patient">Patient *</Label>
-                    <Select
-                      value={newTask.patient}
-                      onValueChange={(value) => setNewTask(prev => ({ ...prev, patient: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select patient" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {patients.map((p) => (
-                          <SelectItem key={p.patient_id} value={p.patient_id}>
-                            {p.patient_name} ({p.patient_mrn})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Nursing Tasks"
+          description="Manage and track nursing tasks for patients"
+          actions={(
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => refetch()}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Task
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Create New Task</DialogTitle>
+                    <DialogDescription>
+                      Assign a new nursing task to a patient
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <Label htmlFor="task_type">Task Type *</Label>
+                      <Label htmlFor="patient">Patient *</Label>
                       <Select
-                        value={newTask.task_type}
-                        onValueChange={(value) => setNewTask(prev => ({ ...prev, task_type: value }))}
+                        value={newTask.patient}
+                        onValueChange={(value) => setNewTask(prev => ({ ...prev, patient: value }))}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder="Select patient" />
                         </SelectTrigger>
                         <SelectContent>
-                          {TASK_TYPES.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
+                          {patients.map((p) => (
+                            <SelectItem key={p.patient_id} value={p.patient_id}>
+                              {p.patient_name} ({p.patient_mrn})
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="priority">Priority</Label>
-                      <Select
-                        value={newTask.priority}
-                        onValueChange={(value) => setNewTask(prev => ({ ...prev, priority: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PRIORITY_LEVELS.map((p) => (
-                            <SelectItem key={p.value} value={p.value}>
-                              {p.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="task_type">Task Type *</Label>
+                        <Select
+                          value={newTask.task_type}
+                          onValueChange={(value) => setNewTask(prev => ({ ...prev, task_type: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TASK_TYPES.map((t) => (
+                              <SelectItem key={t.value} value={t.value}>
+                                {t.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="priority">Priority</Label>
+                        <Select
+                          value={newTask.priority}
+                          onValueChange={(value) => setNewTask(prev => ({ ...prev, priority: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select priority" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PRIORITY_LEVELS.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>
+                                {p.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="description">Description *</Label>
@@ -402,10 +403,12 @@ export default function NursingTasksPage() {
               </DialogContent>
             </Dialog>
           </div>
-        </div>
+        )}
+        />
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="container mx-auto py-6 space-y-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -699,6 +702,7 @@ export default function NursingTasksPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </PageShell>
+  </Layout>
   );
 }

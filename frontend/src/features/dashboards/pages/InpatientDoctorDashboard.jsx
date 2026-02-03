@@ -14,16 +14,14 @@ import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import {
-  ChroniclePageHeader,
   StatCard,
   ActionCard,
   DashboardSection,
   DashboardGrid,
 } from '@/components/dashboard';
 import { WorkflowLauncher } from '@/components/workflow';
-import { useInpatientDashboard } from '@/hooks/useDashboardQueries';
+import { useInpatientDashboard } from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -31,6 +29,9 @@ import format from 'date-fns/format';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
@@ -45,16 +46,38 @@ export default function InpatientDoctorDashboard() {
     isFetching,
   } = useInpatientDashboard({ refetchInterval: 30000 });
 
-  const breadcrumbItems = [
-    { label: 'Dashboards', href: '/dashboards' },
-    { label: 'Inpatient Dashboard', href: '/dashboards/inpatient' },
-  ];
-
   if (!facilityCode) {
     return (
       <Layout>
-        <PageBreadcrumb items={breadcrumbItems} />
-        <FacilityRequiredPanel />
+        <PageShell>
+          <PageHeader
+            title="Inpatient Dashboard"
+            description="Manage ward patients, rounds, and discharges"
+            actions={(
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/sent')}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Sent Referrals
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/inbox')}
+                >
+                  <Inbox className="h-4 w-4 mr-2" />
+                  Referral Inbox
+                </Button>
+              </div>
+            )}
+          />
+          <div className="p-4 sm:p-6">
+            <FacilityRequiredPanel />
+          </div>
+        </PageShell>
       </Layout>
     );
   }
@@ -62,15 +85,40 @@ export default function InpatientDoctorDashboard() {
   if (error) {
     return (
       <Layout>
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" aria-hidden="true" />
-            <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
-              Failed to load dashboard
-            </h3>
-            <p className="text-sm text-muted-foreground">{error.message}</p>
-          </div>
-        </div>
+        <PageShell>
+          <PageHeader
+            title="Inpatient Dashboard"
+            description="Manage ward patients, rounds, and discharges"
+            actions={(
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/sent')}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Sent Referrals
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/inbox')}
+                >
+                  <Inbox className="h-4 w-4 mr-2" />
+                  Referral Inbox
+                </Button>
+              </div>
+            )}
+          />
+          <PageState
+            variant="error"
+            title="Failed to load dashboard"
+            description={error.message}
+            action={() => refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
       </Layout>
     );
   }
@@ -82,54 +130,52 @@ export default function InpatientDoctorDashboard() {
 
   return (
     <Layout>
-      <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        <PageHeader
+          title="Inpatient Dashboard"
+          description="Manage ward patients, rounds, and discharges"
+          actions={(
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/referrals/sent')}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Sent Referrals
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/referrals/inbox')}
+              >
+                <Inbox className="h-4 w-4 mr-2" />
+                Referral Inbox
+              </Button>
+              <WorkflowLauncher
+                variant="default"
+                size="sm"
+                trigger={
+                  <Button variant="default" size="sm">
+                    <Stethoscope className="h-4 w-4 mr-2" />
+                    Start Workflow
+                  </Button>
+                }
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                aria-label="Refresh dashboard"
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        />
 
-      <ChroniclePageHeader
-        title="Inpatient Dashboard"
-        role="inpatient_doctor"
-        subtitle="Manage ward patients, rounds, and discharges"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/referrals/sent')}
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Sent Referrals
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/referrals/inbox')}
-            >
-              <Inbox className="h-4 w-4 mr-2" />
-              Referral Inbox
-            </Button>
-            <WorkflowLauncher
-              variant="default"
-              size="sm"
-              trigger={
-                <Button variant="default" size="sm">
-                  <Stethoscope className="h-4 w-4 mr-2" />
-                  Start Workflow
-                </Button>
-              }
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              aria-label="Refresh dashboard"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-            </Button>
-          </>
-        }
-      />
-
-      <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
         {/* Statistics */}
         {isLoading ? (
           <DashboardGrid columns="4">
@@ -396,7 +442,8 @@ export default function InpatientDoctorDashboard() {
             </div>
           )}
         </DashboardSection>
-      </div>
+        </div>
+      </PageShell>
     </Layout>
   );
 }

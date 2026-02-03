@@ -41,7 +41,7 @@ import {
   useDispenseControlledSubstance,
   useRecordControlledCount,
   useRecordControlledWastage,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { toast } from 'sonner';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';

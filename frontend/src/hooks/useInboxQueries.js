@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { notificationsApi } from '@/lib/api/notifications';
+import { notificationsApi } from '@/features/inbox/api';
+import { createKeyFactory } from '@/shared/lib/queryKeys';
+
+const inboxKeyFactory = createKeyFactory('inbox');
 
 export const inboxKeys = {
-  all: ['inbox'],
-  list: (params = {}) => [...inboxKeys.all, 'list', params],
+  all: inboxKeyFactory.all,
+  list: (params = {}) => [...inboxKeyFactory.all, 'list', params],
 };
 
 export function useInboxItems(params = {}, options = {}) {

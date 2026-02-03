@@ -35,8 +35,8 @@ import {
   useCreateUnitMember,
   useDeleteUnitMember,
   useUpdateUnitMember,
-} from '@/hooks/useOrganization';
-import { useSearchStaff } from '@/hooks/useStaffQueries';
+} from '@/features/admin/hooks';
+import { useSearchStaff } from '@/features/staff/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 
 import format from 'date-fns/format';

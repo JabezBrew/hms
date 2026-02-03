@@ -32,7 +32,7 @@ import {
 
 import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
-import { useChartEntryTrends, useChartAssignment } from "@/hooks/useChartQueries";
+import { useChartEntryTrends, useChartAssignment } from "@/features/charts/hooks";
 
 const ChartTrendGraph = ({
   assignmentId,

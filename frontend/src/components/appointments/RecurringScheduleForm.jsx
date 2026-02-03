@@ -49,7 +49,7 @@ import {
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useSearchPractitioners
-} from '@/hooks/useStaffQueries';
+} from '@/features/staff/hooks';
 import { previewSlots } from '@/lib/api';
 
 // Form validation schema

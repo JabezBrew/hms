@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import {
   Select,
   SelectContent,
@@ -23,7 +25,7 @@ import {
 import format from "date-fns/format";
 import formatDistanceToNow from "date-fns/formatDistanceToNow";
 import { useAuth } from "@/lib/auth";
-import { useLabOrders } from "@/hooks/useLabQueries";
+import { useLabOrders } from "@/features/laboratory/hooks";
 import { LabOrderDetailSlideOver, SpecimenCollectionDialog } from "@/components/laboratory";
 
 /**
@@ -150,24 +152,20 @@ export default function LabCollectionWorklistPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-              Collection Worklist
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {stats.total} orders awaiting specimen collection
-              {stats.stat > 0 && (
-                <span className="text-rose-600 font-semibold ml-2">
-                  ({stats.stat} STAT)
-                </span>
-              )}
-            </p>
-          </div>
-
+    <PageShell>
+      <PageHeader
+        title="Collection Worklist"
+        description={(
+          <span>
+            {stats.total} orders awaiting specimen collection
+            {stats.stat > 0 && (
+              <span className="text-rose-600 font-semibold ml-2">
+                ({stats.stat} STAT)
+              </span>
+            )}
+          </span>
+        )}
+        actions={(
           <Button
             variant="outline"
             size="sm"
@@ -177,10 +175,10 @@ export default function LabCollectionWorklistPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-        </div>
-
+        )}
+      >
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 sm:mt-6">
           <div className="bg-background rounded-lg border p-3">
             <div className="flex items-center gap-2 mb-1">
               <Droplet className="h-4 w-4 text-amber-500" />
@@ -210,7 +208,7 @@ export default function LabCollectionWorklistPage() {
             <p className="font-display text-2xl">{stats.routine}</p>
           </div>
         </div>
-      </header>
+      </PageHeader>
 
       {/* Filter Bar */}
       <div className="bg-card/50 border-b border-border px-4 sm:px-6 py-3">
@@ -366,6 +364,6 @@ export default function LabCollectionWorklistPage() {
         order={orderToCollect}
         onSuccess={handleCollectSuccess}
       />
-    </div>
+    </PageShell>
   );
 }

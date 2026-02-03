@@ -19,7 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 
 import { useScheduleMappings, useScheduleSlots } from '@/features/appointments/hooks/useAppointmentQueries';
-import { usePractitioner } from '@/hooks/useStaffQueries';
+import { usePractitioner } from '@/features/staff/hooks';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageState } from '@/shared/components/page/PageState';

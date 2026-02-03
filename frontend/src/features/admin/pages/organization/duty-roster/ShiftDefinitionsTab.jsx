@@ -28,7 +28,7 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { toast } from 'sonner';
-import { useShiftDefinitions, useCreateShiftDefinition, useDeleteShiftDefinition } from '@/hooks/useOrganization';
+import { useShiftDefinitions, useCreateShiftDefinition, useDeleteShiftDefinition } from '@/features/admin/hooks';
 import { toList } from './utils';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 

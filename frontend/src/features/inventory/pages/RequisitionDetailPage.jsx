@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -26,7 +29,7 @@ import {
   useApproveRequisition,
   useRejectRequisition,
   useConvertRequisitionToPO,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
@@ -138,7 +141,7 @@ export default function RequisitionDetailPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <div>
@@ -153,20 +156,18 @@ export default function RequisitionDetailPage() {
           </div>
           <Skeleton className="h-80" />
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl">Error Loading Requisition</h2>
-          <p className="text-muted-foreground">{error.message}</p>
+      <PageState
+        variant="error"
+        title="Error Loading Requisition"
+        description={error.message}
+        action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -177,29 +178,25 @@ export default function RequisitionDetailPage() {
               Retry
             </Button>
           </div>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
   // Not found
   if (!requisition) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
-            <FileText className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h2 className="font-display text-2xl">Requisition Not Found</h2>
-          <p className="text-muted-foreground">
-            The requested requisition does not exist or has been deleted.
-          </p>
+      <PageState
+        variant="empty"
+        title="Requisition Not Found"
+        description="The requested requisition does not exist or has been deleted."
+        action={(
           <Button variant="outline" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Requisitions
           </Button>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
@@ -212,44 +209,32 @@ export default function RequisitionDetailPage() {
   const canConvert = requisition.status === 'approved';
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          onClick={handleBack}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Requisitions
-        </Button>
-
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="font-display text-3xl font-semibold">
-                {requisition.requisition_number || `REQ-${id}`}
-              </h1>
-              <Badge className={cn('text-xs', statusConfig.bgColor, statusConfig.color)}>
-                {statusConfig.label}
-              </Badge>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" />
-                <span className="text-sm">
-                  {requisition.created_at
-                    ? format(parseISO(requisition.created_at), 'MMM d, yyyy')
-                    : 'N/A'}
-                </span>
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span>{requisition.requisition_number || `REQ-${id}`}</span>
+            <Badge className={cn('text-xs', statusConfig.bgColor, statusConfig.color)}>
+              {statusConfig.label}
+            </Badge>
+          </span>
+        )}
+        description={(
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4" />
+              <span className="text-sm">
+                {requisition.created_at
+                  ? format(parseISO(requisition.created_at), 'MMM d, yyyy')
+                  : 'N/A'}
               </span>
-              <Badge variant="outline" className={cn('text-xs', priorityConfig.color)}>
-                {priorityConfig.label} Priority
-              </Badge>
-            </div>
+            </span>
+            <Badge variant="outline" className={cn('text-xs', priorityConfig.color)}>
+              {priorityConfig.label} Priority
+            </Badge>
           </div>
-
+        )}
+        actions={(
           <div className="flex items-center gap-2 shrink-0">
             {canApprove && (
               <>
@@ -292,8 +277,20 @@ export default function RequisitionDetailPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-      </div>
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit -ml-2"
+          onClick={handleBack}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Requisitions
+        </Button>
+      </PageHeader>
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -592,6 +589,7 @@ export default function RequisitionDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageShell>
   );
 }

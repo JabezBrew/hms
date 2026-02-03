@@ -8,7 +8,7 @@
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { cn } from '@/lib/utils';
-import { useUnitAncestors } from '@/hooks/useOrganization';
+import { useUnitAncestors } from '@/features/admin/hooks';
 
 export function UnitBreadcrumb({
   unitId,

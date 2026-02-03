@@ -15,6 +15,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import {
   Tooltip,
   TooltipContent,
@@ -26,7 +30,7 @@ import format from 'date-fns/format';
 import addDays from 'date-fns/addDays';
 import subDays from 'date-fns/subDays';
 import { toast } from 'sonner';
-import { useMARGrid, useAdministerMedication, useCreateAndAdminister } from '@/hooks/useNursingQueries';
+import { useMARGrid, useAdministerMedication, useCreateAndAdminister } from '@/features/nursing/hooks';
 import { cn } from '@/lib/utils';
 
 // Status colors for dose indicators
@@ -248,6 +252,14 @@ export default function TreatmentSheetPage() {
   const navigate = useNavigate();
   const admissionId = searchParams.get('admission');
 
+  const pageMeta = usePageMeta({
+    title: 'Medication Administration Record | HMS',
+    breadcrumbs: [
+      { label: 'Nursing', href: '/dashboards/nurse' },
+      { label: 'Medication Administration Record' },
+    ],
+  });
+
   // Date navigation state - start from today
   const [startDate, setStartDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [daysToShow] = useState(7);
@@ -302,51 +314,56 @@ export default function TreatmentSheetPage() {
 
   if (!admissionId) {
     return (
-      <div className="p-6">
-        <Alert variant="destructive">
-          <AlertDescription>
-            No admission ID provided. Please access the treatment sheet from a patient's record.
-          </AlertDescription>
-        </Alert>
-      </div>
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Medication Administration Record"
+          description="Track medication administration across the current admission."
+        />
+        <PageState
+          variant="error"
+          title="Admission required"
+          description="No admission ID provided. Please access the treatment sheet from a patient's record."
+        />
+      </PageShell>
     );
   }
 
-  return (
-    <div className="p-6 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Medication Administration Record</h1>
-            {marData && (
-              <p className="text-muted-foreground">
-                {marData.patient_name} · MRN: {marData.patient_mrn}
-              </p>
-            )}
-          </div>
-        </div>
+  const headerDescription = marData
+    ? `${marData.patient_name} · MRN: ${marData.patient_mrn}`
+    : 'Track medication administration across the current admission.';
 
-        {/* Date Navigation */}
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handlePreviousWeek}>
-            <ChevronLeft className="h-4 w-4" />
-            <span className="hidden sm:inline ml-1">Prev Week</span>
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleToday}>
-            <Calendar className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Today</span>
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleNextWeek}>
-            <span className="hidden sm:inline mr-1">Next Week</span>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Medication Administration Record"
+        description={headerDescription}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handlePreviousWeek}>
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline ml-1">Prev Week</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleToday}>
+                <Calendar className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Today</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleNextWeek}>
+                <span className="hidden sm:inline mr-1">Next Week</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      />
+
+      <div className="p-6 space-y-4">
 
       {/* Legend */}
       <div className="flex items-center gap-4 text-sm flex-wrap">
@@ -458,6 +475,7 @@ export default function TreatmentSheetPage() {
           Showing {marData.date_range.start} to {marData.date_range.end}
         </p>
       )}
-    </div>
+      </div>
+    </PageShell>
   );
 }

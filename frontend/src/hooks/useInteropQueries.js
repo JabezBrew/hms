@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { interopApi } from "@/lib/api/interop";
+import { interopApi } from '@/shared/api/interop';
 
 export function useCreateRecordExport() {
   return useMutation({

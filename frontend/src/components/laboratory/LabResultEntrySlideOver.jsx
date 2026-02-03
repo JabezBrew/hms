@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
 import { toast } from "sonner";
-import { useBulkCreateLabResults } from "@/hooks/useLabQueries";
+import { useBulkCreateLabResults } from "@/features/laboratory/hooks";
 
 /**
  * LabResultEntrySlideOver - Chronicle-styled slide-over for bulk lab result entry

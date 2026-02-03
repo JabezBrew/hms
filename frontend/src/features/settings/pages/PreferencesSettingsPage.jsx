@@ -5,11 +5,13 @@ import Moon from 'lucide-react/dist/esm/icons/moon.js';
 import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 /**
  * PreferencesSettingsPage - Theme, notifications, and display settings
@@ -36,42 +38,40 @@ const PreferencesSettingsPage = () => {
     },
   ];
 
+  const pageMeta = usePageMeta({
+    title: 'Preferences | HMS',
+    breadcrumbs: [
+      { label: 'Settings', href: '/settings' },
+      { label: 'Preferences' },
+    ],
+  });
+
   return (
-    <>
-      <Helmet>
-        <title>Preferences | HMS</title>
-        <meta name="description" content="Customize your experience" />
-      </Helmet>
-
-      <div className="min-h-screen bg-background">
-        {/* Page Header - Chronicle style with sky accent */}
-        <header className="bg-card border-b border-border px-4 sm:px-6 py-6">
-          <div className="max-w-2xl mx-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/settings')}
-              className="mb-4 -ml-2 font-mono text-xs"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Settings
-            </Button>
-
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2.5 sm:p-3 rounded-xl bg-sky-500/10 border border-sky-500/20">
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-3 sm:gap-4">
+              <span className="p-2.5 sm:p-3 rounded-xl bg-sky-500/10 border border-sky-500/20">
                 <Palette className="h-6 w-6 sm:h-7 sm:w-7 text-sky-400" aria-hidden="true" />
-              </div>
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                  Preferences
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground font-mono mt-0.5">
-                  Customize your experience
-                </p>
-              </div>
-            </div>
-          </div>
-        </header>
+              </span>
+              Preferences
+            </span>
+          )}
+          description="Customize your experience"
+          contentClassName="max-w-2xl mx-auto w-full"
+          descriptionClassName="text-xs sm:text-sm text-muted-foreground font-mono"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/settings')}
+            className="-ml-2 font-mono text-xs"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
+        </PageHeader>
 
         {/* Main Content */}
         <main className="p-4 sm:p-6 lg:p-8">
@@ -191,8 +191,7 @@ const PreferencesSettingsPage = () => {
             </section>
           </div>
         </main>
-      </div>
-    </>
+      </PageShell>
   );
 };
 

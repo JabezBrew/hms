@@ -1,19 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { clinicalNotesApi } from '@/lib/api/clinical-notes';
+import { clinicalNotesApi } from '@/features/clinical-notes/api';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const clinicalNotesKeyFactory = createKeyFactory('clinical-notes');
+
 export const clinicalNotesKeys = {
-  all: ['clinical-notes'],
-  templates: () => [...clinicalNotesKeys.all, 'templates'],
-  template: (id) => [...clinicalNotesKeys.templates(), id],
-  availableTemplates: () => [...clinicalNotesKeys.templates(), 'available'],
-  myTemplates: () => [...clinicalNotesKeys.templates(), 'mine'],
-  templateCategories: () => [...clinicalNotesKeys.templates(), 'categories'],
-  entries: () => [...clinicalNotesKeys.all, 'entries'],
-  entry: (id) => [...clinicalNotesKeys.entries(), id],
-  entriesByEncounter: (encounterId) => [...clinicalNotesKeys.entries(), 'encounter', encounterId],
-  entryHistory: (id) => [...clinicalNotesKeys.entry(id), 'history'],
-  entryVersion: (id, version) => [...clinicalNotesKeys.entry(id), 'version', version],
+  all: clinicalNotesKeyFactory.all,
+  templates: () => keyWith('clinical-notes', 'templates'),
+  template: (id) => keyWith('clinical-notes', 'templates', id),
+  availableTemplates: () => keyWith('clinical-notes', 'templates', 'available'),
+  myTemplates: () => keyWith('clinical-notes', 'templates', 'mine'),
+  templateCategories: () => keyWith('clinical-notes', 'templates', 'categories'),
+  entries: () => keyWith('clinical-notes', 'entries'),
+  entry: (id) => keyWith('clinical-notes', 'entries', id),
+  entriesByEncounter: (encounterId) => keyWith('clinical-notes', 'entries', 'encounter', encounterId),
+  entryHistory: (id) => keyWith('clinical-notes', 'entries', id, 'history'),
+  entryVersion: (id, version) => keyWith('clinical-notes', 'entries', id, 'version', version),
 };
 
 /**
@@ -23,7 +26,7 @@ export const clinicalNotesKeys = {
  */
 export function useNoteTemplates(filters = {}) {
   return useQuery({
-    queryKey: [...clinicalNotesKeys.templates(), filters],
+    queryKey: keyWith('clinical-notes', 'templates', filters),
     queryFn: () => clinicalNotesApi.getNoteTemplates(filters),
   });
 }
@@ -34,7 +37,7 @@ export function useNoteTemplates(filters = {}) {
  */
 export function useActiveNoteTemplates() {
   return useQuery({
-    queryKey: [...clinicalNotesKeys.templates(), { active: true }],
+    queryKey: keyWith('clinical-notes', 'templates', { active: true }),
     queryFn: () => clinicalNotesApi.getActiveNoteTemplates(),
   });
 }

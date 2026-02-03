@@ -12,6 +12,8 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import {
   Select,
   SelectContent,
@@ -29,7 +31,7 @@ import {
   useLabPanels,
   useDeleteLabTest,
   useDeleteLabPanel,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -296,43 +298,39 @@ const LabCatalogPage = () => {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl sm:text-3xl text-foreground">
-            Lab Catalog
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage laboratory tests and panels for your facility
-          </p>
-        </div>
+    <PageShell>
+      <PageHeader
+        title="Lab Catalog"
+        description="Manage laboratory tests and panels for your facility"
+        actions={(
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                activeTab === "tests" ? refetchTests() : refetchPanels()
+              }
+              className="font-mono text-xs"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              className="font-mono text-xs"
+              onClick={() => {
+                setAddItemType(activeTab === "tests" ? "test" : "panel");
+                openAddSlideOver();
+              }}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add {activeTab === "tests" ? "Test" : "Panel"}
+            </Button>
+          </div>
+        )}
+      />
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              activeTab === "tests" ? refetchTests() : refetchPanels()
-            }
-            className="font-mono text-xs"
-          >
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Refresh
-          </Button>
-          <Button
-            size="sm"
-            className="font-mono text-xs"
-            onClick={() => {
-              setAddItemType(activeTab === "tests" ? "test" : "panel");
-              openAddSlideOver();
-            }}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Add {activeTab === "tests" ? "Test" : "Panel"}
-          </Button>
-        </div>
-      </div>
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -616,7 +614,8 @@ const LabCatalogPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </PageShell>
   );
 };
 

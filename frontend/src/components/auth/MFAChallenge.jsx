@@ -6,7 +6,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useEffect, useMemo, useState } from 'react'
-import { authApi } from '@/lib/api/auth'
+import { authApi } from '@/shared/api/auth'
 import { notifications } from '@/lib/notifications'
 import { toRegistrationOptions, toAuthenticationOptions, serializeCredential } from '@/lib/webauthn'
 import { Button } from '@/components/ui/button'

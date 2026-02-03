@@ -24,7 +24,7 @@ import {
   useReferralNotifications,
   useReferralNotificationCount,
   useMarkNotificationRead,
-} from '@/hooks/useReferralQueries';
+} from '@/features/referrals/hooks';
 import { useNotificationWebSocket } from '@/hooks/useWebSocket';
 
 /**

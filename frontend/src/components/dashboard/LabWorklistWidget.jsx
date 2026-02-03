@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useLabOrders } from '@/hooks/useLabQueries';
+import { useLabOrders } from '@/features/laboratory/hooks';
 import { useNavigate } from 'react-router-dom';
 
 /**

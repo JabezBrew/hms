@@ -29,6 +29,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 
 import { toast } from 'sonner';
 import format from 'date-fns/format';
@@ -37,7 +40,7 @@ import {
   useDispenseSupply,
   useRejectSupplyRequest,
   useBulkDispenseSupply
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 export default function SupplyQueuePage() {
   const {
@@ -148,48 +151,62 @@ export default function SupplyQueuePage() {
 
   if (error) {
     return (
-      <div className="container mx-auto p-6">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Failed to load supply queue: {error.message}
-          </AlertDescription>
-        </Alert>
-      </div>
+      <PageShell>
+        <PageHeader
+          title="Supply Request Queue"
+          description="Pending medication supply requests from nursing staff"
+          actions={(
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          )}
+        />
+        <PageState
+          variant="error"
+          title="Failed to load supply queue"
+          description={error.message}
+          action={() => refetch()}
+          fullHeight={false}
+          className="min-h-0"
+        />
+      </PageShell>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold font-display">Supply Request Queue</h1>
-          <p className="text-muted-foreground">
-            Pending medication supply requests from nursing staff
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => refetch()}
-            disabled={isLoading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          {selectedRequests.length > 0 && (
+    <PageShell>
+      <PageHeader
+        title="Supply Request Queue"
+        description="Pending medication supply requests from nursing staff"
+        actions={(
+          <div className="flex gap-2">
             <Button
-              onClick={handleBulkDispense}
-              disabled={bulkDispenseMutation.isPending}
+              variant="outline"
+              onClick={() => refetch()}
+              disabled={isLoading}
             >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Dispense Selected ({selectedRequests.length})
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-          )}
-        </div>
-      </div>
+            {selectedRequests.length > 0 && (
+              <Button
+                onClick={handleBulkDispense}
+                disabled={bulkDispenseMutation.isPending}
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Dispense Selected ({selectedRequests.length})
+              </Button>
+            )}
+          </div>
+        )}
+      />
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Summary */}
       <Card>
@@ -399,5 +416,6 @@ export default function SupplyQueuePage() {
         </DialogContent>
       </Dialog>
     </div>
+    </PageShell>
   );
 }

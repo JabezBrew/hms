@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, handleApiError } from '@/lib/api-client';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 /**
  * Settings API functions
@@ -77,11 +78,13 @@ const settingsApi = {
 /**
  * Query key factory for settings
  */
+const settingsKeyFactory = createKeyFactory('settings');
+
 export const settingsKeys = {
-  all: ['settings'],
-  profile: () => [...settingsKeys.all, 'profile'],
-  sessions: () => [...settingsKeys.all, 'sessions'],
-  mfaStatus: () => [...settingsKeys.all, 'mfaStatus'],
+  all: settingsKeyFactory.all,
+  profile: () => keyWith('settings', 'profile'),
+  sessions: () => keyWith('settings', 'sessions'),
+  mfaStatus: () => keyWith('settings', 'mfaStatus'),
 };
 
 /**

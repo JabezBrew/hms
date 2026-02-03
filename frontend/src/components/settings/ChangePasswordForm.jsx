@@ -8,7 +8,7 @@ import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 
 import { cn } from '@/lib/utils';
-import { useChangePassword } from '@/hooks/useSettingsQueries';
+import { useChangePassword } from '@/features/settings/hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

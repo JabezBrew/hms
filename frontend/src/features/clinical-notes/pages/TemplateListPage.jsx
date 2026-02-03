@@ -14,11 +14,10 @@ import Globe from 'lucide-react/dist/esm/icons/globe.js';
 import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
-import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { useNoteTemplates, useDeleteNoteTemplate } from '@/hooks/useClinicalNotesQueries';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useNoteTemplates, useDeleteNoteTemplate } from '@/features/clinical-notes/hooks';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -35,6 +34,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 /**
  * TemplateListPage - Chronicle-style clinical note templates
@@ -59,15 +60,21 @@ export default function TemplateListPage() {
   // Delete template mutation
   const deleteTemplate = useDeleteNoteTemplate();
 
-  // Set breadcrumb
-  const { updateBreadcrumbs } = useBreadcrumb();
+  const pageTitle = view === 'edit'
+    ? 'Edit Template | HMS'
+    : view === 'create'
+    ? 'Create Template | HMS'
+    : view === 'detail'
+    ? `${selectedTemplate?.title || 'Template'} | HMS`
+    : 'Clinical Note Templates | HMS';
 
-  useEffect(() => {
-    updateBreadcrumbs([
-      { label: 'Clinical Notes', path: '/clinical-notes' },
-      { label: 'Templates', path: '/clinical-notes/templates' }
-    ]);
-  }, [updateBreadcrumbs]);
+  const pageMeta = usePageMeta({
+    title: pageTitle,
+    breadcrumbs: [
+      { label: 'Clinical Notes', href: '/clinical-notes' },
+      { label: 'Templates', href: '/clinical-notes/templates' },
+    ],
+  });
 
   // Filter templates by search
   const filteredTemplates = useMemo(() => {
@@ -86,6 +93,18 @@ export default function TemplateListPage() {
     active: templates.filter(t => t.is_active).length,
     public: templates.filter(t => t.is_public).length
   }), [templates]);
+
+  const headerDescription = (
+    <span>
+      {stats.total} templates
+      {stats.active !== stats.total && (
+        <span className="ml-2">· {stats.active} active</span>
+      )}
+      {stats.public > 0 && (
+        <span className="text-primary ml-2">· {stats.public} public</span>
+      )}
+    </span>
+  );
 
   // Get sections from template structure
   const getSections = (template) => {
@@ -119,30 +138,12 @@ export default function TemplateListPage() {
   // Render list view
   if (view === 'list') {
     return (
-      <>
-        <Helmet>
-          <title>Clinical Note Templates | HMS</title>
-        </Helmet>
-
-        <div className="min-h-screen bg-background">
-          {/* Page Header */}
-          <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-                  Note Templates
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  {stats.total} templates
-                  {stats.active !== stats.total && (
-                    <span className="ml-2">· {stats.active} active</span>
-                  )}
-                  {stats.public > 0 && (
-                    <span className="text-primary ml-2">· {stats.public} public</span>
-                  )}
-                </p>
-              </div>
-
+      <PageShell>
+        {pageMeta}
+          <PageHeader
+            title="Note Templates"
+            description={headerDescription}
+            actions={(
               <Button
                 onClick={() => setView('create')}
                 size="sm"
@@ -151,8 +152,11 @@ export default function TemplateListPage() {
                 <Plus className="h-4 w-4 mr-2" />
                 Create Template
               </Button>
-            </div>
+            )}
+          />
 
+          {/* Template List */}
+          <main className="p-4 sm:p-6 space-y-4">
             {/* Search and Filters */}
             <div className="flex flex-col gap-3">
               <div className="relative">
@@ -214,10 +218,7 @@ export default function TemplateListPage() {
                 )}
               </div>
             </div>
-          </header>
 
-          {/* Template List */}
-          <main className="p-4 sm:p-6">
             {isLoading ? (
               <LoadingSkeleton viewMode={viewMode} />
             ) : isError ? (
@@ -277,50 +278,40 @@ export default function TemplateListPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        </div>
-      </>
+        </PageShell>
     );
   }
 
   // Render create/edit view
   if (view === 'create' || view === 'edit') {
     return (
-      <>
-        <Helmet>
-          <title>{view === 'edit' ? 'Edit Template' : 'Create Template'} | HMS</title>
-        </Helmet>
+      <PageShell>
+        {pageMeta}
+          <PageHeader
+            title={view === 'edit' ? 'Edit Template' : 'Create Template'}
+            contentClassName="max-w-5xl mx-auto w-full"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setView('list');
+                setSelectedTemplate(null);
+              }}
+              className="-ml-2"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Templates
+            </Button>
+          </PageHeader>
 
-        <div className="min-h-screen bg-background">
-          <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setView('list');
-                  setSelectedTemplate(null);
-                }}
-                className="-ml-2"
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Templates
-              </Button>
-              <div>
-                <h1 className="font-display text-xl sm:text-2xl text-foreground tracking-tight">
-                  {view === 'edit' ? 'Edit Template' : 'Create Template'}
-                </h1>
-              </div>
-            </div>
-          </header>
-
-          <main className="p-4 sm:p-6">
+          <main className="p-4 sm:p-6 max-w-5xl mx-auto w-full">
             <TemplateBuilder
               initialTemplate={selectedTemplate}
               onSuccess={handleTemplateSuccess}
             />
           </main>
-        </div>
-      </>
+        </PageShell>
     );
   }
 
@@ -329,41 +320,36 @@ export default function TemplateListPage() {
     const sections = getSections(selectedTemplate);
 
     return (
-      <>
-        <Helmet>
-          <title>{selectedTemplate.title} | HMS</title>
-        </Helmet>
-
-        <div className="min-h-screen bg-background">
-          <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setView('list');
-                    setSelectedTemplate(null);
-                  }}
-                  className="-ml-2"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Templates
-                </Button>
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setView('edit')}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-              </div>
-            </div>
-          </header>
+      <PageShell>
+        {pageMeta}
+          <PageHeader
+            title="Note Template"
+            description={selectedTemplate.description || 'Clinical note template details'}
+            contentClassName="max-w-4xl mx-auto w-full"
+            actions={(
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setView('edit')}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            )}
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setView('list');
+                setSelectedTemplate(null);
+              }}
+              className="-ml-2"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Templates
+            </Button>
+          </PageHeader>
 
           <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
             {/* Template Header */}
@@ -444,8 +430,7 @@ export default function TemplateListPage() {
               </div>
             </section>
           </main>
-        </div>
-      </>
+        </PageShell>
     );
   }
 

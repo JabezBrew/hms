@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { facilitiesApi } from "@/lib/api/facilities";
+import { facilitiesApi } from '@/shared/api/facilities';
 
 export function useFacilities({ includeInactive = false } = {}) {
   return useQuery({

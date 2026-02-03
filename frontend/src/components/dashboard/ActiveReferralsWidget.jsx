@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import format from 'date-fns/format';
-import { useReferralInbox, useReferralsSent } from '@/hooks/useReferralQueries';
+import { useReferralInbox, useReferralsSent } from '@/features/referrals/hooks';
 import { useNavigate } from 'react-router-dom';
 
 /**

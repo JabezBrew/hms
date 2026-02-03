@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 
 import format from "date-fns/format";
-import { useLabOrder, useLabResults, useVerifyLabResult } from "@/hooks/useLabQueries";
+import { useLabOrder, useLabResults, useVerifyLabResult } from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**

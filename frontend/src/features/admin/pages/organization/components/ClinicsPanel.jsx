@@ -39,7 +39,7 @@ import {
   useCreateClinic,
   useUpdateClinic,
   useDeleteClinic,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 
 /**
  * ClinicsPanel - Displays and manages clinics for a unit (department)

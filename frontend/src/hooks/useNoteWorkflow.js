@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { clinicalNotesApi } from '@/lib/api/clinical-notes';
+import { clinicalNotesApi } from '@/features/clinical-notes/api';
 
 /**
  * Derive workflow steps from a template structure

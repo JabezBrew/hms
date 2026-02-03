@@ -4,7 +4,6 @@
  * Chronicle Design System styling
  */
 import { useState, useMemo, useCallback } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { Link, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,6 +47,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
@@ -79,8 +81,8 @@ import {
   useUpdateRosterEntry,
   useCreateRosterEntry,
   useValidationRules,
-} from '@/hooks/useOrganization';
-import { rosterEntriesApi } from '@/lib/api/organization';
+} from '@/features/admin/hooks';
+import { rosterEntriesApi } from '@/features/admin/api';
 import { flattenUnitTree, toList } from './duty-roster/utils';
 import { EmptyState } from './duty-roster/components';
 
@@ -616,41 +618,40 @@ export default function RosterBuilderPage() {
 
   const isLoading = treeLoading || dutyTypesLoading || rosterLoading;
 
-  return (
-    <>
-      <Helmet>
-        <title>Roster Builder | Organization</title>
-      </Helmet>
+  const pageMeta = usePageMeta({
+    title: 'Roster Builder | Organization',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization', href: '/admin/organization' },
+      { label: 'Roster Builder' },
+    ],
+  });
 
-      <div className="min-h-screen bg-background">
-        <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-          {/* Header */}
-          <header className="mb-6">
-            <div className="flex items-center gap-4 mb-4">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/admin/organization/duty-roster">
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  Back to Roster
-                </Link>
-              </Button>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
-                <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
-                  Roster Builder
-                </h1>
-                <p className="mt-1 text-muted-foreground text-sm">
-                  Generate, edit, and publish the duty roster.
-                </p>
-              </div>
-              <Button variant="outline" size="sm" asChild>
-                <Link to={`/admin/organization/roster-setup${selectedDepartment ? `?department=${selectedDepartment}` : ''}`}>
-                  <Settings className="h-4 w-4 mr-1" />
-                  Setup
-                </Link>
-              </Button>
-            </div>
-          </header>
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Roster Builder"
+        description="Generate, edit, and publish the duty roster."
+        actions={(
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/admin/organization/duty-roster">
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back to Roster
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/admin/organization/roster-setup${selectedDepartment ? `?department=${selectedDepartment}` : ''}`}>
+                <Settings className="h-4 w-4 mr-1" />
+                Setup
+              </Link>
+            </Button>
+          </div>
+        )}
+      />
+
+      <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
 
           {/* Controls */}
           <Card className="mb-6 border-border">
@@ -1155,7 +1156,6 @@ export default function RosterBuilderPage() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
-      </div>
-    </>
+      </PageShell>
   );
 }

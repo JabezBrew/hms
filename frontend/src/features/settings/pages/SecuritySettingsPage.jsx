@@ -4,12 +4,14 @@ import Key from 'lucide-react/dist/esm/icons/key.js';
 import Monitor from 'lucide-react/dist/esm/icons/monitor.js';
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Button } from '@/components/ui/button';
 import ChangePasswordForm from '@/components/settings/ChangePasswordForm';
 import SessionManagement from '@/components/settings/SessionManagement';
 import MFAStatus from '@/components/settings/MFAStatus';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 /**
  * SecuritySettingsPage - Password, MFA, and session management
@@ -18,42 +20,39 @@ import MFAStatus from '@/components/settings/MFAStatus';
 const SecuritySettingsPage = () => {
   const navigate = useNavigate();
 
+  const pageMeta = usePageMeta({
+    title: 'Security Settings | HMS',
+    breadcrumbs: [
+      { label: 'Settings', href: '/settings' },
+      { label: 'Security' },
+    ],
+  });
+
   return (
-    <>
-      <Helmet>
-        <title>Security Settings | HMS</title>
-        <meta name="description" content="Manage your security settings" />
-      </Helmet>
-
-      <div className="min-h-screen bg-background">
-        {/* Page Header - Chronicle style with rose accent */}
-        <header className="bg-card border-b border-border px-4 sm:px-6 py-6">
-          <div className="max-w-2xl mx-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/settings')}
-              className="mb-4 -ml-2 font-mono text-xs"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Settings
-            </Button>
-
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2.5 sm:p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-3 sm:gap-4">
+              <span className="p-2.5 sm:p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
                 <Shield className="h-6 w-6 sm:h-7 sm:w-7 text-rose-400" aria-hidden="true" />
-              </div>
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                  Security
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground font-mono mt-0.5">
-                  Protect your account with strong security settings
-                </p>
-              </div>
-            </div>
-          </div>
-        </header>
+              </span>
+              Security
+            </span>
+          )}
+          description="Protect your account with strong security settings"
+          contentClassName="max-w-2xl mx-auto w-full"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/settings')}
+            className="-ml-2 font-mono text-xs"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
+        </PageHeader>
 
         {/* Main Content */}
         <main className="p-4 sm:p-6 lg:p-8">
@@ -113,8 +112,7 @@ const SecuritySettingsPage = () => {
             </section>
           </div>
         </main>
-      </div>
-    </>
+      </PageShell>
   );
 };
 

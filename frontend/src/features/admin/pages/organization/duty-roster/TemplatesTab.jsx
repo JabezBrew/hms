@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/table';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useDutyRosterTemplates } from '@/hooks/useOrganization';
+import { useDutyRosterTemplates } from '@/features/admin/hooks';
 import { toList } from './utils';
 import { DAYS_OF_WEEK } from './constants';
 import { EmptyState, RosterHeader } from './components';

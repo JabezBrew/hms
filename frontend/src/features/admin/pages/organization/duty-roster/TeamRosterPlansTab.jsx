@@ -42,7 +42,7 @@ import {
   useCreateTeamRosterPlan,
   useUpdateTeamRosterPlan,
   useDeleteTeamRosterPlan,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName, safeDate } from './utils';
 import { DUTY_STATUS_OPTIONS, STATUS_BADGE_CLASSES, SELECT_ALL, SELECT_NONE } from './constants';
 import { useUnitOptions } from './useUnitOptions';

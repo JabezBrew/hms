@@ -36,7 +36,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import { toast } from 'sonner';
-import { rosterOverridesApi } from '@/lib/api/organization';
+import { rosterOverridesApi } from '@/features/admin/api';
 import {
   useDepartmentRosterPlans,
   useDepartmentDutyTypes,
@@ -44,7 +44,7 @@ import {
   useCreateRosterOverride,
   useUpdateRosterOverride,
   useDeleteRosterOverride,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName, safeDate, formatRosterTime } from './utils';
 import { DUTY_CONTEXT_OPTIONS, DUTY_ROLE_OPTIONS, SELECT_ALL, SELECT_DEFAULT } from './constants';
 import { useUnitOptions } from './useUnitOptions';

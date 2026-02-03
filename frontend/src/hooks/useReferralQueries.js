@@ -1,19 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { referralsApi } from '@/lib/api/referrals';
+import { referralsApi } from '@/features/referrals/api';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const referralKeyFactory = createKeyFactory('referrals');
+
 export const referralKeys = {
-  all: ['referrals'],
-  lists: () => [...referralKeys.all, 'list'],
-  list: (filters) => [...referralKeys.lists(), { filters }],
-  details: () => [...referralKeys.all, 'detail'],
-  detail: (id) => [...referralKeys.details(), id],
-  inbox: () => [...referralKeys.all, 'inbox'],
-  inboxCount: () => [...referralKeys.all, 'inbox-count'],
-  sent: () => [...referralKeys.all, 'sent'],
-  pending: () => [...referralKeys.all, 'pending'],
-  notifications: () => ['referralNotifications'],
-  notificationCount: () => ['referralNotificationCount'],
+  all: referralKeyFactory.all,
+  lists: referralKeyFactory.lists,
+  list: (filters) => referralKeyFactory.list(filters),
+  details: referralKeyFactory.details,
+  detail: (id) => referralKeyFactory.detail(id),
+  inbox: () => keyWith('referrals', 'inbox'),
+  inboxCount: () => keyWith('referrals', 'inbox-count'),
+  sent: () => keyWith('referrals', 'sent'),
+  pending: () => keyWith('referrals', 'pending'),
+  notifications: () => keyWith('referralNotifications'),
+  notificationCount: () => keyWith('referralNotificationCount'),
 };
 
 /**

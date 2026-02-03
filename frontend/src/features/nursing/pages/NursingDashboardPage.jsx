@@ -14,12 +14,14 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-import { usePatientMonitoring, useActiveAlerts, useLowSupplyEntries } from '@/hooks/useNursingQueries';
+import { usePatientMonitoring, useActiveAlerts, useLowSupplyEntries } from '@/features/nursing/hooks';
 import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { PatientMonitoringCard } from '@/components/nursing/PatientMonitoringCard';
 import { AlertsPanel } from '@/components/nursing/AlertsPanel';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 export default function NursingDashboardPage() {
   const navigate = useNavigate();
@@ -105,49 +107,50 @@ export default function NursingDashboardPage() {
     pendingTasks: monitoringData.reduce((sum, p) => sum + (p.pending_tasks?.length || 0), 0) || 0,
   };
 
-  const breadcrumbItems = [
-    { label: 'Nursing', href: '/nursing' },
-    { label: 'Dashboard', href: '/nursing/dashboard' },
-  ];
+  const pageMeta = usePageMeta({
+    title: 'Nursing Dashboard | HMS',
+    breadcrumbs: [
+      { label: 'Nursing', href: '/nursing' },
+      { label: 'Dashboard', href: '/nursing/dashboard' },
+    ],
+  });
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Patient Monitoring Dashboard"
+          description="Real-time patient monitoring and care management"
+          actions={(
+            <div className="flex items-center gap-2">
+              <div className="w-[300px]">
+                <Combobox
+                  options={wardOptions}
+                  value={selectedWard || 'all'}
+                  onChange={handleWardChange}
+                  onInputChange={setWardSearchQuery}
+                  placeholder="Search wards..."
+                  searchPlaceholder="Type to search wards..."
+                  emptyMessage="No wards found."
+                  isLoading={wardsLoading}
+                  maxHeight="20rem"
+                />
+              </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Patient Monitoring Dashboard</h1>
-            <p className="text-muted-foreground">
-              Real-time patient monitoring and care management
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="w-[300px]">
-              <Combobox
-                options={wardOptions}
-                value={selectedWard || 'all'}
-                onChange={handleWardChange}
-                onInputChange={setWardSearchQuery}
-                placeholder="Search wards..."
-                searchPlaceholder="Type to search wards..."
-                emptyMessage="No wards found."
-                isLoading={wardsLoading}
-                maxHeight="20rem"
-              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={isFetching}
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
+          )}
+        />
 
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
+        <div className="p-4 sm:p-6 space-y-6">
 
         {/* Error Alerts */}
         {(monitoringError || alertsError) && (
@@ -374,6 +377,7 @@ export default function NursingDashboardPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </PageShell>
+  </Layout>
   );
 }

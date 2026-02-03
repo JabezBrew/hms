@@ -29,7 +29,7 @@ import {
   useLabOrders,
   useCollectLabOrder,
   useStartProcessingLabOrder,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
 

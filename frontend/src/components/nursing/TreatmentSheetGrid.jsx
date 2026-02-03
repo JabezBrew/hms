@@ -39,7 +39,7 @@ import format from 'date-fns/format';
 import {
   useRequestSupply,
   useDiscontinueTreatmentEntry
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 // Supply Status Badge Component
 function SupplyStatusBadge({ entry }) {

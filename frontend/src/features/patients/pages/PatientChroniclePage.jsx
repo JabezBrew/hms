@@ -42,8 +42,8 @@ import {
   WardRoundSlideOver,
   ConsultationSlideOver,
 } from "@/components/chronicle";
-import { usePatientInsurance } from "@/hooks/useBillingQueries";
-import { patientsApi } from "@/lib/api/patients";
+import { usePatientInsurance } from "@/features/billing/hooks";
+import { patientsApi } from '@/features/patients/api';
 import {
   AddChartSlideOver,
   ChartEntryForm,
@@ -53,7 +53,7 @@ import LabOrderForm from "@/components/laboratory/LabOrderForm";
 import ReferralForm from "@/components/referrals/ReferralForm";
 import CrossFacilitySharePanel from "@/components/consent/CrossFacilitySharePanel";
 import ReceiveRecordPanel from "@/components/interop/ReceiveRecordPanel";
-import { useChartAssignments } from "@/hooks/useChartQueries";
+import { useChartAssignments } from "@/features/charts/hooks";
 
 import { useDebounce } from "@/hooks/use-debounce";
 

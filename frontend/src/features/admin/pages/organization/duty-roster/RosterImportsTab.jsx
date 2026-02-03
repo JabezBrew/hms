@@ -32,7 +32,7 @@ import {
   useDepartmentRosterImportApply,
   useTeamRosterImportPreview,
   useTeamRosterImportApply,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { CSV_DELIMITER_HELP } from './constants';
 import {
   RosterHeader,

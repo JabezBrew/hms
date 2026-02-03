@@ -2,7 +2,7 @@
  * Hook for unit options in Duty Roster
  */
 import { useMemo } from 'react';
-import { useClinicalUnitsTree } from '@/hooks/useOrganization';
+import { useClinicalUnitsTree } from '@/features/admin/hooks';
 import { flattenUnitTree } from './utils';
 
 export function useUnitOptions() {

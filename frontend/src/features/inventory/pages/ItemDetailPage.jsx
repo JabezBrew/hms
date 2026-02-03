@@ -6,6 +6,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +27,7 @@ import {
   useItemMovements,
   useItemExpiryTrackers,
   useItemStockByLocation,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Edit from 'lucide-react/dist/esm/icons/pencil.js';
@@ -510,7 +513,7 @@ export default function ItemDetailPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <div>
@@ -523,22 +526,18 @@ export default function ItemDetailPage() {
           <Skeleton className="h-64" />
           <Skeleton className="h-64" />
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">
-            Error Loading Item
-          </h2>
-          <p className="text-muted-foreground">{error.message}</p>
+      <PageState
+        variant="error"
+        title="Error Loading Item"
+        description={error.message}
+        action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -549,75 +548,57 @@ export default function ItemDetailPage() {
               Retry
             </Button>
           </div>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
   // Not found
   if (!item) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
-            <Package className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">
-            Item Not Found
-          </h2>
-          <p className="text-muted-foreground">
-            The requested item does not exist or has been deleted.
-          </p>
+      <PageState
+        variant="empty"
+        title="Item Not Found"
+        description="The requested item does not exist or has been deleted."
+        action={(
           <Button variant="outline" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Items
           </Button>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          onClick={handleBack}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Items
-        </Button>
-
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="font-display text-3xl font-semibold truncate">
-                {item.name}
-              </h1>
-              {item.is_controlled && (
-                <Badge variant="destructive">Controlled</Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span className="truncate">{item.name}</span>
+            {item.is_controlled && (
+              <Badge variant="destructive">Controlled</Badge>
+            )}
+          </span>
+        )}
+        description={(
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Tag className="h-4 w-4" />
+              <span className="font-mono text-sm">{item.sku || 'No SKU'}</span>
+            </span>
+            {item.category_name && (
               <span className="flex items-center gap-1.5">
-                <Tag className="h-4 w-4" />
-                <span className="font-mono text-sm">{item.sku || 'No SKU'}</span>
+                <Package className="h-4 w-4" />
+                <span className="text-sm">{item.category_name}</span>
               </span>
-              {item.category_name && (
-                <span className="flex items-center gap-1.5">
-                  <Package className="h-4 w-4" />
-                  <span className="text-sm">{item.category_name}</span>
-                </span>
-              )}
-              {item.unit_of_measure && (
-                <span className="text-sm">Unit: {item.unit_of_measure}</span>
-              )}
-            </div>
+            )}
+            {item.unit_of_measure && (
+              <span className="text-sm">Unit: {item.unit_of_measure}</span>
+            )}
           </div>
-
+        )}
+        actions={(
           <div className="flex items-center gap-2 shrink-0">
             <StockLevelBadge
               stockLevel={item.total_stock || 0}
@@ -648,8 +629,20 @@ export default function ItemDetailPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-      </div>
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit -ml-2"
+          onClick={handleBack}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Items
+        </Button>
+      </PageHeader>
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Stock Summary Bar */}
       <div className="bg-card/30 border border-border rounded-lg p-4">
@@ -733,6 +726,7 @@ export default function ItemDetailPage() {
           <OrdersTab itemId={id} navigate={navigate} />
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </PageShell>
   );
 }

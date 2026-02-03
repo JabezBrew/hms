@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { patientsApi } from '@/lib/api/patients';
+import { patientsApi } from '@/features/patients/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 

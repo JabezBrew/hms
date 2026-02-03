@@ -25,7 +25,7 @@ import {
   useWardRoundWorkflow,
   useAdmissionWorkflow,
   useDischargeWorkflow,
-} from '@/hooks/useWorkflowQueries';
+} from '@/features/workflows/hooks';
 
 /**
  * WorkflowLauncher - Component to start clinical workflows

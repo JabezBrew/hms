@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { useInboxItems } from '@/hooks/useInboxQueries';
+import { useInboxItems } from '@/features/inbox/hooks';
 
 /**
  * Hook to get the total inbox count for the sidebar badge

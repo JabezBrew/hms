@@ -13,7 +13,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
-import { useUserSessions, useRevokeSession, useRevokeAllSessions } from '@/hooks/useSettingsQueries';
+import { useUserSessions, useRevokeSession, useRevokeAllSessions } from '@/features/settings/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {

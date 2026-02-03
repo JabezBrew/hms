@@ -15,12 +15,15 @@ import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { useNavigate } from 'react-router-dom';
 import {
   useBillingDashboardMetrics,
   useRecentInvoices,
   useRecentPayments,
-} from '@/hooks/useBillingQueries';
+} from '@/features/billing/hooks';
 
 export default function BillingDashboardPage() {
   const navigate = useNavigate();
@@ -48,7 +51,7 @@ export default function BillingDashboardPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <div className="space-y-2">
           <Skeleton className="h-12 w-64" />
           <Skeleton className="h-4 w-48" />
@@ -62,26 +65,19 @@ export default function BillingDashboardPage() {
           <Skeleton className="h-80 rounded-2xl" />
           <Skeleton className="h-80 rounded-2xl" />
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (metricsError) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Dashboard</h2>
-          <p className="text-muted-foreground">{metricsError.message}</p>
-          <Button onClick={() => refetchMetrics()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Dashboard"
+        description={metricsError.message}
+        action={() => refetchMetrics()}
+      />
     );
   }
 
@@ -92,21 +88,12 @@ export default function BillingDashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
-            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
-              {todayDate}
-            </p>
-            <h1 className="font-display text-3xl sm:text-4xl text-foreground tracking-tight">
-              Billing Dashboard
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Revenue tracking and invoice management
-            </p>
-          </div>
+    <PageShell>
+      <PageHeader
+        title="Billing Dashboard"
+        description="Revenue tracking and invoice management"
+        meta={todayDate}
+        actions={(
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -127,8 +114,8 @@ export default function BillingDashboardPage() {
               Refresh
             </Button>
           </div>
-        </div>
-      </header>
+        )}
+      />
 
       <main className="p-4 sm:p-6 space-y-6">
         {/* Metrics Cards */}
@@ -284,7 +271,7 @@ export default function BillingDashboardPage() {
           </div>
         </section>
       </main>
-    </div>
+    </PageShell>
   );
 }
 

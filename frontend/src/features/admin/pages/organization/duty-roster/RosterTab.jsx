@@ -26,7 +26,7 @@ import startOfMonth from 'date-fns/startOfMonth';
 import endOfMonth from 'date-fns/endOfMonth';
 import addMonths from 'date-fns/addMonths';
 import subMonths from 'date-fns/subMonths';
-import { useDutyRoster, useGenerateRoster } from '@/hooks/useOrganization';
+import { useDutyRoster, useGenerateRoster } from '@/features/admin/hooks';
 import { toList } from './utils';
 import { EmptyState } from './components';
 

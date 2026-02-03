@@ -34,7 +34,7 @@ import {
   useChartCategories,
   useChartIntervals,
   useCreateChartAssignment,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
 
 const AddChartSlideOver = ({
   open,

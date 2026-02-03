@@ -26,7 +26,7 @@ import {
 import {
   usePatientInsurance,
   useDeletePatientInsurance,
-} from '@/hooks/useBillingQueries';
+} from '@/features/billing/hooks';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import format from 'date-fns/format';

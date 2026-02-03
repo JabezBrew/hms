@@ -24,7 +24,7 @@ import {
   usePendingDispensing,
   useDispenseMedication,
   useBulkDispense
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 export function PharmacyQueue() {
   const [searchTerm, setSearchTerm] = useState('');

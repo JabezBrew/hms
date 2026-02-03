@@ -36,7 +36,7 @@ import {
   useLabPanels,
   useCreateLabOrder,
   useSubmitLabOrder,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**

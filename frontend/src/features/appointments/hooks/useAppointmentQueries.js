@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { appointmentsApi } from '@/lib/api/appointments';
+import { appointmentsApi } from '@/features/appointments/api';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys

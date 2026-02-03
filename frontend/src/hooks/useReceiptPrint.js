@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { billingApi } from '@/lib/api/billing';
+import { billingApi } from '@/features/billing/api';
 import { toast } from 'sonner';
 
 /**

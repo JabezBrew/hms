@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useClinicalUnits } from '@/hooks/useOrganization';
+import { useClinicalUnits } from '@/features/admin/hooks';
 
 export function UnitSelector({
   value,

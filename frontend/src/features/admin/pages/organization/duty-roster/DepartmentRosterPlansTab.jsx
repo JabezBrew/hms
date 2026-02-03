@@ -41,7 +41,7 @@ import {
   useCreateDepartmentRosterPlan,
   useUpdateDepartmentRosterPlan,
   useDeleteDepartmentRosterPlan,
-} from '@/hooks/useOrganization';
+} from '@/features/admin/hooks';
 import { toList, toValue, formatRosterName, safeDate } from './utils';
 import { DUTY_STATUS_OPTIONS, STATUS_BADGE_CLASSES, DEFAULT_CYCLE_LENGTH, SELECT_ALL } from './constants';
 import { useUnitOptions } from './useUnitOptions';

@@ -47,7 +47,7 @@ import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabi
 
 import { appointmentsApi } from '@/features/appointments/api';
 import { patientsApi } from '@/features/patients/api';
-import { staffApi } from '@/lib/api/staff';
+import { staffApi } from '@/features/staff/api';
 
 // Form validation schema
 const formSchema = z.object({

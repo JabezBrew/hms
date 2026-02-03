@@ -25,7 +25,7 @@ import {
   useStorageLocations,
   useInventoryItems,
   useCreateGRN,
-} from '@/hooks/useInventoryQueries';
+} from '@/features/inventory/hooks';
 import { toast } from 'sonner';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';

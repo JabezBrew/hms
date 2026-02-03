@@ -20,7 +20,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
-import { usePatientInsurance, usePatientInvoices } from "@/hooks/useBillingQueries";
+import { usePatientInsurance, usePatientInvoices } from "@/features/billing/hooks";
 import { useAppointments } from "@/features/appointments/hooks/useAppointmentQueries";
 
 import format from "date-fns/format";

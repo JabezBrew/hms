@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TeamSelectionField } from '../TeamSelectionField';
 
 // Mock the organization API
-vi.mock('@/lib/api/organization', () => ({
+vi.mock('@/features/admin/api', () => ({
   rosterEntriesApi: {
     onDutyDepartment: vi.fn(),
   },
@@ -17,7 +17,7 @@ vi.mock('@/lib/api/organization', () => ({
   },
 }));
 
-import { rosterEntriesApi, clinicalUnitsApi } from '@/lib/api/organization';
+import { rosterEntriesApi, clinicalUnitsApi } from '@/features/admin/api';
 
 const createWrapper = () => {
   const queryClient = new QueryClient({

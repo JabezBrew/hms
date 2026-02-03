@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 import {
   Select,
   SelectContent,
@@ -24,8 +26,8 @@ import { StatCard } from "@/components/dashboard";
 import { LabOrderCard, LabOrderDetailSlideOver } from "@/components/laboratory";
 
 import { useAuth } from "@/lib/auth";
-import { useLabOrders } from "@/hooks/useLabQueries";
-import { usePractitioners } from "@/hooks/useStaffQueries";
+import { useLabOrders } from "@/features/laboratory/hooks";
+import { usePractitioners } from "@/features/staff/hooks";
 
 /**
  * LabOrdersPage - Lab orders list for clinicians
@@ -184,24 +186,20 @@ export default function LabOrdersPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 sm:py-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight mb-1">
-              Lab Orders
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {stats.total} {isDoctor ? "of your orders" : "orders"}
-              {stats.critical > 0 && (
-                <span className="text-rose-600 ml-2">
-                  ({stats.critical} critical)
-                </span>
-              )}
-            </p>
-          </div>
-
+    <PageShell>
+      <PageHeader
+        title="Lab Orders"
+        description={(
+          <span>
+            {stats.total} {isDoctor ? "of your orders" : "orders"}
+            {stats.critical > 0 && (
+              <span className="text-rose-600 ml-2">
+                ({stats.critical} critical)
+              </span>
+            )}
+          </span>
+        )}
+        actions={(
           <Button
             variant="outline"
             size="sm"
@@ -211,10 +209,10 @@ export default function LabOrdersPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-        </div>
-
+        )}
+      >
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6">
           <StatCard
             title="Total Orders"
             value={stats.total}
@@ -240,7 +238,7 @@ export default function LabOrdersPage() {
             color="emerald"
           />
         </div>
-      </header>
+      </PageHeader>
 
       {/* Filter Bar */}
       <div className="bg-card/50 border-b border-border px-4 sm:px-6 py-3">
@@ -426,6 +424,6 @@ export default function LabOrdersPage() {
         orderId={selectedOrderId}
         onOrderCancelled={handleOrderCancelled}
       />
-    </div>
+    </PageShell>
   );
 }

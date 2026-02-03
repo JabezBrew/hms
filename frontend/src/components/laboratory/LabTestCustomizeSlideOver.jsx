@@ -29,7 +29,7 @@ import {
   useResetLabTestToDefaults,
   useCustomizeLabPanel,
   useResetLabPanelToDefaults,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 
 /**
  * LabTestCustomizeSlideOver - Chronicle-styled slide-over for customizing lab tests

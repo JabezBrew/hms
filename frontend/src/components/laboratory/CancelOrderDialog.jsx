@@ -14,7 +14,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
-import { useCancelLabOrder } from "@/hooks/useLabQueries";
+import { useCancelLabOrder } from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**

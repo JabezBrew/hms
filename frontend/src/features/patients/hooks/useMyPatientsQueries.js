@@ -1,12 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { myPatientsApi } from '@/lib/api/my-patients';
+import { myPatientsApi } from '@/features/patients/api';
 import { toast } from 'sonner';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const myPatientsKeyFactory = createKeyFactory('my-patients');
+
 export const myPatientsKeys = {
-  all: ['my-patients'],
-  list: () => [...myPatientsKeys.all, 'list'],
-  check: (patientId) => [...myPatientsKeys.all, 'check', patientId],
+  all: myPatientsKeyFactory.all,
+  list: () => keyWith('my-patients', 'list'),
+  check: (patientId) => keyWith('my-patients', 'check', patientId),
 };
 
 /**

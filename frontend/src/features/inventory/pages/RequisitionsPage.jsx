@@ -4,6 +4,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -27,7 +30,7 @@ import {
   RequisitionRowSkeleton,
 } from '@/components/inventory/RequisitionCard';
 import { RequisitionForm } from '@/components/inventory';
-import { useRequisitions } from '@/hooks/useInventoryQueries';
+import { useRequisitions } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
@@ -213,7 +216,7 @@ export default function RequisitionsPage() {
   // Loading state (only show skeleton on initial load, not on refetches)
   if (isLoading && !requisitionsData) {
     return (
-      <div className="space-y-6">
+      <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <Skeleton className="h-9 w-56" />
@@ -231,54 +234,42 @@ export default function RequisitionsPage() {
             <RequisitionCardSkeleton key={i} />
           ))}
         </div>
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">
-            Error Loading Requisitions
-          </h2>
-          <p className="text-muted-foreground">{error.message}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Requisitions"
+        description={error.message}
+        action={() => refetch()}
+      />
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">
-            Purchase Requisitions
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {totalCount} requisition{totalCount !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => refetch()}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
-            Refresh
-          </Button>
-          <Button onClick={handleCreateRequisition}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Requisition
-          </Button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Purchase Requisitions"
+        description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
+        actions={(
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+            <Button onClick={handleCreateRequisition}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Requisition
+            </Button>
+          </div>
+        )}
+      />
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Status Tabs */}
       <Tabs value={status} onValueChange={handleTabChange}>
@@ -486,6 +477,7 @@ export default function RequisitionsPage() {
           </SheetBody>
         </SheetContent>
       </Sheet>
-    </div>
+      </div>
+    </PageShell>
   );
 }

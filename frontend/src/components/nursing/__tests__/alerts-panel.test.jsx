@@ -16,7 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AlertsPanel } from '../AlertsPanel'
 
 // Mock the nursing queries hook
-vi.mock('@/hooks/useNursingQueries', () => ({
+vi.mock('@/features/nursing/hooks', () => ({
   useAcknowledgeAlert: vi.fn(),
 }))
 
@@ -28,7 +28,7 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { useAcknowledgeAlert } from '@/hooks/useNursingQueries'
+import { useAcknowledgeAlert } from '@/features/nursing/hooks'
 import { toast } from 'sonner'
 
 // Helper to create test query client

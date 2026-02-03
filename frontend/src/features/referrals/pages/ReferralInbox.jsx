@@ -33,8 +33,11 @@ import {
   useAcceptReferral,
   useDeclineReferral,
   useCompleteReferral,
-} from "@/hooks/useReferralQueries";
+} from "@/features/referrals/hooks";
 import { toast } from "sonner";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
+import { useListFilters } from "@/shared/hooks/useListFilters";
 
 /**
  * ReferralInbox - Received referrals management for specialists
@@ -42,7 +45,7 @@ import { toast } from "sonner";
  */
 const ReferralInbox = () => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { search: searchQuery, updateSearch, hasActiveFilters } = useListFilters();
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [currentAction, setCurrentAction] = useState(null);
@@ -219,39 +222,41 @@ const ReferralInbox = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">Loading referrals...</div>
-      </div>
+      <PageShell>
+        <PageHeader
+          title="Referral Inbox"
+          description="Review and manage referrals sent to your department"
+        />
+        <div className="flex items-center justify-center py-12">
+          <div className="text-muted-foreground">Loading referrals...</div>
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">
-            Referral Inbox
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Review and manage referrals sent to your department
-          </p>
-        </div>
-        <span className="badge-chronicle-amber text-base px-3 py-1">
-          {filteredReferrals.length} Referrals
-        </span>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Referral Inbox"
+        description="Review and manage referrals sent to your department"
+        actions={(
+          <span className="badge-chronicle-amber text-base px-3 py-1">
+            {filteredReferrals.length} Referrals
+          </span>
+        )}
+      />
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by patient name, MRN, referral number, or reason..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 bg-card border-border"
-        />
-      </div>
+      <div className="p-4 sm:p-6 space-y-6">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by patient name, MRN, referral number, or reason..."
+            value={searchQuery}
+            onChange={(e) => updateSearch(e.target.value)}
+            className="pl-10 bg-card border-border"
+          />
+        </div>
 
       {/* Referrals List */}
       {filteredReferrals.length === 0 ? (
@@ -261,7 +266,7 @@ const ReferralInbox = () => {
               <Stethoscope className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p className="font-heading font-medium">No referrals found</p>
               <p className="text-sm mt-1">
-                {searchQuery
+                {hasActiveFilters
                   ? "Try adjusting your search"
                   : "Referrals will appear here when sent to your department"}
               </p>
@@ -578,6 +583,7 @@ const ReferralInbox = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </PageShell>
   );
 };
 

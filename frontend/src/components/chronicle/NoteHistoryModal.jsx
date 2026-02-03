@@ -19,7 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
-import { useNoteEntryHistory, useCompareNoteVersions } from "@/hooks/useClinicalNotesQueries";
+import { useNoteEntryHistory, useCompareNoteVersions } from "@/features/clinical-notes/hooks";
 import DiffRenderer from "./DiffRenderer";
 
 /**

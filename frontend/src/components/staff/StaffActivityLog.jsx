@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/hooks/useAuditLogs';
+import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/features/admin/hooks';
 
 /**
  * StaffActivityLog - Display audit trail for a specific staff member

@@ -22,7 +22,7 @@ import {
   useUpdatePatientInsurance,
   useInsuranceProviders,
   useInsurancePlans,
-} from '@/hooks/useBillingQueries';
+} from '@/features/billing/hooks';
 import { toast } from 'sonner';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';

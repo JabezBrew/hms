@@ -25,7 +25,7 @@ import BarChart from 'lucide-react/dist/esm/icons/chart-no-axes-column-increasin
 import Layers from 'lucide-react/dist/esm/icons/layers.js';
 import { useState } from "react";
 import { toast } from "sonner";
-import { patientsApi } from "@/lib/api/patients";
+import { patientsApi } from '@/features/patients/api';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

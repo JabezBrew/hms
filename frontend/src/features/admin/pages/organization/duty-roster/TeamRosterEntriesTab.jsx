@@ -35,7 +35,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import { toast } from 'sonner';
-import { teamRosterEntriesApi } from '@/lib/api/organization';
+import { teamRosterEntriesApi } from '@/features/admin/api';
 import {
   useDepartmentDutyTypes,
   useDepartmentStations,
@@ -43,8 +43,8 @@ import {
   useCreateTeamRosterEntry,
   useUpdateTeamRosterEntry,
   useDeleteTeamRosterEntry,
-} from '@/hooks/useOrganization';
-import { usePractitioners } from '@/hooks/useStaffQueries';
+} from '@/features/admin/hooks';
+import { usePractitioners } from '@/features/staff/hooks';
 import { toList, toValue, formatRosterName, safeDate, formatRosterTime } from './utils';
 import { SELECT_ALL, SELECT_NONE } from './constants';
 import { useUnitOptions } from './useUnitOptions';

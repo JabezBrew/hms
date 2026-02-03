@@ -5,7 +5,7 @@ import Mail from 'lucide-react/dist/esm/icons/mail.js';
 import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import BadgeCheck from 'lucide-react/dist/esm/icons/badge-check.js';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,11 +13,13 @@ import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
-import { useProfile, useUpdateProfile } from '@/hooks/useSettingsQueries';
+import { useProfile, useUpdateProfile } from '@/features/settings/hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
 
 // Validation schema
 const profileSchema = z.object({
@@ -35,6 +37,14 @@ const ProfileSettingsPage = () => {
   const { user } = useAuth();
   const { data: profile, isLoading, isError } = useProfile();
   const updateProfile = useUpdateProfile();
+
+  const pageMeta = usePageMeta({
+    title: 'Profile Settings | HMS',
+    breadcrumbs: [
+      { label: 'Settings', href: '/settings' },
+      { label: 'Profile' },
+    ],
+  });
 
   const {
     register,
@@ -72,41 +82,30 @@ const ProfileSettingsPage = () => {
   };
 
   return (
-    <>
-      <Helmet>
-        <title>Profile Settings | HMS</title>
-        <meta name="description" content="Manage your profile information" />
-      </Helmet>
-
-      <div className="min-h-screen bg-background">
-        {/* Page Header - Chronicle style */}
-        <header className="bg-card border-b border-border px-4 sm:px-6 py-6">
-          <div className="max-w-2xl mx-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/settings')}
-              className="mb-4 -ml-2 font-mono text-xs"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Settings
-            </Button>
-
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
+    <PageShell>
+      {pageMeta}
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-3 sm:gap-4">
+              <span className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
                 <User className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
-              </div>
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                  Profile
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground font-mono mt-0.5">
-                  Manage your personal information
-                </p>
-              </div>
-            </div>
-          </div>
-        </header>
+              </span>
+              Profile
+            </span>
+          )}
+          description="Manage your personal information"
+          contentClassName="max-w-2xl mx-auto w-full"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/settings')}
+            className="-ml-2 font-mono text-xs"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
+        </PageHeader>
 
         {/* Main Content */}
         <main className="p-4 sm:p-6 lg:p-8">
@@ -246,8 +245,7 @@ const ProfileSettingsPage = () => {
             )}
           </div>
         </main>
-      </div>
-    </>
+      </PageShell>
   );
 };
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { patientsApi } from '@/lib/api/patients';
+import { patientsApi } from '@/features/patients/api';
 import PatientForm from '@/components/patients/PatientForm';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

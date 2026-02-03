@@ -15,7 +15,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-import { useAvailableNoteTemplates } from "@/hooks/useClinicalNotesQueries";
+import { useAvailableNoteTemplates } from "@/features/clinical-notes/hooks";
 
 // Icon mapping for template icons (Lucide icon names to components)
 const ICON_MAP = {

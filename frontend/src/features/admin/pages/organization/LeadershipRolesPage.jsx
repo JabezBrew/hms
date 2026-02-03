@@ -8,7 +8,6 @@ import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import ClipboardCheck from 'lucide-react/dist/esm/icons/clipboard-check.js';
 import { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +28,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
-import { useLeadershipRoles } from '@/hooks/useOrganization';
+import { useLeadershipRoles } from '@/features/admin/hooks';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Link } from 'react-router-dom';
 
@@ -49,6 +51,15 @@ export default function LeadershipRolesPage() {
     role.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const pageMeta = usePageMeta({
+    title: 'Leadership Roles | HMS Admin',
+    breadcrumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Organization', href: '/admin/organization' },
+      { label: 'Leadership Roles' },
+    ],
+  });
+
   const CapabilityBadge = ({ enabled, label, icon: Icon }) => (
     <div className="flex items-center gap-2">
       {enabled ? (
@@ -67,31 +78,28 @@ export default function LeadershipRolesPage() {
   );
 
   return (
-    <>
-      <Helmet>
-        <title>Leadership Roles | HMS Admin</title>
-      </Helmet>
-
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title={(
+          <span className="inline-flex items-center gap-3">
+            <span className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Crown className="h-5 w-5 text-amber-700" />
+            </span>
+            <span>Leadership Roles</span>
+          </span>
+        )}
+        description="Configure leadership roles and their permissions"
+        actions={(
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/admin/organization">
+            <Link to="/admin/organization" aria-label="Back to organization">
               <ChevronLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Crown className="h-5 w-5 text-amber-700" />
-            </div>
-            <div>
-              <h1 className="text-xl font-display font-semibold">Leadership Roles</h1>
-              <p className="text-sm text-muted-foreground">
-                Configure leadership roles and their permissions
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
+      />
+
+      <div className="p-6 max-w-6xl mx-auto">
 
         {/* Search */}
         <div className="relative mb-6">
@@ -275,6 +283,6 @@ export default function LeadershipRolesPage() {
           )}
         </SheetContent>
       </Sheet>
-    </>
+    </PageShell>
   );
 }

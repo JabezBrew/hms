@@ -18,8 +18,11 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useInvoice, useGenerateClaim } from '@/hooks/useBillingQueries';
+import { useInvoice, useGenerateClaim } from '@/features/billing/hooks';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 import { toast } from 'sonner';
 
@@ -58,27 +61,25 @@ export default function InvoiceDetailPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 sm:p-6 space-y-6">
+      <PageState variant="loading">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
         <Skeleton className="h-48 rounded-2xl" />
         <Skeleton className="h-64 rounded-2xl" />
-      </div>
+      </PageState>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Invoice</h2>
-          <p className="text-muted-foreground">{error.message}</p>
+      <PageState
+        variant="error"
+        title="Error Loading Invoice"
+        description={error.message}
+        action={(
           <div className="flex gap-2 justify-center">
             <Button variant="outline" onClick={() => navigate('/billing/invoices')} className="font-mono text-xs">
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -89,8 +90,8 @@ export default function InvoiceDetailPage() {
               Retry
             </Button>
           </div>
-        </div>
-      </div>
+        )}
+      />
     );
   }
 
@@ -123,84 +124,77 @@ export default function InvoiceDetailPage() {
   const facilityCode = invoice.facility_code || invoice.facility_details?.code;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Page Header */}
-      <header className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col gap-4">
-          {/* Back Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/billing/invoices')}
-            className="font-mono text-xs w-fit -ml-2"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Invoices
-          </Button>
-
-          {/* Invoice Title */}
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <FileText className="h-6 w-6 text-primary" />
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                  {invoice.invoice_number}
-                </h1>
-                <span className={cn("text-xs px-2 py-1 rounded flex items-center gap-1", badge.class)}>
-                  <StatusIcon className="h-3 w-3" />
-                  {badge.label}
-                </span>
-              </div>
-              <p className="text-muted-foreground">
-                Created {formatDate(invoice.created_at)}
-                {invoice.due_date && ` · Due ${formatDate(invoice.due_date)}`}
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-                <Button
-                  onClick={() => setShowPaymentSlideOver(true)}
-                  className="font-mono text-xs"
-                >
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Record Payment
-                </Button>
-              )}
-              {invoice.status !== 'cancelled' && !invoice.has_claim && invoice.insurance_amount > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={handleGenerateClaim}
-                  disabled={generateClaimMutation.isPending}
-                  className="font-mono text-xs"
-                >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Generate Claim
-                </Button>
-              )}
+    <PageShell>
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <FileText className="h-6 w-6 text-primary" />
+            {invoice.invoice_number}
+            <span className={cn("text-xs px-2 py-1 rounded flex items-center gap-1", badge.class)}>
+              <StatusIcon className="h-3 w-3" />
+              {badge.label}
+            </span>
+          </span>
+        )}
+        description={(
+          <span className="text-muted-foreground">
+            Created {formatDate(invoice.created_at)}
+            {invoice.due_date && ` · Due ${formatDate(invoice.due_date)}`}
+          </span>
+        )}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
               <Button
-                variant="outline"
-                onClick={handlePrint}
-                disabled={printingId === id}
+                onClick={() => setShowPaymentSlideOver(true)}
                 className="font-mono text-xs"
               >
-                {printingId === id ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  <>
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Invoice
-                  </>
-                )}
+                <CreditCard className="h-4 w-4 mr-2" />
+                Record Payment
               </Button>
-            </div>
+            )}
+            {invoice.status !== 'cancelled' && !invoice.has_claim && invoice.insurance_amount > 0 && (
+              <Button
+                variant="outline"
+                onClick={handleGenerateClaim}
+                disabled={generateClaimMutation.isPending}
+                className="font-mono text-xs"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Generate Claim
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={handlePrint}
+              disabled={printingId === id}
+              className="font-mono text-xs"
+            >
+              {printingId === id ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print Invoice
+                </>
+              )}
+            </Button>
           </div>
-        </div>
-      </header>
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/billing/invoices')}
+          className="font-mono text-xs w-fit -ml-2"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Invoices
+        </Button>
+      </PageHeader>
 
       <main className="p-4 sm:p-6 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -493,7 +487,7 @@ export default function InvoiceDetailPage() {
         onClose={() => setShowPaymentSlideOver(false)}
         invoice={invoice}
       />
-    </div>
+    </PageShell>
   );
 }
 

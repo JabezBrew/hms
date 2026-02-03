@@ -1,17 +1,18 @@
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
-import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { WorkflowProgress, WorkflowStepRenderer } from '@/components/workflow';
-import { useDischargeWorkflow } from '@/hooks/useWorkflowQueries';
+import { useDischargeWorkflow } from '@/features/workflows/hooks';
 import { usePatient } from '@/features/patients/hooks/usePatientQueries';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/shared/components/page/PageHeader';
+import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { toast } from 'sonner';
 
@@ -141,33 +142,43 @@ export default function DischargeWorkflowPage() {
     }
   };
 
-  const breadcrumbItems = [
+  const breadcrumbs = [
     { label: 'Patients', href: '/patients' },
-    { label: patient?.full_name || 'Loading...', href: `/patients/${patientId}` },
-    { label: 'Discharge', href: '#' },
+    ...(patientId
+      ? [{ label: patient?.full_name || 'Patient', href: `/patients/${patientId}` }]
+      : []),
+    { label: 'Discharge' },
   ];
+
+  const pageMeta = usePageMeta({
+    title: 'Discharge Workflow | HMS',
+    breadcrumbs,
+  });
 
   if (!patientId || !admissionId) {
     return (
       <Layout>
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-            <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
-            <h3 className="font-heading text-lg font-semibold text-rose-400 mb-1">
-              Missing Parameters
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Patient ID and Admission ID are required to start a discharge.
-            </p>
-            <Button
-              variant="outline"
-              className="mt-4"
-              onClick={() => navigate('/dashboards/inpatient')}
-            >
-              Back to Dashboard
-            </Button>
-          </div>
-        </div>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Discharge Workflow"
+            description="Guided steps to complete discharge safely."
+          />
+          <PageState
+            variant="error"
+            title="Missing parameters"
+            description="Patient ID and Admission ID are required to start a discharge."
+            action={(
+              <Button
+                variant="outline"
+                onClick={() => navigate('/dashboards/inpatient')}
+              >
+                Back to Dashboard
+              </Button>
+            )}
+            fullHeight={false}
+          />
+        </PageShell>
       </Layout>
     );
   }
@@ -175,10 +186,14 @@ export default function DischargeWorkflowPage() {
   if (patientLoading) {
     return (
       <Layout>
-        <div className="p-6 space-y-6">
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-96 w-full" />
-        </div>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Discharge Workflow"
+            description="Guided steps to complete discharge safely."
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
       </Layout>
     );
   }
@@ -189,9 +204,14 @@ export default function DischargeWorkflowPage() {
 
   return (
     <Layout>
-      <PageBreadcrumb items={breadcrumbItems} />
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Discharge Workflow"
+          description="Guided steps to complete discharge safely."
+        />
 
-      <div className="p-4 sm:p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
         {patient && <PatientIdentityHero patient={patient} hideActions={true} />}
 
         <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
@@ -258,7 +278,8 @@ export default function DischargeWorkflowPage() {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      </PageShell>
     </Layout>
   );
 }

@@ -26,14 +26,17 @@ import {
 } from "@/components/ui/dialog";
 
 import format from "date-fns/format";
-import { useReferralsSent } from "@/hooks/useReferralQueries";
+import { useReferralsSent } from "@/features/referrals/hooks";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
+import { useListFilters } from "@/shared/hooks/useListFilters";
 
 /**
  * ReferralSent - Track referrals sent by current user
  * Uses Chronicle Design System for consistent dark mode support
  */
 const ReferralSent = () => {
-  const [searchQuery, setSearchQuery] = useState("");
+  const { search: searchQuery, updateSearch, hasActiveFilters } = useListFilters();
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
@@ -151,28 +154,31 @@ const ReferralSent = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">Loading referrals...</div>
-      </div>
+      <PageShell>
+        <PageHeader
+          title="Sent Referrals"
+          description="Track the status of referrals you've sent to specialists"
+        />
+        <div className="flex items-center justify-center py-12">
+          <div className="text-muted-foreground">Loading referrals...</div>
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">
-            Sent Referrals
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Track the status of referrals you've sent to specialists
-          </p>
-        </div>
-        <span className="badge-chronicle-amber text-base px-3 py-1">
-          {filteredReferrals.length} Referrals
-        </span>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Sent Referrals"
+        description="Track the status of referrals you've sent to specialists"
+        actions={(
+          <span className="badge-chronicle-amber text-base px-3 py-1">
+            {filteredReferrals.length} Referrals
+          </span>
+        )}
+      />
+
+      <div className="p-4 sm:p-6 space-y-6">
 
       {/* Status Summary */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -201,7 +207,7 @@ const ReferralSent = () => {
         <Input
           placeholder="Search by patient name, MRN, department, or reason..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => updateSearch(e.target.value)}
           className="pl-10 bg-card border-border"
         />
       </div>
@@ -214,7 +220,7 @@ const ReferralSent = () => {
               <Send className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p className="font-heading font-medium">No referrals found</p>
               <p className="text-sm mt-1">
-                {searchQuery
+                {hasActiveFilters
                   ? "Try adjusting your search"
                   : "Referrals you send will appear here"}
               </p>
@@ -667,6 +673,7 @@ const ReferralSent = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </PageShell>
   );
 };
 

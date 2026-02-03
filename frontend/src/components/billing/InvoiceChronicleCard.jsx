@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
-import { usePatientInvoices } from '@/hooks/useBillingQueries';
+import { usePatientInvoices } from '@/features/billing/hooks';
 import { useAuth } from '@/lib/auth';
 
 /**
