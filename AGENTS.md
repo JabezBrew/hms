@@ -68,6 +68,11 @@ favor correctness, least privilege, and predictable performance.
 - For dashboards, use cached projections + async refresh with stale reads; no FHIR in request path.
 - List endpoints should accept `include_data` or `expand` flags for large JSON payloads.
 
+## Frontend Performance Budget
+- Assume many deployments use modest client hardware; the default experience must stay fast without a special mode.
+- Defer heavy widgets (charts, calendars), virtualize large lists, and avoid render-time side effects.
+- Keep motion lightweight and honor reduced-motion preferences.
+
 ## Database Reliability Rules
 - Avoid table scans: no `DATE(column)` filters; use range predicates.
 - For `icontains`, add trigram or FTS indexes.

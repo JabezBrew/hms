@@ -167,6 +167,14 @@ import { PatientIdentityHero } from '@/components/chronicle';
 
 ---
 
+## Performance & Responsiveness
+
+- Chronicle must stay responsive on modest client hardware; the default UI should not assume high-end devices.
+- Favor light DOM and predictable render cost: virtualize long lists and defer heavy charts/calendars.
+- Keep motion minimal and honor `prefers-reduced-motion`.
+
+---
+
 ## Animations
 
 ### Entry Animation

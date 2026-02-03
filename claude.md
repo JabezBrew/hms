@@ -109,6 +109,12 @@ class MyViewSet(viewsets.ModelViewSet):
 **Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod, date-fns, lucide-react, sonner
 **Backend:** Django 4+, DRF, PostgreSQL, Celery, Redis, JWT
 
+## Frontend Performance Budget
+
+- Assume many deployments run on modest client hardware; the default UI must remain fast without opt-in.
+- Keep initial JS and render work low: defer charts/calendars, virtualize long lists, and avoid render-time side effects.
+- Keep motion lightweight and honor reduced-motion preferences.
+
 ---
 
 ## Frontend Modularization (Current)

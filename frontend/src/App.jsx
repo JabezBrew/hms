@@ -10,7 +10,6 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { queryClient } from './lib/react-query'
 import { Layout } from './components/layout/layout'
-import { Toaster } from './components/ui/sonner'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { PageLoader } from './shared/components/page/PageState'
@@ -27,6 +26,7 @@ import { ReadOnlyBanner } from './components/readonly'
 
 // Lazy load page components for code splitting
 const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'))
+const Toaster = lazy(() => import('./components/ui/sonner').then((module) => ({ default: module.Toaster })))
 
 // Main app content with routes
 function AppContent() {
@@ -116,6 +116,9 @@ function AppContent() {
         </Suspense>
         {/* Mount critical alerts monitor only for authenticated users */}
         <CriticalAlertsMonitor />
+        <Suspense fallback={null}>
+          <Toaster />
+        </Suspense>
       </ReadOnlyModeProvider>
     </ErrorBoundary>
   )
@@ -133,7 +136,6 @@ function App() {
                 <ViewModeProvider>
                   <WorkflowProvider>
                     <AppContent />
-                    <Toaster />
                     <OfflineIndicator />
                     <SessionTimeoutWarning />
                   </WorkflowProvider>
