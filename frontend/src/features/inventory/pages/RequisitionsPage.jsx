@@ -1,0 +1,491 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetBody,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  RequisitionCard,
+  RequisitionCardSkeleton,
+  RequisitionRow,
+  RequisitionRowSkeleton,
+} from '@/components/inventory/RequisitionCard';
+import { RequisitionForm } from '@/components/inventory';
+import { useRequisitions } from '@/hooks/useInventoryQueries';
+import { useDebounce } from '@/hooks/use-debounce';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+
+const STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: 'all', label: 'All Priorities' },
+  { value: 'low', label: 'Low' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' },
+];
+
+/**
+ * RequisitionsPage - Purchase requisitions list page
+ */
+export default function RequisitionsPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // View mode from localStorage
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem('requisitions-view-mode') || 'list';
+  });
+
+  // Filters from URL
+  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const status = searchParams.get('status') || 'all';
+  const priority = searchParams.get('priority') || '';
+  const page = parseInt(searchParams.get('page') || '1', 10);
+
+  // Debounced search
+  const debouncedSearch = useDebounce(search, 300);
+
+  // Sheet state from URL
+  const action = searchParams.get('action');
+  const isCreateOpen = action === 'create';
+  const initialItems = searchParams.get('items')?.split(',').filter(Boolean) || [];
+
+  // Persist view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('requisitions-view-mode', viewMode);
+  }, [viewMode]);
+
+  // Build query params
+  const queryParams = {
+    page,
+    page_size: 20,
+    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(status !== 'all' && { status }),
+    ...(priority && priority !== 'all' && { priority }),
+  };
+
+  // Fetch data
+  const {
+    data: requisitionsData,
+    isLoading,
+    error,
+    refetch,
+  } = useRequisitions(queryParams);
+
+  const requisitions = requisitionsData?.results || [];
+  const totalCount = requisitionsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / 20);
+
+  // Handle search input
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value);
+  };
+
+  // Update search params when debounced search changes
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (debouncedSearch) {
+        params.set('search', debouncedSearch);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [debouncedSearch, setSearchParams]);
+
+  // Handle tab change
+  const handleTabChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value !== 'all') {
+        params.set('status', value);
+      } else {
+        params.delete('status');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  // Handle filter changes
+  const handlePriorityChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value && value !== 'all') {
+        params.set('priority', value);
+      } else {
+        params.delete('priority');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  const handlePageChange = (newPage) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', newPage.toString());
+      return params;
+    });
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSearch('');
+    setSearchParams({});
+  };
+
+  const hasActiveFilters = debouncedSearch || status !== 'all' || priority;
+
+  // Navigate handlers
+  const handleRequisitionClick = (requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}`);
+  };
+
+  const handleApprove = (requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}?action=approve`);
+  };
+
+  const handleReject = (requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}?action=reject`);
+  };
+
+  const handleConvertToPO = (requisitionId) => {
+    navigate(`/inventory/purchase-orders?action=create&requisition=${requisitionId}`);
+  };
+
+  const handleCreateRequisition = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('action', 'create');
+      return params;
+    });
+  };
+
+  const handleCloseSheet = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('action');
+      params.delete('items');
+      return params;
+    });
+  };
+
+  const handleCreateSuccess = () => {
+    handleCloseSheet();
+    refetch();
+  };
+
+  // Loading state (only show skeleton on initial load, not on refetches)
+  if (isLoading && !requisitionsData) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-9 w-56" />
+            <Skeleton className="h-5 w-32 mt-2" />
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <Skeleton className="h-10 w-full max-w-md" />
+        <div className="flex gap-3">
+          <Skeleton className="h-10 flex-1 max-w-md" />
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <div className="space-y-3">
+          {[...Array(6)].map((_, i) => (
+            <RequisitionCardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+          </div>
+          <h2 className="font-display text-2xl text-foreground">
+            Error Loading Requisitions
+          </h2>
+          <p className="text-muted-foreground">{error.message}</p>
+          <Button onClick={() => refetch()} className="font-mono text-xs">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-semibold">
+            Purchase Requisitions
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {totalCount} requisition{totalCount !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => refetch()}>
+            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Button onClick={handleCreateRequisition}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Requisition
+          </Button>
+        </div>
+      </div>
+
+      {/* Status Tabs */}
+      <Tabs value={status} onValueChange={handleTabChange}>
+        <TabsList className="w-full sm:w-auto">
+          {STATUS_TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Filters Row */}
+      <div className="flex flex-col lg:flex-row gap-3">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by number or requester..."
+            value={search}
+            onChange={handleSearchChange}
+            className="pl-9 font-mono text-sm"
+          />
+        </div>
+
+        {/* Priority Filter */}
+        <Select value={priority || 'all'} onValueChange={handlePriorityChange}>
+          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+            <SelectValue placeholder="Priority" />
+          </SelectTrigger>
+          <SelectContent>
+            {PRIORITY_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Clear Filters */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="font-mono text-xs text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {/* View Toggle */}
+      <div className="flex items-center justify-end">
+        <div className="flex items-center border rounded-lg p-1 bg-muted/30">
+          <Button
+            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('grid')}
+            className="h-8 w-8 p-0"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+            className="h-8 w-8 p-0"
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Requisitions Display */}
+      {requisitions.length > 0 ? (
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {requisitions.map((requisition, index) => (
+              <RequisitionCard
+                key={requisition.id}
+                requisition={requisition}
+                index={index}
+                onClick={() => handleRequisitionClick(requisition.id)}
+                onApprove={() => handleApprove(requisition.id)}
+                onReject={() => handleReject(requisition.id)}
+                onConvert={() => handleConvertToPO(requisition.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="border border-border rounded-lg overflow-hidden bg-card/30">
+            <table className="w-full">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Requisition #
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden md:table-cell">
+                    Requested By
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
+                    Required By
+                  </th>
+                  <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Items
+                  </th>
+                  <th className="text-right px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Total
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
+                    Priority
+                  </th>
+                  <th className="w-10 px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {requisitions.map((requisition, index) => (
+                  <RequisitionRow
+                    key={requisition.id}
+                    requisition={requisition}
+                    index={index}
+                    onClick={() => handleRequisitionClick(requisition.id)}
+                    onApprove={() => handleApprove(requisition.id)}
+                    onReject={() => handleReject(requisition.id)}
+                    onConvert={() => handleConvertToPO(requisition.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : (
+        <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
+          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <ClipboardList className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="font-display text-xl text-foreground mb-2">
+            No Requisitions Found
+          </h3>
+          <p className="text-muted-foreground text-sm mb-4">
+            {hasActiveFilters
+              ? 'Try adjusting your filters'
+              : 'Create your first requisition to get started'}
+          </p>
+          {!hasActiveFilters && (
+            <Button onClick={handleCreateRequisition} className="font-mono text-xs">
+              <Plus className="h-4 w-4 mr-2" />
+              New Requisition
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 border-t border-border">
+          <p className="font-mono text-xs text-muted-foreground">
+            Page {page} of {totalPages} ({totalCount} requisitions)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page <= 1}
+              className="font-mono text-xs"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page >= totalPages}
+              className="font-mono text-xs"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Create Requisition Sheet */}
+      <Sheet open={isCreateOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
+        <SheetContent className="sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-display text-2xl">New Requisition</SheetTitle>
+            <SheetDescription>
+              Create a new purchase requisition for inventory items.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            <RequisitionForm
+              initialItems={initialItems}
+              onSuccess={handleCreateSuccess}
+              onCancel={handleCloseSheet}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
