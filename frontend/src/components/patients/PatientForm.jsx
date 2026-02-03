@@ -14,8 +14,8 @@ import {
   useUpdatePatientWithFHIR,
   useRegisterPatient,
   usePatientValidationRules
-} from "@/hooks/usePatientQueries";
-import { useWards, useWardBeds } from "@/hooks/useWardQueries";
+} from "@/features/patients/hooks/usePatientQueries";
+import { useWards, useWardBeds } from "@/features/wards/hooks/useWardQueries";
 import { useDepartments, useRosterOnDutyDepartment } from "@/hooks/useOrganization";
 import {
   useInsuranceProviders,

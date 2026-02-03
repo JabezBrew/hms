@@ -258,6 +258,8 @@ class NursingTask(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to update status based on time."""
+        if not self.facility_id and self.patient_id:
+            self.facility = self.patient.facility
         if self.status == 'pending' and self.scheduled_time < timezone.now():
             self.status = 'overdue'
 

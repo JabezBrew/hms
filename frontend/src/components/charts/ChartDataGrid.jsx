@@ -69,9 +69,10 @@ const ChartDataGrid = ({
   const formatValue = (field, value) => {
     if (value === null || value === undefined) return '—';
 
+    const config = field?.config || {};
+
     switch (field.field_type) {
       case 'numeric':
-        const config = field.config || {};
         return `${value}${config.unit ? ` ${config.unit}` : ''}`;
 
       case 'paired':

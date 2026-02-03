@@ -27,7 +27,7 @@ import {
   useNursingAlerts,
   useMedicationsDueNow
 } from '@/hooks/useNursingQueries';
-import { useWardStaff } from '@/hooks/useWardQueries';
+import { useWardStaff } from '@/features/wards/hooks/useWardQueries';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Layout } from '@/components/layout/layout';
 

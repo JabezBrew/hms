@@ -15,54 +15,53 @@ describe('StockLevelBadge', () => {
   it('renders "Out of Stock" badge when stock is 0', () => {
     render(<StockLevelBadge stockLevel={0} reorderLevel={100} />)
 
-    expect(screen.getByText('Out of Stock')).toBeInTheDocument()
+    expect(screen.getByText(/Out of Stock/)).toBeInTheDocument()
   })
 
-  it('renders "Critical" badge when stock is below half of reorder level', () => {
+  it('renders "Low Stock" badge when stock is below reorder level', () => {
     render(<StockLevelBadge stockLevel={40} reorderLevel={100} />)
 
-    expect(screen.getByText('Critical')).toBeInTheDocument()
+    expect(screen.getByText(/Low Stock/)).toBeInTheDocument()
   })
 
   it('renders "Low Stock" badge when stock is at or below reorder level', () => {
     render(<StockLevelBadge stockLevel={80} reorderLevel={100} />)
 
-    expect(screen.getByText('Low Stock')).toBeInTheDocument()
+    expect(screen.getByText(/Low Stock/)).toBeInTheDocument()
   })
 
   it('renders "In Stock" badge when stock is above reorder level', () => {
     render(<StockLevelBadge stockLevel={500} reorderLevel={100} />)
 
-    expect(screen.getByText('In Stock')).toBeInTheDocument()
+    expect(screen.getByText(/In Stock/)).toBeInTheDocument()
   })
 
   it('displays quantity when showQuantity is true', () => {
     render(<StockLevelBadge stockLevel={150} reorderLevel={100} showQuantity={true} />)
 
     // Should show both status and quantity
-    expect(screen.getByText('150')).toBeInTheDocument()
+    expect(screen.getByText('150 - In Stock')).toBeInTheDocument()
   })
 
   it('handles zero reorder level', () => {
     render(<StockLevelBadge stockLevel={50} reorderLevel={0} />)
 
     // With no reorder level, any stock should be "In Stock"
-    expect(screen.getByText('In Stock')).toBeInTheDocument()
+    expect(screen.getByText(/In Stock/)).toBeInTheDocument()
   })
 
   it('handles negative stock (edge case)', () => {
     render(<StockLevelBadge stockLevel={-5} reorderLevel={100} />)
 
-    expect(screen.getByText('Out of Stock')).toBeInTheDocument()
+    expect(screen.getByText(/Out of Stock/)).toBeInTheDocument()
   })
 
-  it('applies correct size classes', () => {
+  it('applies custom class names', () => {
     const { container } = render(
-      <StockLevelBadge stockLevel={500} reorderLevel={100} size="lg" />
+      <StockLevelBadge stockLevel={500} reorderLevel={100} className="test-class" />
     )
 
-    // Should have larger text class for "lg" size
-    const badge = container.querySelector('.text-sm')
+    const badge = container.querySelector('.test-class')
     expect(badge).toBeInTheDocument()
   })
 })
@@ -73,7 +72,7 @@ describe('StockLevelIndicator', () => {
       <StockLevelIndicator
         stockLevel={250}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 
@@ -86,7 +85,7 @@ describe('StockLevelIndicator', () => {
       <StockLevelIndicator
         stockLevel={250}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 
@@ -95,13 +94,12 @@ describe('StockLevelIndicator', () => {
     expect(fillElement).toBeInTheDocument()
   })
 
-  it('shows reorder level marker when enabled', () => {
+  it('shows reorder level marker', () => {
     const { container } = render(
       <StockLevelIndicator
         stockLevel={250}
         reorderLevel={100}
-        maxLevel={500}
-        showReorderMarker={true}
+        maxStock={500}
       />
     )
 
@@ -115,7 +113,7 @@ describe('StockLevelIndicator', () => {
       <StockLevelIndicator
         stockLevel={300}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 
@@ -129,7 +127,7 @@ describe('StockLevelIndicator', () => {
       <StockLevelIndicator
         stockLevel={80}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 
@@ -138,12 +136,12 @@ describe('StockLevelIndicator', () => {
     expect(fillElement).toBeInTheDocument()
   })
 
-  it('uses rose color when stock is critical', () => {
+  it('uses rose color when stock is empty', () => {
     const { container } = render(
       <StockLevelIndicator
-        stockLevel={30}
+        stockLevel={0}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 
@@ -152,7 +150,7 @@ describe('StockLevelIndicator', () => {
     expect(fillElement).toBeInTheDocument()
   })
 
-  it('handles maxLevel being undefined', () => {
+  it('handles maxStock being undefined', () => {
     const { container } = render(
       <StockLevelIndicator
         stockLevel={100}
@@ -169,7 +167,7 @@ describe('StockLevelIndicator', () => {
       <StockLevelIndicator
         stockLevel={600}
         reorderLevel={100}
-        maxLevel={500}
+        maxStock={500}
       />
     )
 

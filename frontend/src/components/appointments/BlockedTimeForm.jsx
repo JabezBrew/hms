@@ -34,7 +34,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { usePractitioners } from '@/hooks/useStaffQueries';
-import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/hooks/useAppointmentQueries';
+import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/features/appointments/hooks/useAppointmentQueries';
 
 const formSchema = z.object({
     practitioner_id: z.string().min(1, 'Practitioner is required'),

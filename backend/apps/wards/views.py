@@ -166,6 +166,10 @@ class WardViewSet(viewsets.ModelViewSet):
 
             # Create beds automatically
             with transaction.atomic():
+                facility = ward.facility or get_user_facility(self.request)
+                if not facility:
+                    raise PermissionDenied("Facility context is required.")
+
                 # Calculate grid size (square root of total beds, rounded up)
                 import math
                 grid_size = math.ceil(math.sqrt(total_beds))
@@ -178,6 +182,7 @@ class WardViewSet(viewsets.ModelViewSet):
 
                     Bed.objects.create(
                         ward=ward,
+                        facility=facility,
                         bed_number=f"{i:03d}",  # Format: 001, 002, etc.
                         bed_type=default_bed_type,
                         status='available',

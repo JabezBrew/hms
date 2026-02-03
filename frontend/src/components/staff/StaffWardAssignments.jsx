@@ -46,7 +46,7 @@ import {
   useStaffRoles,
   useCreateStaffAssignment,
   useDeleteStaffAssignment,
-} from '@/hooks/useWardQueries';
+} from '@/features/wards/hooks/useWardQueries';
 import { toast } from 'sonner';
 
 /**

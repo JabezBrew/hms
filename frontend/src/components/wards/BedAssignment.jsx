@@ -10,7 +10,7 @@ import { SearchBar } from '@/components/ui/search-bar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { fetchWards, fetchBeds } from '@/lib/api';
-import { useAvailableBeds } from '@/hooks/useWardQueries';
+import { useAvailableBeds } from '@/features/wards/hooks/useWardQueries';
 import { SectionSelector } from './SectionSelector';
 import { BedAmenityPicker } from './BedAmenityPicker';
 

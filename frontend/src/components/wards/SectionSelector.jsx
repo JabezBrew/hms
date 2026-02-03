@@ -4,7 +4,7 @@ import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import React from 'react';
 
-import { useWardSections } from '@/hooks/useWardQueries';
+import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 import {
   Select,
   SelectContent,

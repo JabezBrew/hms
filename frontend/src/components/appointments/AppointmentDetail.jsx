@@ -45,7 +45,7 @@ import {
   useAppointment,
   useUpdateAppointmentStatus,
   useDeleteAppointment
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 
 // Chronicle Design System status colors
 // Using amber for pending/proposed, emerald for confirmed, rose for cancelled, sky for info

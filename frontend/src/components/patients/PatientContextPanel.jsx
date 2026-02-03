@@ -19,9 +19,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { usePatient } from "@/hooks/usePatientQueries";
+import { usePatient } from "@/features/patients/hooks/usePatientQueries";
 import { usePatientInsurance, usePatientInvoices } from "@/hooks/useBillingQueries";
-import { useAppointments } from "@/hooks/useAppointmentQueries";
+import { useAppointments } from "@/features/appointments/hooks/useAppointmentQueries";
 
 import format from "date-fns/format";
 

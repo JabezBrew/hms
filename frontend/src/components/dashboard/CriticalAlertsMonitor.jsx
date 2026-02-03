@@ -20,11 +20,6 @@ export default function CriticalAlertsMonitor() {
   const { user, isAuthenticated } = useAuth();
   const previousAlertsRef = useRef(new Set());
 
-  // Early return if not authenticated - security safeguard
-  if (!isAuthenticated || !user) {
-    return null;
-  }
-
   // Determine which dashboard to monitor based on role
   const userRole = user?.role;
   const shouldMonitor = userRole && ['nurse', 'head_nurse', 'nurse_practitioner', 'doctor', 'inpatient_doctor', 'admin'].includes(userRole);
@@ -66,7 +61,7 @@ export default function CriticalAlertsMonitor() {
     : null;
 
   useEffect(() => {
-    if (!dashboardData?.urgent) return;
+    if (!shouldMonitor || !dashboardData?.urgent) return;
 
     const currentAlerts = dashboardData.urgent.critical_alerts || [];
     const newAlerts = currentAlerts.filter(
@@ -108,10 +103,10 @@ export default function CriticalAlertsMonitor() {
     // Update the set of seen alerts
     const alertIds = new Set(currentAlerts.map((a) => a.id));
     previousAlertsRef.current = alertIds;
-  }, [dashboardData]);
+  }, [dashboardData, shouldMonitor]);
 
   useEffect(() => {
-    if (!dashboardData?.urgent) return;
+    if (!shouldMonitor || !dashboardData?.urgent) return;
 
     const overdueMeds = dashboardData.urgent.overdue_medications || [];
     const newOverdueMeds = overdueMeds.filter(
@@ -151,7 +146,7 @@ export default function CriticalAlertsMonitor() {
       // Add to seen set
       previousAlertsRef.current.add(`med-${med.id}`);
     });
-  }, [dashboardData]);
+  }, [dashboardData, shouldMonitor]);
 
   // This component doesn't render anything
   return null;

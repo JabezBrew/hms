@@ -683,7 +683,7 @@ export default function ItemDetailPage() {
           <StockLevelIndicator
             stockLevel={item.total_stock || 0}
             reorderLevel={item.reorder_level}
-            maxLevel={item.max_stock_level}
+            maxStock={item.max_stock_level}
           />
         </div>
       </div>

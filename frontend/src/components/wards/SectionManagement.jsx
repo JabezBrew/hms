@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
-import { useWardSections, useCreateSection, useUpdateSection, useDeleteSection } from '@/hooks/useWardQueries';
+import { useWardSections, useCreateSection, useUpdateSection, useDeleteSection } from '@/features/wards/hooks/useWardQueries';
 import { toast } from 'sonner';
 
 /**

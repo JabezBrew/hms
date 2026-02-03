@@ -474,7 +474,8 @@ SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
 
-# Access control se = env.bool('TEAM_ACCESS_STRICT', default=True)
+# Access control settings
+TEAM_ACCESS_STRICT = env.bool('TEAM_ACCESS_STRICT', default=True)
 BREAK_GLASS_TTL_MINUTES = env.int('BREAK_GLASS_TTL_MINUTES', default=30)
 
 # Email settings - SendGrid Web API

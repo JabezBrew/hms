@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 import { PatientList } from './PatientList';
 import { MedicationAdministration } from './MedicationAdministration';
-import { useWards, useAdmissions } from '@/hooks/useWardQueries';
+import { useWards, useAdmissions } from '@/features/wards/hooks/useWardQueries';
 import { toast } from 'sonner';
 
 // Lazy load chart-heavy components to reduce initial bundle size (~180KB saved)

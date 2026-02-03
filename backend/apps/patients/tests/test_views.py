@@ -414,29 +414,32 @@ class TestPatientNoteViewSet:
 class TestPatientViewSet:
     """Tests for PatientViewSet (register, search, get, update, delete)."""
 
+    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
-    def test_register_patient(self, mock_create_task, db):
+    def test_register_patient(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test patient registration."""
         mock_create_task.return_value = MagicMock(id='task-123')
+        mock_sync_encounter_task.return_value = MagicMock(id='task-456')
 
         admin = AdminUserFactory()
         facility = admin.primary_facility
         clinic = create_clinic(facility)
         client = get_authenticated_client(admin, facility=facility)
 
-        response = client.post('/api/patients/register/', {
-            'email': 'newpatient@test.com',
-            'first_name': 'New',
-            'last_name': 'Patient',
-            'date_of_birth': '1990-01-15',
-            'phone_number': '1234567890',
-            'blood_group': 'A+',
-            'admission_details': {
-                'type': 'outpatient',
-                'department_id': str(clinic.department_id),
-                'clinic_id': str(clinic.id),
-            }
-        }, format='json')
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post('/api/patients/register/', {
+                'email': 'newpatient@test.com',
+                'first_name': 'New',
+                'last_name': 'Patient',
+                'date_of_birth': '1990-01-15',
+                'phone_number': '1234567890',
+                'blood_group': 'A+',
+                'admission_details': {
+                    'type': 'outpatient',
+                    'department_id': str(clinic.department_id),
+                    'clinic_id': str(clinic.id),
+                }
+            }, format='json')
 
         assert response.status_code == status.HTTP_201_CREATED
         assert PatientProfile.objects.filter(
@@ -466,30 +469,33 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
-    def test_register_patient_as_receptionist(self, mock_create_task, db):
+    def test_register_patient_as_receptionist(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test that receptionists can register patients."""
         from apps.users.tests.factories import ReceptionistUserFactory
 
         mock_create_task.return_value = MagicMock(id='task-123')
+        mock_sync_encounter_task.return_value = MagicMock(id='task-456')
 
         receptionist = ReceptionistUserFactory()
         facility = receptionist.primary_facility
         clinic = create_clinic(facility)
         client = get_authenticated_client(receptionist, facility=facility)
 
-        response = client.post('/api/patients/register/', {
-            'email': 'receptionist-patient@test.com',
-            'first_name': 'New',
-            'last_name': 'Patient',
-            'date_of_birth': '1990-01-15',
-            'phone_number': '1234567890',
-            'admission_details': {
-                'type': 'outpatient',
-                'department_id': str(clinic.department_id),
-                'clinic_id': str(clinic.id),
-            },
-        }, format='json')
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post('/api/patients/register/', {
+                'email': 'receptionist-patient@test.com',
+                'first_name': 'New',
+                'last_name': 'Patient',
+                'date_of_birth': '1990-01-15',
+                'phone_number': '1234567890',
+                'admission_details': {
+                    'type': 'outpatient',
+                    'department_id': str(clinic.department_id),
+                    'clinic_id': str(clinic.id),
+                },
+            }, format='json')
 
         assert response.status_code == status.HTTP_201_CREATED
         assert PatientProfile.objects.filter(
@@ -545,7 +551,8 @@ class TestPatientViewSet:
         assert 'results' in response.data
         assert 'total' in response.data
 
-    def test_search_query_count(self, db):
+    @patch('apps.patients.tasks.log_patient_search.delay')
+    def test_search_query_count(self, mock_log_task, db):
         """Search should be O(1) queries per page."""
         admin = AdminUserFactory()
         facility = admin.primary_facility
@@ -587,6 +594,10 @@ class TestPatientViewSet:
         """Test getting a patient by ID."""
         admin = AdminUserFactory()
         patient = PatientProfileFactory(fhir_patient_id='fhir-patient-123')
+        PatientFHIRMappingFactory(
+            patient_profile=patient,
+            fhir_patient_id='fhir-patient-123'
+        )
 
         client = get_authenticated_client(admin)
         response = client.get(f'/api/patients/{patient.id}/get_patient/')
@@ -600,15 +611,15 @@ class TestPatientViewSet:
     @patch('apps.patients.tasks.sync_patient_with_fhir.delay')
     def test_get_patient_creates_recent_record(self, mock_sync_task, db):
         """Test getting a patient adds to recent list."""
-        doctor = DoctorUserFactory()
+        admin = AdminUserFactory()
         patient = PatientProfileFactory()
 
-        client = get_authenticated_client(doctor)
+        client = get_authenticated_client(admin)
         response = client.get(f'/api/patients/{patient.id}/get_patient/')
 
         assert response.status_code == status.HTTP_200_OK
         assert RecentPatient.objects.filter(
-            user=doctor,
+            user=admin,
             patient_profile=patient
         ).exists()
 

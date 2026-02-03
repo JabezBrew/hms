@@ -46,7 +46,7 @@ import { useAuth } from '@/lib/auth';
 import {
   useCreateRecurringSchedule,
   useUpdateRecurringSchedule
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useSearchPractitioners
 } from '@/hooks/useStaffQueries';

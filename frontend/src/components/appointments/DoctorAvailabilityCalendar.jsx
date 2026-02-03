@@ -28,7 +28,7 @@ import {
   useAvailableSlots,
   useRecurringSchedules,
   useBlockedTimes
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 
 /**
  * DoctorAvailabilityCalendar - Chronicle-style calendar component

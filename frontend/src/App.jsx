@@ -13,42 +13,24 @@ import { Layout } from './components/layout/layout'
 import { Toaster } from './components/ui/sonner'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
+import { PageLoader } from './shared/components/page/PageState'
 import { LoginForm } from './components/auth/login-form'
 import { ResetPasswordForm } from './components/auth/reset-password-form'
 import { ResetPasswordConfirmForm } from './components/auth/reset-password-confirm-form'
 import { RoleBasedRoute } from './components/auth/RoleBasedRoute'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OfflineIndicator } from './components/OfflineIndicator'
+import { featureRoutes } from './app/routes/featureRoutes'
+import { renderRoutes } from './app/routes/renderRoutes'
 import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
 import { CriticalAlertsMonitor } from './components/dashboard'
 import { ReadOnlyBanner } from './components/readonly'
 
 // Lazy load page components for code splitting
-const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
-const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
-const PatientCreatePage = lazy(() => import('./pages/PatientCreatePage'))
-const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage'))
-const AppointmentDetailPage = lazy(() => import('./pages/AppointmentDetailPage'))
-const AppointmentCreatePage = lazy(() => import('./pages/AppointmentCreatePage'))
-const AppointmentEditPage = lazy(() => import('./pages/AppointmentEditPage'))
 const StaffListPage = lazy(() => import('./pages/StaffListPage'))
 const StaffCreatePage = lazy(() => import('./pages/StaffCreatePage'))
 const StaffDetailPage = lazy(() => import('./pages/StaffDetailPage'))
 const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'))
-const PractitionerAvailabilityPage = lazy(() => import('./pages/PractitionerAvailabilityPage'))
-const PractitionerAvailabilityDetailPage = lazy(() => import('./pages/PractitionerAvailabilityDetailPage'))
-const ScheduleSlotsPage = lazy(() => import('./pages/ScheduleSlotsPage'))
-const WardsPage = lazy(() => import('./pages/wards/WardsPage'))
-const WardDetailPage = lazy(() => import('./pages/wards/WardDetailPage'))
-const NewWardPage = lazy(() => import('./pages/wards/NewWardPage'))
-const EditWardPage = lazy(() => import('./pages/wards/EditWardPage'))
-const WardReportsPage = lazy(() => import('./pages/wards/WardReportsPage'))
-const AdmissionCreatePage = lazy(() => import('./pages/admissions/AdmissionCreatePage'))
-const AdmissionDetailPage = lazy(() => import('./pages/admissions/AdmissionDetailPage'))
-const EncountersPage = lazy(() => import('./pages/encounters/EncountersPage'))
-const EncounterCreatePage = lazy(() => import('./pages/encounters/EncounterCreatePage'))
-const EncounterDetailPage = lazy(() => import('./pages/encounters/EncounterDetailPage'))
-const EncounterEditPage = lazy(() => import('./pages/encounters/EncounterEditPage'))
 const CreateClinicalNotePage = lazy(() => import('./pages/clinical-notes/CreateClinicalNotePage'))
 const TemplateListPage = lazy(() => import('./pages/clinical-notes/TemplateListPage'))
 const NursingDashboardPage = lazy(() => import('./pages/nursing/NursingDashboardPage'))
@@ -63,15 +45,11 @@ const InpatientDoctorDashboard = lazy(() => import('./pages/dashboards/Inpatient
 const ReceptionistDashboard = lazy(() => import('./pages/dashboards/ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./pages/dashboards/AdminDashboard'))
 const RoleDashboard = lazy(() => import('./pages/dashboards/RoleDashboard'))
-const EncounterWorkspace = lazy(() => import('./pages/encounters/EncounterWorkspace'))
 const WardRoundWorkflowPage = lazy(() => import('./pages/workflows/ward-round/WardRoundWorkflowPage'))
 const AdmissionWorkflowPage = lazy(() => import('./pages/workflows/admission/AdmissionWorkflowPage'))
 const DischargeWorkflowPage = lazy(() => import('./pages/workflows/discharge/DischargeWorkflowPage'))
 
 // Chronicle Design System Pages
-const PatientChronicleListPage = lazy(() => import('./pages/patients/PatientChronicleListPage'))
-const PatientPage = lazy(() => import('./pages/patients/PatientPage'))
-const MyPatientsPage = lazy(() => import('./pages/patients/MyPatientsPage'))
 
 // Admin Pages
 const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'))
@@ -139,16 +117,6 @@ const TransferRequestsPage = lazy(() => import('./pages/inventory/TransferReques
 const ControlledSubstancesPage = lazy(() => import('./pages/inventory/ControlledSubstancesPage'))
 const ControlledRegisterDetailPage = lazy(() => import('./pages/inventory/ControlledRegisterDetailPage'))
 const AnalyticsPage = lazy(() => import('./pages/inventory/AnalyticsPage'))
-
-// Loading fallback component
-const PageLoader = () => (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="space-y-4">
-      <Skeleton className="h-12 w-64" />
-      <Skeleton className="h-64 w-full" />
-    </div>
-  </div>
-)
 
 // Main app content with routes
 function AppContent() {
@@ -224,710 +192,495 @@ function AppContent() {
         <ReadOnlyBanner />
         <Suspense fallback={<PageLoader />}>
           <Routes>
-          {/* Dashboard - role-based routing to appropriate dashboard */}
-          <Route path="/" element={<RoleDashboard />} />
-
-          {/* Unauthorized page */}
-          <Route path="/unauthorized" element={
-            <Layout>
-              <UnauthorizedPage />
-            </Layout>
-          } />
-
-          {/* Patient routes - Chronicle Design System */}
-          {/* Note: Support staff (lab_technician, pharmacist, billing) access patients through their workflow pages */}
-          <Route path="/patients" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
-              <Layout>
-                <PatientChronicleListPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/patients/create" element={
-            <RoleBasedRoute allowedRoles={['admin', 'receptionist']}>
-              <Layout>
-                <PatientCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/patients/my-patients" element={
-            <RoleBasedRoute allowedRoles={['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
-              <Layout>
-                <MyPatientsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Patient detail page - serves different views based on user role */}
-          <Route path="/patients/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'patient']}>
-              <Layout>
-                <PatientPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Ward Round - dedicated URL that renders patient page with ward round open */}
-          <Route path="/patients/:id/ward-round" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician']}>
-              <Layout>
-                <PatientPage defaultAction="ward_round" />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/patients/:id/edit" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <PatientEditPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Appointment routes */}
-          <Route path="/appointments" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AppointmentsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/appointments/create" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AppointmentCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/appointments/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AppointmentDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/appointments/:id/edit" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AppointmentEditPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Staff routes */}
-          <Route path="/staff" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <StaffListPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/staff/create" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <StaffCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/staff/:id" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <StaffDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Practitioner Availability routes */}
-          <Route path="/practitioner-availability" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <Layout>
-                <PractitionerAvailabilityPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/practitioner-availability/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <Layout>
-                <PractitionerAvailabilityDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Schedule Slots route */}
-          <Route path="/schedules/:id/slots" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <ScheduleSlotsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Ward management routes */}
-          <Route path="/wards" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <WardsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/wards/new" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <NewWardPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/wards/reports" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <WardReportsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/wards/:wardId/edit" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <EditWardPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/wards/:wardId" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <WardDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Admission routes */}
-          <Route path="/admissions/new" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AdmissionCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admissions/:admissionId" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <AdmissionDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Encounter routes */}
-          <Route path="/encounters" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <EncountersPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/encounters/new" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <EncounterCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/encounters/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist']}>
-              <Layout>
-                <EncounterDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/encounters/:id/edit" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <EncounterEditPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/encounters/:id/clinical-notes" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <CreateClinicalNotePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Clinical Notes Template Management */}
-          <Route path="/clinical-notes/templates" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <TemplateListPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Inbox route */}
-          <Route path="/inbox" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'inpatient_doctor', 'practitioner', 'physician']}>
-              <Layout>
-                <InboxPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Referral routes */}
-          <Route path="/referrals/inbox" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <ReferralInbox />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/referrals/sent" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
-              <Layout>
-                <ReferralSent />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Nursing routes */}
-          <Route path="/nursing/dashboard" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-              <NursingDashboardPage />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/nursing/treatment-sheet" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'doctor', 'head_nurse', 'nurse_practitioner']}>
-              <Layout>
-                <TreatmentSheetPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/nursing/shift-handoff" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-              <ShiftHandoffPage />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/nursing/tasks" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-              <NursingTasksPage />
-            </RoleBasedRoute>
-          } />
-
-          {/* Pharmacy routes */}
-          <Route path="/pharmacy/dispensing" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
-              <Layout>
-                <PharmacyDispensingPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/pharmacy/supply-queue" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
-              <Layout>
-                <SupplyQueuePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Laboratory routes */}
-          <Route path="/laboratory/catalog" element={
-            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor']}>
-              <Layout>
-                <LabCatalogPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/laboratory/dashboard" element={
-            <RoleBasedRoute allowedRoles={['admin', 'lab_technician']}>
-              <Layout>
-                <LabDashboardPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/laboratory/orders" element={
-            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner']}>
-              <Layout>
-                <LabOrdersPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/laboratory/results" element={
-            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'physician', 'practitioner']}>
-              <Layout>
-                <LabResultsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/laboratory/collection" element={
-            <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-              <Layout>
-                <LabCollectionWorklistPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Billing routes */}
-          <Route path="/billing" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
-              <Layout>
-                <BillingDashboardPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/invoices" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
-              <Layout>
-                <InvoicesPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/invoices/new" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
-              <Layout>
-                <InvoiceCreatePage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/invoices/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
-              <Layout>
-                <InvoiceDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/payments" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
-              <Layout>
-                <PaymentsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/claims" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing']}>
-              <Layout>
-                <ClaimsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/billing/insurance" element={
-            <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
-              <Layout>
-                <InsuranceManagementPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Inventory routes */}
-          <Route path="/inventory" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <InventoryDashboardPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/items" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <ItemsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/items/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <ItemDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/locations" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <LocationsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/requisitions" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <RequisitionsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/requisitions/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <RequisitionDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/purchase-orders" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <PurchaseOrdersPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/purchase-orders/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <PurchaseOrderDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/grns" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <GRNsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/grns/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <GRNDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/internal-requisitions" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <InternalRequisitionsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/standing-orders" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <StandingOrdersPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/transfers" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <TransferRequestsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/controlled" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <ControlledSubstancesPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/controlled/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <ControlledRegisterDetailPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-          <Route path="/inventory/analytics" element={
-            <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
-              <Layout>
-                <AnalyticsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Role-Based Dashboards */}
-          <Route path="/dashboards/nurse" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
-              <NurseDashboard />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/dashboards/inpatient" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <InpatientDoctorDashboard />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/dashboards/reception" element={
-            <RoleBasedRoute allowedRoles={['admin', 'receptionist']}>
-              <ReceptionistDashboard />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/dashboards/admin" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <AdminDashboard />
-            </RoleBasedRoute>
-          } />
-
-          {/* Doctor Dashboard */}
-          <Route path="/dashboard/doctor" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <Layout>
-                <DoctorDashboard />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Workflow routes */}
-          <Route path="/workflows/ward-round" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <WardRoundWorkflowPage />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/workflows/admission" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <AdmissionWorkflowPage />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/workflows/discharge" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
-              <DischargeWorkflowPage />
-            </RoleBasedRoute>
-          } />
-
-          {/* Provider Dashboard */}
-          <Route path="/dashboard/provider" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
-              <Layout>
-                <ProviderDashboard />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Encounter Workspace */}
-          <Route path="/encounters/:id/workspace" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
-              {/* Note: Workspace has its own layout/header, so we might not want the main Layout here,
-               but for now keeping it consistent or we can remove Layout if it duplicates the header.
-               The design says "Sticky context", implying full screen.
-               Let's try without Layout for full immersion or with Layout if sidebar is needed.
-               Design guide implies a "Command Center" feel.
-               I'll use Layout for sidebar navigation but the workspace itself handles the header.
-           */}
-              <Layout>
-                <EncounterWorkspace />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Admin routes */}
-          <Route path="/admin/audit-logs" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <AuditLogsPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <OrganizationPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization/unit-types" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <UnitTypesPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization/leadership-roles" element={
-            <RoleBasedRoute allowedRoles={['admin']}>
-              <Layout>
-                <LeadershipRolesPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization/duty-roster" element={
-            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
-              <Layout>
-                <DutyRosterPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization/roster-setup" element={
-            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
-              <Layout>
-                <RosterSetupPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/admin/organization/roster-builder" element={
-            <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
-              <Layout>
-                <RosterBuilderPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          {/* Clinic Waiting Room */}
-          <Route path="/clinics/:clinicId/waiting-room" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
-              <ClinicWaitingRoomPage />
-            </RoleBasedRoute>
-          } />
-
-          {/* Triage Queue */}
-          <Route path="/triage" element={
-            <RoleBasedRoute allowedRoles={['admin', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner']}>
-              <TriagePage />
-            </RoleBasedRoute>
-          } />
-
-          {/* Chart Builder routes */}
-          <Route path="/charts/templates" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
-              <Layout>
-                <ChartTemplateListPage />
-              </Layout>
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/charts/builder" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
-              <ChartBuilderPage />
-            </RoleBasedRoute>
-          } />
-
-          <Route path="/charts/builder/:id" element={
-            <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
-              <ChartBuilderPage />
-            </RoleBasedRoute>
-          } />
-
-          {/* Settings Routes - all authenticated users */}
-          <Route path="/settings" element={<Layout><SettingsHubPage /></Layout>} />
-          <Route path="/settings/profile" element={<Layout><ProfileSettingsPage /></Layout>} />
-          <Route path="/settings/security" element={<Layout><SecuritySettingsPage /></Layout>} />
-          <Route path="/settings/preferences" element={<Layout><PreferencesSettingsPage /></Layout>} />
-
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+            {/* Dashboard - role-based routing to appropriate dashboard */}
+            <Route path="/" element={<RoleDashboard />} />
+
+            {/* Unauthorized page */}
+            <Route path="/unauthorized" element={
+              <Layout>
+                <UnauthorizedPage />
+              </Layout>
+            } />
+
+            {renderRoutes(featureRoutes)}
+
+            {/* Staff routes */}
+            <Route path="/staff" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <StaffListPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/staff/create" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <StaffCreatePage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/staff/:id" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <StaffDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Encounter clinical notes */}
+            <Route path="/encounters/:id/clinical-notes" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+                <Layout>
+                  <CreateClinicalNotePage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Clinical Notes Template Management */}
+            <Route path="/clinical-notes/templates" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+                <Layout>
+                  <TemplateListPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Inbox route */}
+            <Route path="/inbox" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'inpatient_doctor', 'practitioner', 'physician']}>
+                <Layout>
+                  <InboxPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Referral routes */}
+            <Route path="/referrals/inbox" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+                <Layout>
+                  <ReferralInbox />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/referrals/sent" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse']}>
+                <Layout>
+                  <ReferralSent />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Nursing routes */}
+            <Route path="/nursing/dashboard" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+                <NursingDashboardPage />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/nursing/treatment-sheet" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'doctor', 'head_nurse', 'nurse_practitioner']}>
+                <Layout>
+                  <TreatmentSheetPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/nursing/shift-handoff" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+                <ShiftHandoffPage />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/nursing/tasks" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+                <NursingTasksPage />
+              </RoleBasedRoute>
+            } />
+
+            {/* Pharmacy routes */}
+            <Route path="/pharmacy/dispensing" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
+                <Layout>
+                  <PharmacyDispensingPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/pharmacy/supply-queue" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'pharmacy_tech']}>
+                <Layout>
+                  <SupplyQueuePage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Laboratory routes */}
+            <Route path="/laboratory/catalog" element={
+              <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor']}>
+                <Layout>
+                  <LabCatalogPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/laboratory/dashboard" element={
+              <RoleBasedRoute allowedRoles={['admin', 'lab_technician']}>
+                <Layout>
+                  <LabDashboardPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/laboratory/orders" element={
+              <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner']}>
+                <Layout>
+                  <LabOrdersPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/laboratory/results" element={
+              <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'doctor', 'physician', 'practitioner']}>
+                <Layout>
+                  <LabResultsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/laboratory/collection" element={
+              <RoleBasedRoute allowedRoles={['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+                <Layout>
+                  <LabCollectionWorklistPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Billing routes */}
+            <Route path="/billing" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+                <Layout>
+                  <BillingDashboardPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/invoices" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+                <Layout>
+                  <InvoicesPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/invoices/new" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+                <Layout>
+                  <InvoiceCreatePage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/invoices/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist', 'doctor']}>
+                <Layout>
+                  <InvoiceDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/payments" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+                <Layout>
+                  <PaymentsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/claims" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing']}>
+                <Layout>
+                  <ClaimsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/billing/insurance" element={
+              <RoleBasedRoute allowedRoles={['admin', 'billing', 'receptionist']}>
+                <Layout>
+                  <InsuranceManagementPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Inventory routes */}
+            <Route path="/inventory" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <InventoryDashboardPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/items" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <ItemsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/items/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <ItemDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/locations" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <LocationsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/requisitions" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <RequisitionsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/requisitions/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <RequisitionDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/purchase-orders" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <PurchaseOrdersPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/purchase-orders/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <PurchaseOrderDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/grns" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <GRNsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/grns/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <GRNDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/internal-requisitions" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <InternalRequisitionsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/standing-orders" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <StandingOrdersPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/transfers" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <TransferRequestsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/controlled" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <ControlledSubstancesPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/controlled/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <ControlledRegisterDetailPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+            <Route path="/inventory/analytics" element={
+              <RoleBasedRoute allowedRoles={['admin', 'pharmacist', 'store_keeper']}>
+                <Layout>
+                  <AnalyticsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Role-Based Dashboards */}
+            <Route path="/dashboards/nurse" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'head_nurse', 'nurse_practitioner']}>
+                <NurseDashboard />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/dashboards/inpatient" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+                <InpatientDoctorDashboard />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/dashboards/reception" element={
+              <RoleBasedRoute allowedRoles={['admin', 'receptionist']}>
+                <ReceptionistDashboard />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/dashboards/admin" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <AdminDashboard />
+              </RoleBasedRoute>
+            } />
+
+            {/* Doctor Dashboard */}
+            <Route path="/dashboard/doctor" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+                <Layout>
+                  <DoctorDashboard />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Workflow routes */}
+            <Route path="/workflows/ward-round" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+                <WardRoundWorkflowPage />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/workflows/admission" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+                <AdmissionWorkflowPage />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/workflows/discharge" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'physician', 'practitioner']}>
+                <DischargeWorkflowPage />
+              </RoleBasedRoute>
+            } />
+
+            {/* Provider Dashboard */}
+            <Route path="/dashboard/provider" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'practitioner', 'physician']}>
+                <Layout>
+                  <ProviderDashboard />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Admin routes */}
+            <Route path="/admin/audit-logs" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <AuditLogsPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <OrganizationPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization/unit-types" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <UnitTypesPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization/leadership-roles" element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <Layout>
+                  <LeadershipRolesPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization/duty-roster" element={
+              <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
+                <Layout>
+                  <DutyRosterPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization/roster-setup" element={
+              <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
+                <Layout>
+                  <RosterSetupPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/admin/organization/roster-builder" element={
+              <RoleBasedRoute allowedRoles={['admin', 'head_nurse']}>
+                <Layout>
+                  <RosterBuilderPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            {/* Clinic Waiting Room */}
+            <Route path="/clinics/:clinicId/waiting-room" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+                <ClinicWaitingRoomPage />
+              </RoleBasedRoute>
+            } />
+
+            {/* Triage Queue */}
+            <Route path="/triage" element={
+              <RoleBasedRoute allowedRoles={['admin', 'nurse', 'receptionist', 'head_nurse', 'nurse_practitioner']}>
+                <TriagePage />
+              </RoleBasedRoute>
+            } />
+
+            {/* Chart Builder routes */}
+            <Route path="/charts/templates" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+                <Layout>
+                  <ChartTemplateListPage />
+                </Layout>
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/charts/builder" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+                <ChartBuilderPage />
+              </RoleBasedRoute>
+            } />
+
+            <Route path="/charts/builder/:id" element={
+              <RoleBasedRoute allowedRoles={['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner']}>
+                <ChartBuilderPage />
+              </RoleBasedRoute>
+            } />
+
+            {/* Settings Routes - all authenticated users */}
+            <Route path="/settings" element={<Layout><SettingsHubPage /></Layout>} />
+            <Route path="/settings/profile" element={<Layout><ProfileSettingsPage /></Layout>} />
+            <Route path="/settings/security" element={<Layout><SecuritySettingsPage /></Layout>} />
+            <Route path="/settings/preferences" element={<Layout><PreferencesSettingsPage /></Layout>} />
+
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
         </Suspense>
         {/* Mount critical alerts monitor only for authenticated users */}
         <CriticalAlertsMonitor />
@@ -935,6 +688,7 @@ function AppContent() {
     </ErrorBoundary>
   )
 }
+
 
 function App() {
   return (

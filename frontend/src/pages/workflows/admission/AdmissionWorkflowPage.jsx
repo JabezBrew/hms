@@ -8,7 +8,7 @@ import { Layout } from '@/components/layout/layout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { WorkflowProgress, WorkflowStepRenderer } from '@/components/workflow';
 import { useAdmissionWorkflow } from '@/hooks/useWorkflowQueries';
-import { usePatient } from '@/hooks/usePatientQueries';
+import { usePatient } from '@/features/patients/hooks/usePatientQueries';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';

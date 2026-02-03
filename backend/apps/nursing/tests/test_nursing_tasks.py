@@ -11,6 +11,7 @@ Tests for:
 import pytest
 from datetime import timedelta
 from django.utils import timezone
+from unittest.mock import patch
 
 from apps.nursing.models import NursingTask
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
@@ -179,7 +180,8 @@ class TestNursingTaskAssignment:
 
         assert task.assigned_to is None
 
-    def test_task_reassignment(self, db):
+    @patch('apps.notifications.tasks.ingest_nursing_task_async.delay')
+    def test_task_reassignment(self, mock_ingest_task, db):
         """Test task can be reassigned to another practitioner."""
         original = PractitionerProfileFactory()
         new_assignee = PractitionerProfileFactory()

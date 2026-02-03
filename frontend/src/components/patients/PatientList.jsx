@@ -6,7 +6,7 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { usePatients, useSearchPatients } from "@/hooks/usePatientQueries";
+import { usePatients, useSearchPatients } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

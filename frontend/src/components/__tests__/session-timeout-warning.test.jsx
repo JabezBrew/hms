@@ -160,7 +160,7 @@ describe('SessionTimeoutWarning', () => {
       })
 
       await waitFor(() => {
-        expect(mockLogout).toHaveBeenCalledWith(true) // local-only logout
+        expect(mockLogout).toHaveBeenCalledWith(false) // backend logout
       })
     })
 
@@ -182,7 +182,7 @@ describe('SessionTimeoutWarning', () => {
       })
 
       await waitFor(() => {
-        expect(mockLogout).toHaveBeenCalledWith(true)
+        expect(mockLogout).toHaveBeenCalledWith(false)
       })
     })
   })
@@ -375,7 +375,7 @@ describe('SessionTimeoutWarning', () => {
       })
 
       await waitFor(() => {
-        expect(mockLogout).toHaveBeenCalledWith(true)
+        expect(mockLogout).toHaveBeenCalledWith(false)
       })
     })
 
@@ -423,7 +423,7 @@ describe('SessionTimeoutWarning', () => {
       })
 
       await waitFor(() => {
-        expect(mockLogout).toHaveBeenCalledWith(true)
+        expect(mockLogout).toHaveBeenCalledWith(false)
       })
     })
   })

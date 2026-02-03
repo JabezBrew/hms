@@ -39,14 +39,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { cn, normalizeApiResults } from '@/lib/utils';
-import { 
-  fetchAppointmentTypes, 
-  fetchAvailableSlots, 
+import {
+  fetchAppointmentTypes,
+  fetchAvailableSlots,
   createAppointment,
-  fetchPatient,
-  searchPatients,
-  searchPractitioners
-} from '@/lib/api.js';
+} from '@/features/appointments/api';
+import { patientsApi } from '@/features/patients/api';
+import { staffApi } from '@/lib/api/staff';
 import { SearchBar } from "@/components/ui/search-bar";
 import DoctorAvailability from './DoctorAvailability';
 
@@ -149,7 +148,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
         // If we have initialData with patientId or practitionerId, fetch those
         if (initialData.patientId) {
           try {
-            const patientData = await fetchPatient(initialData.patientId);
+            const patientData = await patientsApi.getPatient(initialData.patientId);
             setPatients([patientData]);
           } catch (error) {
             console.error('Error loading initial patient:', error);
@@ -160,7 +159,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
           try {
             // Search for the practitioner by ID to get their details
             // Using doctorsOnly=true since appointments are only with doctors
-            const result = await searchPractitioners(initialData.practitionerId, true);
+            const result = await staffApi.searchPractitioners(initialData.practitionerId, true);
             if (Array.isArray(result) && result.length > 0) {
               setPractitioners(result);
             }
@@ -189,7 +188,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
 
       setIsLoadingPatients(true);
       try {
-        const response = await searchPatients(debouncedPatientQuery);
+        const response = await patientsApi.searchPatients(debouncedPatientQuery);
         setPatients(normalizeApiResults(response));
       } catch (error) {
         console.error('Error searching patients:', error);
@@ -213,7 +212,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
       setIsLoadingPractitioners(true);
       try {
         // Using doctorsOnly=true since appointments are only with doctors
-        const results = await searchPractitioners(debouncedPractitionerQuery, true);
+        const results = await staffApi.searchPractitioners(debouncedPractitionerQuery, true);
         setPractitioners(Array.isArray(results) ? results : []);
       } catch (error) {
         console.error('Error searching practitioners:', error);

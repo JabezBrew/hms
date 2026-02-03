@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/hooks/useWardQueries';
+import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/features/wards/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 
 /**

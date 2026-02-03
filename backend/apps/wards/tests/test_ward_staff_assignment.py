@@ -18,6 +18,24 @@ from apps.users.tests.factories import (
 )
 
 
+def get_or_create_role(name, code, category='nursing', description=''):
+    role, _ = StaffRole.objects.get_or_create(
+        code=code,
+        defaults={
+            'name': name,
+            'category': category,
+            'description': description,
+        }
+    )
+    return role
+
+
+def configure_facility_header(client, user):
+    facility = getattr(user, 'primary_facility', None)
+    if facility:
+        client.credentials(HTTP_X_FACILITY_CODE=facility.code)
+
+
 # ============================================================================
 # StaffRole Model Tests
 # ============================================================================
@@ -29,13 +47,13 @@ class TestStaffRoleModel:
     def test_create_staff_role(self, db):
         """Test basic staff role creation."""
         role = StaffRole.objects.create(
-            name='Staff Nurse',
-            code='staff_nurse',
+            name='Test Staff Nurse',
+            code='test_staff_nurse',
             category='nursing',
             description='General nursing staff'
         )
-        assert role.name == 'Staff Nurse'
-        assert role.code == 'staff_nurse'
+        assert role.name == 'Test Staff Nurse'
+        assert role.code == 'test_staff_nurse'
         assert role.category == 'nursing'
         assert role.is_active is True
 
@@ -53,23 +71,23 @@ class TestStaffRoleModel:
     def test_staff_role_str_representation(self, db):
         """Test staff role string representation."""
         role = StaffRole.objects.create(
-            name='Charge Nurse',
-            code='charge_nurse',
+            name='Charge Nurse Test',
+            code='charge_nurse_test',
             category='nursing'
         )
-        assert str(role) == 'Charge Nurse'
+        assert str(role) == 'Charge Nurse Test'
 
     def test_unique_role_name(self, db):
         """Test that role names are unique."""
-        StaffRole.objects.create(name='Staff Nurse', code='staff_nurse')
+        StaffRole.objects.create(name='Unique Role', code='unique_role')
         with pytest.raises(IntegrityError):
-            StaffRole.objects.create(name='Staff Nurse', code='staff_nurse_2')
+            StaffRole.objects.create(name='Unique Role', code='unique_role_2')
 
     def test_unique_role_code(self, db):
         """Test that role codes are unique."""
-        StaffRole.objects.create(name='Staff Nurse', code='staff_nurse')
+        StaffRole.objects.create(name='Unique Code Role', code='unique_code_role')
         with pytest.raises(IntegrityError):
-            StaffRole.objects.create(name='Staff Nurse 2', code='staff_nurse')
+            StaffRole.objects.create(name='Unique Code Role 2', code='unique_code_role')
 
     def test_inactive_role_filtering(self, db):
         """Test filtering active/inactive roles."""
@@ -100,7 +118,7 @@ class TestWardStaffAssignmentModel:
     @pytest.fixture
     def staff_role(self, db):
         """Create a default staff role for tests."""
-        return StaffRole.objects.create(
+        return get_or_create_role(
             name='Staff Nurse',
             code='staff_nurse',
             category='nursing'
@@ -216,13 +234,13 @@ class TestWardStaffAssignmentModel:
     def test_filter_by_role_category(self, db, ward):
         """Test filtering assignments by role category."""
         nursing_role = StaffRole.objects.create(
-            name='Staff Nurse',
-            code='staff_nurse',
+            name='Staff Nurse Test',
+            code='staff_nurse_test',
             category='nursing'
         )
         medical_role = StaffRole.objects.create(
-            name='Attending Physician',
-            code='attending_physician',
+            name='Attending Physician Test',
+            code='attending_physician_test',
             category='medical'
         )
 
@@ -286,12 +304,13 @@ class TestWardStaffAPI:
         user = UserFactory(user_type='admin')
         client = APIClient()
         client.force_authenticate(user=user)
+        configure_facility_header(client, user)
         return client
 
     @pytest.fixture
     def nursing_role(self, db):
         """Create nursing role."""
-        return StaffRole.objects.create(
+        return get_or_create_role(
             name='Staff Nurse',
             code='staff_nurse',
             category='nursing'
@@ -300,7 +319,7 @@ class TestWardStaffAPI:
     @pytest.fixture
     def medical_role(self, db):
         """Create medical role."""
-        return StaffRole.objects.create(
+        return get_or_create_role(
             name='Attending Physician',
             code='attending_physician',
             category='medical'
@@ -421,12 +440,13 @@ class TestWardStaffAssignmentCRUD:
         user = AdminUserFactory()
         client = APIClient()
         client.force_authenticate(user=user)
+        configure_facility_header(client, user)
         return client
 
     @pytest.fixture
     def nursing_role(self, db):
         """Create nursing role."""
-        return StaffRole.objects.create(
+        return get_or_create_role(
             name='Staff Nurse',
             code='staff_nurse',
             category='nursing'
@@ -599,6 +619,7 @@ class TestStaffRoleAPI:
         user = AdminUserFactory()
         client = APIClient()
         client.force_authenticate(user=user)
+        configure_facility_header(client, user)
         return client
 
     def _get_results(self, response):
@@ -645,7 +666,7 @@ class TestStaffRoleAPI:
 
     def test_get_role_detail(self, admin_client, db):
         """Test getting a single role."""
-        role = StaffRole.objects.create(
+        role = get_or_create_role(
             name='Staff Nurse',
             code='staff_nurse',
             category='nursing',

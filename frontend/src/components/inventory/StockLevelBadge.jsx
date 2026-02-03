@@ -18,7 +18,7 @@ export function StockLevelBadge({
   className,
 }) {
   const getStockStatus = () => {
-    if (stockLevel === 0) {
+    if (stockLevel <= 0) {
       return {
         label: 'Out of Stock',
         variant: 'destructive',
@@ -69,8 +69,10 @@ export function StockLevelIndicator({
   maxStock,
   className,
 }) {
-  const percentage = Math.min((stockLevel / maxStock) * 100, 100);
-  const reorderPercentage = (reorderLevel / maxStock) * 100;
+  const safeMaxStock = maxStock ?? Math.max(stockLevel || 0, reorderLevel || 0, 1);
+  const safeReorderLevel = typeof reorderLevel === 'number' ? reorderLevel : 0;
+  const percentage = Math.min((stockLevel / safeMaxStock) * 100, 100);
+  const reorderPercentage = (safeReorderLevel / safeMaxStock) * 100;
 
   const getBarColor = () => {
     if (stockLevel === 0) return 'bg-rose-500';

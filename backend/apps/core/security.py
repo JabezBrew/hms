@@ -60,6 +60,7 @@ def get_user_facility(request):
     if facility:
         return facility
 
+    user = getattr(request, 'user', None) if request else None
     facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
     if not facility_code and request:
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
@@ -68,18 +69,26 @@ def get_user_facility(request):
     if not facility_code:
         from hms_backend.tenancy import get_current_facility_code
         facility_code = get_current_facility_code()
+    if not facility_code and user and getattr(user, 'is_authenticated', False):
+        allowed_codes = get_user_facility_codes(user)
+        if len(allowed_codes) == 1:
+            facility_code = next(iter(allowed_codes))
     if not facility_code:
         return None
 
-    if request and getattr(request, 'user', None) and request.user.is_authenticated:
-        allowed_codes = get_user_facility_codes(request.user)
+    if user and getattr(user, 'is_authenticated', False):
+        allowed_codes = get_user_facility_codes(user)
         allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
-        is_admin = bool(getattr(request.user, 'user_type', None) == 'admin')
+        is_admin = bool(getattr(user, 'user_type', None) == 'admin')
         if allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
             return None
 
     from apps.core.models import Facility
-    return Facility.get_by_code(facility_code)
+    facility = Facility.get_by_code(facility_code)
+    if facility and request:
+        request.facility = facility
+        request.facility_code = facility.code
+    return facility
 
 
 def resolve_object_facility(obj):
@@ -393,7 +402,7 @@ def check_clinical_access(user, patient_or_id):
         raise PermissionDenied("You can only access your own data.")
 
     if user.user_type in ['doctor', 'nurse']:
-        if not settings.TEAM_ACCESS_STRICT:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return True
 
         if _has_team_access(user, patient_profile):
@@ -573,7 +582,7 @@ def get_access_flags(user, patient_or_id):
 
         # Check team access or break-glass for clinical data
         has_clinical = False
-        if not settings.TEAM_ACCESS_STRICT:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             has_clinical = True
         elif _has_team_access(user, patient_profile):
             has_clinical = True

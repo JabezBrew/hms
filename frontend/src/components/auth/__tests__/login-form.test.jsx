@@ -51,6 +51,8 @@ function renderLoginForm() {
   )
 }
 
+const expectedFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || ''
+
 describe('LoginForm', () => {
   const mockLogin = vi.fn()
 
@@ -120,7 +122,7 @@ describe('LoginForm', () => {
       await user.type(screen.getByLabelText('Password'), 'password123')
       await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
     })
 
     it('shows success notification on successful login', async () => {
@@ -160,7 +162,7 @@ describe('LoginForm', () => {
       await user.type(screen.getByLabelText('Password'), 'password123{enter}')
 
       await waitFor(() => {
-        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
+        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
       })
     })
   })
@@ -306,7 +308,7 @@ describe('LoginForm', () => {
       expect(passwordInput).toHaveAttribute('type', 'password')
 
       // Find and click the toggle button
-      const toggleButton = screen.getByRole('button', { name: '' }) // Eye button has no text
+      const toggleButton = screen.getByRole('button', { name: /show password/i })
       await user.click(toggleButton)
 
       expect(passwordInput).toHaveAttribute('type', 'text')
@@ -318,6 +320,7 @@ describe('LoginForm', () => {
       // The Eye icon (not EyeOff) should be visible when password is hidden
       const passwordInput = screen.getByLabelText('Password')
       expect(passwordInput).toHaveAttribute('type', 'password')
+      expect(screen.getByRole('button', { name: /show password/i })).toBeInTheDocument()
     })
 
     it('shows EyeOff icon when password is visible', async () => {
@@ -325,11 +328,12 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      const toggleButton = screen.getByRole('button', { name: '' })
+      const toggleButton = screen.getByRole('button', { name: /show password/i })
       await user.click(toggleButton)
 
       const passwordInput = screen.getByLabelText('Password')
       expect(passwordInput).toHaveAttribute('type', 'text')
+      expect(screen.getByRole('button', { name: /hide password/i })).toBeInTheDocument()
     })
 
     it('toggles back to hidden on second click', async () => {
@@ -337,15 +341,14 @@ describe('LoginForm', () => {
 
       renderLoginForm()
 
-      const toggleButton = screen.getByRole('button', { name: '' })
       const passwordInput = screen.getByLabelText('Password')
 
       // Show password
-      await user.click(toggleButton)
+      await user.click(screen.getByRole('button', { name: /show password/i }))
       expect(passwordInput).toHaveAttribute('type', 'text')
 
       // Hide password
-      await user.click(toggleButton)
+      await user.click(screen.getByRole('button', { name: /hide password/i }))
       expect(passwordInput).toHaveAttribute('type', 'password')
     })
   })
@@ -411,11 +414,11 @@ describe('LoginForm', () => {
       expect(document.activeElement).toBe(emailInput)
     })
 
-    it('toggle button has negative tabIndex (not focusable via keyboard)', () => {
+    it('toggle button uses accessible label', () => {
       renderLoginForm()
 
-      const toggleButton = screen.getByRole('button', { name: '' })
-      expect(toggleButton).toHaveAttribute('tabIndex', '-1')
+      const toggleButton = screen.getByRole('button', { name: /show password/i })
+      expect(toggleButton).toBeInTheDocument()
     })
   })
 
@@ -434,7 +437,7 @@ describe('LoginForm', () => {
       await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       // Email should be trimmed before submission
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', '')
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
     })
 
     it('handles empty form submission attempt', async () => {

@@ -196,7 +196,7 @@ describe('useInventoryDashboardMetrics', () => {
     }
 
     server.use(
-      http.get('/api/inventory/dashboard/metrics/', () => {
+      http.get('/api/inventory/analytics/dashboard/', () => {
         return HttpResponse.json(mockMetrics)
       })
     )
@@ -224,7 +224,7 @@ describe('useLowStockAlerts', () => {
     ]
 
     server.use(
-      http.get('/api/inventory/dashboard/low-stock/', () => {
+      http.get('/api/inventory/items/low_stock/', () => {
         return HttpResponse.json(mockAlerts)
       })
     )
@@ -249,7 +249,7 @@ describe('useExpiringItems', () => {
     ]
 
     server.use(
-      http.get('/api/inventory/dashboard/expiring/', () => {
+      http.get('/api/inventory/items/expiring_soon/', () => {
         return HttpResponse.json(mockExpiring)
       })
     )
@@ -404,7 +404,7 @@ describe('useUpdateInventoryItem', () => {
     queryClient.setQueryData(inventoryKeys.itemDetail(mockItem.id), mockItem)
 
     server.use(
-      http.patch('/api/inventory/items/:id/', async ({ params, request }) => {
+      http.put('/api/inventory/items/:id/', async ({ params, request }) => {
         const body = await request.json()
         return HttpResponse.json({
           ...mockItem,
@@ -422,7 +422,9 @@ describe('useUpdateInventoryItem', () => {
       })
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 
@@ -531,7 +533,9 @@ describe('useApproveRequisition', () => {
       await result.current.mutateAsync('req-1')
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 
@@ -559,7 +563,9 @@ describe('useRejectRequisition', () => {
       })
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 
@@ -616,7 +622,9 @@ describe('useApprovePurchaseOrder', () => {
       await result.current.mutateAsync('po-1')
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 
@@ -666,7 +674,9 @@ describe('useAcceptGRN', () => {
       await result.current.mutateAsync('grn-1')
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 
@@ -721,7 +731,7 @@ describe('useControlledRegisters', () => {
 describe('useDispenseControlledSubstance', () => {
   it('dispenses controlled substance successfully', async () => {
     server.use(
-      http.post('/api/inventory/controlled-registers/dispense/', async ({ request }) => {
+      http.post('/api/inventory/controlled/dispense/', async ({ request }) => {
         const body = await request.json()
         return HttpResponse.json({
           id: 'entry-1',
@@ -754,7 +764,7 @@ describe('useDispenseControlledSubstance', () => {
 
   it('handles dispense error', async () => {
     server.use(
-      http.post('/api/inventory/controlled-registers/dispense/', () => {
+      http.post('/api/inventory/controlled/dispense/', () => {
         return HttpResponse.json(
           { detail: 'Insufficient balance' },
           { status: 400 }
@@ -787,7 +797,7 @@ describe('useDispenseControlledSubstance', () => {
 describe('useRecordControlledCount', () => {
   it('records physical count successfully', async () => {
     server.use(
-      http.post('/api/inventory/controlled-registers/count/', async ({ request }) => {
+      http.post('/api/inventory/controlled/count/', async ({ request }) => {
         const body = await request.json()
         return HttpResponse.json({
           id: 'entry-2',

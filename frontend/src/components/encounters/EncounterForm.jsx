@@ -36,7 +36,7 @@ import {
   useEncounter,
   useSearchPatientsForEncounter,
   useSearchPractitioners
-} from '@/hooks/useEncounterQueries';
+} from '@/features/encounters/hooks/useEncounterQueries';
 
 // Form validation schema
 const encounterFormSchema = z.object({

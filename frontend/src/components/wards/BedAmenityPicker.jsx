@@ -11,7 +11,7 @@ import Accessibility from 'lucide-react/dist/esm/icons/accessibility.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import React, { useState } from 'react';
 
-import { useAmenities } from '@/hooks/useWardQueries';
+import { useAmenities } from '@/features/wards/hooks/useWardQueries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';

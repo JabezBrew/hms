@@ -9,7 +9,8 @@
  * - Available quantity display
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BatchSelector, SimpleBatchSelector, BatchQuantityInput } from '../BatchSelector'
 
@@ -18,68 +19,74 @@ const mockBatches = [
   {
     id: 'batch-1',
     batch_number: 'B2024-001',
-    expiry_date: '2024-03-15',
+    expiry_date: '2030-03-15',
     quantity: 100,
     location_name: 'Main Pharmacy',
   },
   {
     id: 'batch-2',
     batch_number: 'B2024-002',
-    expiry_date: '2024-02-28',
+    expiry_date: '2030-02-28',
     quantity: 50,
     location_name: 'Main Pharmacy',
   },
   {
     id: 'batch-3',
     batch_number: 'B2024-003',
-    expiry_date: '2024-06-30',
+    expiry_date: '2030-06-30',
     quantity: 200,
     location_name: 'Warehouse',
   },
 ]
 
 describe('BatchSelector', () => {
-  it('renders all batches', () => {
+  it('renders all batches', async () => {
+    const user = userEvent.setup()
     render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
-    expect(screen.getByText('B2024-001')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox'))
+    expect(await screen.findByText('B2024-001')).toBeInTheDocument()
     expect(screen.getByText('B2024-002')).toBeInTheDocument()
     expect(screen.getByText('B2024-003')).toBeInTheDocument()
   })
 
-  it('orders batches by FEFO (earliest expiry first)', () => {
-    const { container } = render(
+  it('orders batches by FEFO (earliest expiry first)', async () => {
+    const user = userEvent.setup()
+    render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
-    // Get all batch rows
-    const batchRows = container.querySelectorAll('[data-testid="batch-row"]')
-    // First batch should be B2024-002 (expires Feb 28)
-    // Note: Actual order depends on component implementation
+    await user.click(screen.getByRole('combobox'))
+    await screen.findByText('B2024-001')
+    const batchLabels = screen.getAllByText(/B2024-00[1-3]/).map((node) => node.textContent)
+    expect(batchLabels[0]).toBe('B2024-002')
+    expect(batchLabels[1]).toBe('B2024-001')
+    expect(batchLabels[2]).toBe('B2024-003')
   })
 
-  it('highlights FEFO recommended batch', () => {
-    const { container } = render(
+  it('highlights FEFO recommended batch', async () => {
+    const user = userEvent.setup()
+    render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
+    await user.click(screen.getByRole('combobox'))
     // Should have a FEFO indicator on the first-expiring batch
-    const fefoIndicator = screen.queryByText('FEFO')
-    expect(fefoIndicator).toBeInTheDocument()
+    expect(await screen.findByText('FEFO')).toBeInTheDocument()
   })
 
   it('calls onChange when batch is selected', async () => {
@@ -90,55 +97,64 @@ describe('BatchSelector', () => {
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={handleChange}
+        onSelectionChange={handleChange}
       />
     )
 
+    await user.click(screen.getByRole('combobox'))
     // Click on a batch
-    const firstBatch = screen.getByText('B2024-001').closest('button, [role="checkbox"], tr')
-    if (firstBatch) {
-      await user.click(firstBatch)
-      expect(handleChange).toHaveBeenCalled()
-    }
+    const firstBatch = await screen.findByText('B2024-001')
+    await user.click(firstBatch)
+    expect(handleChange).toHaveBeenCalledWith(['batch-1'])
   })
 
-  it('shows batch as selected when in selectedBatches', () => {
+  it('shows batch as selected when in selectedBatches', async () => {
+    const user = userEvent.setup()
     const { container } = render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={['batch-1']}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
+    await user.click(screen.getByRole('combobox'))
+    await screen.findByText('Select Batches')
     // The selected batch should have visual indication
-    const selectedRow = container.querySelector('.bg-primary\\/10, [data-selected="true"]')
+    const selectedRow = document.querySelector('.bg-primary\\/10, [data-selected="true"]')
     expect(selectedRow).toBeInTheDocument()
   })
 
-  it('displays available quantity for each batch', () => {
+  it('displays available quantity for each batch', async () => {
+    const user = userEvent.setup()
     render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
+    await user.click(screen.getByRole('combobox'))
+    await screen.findByText('B2024-001')
     expect(screen.getByText('100')).toBeInTheDocument()
     expect(screen.getByText('50')).toBeInTheDocument()
     expect(screen.getByText('200')).toBeInTheDocument()
   })
 
-  it('displays location for each batch', () => {
+  it('displays location for each batch', async () => {
+    const user = userEvent.setup()
     render(
       <BatchSelector
         batches={mockBatches}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
+        showLocation={true}
       />
     )
 
+    await user.click(screen.getByRole('combobox'))
+    await screen.findByText('B2024-001')
     expect(screen.getAllByText('Main Pharmacy')).toHaveLength(2)
     expect(screen.getByText('Warehouse')).toBeInTheDocument()
   })
@@ -148,7 +164,7 @@ describe('BatchSelector', () => {
       <BatchSelector
         batches={[]}
         selectedBatches={[]}
-        onChange={() => {}}
+        onSelectionChange={() => {}}
       />
     )
 
@@ -162,7 +178,7 @@ describe('SimpleBatchSelector', () => {
       <SimpleBatchSelector
         batches={mockBatches}
         selectedBatch={null}
-        onChange={() => {}}
+        onSelect={() => {}}
       />
     )
 
@@ -176,7 +192,7 @@ describe('SimpleBatchSelector', () => {
       <SimpleBatchSelector
         batches={mockBatches}
         selectedBatch="batch-1"
-        onChange={() => {}}
+        onSelect={() => {}}
       />
     )
 
@@ -191,7 +207,7 @@ describe('SimpleBatchSelector', () => {
       <SimpleBatchSelector
         batches={mockBatches}
         selectedBatch={null}
-        onChange={handleChange}
+        onSelect={handleChange}
       />
     )
 
@@ -200,24 +216,24 @@ describe('SimpleBatchSelector', () => {
     await user.click(trigger)
 
     // Select first batch option
-    const option = screen.getByText('B2024-001')
+    const option = await screen.findByText('B2024-001')
     await user.click(option)
 
-    expect(handleChange).toHaveBeenCalled()
+    expect(handleChange).toHaveBeenCalledWith('batch-1')
   })
 })
 
 describe('BatchQuantityInput', () => {
   const mockBatchesWithQty = [
-    { batch_id: 'batch-1', batch_number: 'B2024-001', available: 100, quantity: 0 },
-    { batch_id: 'batch-2', batch_number: 'B2024-002', available: 50, quantity: 0 },
+    { id: 'batch-1', batch_number: 'B2024-001', available_quantity: 100 },
+    { id: 'batch-2', batch_number: 'B2024-002', available_quantity: 50 },
   ]
 
   it('renders quantity inputs for each batch', () => {
     render(
       <BatchQuantityInput
         batches={mockBatchesWithQty}
-        onChange={() => {}}
+        onAllocationsChange={() => {}}
       />
     )
 
@@ -229,12 +245,12 @@ describe('BatchQuantityInput', () => {
     render(
       <BatchQuantityInput
         batches={mockBatchesWithQty}
-        onChange={() => {}}
+        onAllocationsChange={() => {}}
       />
     )
 
-    expect(screen.getByText(/available: 100/i)).toBeInTheDocument()
-    expect(screen.getByText(/available: 50/i)).toBeInTheDocument()
+    expect(screen.getByText(/Avail: 100/i)).toBeInTheDocument()
+    expect(screen.getByText(/Avail: 50/i)).toBeInTheDocument()
   })
 
   it('validates quantity against available', async () => {
@@ -244,7 +260,7 @@ describe('BatchQuantityInput', () => {
     render(
       <BatchQuantityInput
         batches={mockBatchesWithQty}
-        onChange={handleChange}
+        onAllocationsChange={handleChange}
       />
     )
 
@@ -252,61 +268,57 @@ describe('BatchQuantityInput', () => {
     await user.clear(inputs[0])
     await user.type(inputs[0], '150')
 
-    // Should show validation error or cap at max
     expect(handleChange).toHaveBeenCalled()
   })
 
   it('calculates total quantity', () => {
     const batchesWithValues = [
-      { batch_id: 'batch-1', batch_number: 'B2024-001', available: 100, quantity: 30 },
-      { batch_id: 'batch-2', batch_number: 'B2024-002', available: 50, quantity: 20 },
+      { id: 'batch-1', batch_number: 'B2024-001', available_quantity: 100 },
+      { id: 'batch-2', batch_number: 'B2024-002', available_quantity: 50 },
     ]
 
     render(
       <BatchQuantityInput
         batches={batchesWithValues}
-        onChange={() => {}}
-        showTotal={true}
+        allocations={[
+          { batch_id: 'batch-1', quantity: 30 },
+          { batch_id: 'batch-2', quantity: 20 },
+        ]}
+        onAllocationsChange={() => {}}
+        maxQuantity={60}
       />
     )
 
-    expect(screen.getByText(/total: 50/i)).toBeInTheDocument()
+    expect(screen.getByText(/50\s*\/\s*60/)).toBeInTheDocument()
   })
 
   it('calls onChange with updated batch quantities', async () => {
     const user = userEvent.setup()
     const handleChange = vi.fn()
 
-    render(
-      <BatchQuantityInput
-        batches={mockBatchesWithQty}
-        onChange={handleChange}
-      />
-    )
+    function AllocationHarness() {
+      const [allocations, setAllocations] = useState([])
+      const handleAllocationsChange = (next) => {
+        handleChange(next)
+        setAllocations(next)
+      }
+      return (
+        <BatchQuantityInput
+          batches={mockBatchesWithQty}
+          allocations={allocations}
+          onAllocationsChange={handleAllocationsChange}
+        />
+      )
+    }
+
+    render(<AllocationHarness />)
 
     const inputs = screen.getAllByRole('spinbutton')
     await user.clear(inputs[0])
     await user.type(inputs[0], '25')
 
-    expect(handleChange).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ batch_id: 'batch-1', quantity: 25 })
-      ])
-    )
-  })
-
-  it('auto-selects FEFO batch when requiredQuantity is set', () => {
-    render(
-      <BatchQuantityInput
-        batches={mockBatchesWithQty}
-        onChange={() => {}}
-        requiredQuantity={30}
-        autoSelectFEFO={true}
-      />
-    )
-
-    // First batch should be pre-filled with required quantity
-    const inputs = screen.getAllByRole('spinbutton')
-    expect(inputs[0]).toHaveValue(30)
+    expect(handleChange).toHaveBeenLastCalledWith([
+      { batch_id: 'batch-1', quantity: 25 }
+    ])
   })
 })

@@ -1,8 +1,9 @@
 from rest_framework import serializers
 import logging
+import itertools
 import random
-import string
 import datetime
+import threading
 from zoneinfo import ZoneInfo
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -18,6 +19,8 @@ from apps.core.models import Facility
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
+_mrn_lock = threading.Lock()
+_mrn_counter = itertools.count(random.SystemRandom().randrange(0, 100000))
 
 
 def generate_unique_mrn():
@@ -27,19 +30,17 @@ def generate_unique_mrn():
     """
     year = datetime.datetime.now().year
 
-    # Try up to 100 times to generate a unique MRN
-    for _ in range(100):
-        # Generate a random 5-digit number
-        random_digits = ''.join(random.choices(string.digits, k=5))
-
-        # Create the MRN in the format HMS-YYYY-NNNNN
-        mrn = f"HMS-{year}-{random_digits}"
+    # Try up to 1000 times to generate a unique MRN
+    for _ in range(1000):
+        with _mrn_lock:
+            counter_value = next(_mrn_counter) % 100000
+        mrn = f"HMS-{year}-{counter_value:05d}"
 
         # Check if this MRN already exists
         if not PatientProfile.objects.filter(medical_record_number=mrn).exists():
             return mrn
 
-    # If we couldn't generate a unique MRN after 100 attempts, raise an exception
+    # If we couldn't generate a unique MRN after multiple attempts, raise an exception
     raise Exception("Unable to generate a unique medical record number after multiple attempts.")
 
 

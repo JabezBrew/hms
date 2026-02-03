@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { useCreateTimeSlot, useUpdateTimeSlot } from '@/hooks/useAppointmentQueries';
+import { useCreateTimeSlot, useUpdateTimeSlot } from '@/features/appointments/hooks/useAppointmentQueries';
 
 // Day of week options
 const DAYS_OF_WEEK = [

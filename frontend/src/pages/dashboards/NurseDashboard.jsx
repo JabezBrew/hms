@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import format from 'date-fns/format';
-import { useWards } from '@/hooks/useWardQueries';
+import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 

@@ -26,6 +26,17 @@ from .factories import (
 )
 
 
+@pytest.fixture(autouse=True)
+def disable_team_access_strict(settings):
+    settings.TEAM_ACCESS_STRICT = False
+
+
+def configure_facility_header(client, user):
+    facility = getattr(user, 'primary_facility', None)
+    if facility:
+        client.credentials(HTTP_X_FACILITY_CODE=facility.code)
+
+
 # =============================================================================
 # Model Tests
 # =============================================================================
@@ -219,6 +230,7 @@ class TestFluidBalanceCreateAPI:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
         return client, nurse_user
 
     def test_create_intake_entry(self, nurse_client):
@@ -313,6 +325,7 @@ class TestFluidBalanceListAPI:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
         return client
 
     def test_list_entries_for_patient(self, nurse_client):
@@ -380,6 +393,7 @@ class TestFluidBalanceSummaryAPI:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
         return client
 
     def test_patient_summary_calculates_totals(self, nurse_client):
@@ -479,6 +493,7 @@ class TestFluidBalancePermissions:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         patient = PatientProfileFactory()
         data = {
@@ -497,6 +512,7 @@ class TestFluidBalancePermissions:
         doctor_user = DoctorUserFactory()
         client = APIClient()
         client.force_authenticate(user=doctor_user)
+        configure_facility_header(client, doctor_user)
 
         patient = PatientProfileFactory()
         FluidBalanceFactory(patient=patient)
@@ -570,6 +586,7 @@ class TestFluidBalanceColourField:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         patient = PatientProfileFactory()
         entry = FluidBalanceOutputFactory(
@@ -590,6 +607,7 @@ class TestFluidBalanceColourField:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         patient = PatientProfileFactory()
         data = {
@@ -636,6 +654,7 @@ class TestNGSuctionCategory:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         patient = PatientProfileFactory()
         data = {
@@ -658,6 +677,7 @@ class TestNGSuctionCategory:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         patient = PatientProfileFactory()
         today = timezone.now()
@@ -693,6 +713,7 @@ class TestFluidBalanceAlerts:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
         return client
 
     def test_check_alerts_returns_no_alerts_when_normal(self, nurse_client):
@@ -875,6 +896,7 @@ class TestFacilityFluidBalanceSettings:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         response = client.get('/api/settings/fluid-balance/')
 
@@ -887,6 +909,7 @@ class TestFacilityFluidBalanceSettings:
         nurse_user = NurseUserFactory()
         client = APIClient()
         client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
 
         response = client.patch(
             '/api/settings/fluid-balance/update/',
@@ -901,6 +924,7 @@ class TestFacilityFluidBalanceSettings:
         admin_user = AdminUserFactory()
         client = APIClient()
         client.force_authenticate(user=admin_user)
+        configure_facility_header(client, admin_user)
 
         response = client.patch(
             '/api/settings/fluid-balance/update/',

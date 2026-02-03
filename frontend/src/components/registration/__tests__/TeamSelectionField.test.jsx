@@ -9,15 +9,15 @@ import { TeamSelectionField } from '../TeamSelectionField';
 
 // Mock the organization API
 vi.mock('@/lib/api/organization', () => ({
-  dutyRosterApi: {
-    onDuty: vi.fn(),
+  rosterEntriesApi: {
+    onDutyDepartment: vi.fn(),
   },
   clinicalUnitsApi: {
     descendants: vi.fn(),
   },
 }));
 
-import { dutyRosterApi, clinicalUnitsApi } from '@/lib/api/organization';
+import { rosterEntriesApi, clinicalUnitsApi } from '@/lib/api/organization';
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -53,19 +53,17 @@ describe('TeamSelectionField', () => {
   });
 
   it('shows on-duty team badge when roster entry exists', async () => {
-    dutyRosterApi.onDuty.mockResolvedValue({
-      data: {
-        results: [
-          {
-            id: 'roster-1',
-            unit: 'team-1',
-            unit_name: 'Surgical Team A',
-            date: '2026-01-18',
-            start_time: '08:00:00',
-            end_time: '17:00:00',
-          },
-        ],
-      },
+    rosterEntriesApi.onDutyDepartment.mockResolvedValue({
+      results: [
+        {
+          id: 'roster-1',
+          team_id: 'team-1',
+          team_name: 'Surgical Team A',
+          date: '2026-02-03',
+          start_time: '08:00:00',
+          end_time: '17:00:00',
+        },
+      ],
     });
 
     clinicalUnitsApi.descendants.mockResolvedValue({
@@ -95,19 +93,17 @@ describe('TeamSelectionField', () => {
   });
 
   it('auto-selects on-duty team on mount', async () => {
-    dutyRosterApi.onDuty.mockResolvedValue({
-      data: {
-        results: [
-          {
-            id: 'roster-1',
-            unit: 'team-1',
-            unit_name: 'Medical Team A',
-            date: '2026-01-18',
-            start_time: '08:00:00',
-            end_time: '17:00:00',
-          },
-        ],
-      },
+    rosterEntriesApi.onDutyDepartment.mockResolvedValue({
+      results: [
+        {
+          id: 'roster-1',
+          team_id: 'team-1',
+          team_name: 'Medical Team A',
+          date: '2026-02-03',
+          start_time: '08:00:00',
+          end_time: '17:00:00',
+        },
+      ],
     });
 
     clinicalUnitsApi.descendants.mockResolvedValue({
@@ -131,7 +127,7 @@ describe('TeamSelectionField', () => {
   });
 
   it('shows fallback message when no roster entry', async () => {
-    dutyRosterApi.onDuty.mockResolvedValue({ data: { results: [] } });
+    rosterEntriesApi.onDutyDepartment.mockResolvedValue({ results: [] });
     clinicalUnitsApi.descendants.mockResolvedValue({
       results: [{ id: 'team-1', name: 'Team A', code: 'TEAM-A', is_active: true }],
     });
@@ -155,19 +151,17 @@ describe('TeamSelectionField', () => {
   });
 
   it('allows manual team selection override', async () => {
-    dutyRosterApi.onDuty.mockResolvedValue({
-      data: {
-        results: [
-          {
-            id: 'roster-1',
-            unit: 'team-1',
-            unit_name: 'Team A',
-            date: '2026-01-18',
-            start_time: '08:00:00',
-            end_time: '17:00:00',
-          },
-        ],
-      },
+    rosterEntriesApi.onDutyDepartment.mockResolvedValue({
+      results: [
+        {
+          id: 'roster-1',
+          team_id: 'team-1',
+          team_name: 'Team A',
+          date: '2026-02-03',
+          start_time: '08:00:00',
+          end_time: '17:00:00',
+        },
+      ],
     });
 
     clinicalUnitsApi.descendants.mockResolvedValue({

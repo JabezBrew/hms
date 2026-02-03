@@ -48,7 +48,7 @@ import {
   useCreateAppointmentType,
   useUpdateAppointmentType,
   useDeleteAppointmentType
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 
 /**
  * Component for managing appointment types

@@ -2086,7 +2086,6 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         date_str = request.query_params.get('date')
         if date_str:
             try:
-                from datetime import datetime
                 filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             except ValueError:
                 return Response(
@@ -2240,7 +2239,6 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         date_str = request.query_params.get('date')
         if date_str:
             try:
-                from datetime import datetime
                 filter_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             except ValueError:
                 return Response(

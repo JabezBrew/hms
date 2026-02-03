@@ -10,7 +10,7 @@ import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { WorkflowWizard, WorkflowProgress } from '@/components/workflow';
 import { WorkflowStepRenderer } from '@/components/workflow';
 import { useWardRoundWorkflow } from '@/hooks/useWorkflowQueries';
-import { usePatient } from '@/hooks/usePatientQueries';
+import { usePatient } from '@/features/patients/hooks/usePatientQueries';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';

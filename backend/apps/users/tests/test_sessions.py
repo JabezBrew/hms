@@ -16,6 +16,12 @@ def api_client():
     return APIClient()
 
 
+@pytest.fixture(autouse=True)
+def disable_mfa_for_tests(settings):
+    settings.MFA_REQUIRED_FOR_ALL = False
+    settings.MFA_REQUIRED_FOR_ADMIN = False
+
+
 def authenticate_client(user, client=None):
     if client is None:
         client = APIClient()

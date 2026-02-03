@@ -11,7 +11,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import { BedAssignment } from './BedAssignment';
-import { searchPatientsForAdmission, searchPractitionersForAdmission, createAdmission } from '@/lib/api.js';
+import { admissionsApi } from '@/features/admissions/api';
 import format from 'date-fns/format';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
@@ -64,7 +64,7 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
 
       setIsLoadingPatients(true);
       try {
-        const response = await searchPatientsForAdmission(debouncedPatientQuery);
+        const response = await admissionsApi.searchPatients(debouncedPatientQuery);
         setPatients(normalizeApiResults(response));
       } catch (err) {
         console.error('Error searching patients:', err);
@@ -89,7 +89,7 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       setIsLoadingPractitioners(true);
       try {
         // Using doctorsOnly=true since admissions are typically handled by doctors
-        const results = await searchPractitionersForAdmission(debouncedPractitionerQuery, true);
+        const results = await admissionsApi.searchPractitioners(debouncedPractitionerQuery, true);
         setPractitioners(Array.isArray(results) ? results : []);
       } catch (err) {
         console.error('Error searching practitioners:', err);
@@ -165,7 +165,7 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       console.log('Submitting admission data:', formattedData);
 
       // Create admission using the dedicated API function
-      const response = await createAdmission(formattedData);
+      const response = await admissionsApi.createAdmission(formattedData);
 
       console.log('Admission created successfully:', response);
 

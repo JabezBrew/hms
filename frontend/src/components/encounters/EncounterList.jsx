@@ -28,7 +28,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import isValid from 'date-fns/isValid';
-import { useEncounters } from '@/hooks/useEncounterQueries';
+import { useEncounters } from '@/features/encounters/hooks/useEncounterQueries';
 
 const PAGE_SIZE = 20;
 

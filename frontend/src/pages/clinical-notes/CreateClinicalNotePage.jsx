@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { useEncounter } from '@/hooks/useEncounterQueries';
+import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { 
   useNoteEntriesForEncounter, 

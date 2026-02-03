@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 import { usePatientMonitoring, useActiveAlerts, useLowSupplyEntries } from '@/hooks/useNursingQueries';
-import { useWards } from '@/hooks/useWardQueries';
+import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { PatientMonitoringCard } from '@/components/nursing/PatientMonitoringCard';
 import { AlertsPanel } from '@/components/nursing/AlertsPanel';
 import { Layout } from '@/components/layout/layout';

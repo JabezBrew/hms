@@ -24,7 +24,7 @@ import {
   useCreateWardAllocation,
   useDeleteWardAllocation,
 } from '@/hooks/useOrganization';
-import { useWardSearch } from '@/hooks/useWardQueries';
+import { useWardSearch } from '@/features/wards/hooks/useWardQueries';
 
 import { toast } from 'sonner';
 import { normalizeApiResults } from '@/lib/utils';

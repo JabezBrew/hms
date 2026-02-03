@@ -435,10 +435,12 @@ class TestPatientRegistrationSerializer:
         assert not serializer.is_valid()
         assert 'phone_number' in serializer.errors
 
+    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
-    def test_create_patient_with_fhir(self, mock_create_task, db, request_context):
+    def test_create_patient_with_fhir(self, mock_create_task, mock_sync_encounter_task, db, request_context, django_capture_on_commit_callbacks):
         """Test creating a patient queues FHIR resource creation."""
         mock_create_task.return_value = MagicMock(id='task-123')
+        mock_sync_encounter_task.return_value = MagicMock(id='task-456')
         facility = request_context['request'].facility
         clinic = create_clinic(facility)
 
@@ -462,13 +464,13 @@ class TestPatientRegistrationSerializer:
 
         assert serializer.is_valid(), serializer.errors
 
-        patient_profile = serializer.save()
+        with django_capture_on_commit_callbacks(execute=True):
+            patient_profile = serializer.save()
         mock_create_task.assert_called_once()
 
         assert patient_profile.user.email == 'fhirpatient@test.com'
         assert patient_profile.user.first_name == 'FHIR'
         assert patient_profile.medical_record_number.startswith('HMS-')
-        mock_create_resource.assert_called_once()
         assert patient_profile.patient_identity_id is not None
 
         from apps.mpi.models import PatientFacilityLink

@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 
-import { useWardSections } from '@/hooks/useWardQueries';
+import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 
 /**
  * WardBedLayout - Chronicle-style bed visualization
