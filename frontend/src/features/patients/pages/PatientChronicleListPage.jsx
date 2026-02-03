@@ -151,6 +151,63 @@ const PatientChronicleListPage = () => {
   // Loading state
   const isLoading = isSearching ? isSearchLoading : (isRecentLoading || isContextLoading);
 
+  const headerControls = (
+    <div className="flex items-center justify-end gap-2">
+      {/* View Mode Toggle */}
+      <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
+        <button
+          onClick={() => setViewMode('grid')}
+          aria-label="Grid view"
+          aria-pressed={viewMode === 'grid'}
+          className={cn(
+            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            viewMode === 'grid'
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button
+          onClick={() => setViewMode('list')}
+          aria-label="List view"
+          aria-pressed={viewMode === 'list'}
+          className={cn(
+            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            viewMode === 'list'
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <List className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      {/* Refresh */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleRefresh}
+        className="shrink-0 h-9 w-9"
+        aria-label="Refresh patient list"
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
+  );
+
+  const headerActions = ['admin', 'receptionist'].includes(user?.role) ? (
+    <div className="flex flex-col items-stretch gap-2 sm:items-end">
+      <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
+        <Plus className="h-4 w-4 mr-2" />
+        Register Patient
+      </Button>
+      {headerControls}
+    </div>
+  ) : (
+    <div className="flex justify-end">{headerControls}</div>
+  );
+
   return (
     <PageShell>
       {pageMeta}
@@ -158,12 +215,7 @@ const PatientChronicleListPage = () => {
         title="Patient Registry"
         description="Search for patients or browse your recent and assigned patients"
         size="md"
-        actions={['admin', 'receptionist'].includes(user?.role) ? (
-          <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Register Patient
-          </Button>
-        ) : null}
+        actions={headerActions}
       >
         {/* Tab Navigation - Using NavLinks for routes */}
         {isClinicalProvider && (
@@ -198,7 +250,7 @@ const PatientChronicleListPage = () => {
 
         {/* Search Bar */}
         <div className="flex flex-col gap-3 mt-4">
-          <div className="relative">
+          <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
             <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
             <Input
@@ -219,56 +271,10 @@ const PatientChronicleListPage = () => {
             )}
           </div>
 
-          {/* Toolbar */}
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-muted-foreground">
-              {isSearching && (
-                <span>{searchPatients.length} results for "{debouncedSearchTerm}"</span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* View Mode Toggle */}
-              <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  aria-label="Grid view"
-                  aria-pressed={viewMode === 'grid'}
-                  className={cn(
-                    "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    viewMode === 'grid'
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  aria-label="List view"
-                  aria-pressed={viewMode === 'list'}
-                  className={cn(
-                    "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    viewMode === 'list'
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <List className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-
-              {/* Refresh */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRefresh}
-                className="shrink-0 h-9 w-9"
-                aria-label="Refresh patient list"
-              >
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
+          <div className="text-xs text-muted-foreground">
+            {isSearching && (
+              <span>{searchPatients.length} results for "{debouncedSearchTerm}"</span>
+            )}
           </div>
         </div>
       </PageHeader>
