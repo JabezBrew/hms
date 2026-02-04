@@ -5,6 +5,7 @@ import { ThemeToggle } from "../theme-toggle"
 import { useAuth } from "../../lib/auth"
 import { useIsMobile } from "../../hooks/use-mobile"
 import AppointmentNotifications from "../appointments/AppointmentNotifications"
+import { Link } from 'react-router-dom';
 
 // Helper function to check if a user has access to a menu item
 const hasAccess = (userRole, allowedRoles) => {
@@ -81,9 +82,9 @@ export function Header() {
         {!isMobile && <SidebarTrigger className="mr-2" />}
 
         <div className="mr-2 flex">
-          <a href="/" className="flex items-center space-x-2">
+          <Link to="/" className="flex items-center space-x-2">
             <span className="font-bold">HMS</span>
-          </a>
+          </Link>
         </div>
 
         <div className="flex-1 hidden md:flex">
@@ -96,9 +97,9 @@ export function Header() {
                     <ul className="grid gap-3 p-4 md:w-[400px] lg:w-[500px] lg:grid-cols-[.75fr_1fr]">
                       <li className="row-span-3">
                         <NavigationMenuLink asChild>
-                          <a
+                          <Link
                             className="flex h-full w-full select-none flex-col justify-end rounded-md bg-gradient-to-b from-muted/50 to-muted p-6 no-underline outline-none focus:shadow-md"
-                            href="/"
+                            to="/"
                           >
                             <div className="mb-2 mt-4 text-lg font-medium">
                               HMS Dashboard
@@ -106,22 +107,22 @@ export function Header() {
                             <p className="text-sm leading-tight text-muted-foreground">
                               Hospital Management System Dashboard
                             </p>
-                          </a>
+                          </Link>
                         </NavigationMenuLink>
                       </li>
 
                       {hasAccess(userRole, menuItems.dashboard.overview) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/overview"
+                            <Link
+                              to="/overview"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Overview</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Hospital overview and statistics
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -129,15 +130,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.dashboard.patients) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/patients"
+                            <Link
+                              to="/patients"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Patients</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Patient management and records
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -145,15 +146,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.dashboard.appointments) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/appointments"
+                            <Link
+                              to="/appointments"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Appointments</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Schedule and manage appointments
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -170,15 +171,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.wards) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/wards"
+                            <Link
+                              to="/wards"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Wards</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage hospital wards and beds
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -186,15 +187,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.inventory) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/inventory"
+                            <Link
+                              to="/inventory"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Inventory</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage hospital inventory and supplies
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -202,15 +203,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.billing) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/billing"
+                            <Link
+                              to="/billing"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Billing</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage patient billing and invoices
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -218,15 +219,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.laboratory) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/laboratory"
+                            <Link
+                              to="/laboratory"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Laboratory</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage lab tests and results
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -234,15 +235,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.pharmacy) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/pharmacy"
+                            <Link
+                              to="/pharmacy"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Pharmacy</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage prescriptions and medications
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
@@ -250,15 +251,15 @@ export function Header() {
                       {hasAccess(userRole, menuItems.management.staff) && (
                         <li>
                           <NavigationMenuLink asChild>
-                            <a
-                              href="/staff"
+                            <Link
+                              to="/staff"
                               className="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                             >
                               <div className="text-sm font-medium leading-none">Staff</div>
                               <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
                                 Manage hospital staff and roles
                               </p>
-                            </a>
+                            </Link>
                           </NavigationMenuLink>
                         </li>
                       )}
