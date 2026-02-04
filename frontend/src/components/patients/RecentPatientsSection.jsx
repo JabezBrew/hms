@@ -12,16 +12,23 @@ import { Skeleton } from "@/components/ui/skeleton";
  * - Maximum 10 patients
  * - Click navigates to patient chronicle
  */
-const RecentPatientsSection = ({ patients = [], isLoading = false, className }) => {
+const RecentPatientsSection = ({
+  patients = [],
+  isLoading = false,
+  className,
+  showHeader = true,
+}) => {
   const navigate = useNavigate();
 
   if (isLoading) {
     return (
       <section className={cn("space-y-3", className)}>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <h2 className="font-heading text-sm font-medium">Recent</h2>
-        </div>
+        {showHeader && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            <h2 className="font-heading text-sm font-medium">Recent</h2>
+          </div>
+        )}
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-20 w-40 flex-shrink-0 rounded-xl" />
@@ -44,11 +51,13 @@ const RecentPatientsSection = ({ patients = [], isLoading = false, className }) 
 
   return (
     <section className={cn("space-y-3", className)}>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Clock className="h-4 w-4" />
-        <h2 className="font-heading text-sm font-medium">Recent</h2>
-        <span className="text-xs">({patients.length})</span>
-      </div>
+      {showHeader && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Clock className="h-4 w-4" />
+          <h2 className="font-heading text-sm font-medium">Recent</h2>
+          <span className="text-xs">({patients.length})</span>
+        </div>
+      )}
 
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin snap-x snap-mandatory">
         {patients.map((recentEntry, index) => {

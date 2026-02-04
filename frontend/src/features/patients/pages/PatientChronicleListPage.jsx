@@ -5,6 +5,7 @@ import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
 import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/filter.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import { useState, useMemo, useEffect } from "react";
@@ -367,7 +368,7 @@ const PatientChronicleListPage = () => {
   // Loading state
   const isLoading = isSearching ? isSearchLoading : (isRecentLoading || isContextLoading);
 
-  const headerControls = (
+  const listControls = (
     <div className="flex items-center justify-end gap-2">
       {/* View Mode Toggle */}
       <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
@@ -413,16 +414,15 @@ const PatientChronicleListPage = () => {
   );
 
   const headerActions = ['admin', 'receptionist'].includes(user?.role) ? (
-    <div className="flex flex-col items-stretch gap-2 sm:items-end">
-      <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs w-full sm:w-auto">
-        <Plus className="h-4 w-4 mr-2" />
-        Register Patient
-      </Button>
-      {headerControls}
-    </div>
-  ) : (
-    <div className="flex justify-end">{headerControls}</div>
-  );
+    <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs">
+      <Plus className="h-4 w-4 mr-2" />
+      Register Patient
+    </Button>
+  ) : null;
+
+  const listHeaderLabel = isSearching
+    ? (effectiveSearchQuery ? 'Search results' : 'Filtered results')
+    : 'Recent';
 
   return (
     <PageShell>
@@ -432,6 +432,7 @@ const PatientChronicleListPage = () => {
         description="Search for patients or browse your recent and assigned patients"
         size="md"
         actions={headerActions}
+        contentClassName="sm:items-start"
       >
         {/* Tab Navigation - Using NavLinks for routes */}
         {isClinicalProvider && (
@@ -502,16 +503,6 @@ const PatientChronicleListPage = () => {
                   </Badge>
                 )}
               </Button>
-              {(hasSearchQuery || hasActiveFilters) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearAll}
-                  className="font-mono text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Clear all
-                </Button>
-              )}
             </div>
           </div>
 
@@ -779,6 +770,16 @@ const PatientChronicleListPage = () => {
                   onRemove={() => handleRemoveFilter('myPatients')}
                 />
               )}
+              {(hasSearchQuery || hasActiveFilters) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearAll}
+                  className="font-mono text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear all
+                </Button>
+              )}
             </div>
           )}
 
@@ -792,6 +793,25 @@ const PatientChronicleListPage = () => {
 
       {/* Main Content */}
       <main className="p-4 sm:p-6 space-y-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            {isSearching ? (
+              <Search className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Clock className="h-4 w-4" aria-hidden="true" />
+            )}
+            <h2 className="font-heading text-sm font-medium text-foreground">
+              {listHeaderLabel}
+            </h2>
+            {isSearching ? (
+              <span className="text-xs">({searchTotal})</span>
+            ) : (
+              !isRecentLoading && <span className="text-xs">({recentPatients.length})</span>
+            )}
+          </div>
+          {listControls}
+        </div>
+
         {isSearching ? (
           // Show search results
           <SearchResultsSection
@@ -811,6 +831,7 @@ const PatientChronicleListPage = () => {
             <RecentPatientsSection
               patients={recentPatients}
               isLoading={isRecentLoading}
+              showHeader={false}
             />
 
             <ContextPatientsSection
