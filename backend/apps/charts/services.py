@@ -474,7 +474,7 @@ class ChartEntryService:
         """
         from django.db.models import Count, Avg, Min, Max, FloatField, Value, Case, When, Q
         from django.db.models.functions import Cast
-        from django.contrib.postgres.fields.jsonb import KeyTextTransform
+        from django.db.models.fields.json import KeyTextTransform
         from apps.charts.models import ChartEntry
 
         entries = assignment.entries.filter(is_deleted=False)

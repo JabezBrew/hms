@@ -1,5 +1,5 @@
 from rest_framework import viewsets, permissions, status, filters
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 import time
 import logging
 import hashlib
@@ -354,6 +354,10 @@ class PatientViewSet(viewsets.ViewSet):
                         PatientProfileSerializer(patient_profile).data,
                         status=status.HTTP_201_CREATED
                     )
+            except ValidationError as e:
+                logger.warning(f"Patient registration validation failed: {str(e)}")
+                detail = e.detail if hasattr(e, 'detail') else {"error": str(e)}
+                return Response(detail, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
                 logger.error(f"Failed to register patient: {str(e)}")
                 return Response(
@@ -379,6 +383,7 @@ class PatientViewSet(viewsets.ViewSet):
         ward_id = request.query_params.get('ward', '').strip()
         admission_start = request.query_params.get('admission_start', '').strip()
         admission_end = request.query_params.get('admission_end', '').strip()
+        admission_date = request.query_params.get('admission_date', '').strip()
         department_id = request.query_params.get('department_id', '').strip()
         admission_status = request.query_params.get('admission_status', '').strip()
         admission_type = request.query_params.get('admission_type', '').strip()
@@ -388,6 +393,13 @@ class PatientViewSet(viewsets.ViewSet):
         age_max = request.query_params.get('age_max', '').strip()
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+
+        # Backward compatibility: treat legacy admission_date as a single-day range.
+        if admission_date:
+            if not admission_start:
+                admission_start = admission_date
+            if not admission_end:
+                admission_end = admission_date
 
         allowed_admission_statuses = {'admitted', 'waiting', 'discharged', 'transferred', 'deceased'}
         allowed_admission_types = {'emergency', 'elective', 'maternity', 'newborn'}

@@ -88,11 +88,13 @@ class PatientRegistrationAdmissionTests(TestCase):
             defaults={
                 'name': 'Department',
                 'depth_level': 1,
+                'can_admit_patients': True,
             },
         )
-        if department_type.depth_level != 1:
+        if department_type.depth_level != 1 or not department_type.can_admit_patients:
             department_type.depth_level = 1
-            department_type.save(update_fields=['depth_level'])
+            department_type.can_admit_patients = True
+            department_type.save(update_fields=['depth_level', 'can_admit_patients'])
         department_type.allowed_parent_types.add(facility_type)
         root_unit = ClinicalUnit.objects.create(
             unit_type=facility_type,

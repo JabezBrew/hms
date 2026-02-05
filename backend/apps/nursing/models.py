@@ -483,6 +483,36 @@ class MedicationAdministration(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to create alerts for overdue medications."""
+        if self.facility_id is None:
+            facility_id = None
+
+            if self.treatment_entry_id:
+                entry_obj = getattr(self, 'treatment_entry', None)
+                facility_id = getattr(entry_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = TreatmentSheetEntry.objects.filter(
+                        id=self.treatment_entry_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.prescription_id:
+                prescription_obj = getattr(self, 'prescription', None)
+                facility_id = getattr(prescription_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.clinical_notes.models import Prescription
+                    facility_id = Prescription.objects.filter(
+                        id=self.prescription_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                facility_id = getattr(patient_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+
+            self.facility_id = facility_id
+
         super().save(*args, **kwargs)
 
         # Create alert if medication is overdue by more than 30 minutes
@@ -698,6 +728,49 @@ class TreatmentSheetEntry(models.Model):
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.medication_name} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        if self.facility_id is None:
+            facility_id = None
+
+            if self.admission_id:
+                admission_obj = getattr(self, 'admission', None)
+                facility_id = getattr(admission_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.wards.models import Admission
+                    facility_id = Admission.objects.filter(
+                        id=self.admission_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.encounter_id:
+                encounter_obj = getattr(self, 'encounter', None)
+                facility_id = getattr(encounter_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.encounters.models import Encounter
+                    facility_id = Encounter.objects.filter(
+                        id=self.encounter_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                facility_id = getattr(patient_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.prescription_id:
+                prescription_obj = getattr(self, 'prescription', None)
+                facility_id = getattr(prescription_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.clinical_notes.models import Prescription
+                    facility_id = Prescription.objects.filter(
+                        id=self.prescription_id
+                    ).values_list('facility_id', flat=True).first()
+
+            self.facility_id = facility_id
+
+        super().save(*args, **kwargs)
 
     @property
     def supply_remaining(self):

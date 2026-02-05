@@ -56,30 +56,38 @@ def get_user_facility_codes(user):
 
 
 def get_user_facility(request):
-    facility = getattr(request, 'facility', None)
-    if facility:
-        return facility
-
     user = getattr(request, 'user', None) if request else None
-    facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
-    if not facility_code and request:
-        header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
-        header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
-        facility_code = normalize_facility_code(request.META.get(header_key))
-    if not facility_code:
-        from hms_backend.tenancy import get_current_facility_code
-        facility_code = get_current_facility_code()
-    if not facility_code and user and getattr(user, 'is_authenticated', False):
-        allowed_codes = get_user_facility_codes(user)
-        if len(allowed_codes) == 1:
-            facility_code = next(iter(allowed_codes))
-    if not facility_code:
-        return None
-
+    allowed_codes = set()
+    allow_cross_facility = False
+    is_admin = False
     if user and getattr(user, 'is_authenticated', False):
         allowed_codes = get_user_facility_codes(user)
         allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
         is_admin = bool(getattr(user, 'user_type', None) == 'admin')
+
+    facility = getattr(request, 'facility', None)
+    if facility:
+        facility_code = normalize_facility_code(getattr(facility, 'code', None))
+        if not allowed_codes or facility_code in allowed_codes or (allow_cross_facility and is_admin):
+            return facility
+
+    facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
+    if facility_code and allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+        facility_code = None
+    if not facility_code and request:
+        header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
+        header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
+        facility_code = normalize_facility_code(request.META.get(header_key))
+    if not facility_code and user and getattr(user, 'is_authenticated', False):
+        if len(allowed_codes) == 1:
+            facility_code = next(iter(allowed_codes))
+    if not facility_code:
+        from hms_backend.tenancy import get_current_facility_code
+        facility_code = get_current_facility_code()
+    if not facility_code:
+        return None
+
+    if user and getattr(user, 'is_authenticated', False):
         if allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
             return None
 

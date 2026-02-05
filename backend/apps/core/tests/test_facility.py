@@ -93,8 +93,8 @@ class TestFacilityModel:
 
     def test_facility_str_representation(self):
         """Test string representation of facility."""
-        facility = FacilityFactory(name='Test Hospital', code='TEST')
-        assert str(facility) == 'Test Hospital (TEST)'
+        facility = FacilityFactory(name='Test Hospital', code='TESTSTR')
+        assert str(facility) == 'Test Hospital (TESTSTR)'
 
     def test_facility_types(self):
         """Test creating facilities of different types."""

@@ -401,6 +401,31 @@ class Prescription(models.Model):
         # Calculate end_date from duration if provided
         if self.duration_days and not self.end_date:
             self.end_date = self.start_date + timedelta(days=self.duration_days)
+
+        # Backward compatibility: derive facility from encounter/patient when omitted.
+        if self.facility_id is None:
+            encounter_facility_id = None
+            if self.encounter_id:
+                encounter_obj = getattr(self, 'encounter', None)
+                encounter_facility_id = getattr(encounter_obj, 'facility_id', None)
+                if encounter_facility_id is None:
+                    from apps.encounters.models import Encounter
+                    encounter_facility_id = Encounter.objects.filter(
+                        id=self.encounter_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if encounter_facility_id is not None:
+                self.facility_id = encounter_facility_id
+            elif self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                patient_facility_id = getattr(patient_obj, 'facility_id', None)
+                if patient_facility_id is None:
+                    from apps.users.models import PatientProfile
+                    patient_facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+                self.facility_id = patient_facility_id
+
         super().save(*args, **kwargs)
 
     @property

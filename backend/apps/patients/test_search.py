@@ -35,6 +35,7 @@ class PatientSearchTests(APITestCase):
             password='testpassword',
             first_name='Test',
             last_name='User',
+            user_type='admin',
             primary_facility=self.facility
         )
         self.client.force_authenticate(user=self.user)
