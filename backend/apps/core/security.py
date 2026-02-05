@@ -30,6 +30,10 @@ def get_user_facility_codes(user):
     if not user or not getattr(user, 'is_authenticated', False):
         return set()
 
+    cached_codes = getattr(user, '_cached_facility_codes', None)
+    if cached_codes is not None:
+        return set(cached_codes)
+
     codes = set()
     primary_facility = getattr(user, 'primary_facility', None)
     if primary_facility:
@@ -42,8 +46,13 @@ def get_user_facility_codes(user):
     if staff and getattr(staff, 'primary_facility', None):
         codes.add(normalize_facility_code(staff.primary_facility.code))
 
+    facility_codes = []
     try:
-        facility_codes = user.facilities.values_list('code', flat=True)
+        prefetched = getattr(user, '_prefetched_objects_cache', {})
+        if 'facilities' in prefetched:
+            facility_codes = [facility.code for facility in prefetched['facilities']]
+        else:
+            facility_codes = user.facilities.values_list('code', flat=True)
     except Exception:
         facility_codes = []
     for code in facility_codes:
@@ -51,52 +60,92 @@ def get_user_facility_codes(user):
         if normalized:
             codes.add(normalized)
 
-    codes.discard(None)
-    return codes
+    normalized_codes = frozenset(code for code in codes if code)
+    user._cached_facility_codes = normalized_codes
+    return set(normalized_codes)
 
 
 def get_user_facility(request):
+    if request is not None and getattr(request, '_cached_user_facility_resolved', False):
+        return getattr(request, '_cached_user_facility', None)
+
+    def _cache_and_return(facility_value):
+        if request is not None:
+            request._cached_user_facility = facility_value
+            request._cached_user_facility_resolved = True
+        return facility_value
+
     user = getattr(request, 'user', None) if request else None
-    allowed_codes = set()
+    allowed_codes = None
     allow_cross_facility = False
     is_admin = False
+    primary_facility = None
+    primary_code = None
     if user and getattr(user, 'is_authenticated', False):
-        allowed_codes = get_user_facility_codes(user)
         allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
         is_admin = bool(getattr(user, 'user_type', None) == 'admin')
+        primary_facility = getattr(user, 'primary_facility', None)
+        if primary_facility:
+            primary_code = normalize_facility_code(primary_facility.code)
+
+    def _load_allowed_codes():
+        nonlocal allowed_codes
+        if allowed_codes is None:
+            allowed_codes = get_user_facility_codes(user)
+        return allowed_codes
+
+    def _is_allowed(facility_code):
+        if not facility_code:
+            return True
+        if not user or not getattr(user, 'is_authenticated', False):
+            return True
+        if allow_cross_facility and is_admin:
+            return True
+        if primary_code and facility_code == primary_code:
+            return True
+        resolved_codes = _load_allowed_codes()
+        return not resolved_codes or facility_code in resolved_codes
 
     facility = getattr(request, 'facility', None)
     if facility:
         facility_code = normalize_facility_code(getattr(facility, 'code', None))
-        if not allowed_codes or facility_code in allowed_codes or (allow_cross_facility and is_admin):
-            return facility
+        if _is_allowed(facility_code):
+            return _cache_and_return(facility)
 
     facility_code = normalize_facility_code(getattr(request, 'facility_code', None))
-    if facility_code and allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+    if facility_code and not _is_allowed(facility_code):
         facility_code = None
     if not facility_code and request:
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
         header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
-        facility_code = normalize_facility_code(request.META.get(header_key))
+        requested_code = normalize_facility_code(request.META.get(header_key))
+        if _is_allowed(requested_code):
+            facility_code = requested_code
     if not facility_code and user and getattr(user, 'is_authenticated', False):
-        if len(allowed_codes) == 1:
-            facility_code = next(iter(allowed_codes))
+        resolved_codes = _load_allowed_codes()
+        if len(resolved_codes) == 1:
+            facility_code = next(iter(resolved_codes))
     if not facility_code:
-        from hms_backend.tenancy import get_current_facility_code
-        facility_code = get_current_facility_code()
+        if primary_code:
+            facility_code = primary_code
+        else:
+            from hms_backend.tenancy import get_current_facility_code
+            facility_code = get_current_facility_code()
     if not facility_code:
-        return None
+        return _cache_and_return(None)
 
-    if user and getattr(user, 'is_authenticated', False):
-        if allowed_codes and facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
-            return None
+    if not _is_allowed(facility_code):
+        return _cache_and_return(None)
 
-    from apps.core.models import Facility
-    facility = Facility.get_by_code(facility_code)
+    if primary_facility and primary_code == facility_code and getattr(primary_facility, 'is_active', False):
+        facility = primary_facility
+    else:
+        from apps.core.models import Facility
+        facility = Facility.get_by_code(facility_code)
     if facility and request:
         request.facility = facility
         request.facility_code = facility.code
-    return facility
+    return _cache_and_return(facility)
 
 
 def resolve_object_facility(obj):

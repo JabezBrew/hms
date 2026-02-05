@@ -139,11 +139,12 @@ class ClinicalUnitTreeSerializer(serializers.ModelSerializer):
     def get_children(self, obj):
         """Recursively serialize children."""
         include_inactive = self.context.get('include_inactive', False)
-        children = obj.get_children()
-        if hasattr(children, 'filter'):
-            if not include_inactive:
-                children = children.filter(is_active=True)
-        elif not include_inactive:
+        children = getattr(obj, '_cached_children', None)
+        if children is None:
+            children = list(obj.get_children())
+        else:
+            children = list(children)
+        if not include_inactive:
             children = [child for child in children if child.is_active]
         return ClinicalUnitTreeSerializer(children, many=True, context=self.context).data
 

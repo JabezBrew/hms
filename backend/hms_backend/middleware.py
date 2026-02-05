@@ -96,7 +96,14 @@ class FacilityContextMiddleware(MiddlewareMixin):
             facility_code = normalize_facility_code(validated_token.get('facility_code'))
             facility_code_source = 'token' if facility_code else None
 
-        allowed_codes = get_user_facility_codes(user) if user else set()
+        allowed_codes = set()
+        if user:
+            primary_facility = getattr(user, 'primary_facility', None)
+            primary_code = normalize_facility_code(getattr(primary_facility, 'code', None))
+            if facility_code and primary_code and facility_code == primary_code:
+                allowed_codes = {primary_code}
+            else:
+                allowed_codes = get_user_facility_codes(user)
         allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
 
         if not facility_code and allowed_codes:
