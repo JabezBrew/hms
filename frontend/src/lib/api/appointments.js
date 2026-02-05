@@ -220,6 +220,28 @@ export const appointmentsApi = {
     try {
       return await apiClient.post('/appointments/appointments/', data);
     } catch (error) {
+      // Extract field-level validation errors for better user feedback
+      if (error.data && typeof error.data === 'object') {
+        const fieldErrors = [];
+        const fieldNameMap = {
+          'patient': 'Patient',
+          'practitioner': 'Doctor',
+          'appointment_type': 'Appointment type',
+          'start_time': 'Start time',
+          'end_time': 'End time',
+          'slot': 'Time slot',
+        };
+
+        for (const [field, messages] of Object.entries(error.data)) {
+          const fieldName = fieldNameMap[field] || field;
+          const message = Array.isArray(messages) ? messages[0] : messages;
+          fieldErrors.push(`${fieldName}: ${message}`);
+        }
+
+        if (fieldErrors.length > 0) {
+          throw new Error(fieldErrors.join('\n'));
+        }
+      }
       throw new Error(handleApiError(error, 'Failed to create appointment'));
     }
   },

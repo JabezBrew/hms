@@ -1,3 +1,12 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,7 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { X, TestTube2, Package, AlertCircle, Check, Search, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   WorkflowSteps,
@@ -27,7 +36,7 @@ import {
   useLabPanels,
   useCreateLabOrder,
   useSubmitLabOrder,
-} from "@/hooks/useLabQueries";
+} from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**
@@ -312,6 +321,9 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lab-order-title"
       className={cn(
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
@@ -323,10 +335,10 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="font-display text-xl text-foreground">
+            <h2 id="lab-order-title" className="font-display text-xl text-foreground">
               Order Labs
             </h2>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
@@ -341,7 +353,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="h-4 w-4 mr-1.5" aria-hidden="true" />
           Close
         </Button>
       </header>
@@ -367,8 +379,10 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
             <div className="space-y-4">
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <Label htmlFor="lab-test-search" className="sr-only">Search tests and panels</Label>
                 <Input
+                  id="lab-test-search"
                   placeholder="Search by name or abbreviation (TSH, CBC, LFTs...)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -405,7 +419,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
               {hasSearchQuery ? (
                 // Combined search results view
                 <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
+                  <div aria-live="polite" aria-atomic="true" className="text-sm text-muted-foreground">
                     Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{searchQuery}"
                   </div>
 
@@ -431,6 +445,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                           {filteredPanels.map((panel) => (
                             <Card
                               key={panel.id}
+                              tabIndex={0}
+                              role="checkbox"
+                              aria-checked={formData.selected_panels.includes(panel.id)}
+                              aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlePanelToggle(panel.id); } }}
                               className={cn(
                                 "cursor-pointer transition-colors",
                                 formData.selected_panels.includes(panel.id)
@@ -479,6 +498,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                           {filteredTests.slice(0, 20).map((test) => (
                             <Card
                               key={test.id}
+                              tabIndex={0}
+                              role="checkbox"
+                              aria-checked={formData.selected_tests.includes(test.id)}
+                              aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTestToggle(test.id); } }}
                               className={cn(
                                 "cursor-pointer transition-colors",
                                 formData.selected_tests.includes(test.id)
@@ -578,6 +602,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                         filteredPanels.map((panel) => (
                           <Card
                             key={panel.id}
+                            tabIndex={0}
+                            role="checkbox"
+                            aria-checked={formData.selected_panels.includes(panel.id)}
+                            aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlePanelToggle(panel.id); } }}
                             className={cn(
                               "cursor-pointer transition-colors",
                               formData.selected_panels.includes(panel.id)
@@ -636,6 +665,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                         filteredTests.map((test) => (
                           <Card
                             key={test.id}
+                            tabIndex={0}
+                            role="checkbox"
+                            aria-checked={formData.selected_tests.includes(test.id)}
+                            aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTestToggle(test.id); } }}
                             className={cn(
                               "cursor-pointer transition-colors",
                               formData.selected_tests.includes(test.id)

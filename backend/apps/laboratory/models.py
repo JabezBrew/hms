@@ -1,5 +1,6 @@
 import uuid
-from django.db import models
+from django.db import models, transaction
+from django.db.models import F
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
@@ -34,9 +35,14 @@ class LabTestCatalog(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_tests',
+        help_text="Facility that owns this test catalog entry"
+    )
     code = models.CharField(
         max_length=20,
-        unique=True,
         help_text="Internal test code (e.g., 'CBC', 'BMP')"
     )
 
@@ -122,8 +128,12 @@ class LabTestCatalog(models.Model):
         verbose_name = 'Lab Test'
         verbose_name_plural = 'Lab Test Catalog'
         ordering = ['category', 'short_name']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'code'], name='lab_test_facility_code_uniq'),
+        ]
         indexes = [
-            models.Index(fields=['code']),
+            models.Index(fields=['facility', 'code']),
+            models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['loinc_code']),
             models.Index(fields=['name']),  # Added for search optimization
             models.Index(fields=['category', 'is_active']),
@@ -157,9 +167,14 @@ class LabPanel(models.Model):
     Supports facility customization similar to LabTestCatalog.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_panels',
+        help_text="Facility that owns this lab panel"
+    )
     code = models.CharField(
         max_length=20,
-        unique=True,
         help_text="Panel code (e.g., 'CMP', 'LFT')"
     )
 
@@ -202,6 +217,13 @@ class LabPanel(models.Model):
         verbose_name = 'Lab Panel'
         verbose_name_plural = 'Lab Panels'
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'code'], name='lab_panel_facility_code_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'code']),
+            models.Index(fields=['facility', 'is_active']),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.name}"
@@ -235,6 +257,24 @@ class LabOrderPriority(models.TextChoices):
     STAT = 'stat', 'STAT'
 
 
+class LabOrderSequence(models.Model):
+    """
+    Per-day sequence counter for lab order numbers.
+    Avoids full-table scans on order creation.
+    """
+    date = models.DateField(primary_key=True)
+    last_number = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'laboratory_lab_order_sequence'
+        verbose_name = 'Lab Order Sequence'
+        verbose_name_plural = 'Lab Order Sequences'
+
+    def __str__(self):
+        return f"{self.date.isoformat()} - {self.last_number}"
+
+
 class LabOrder(models.Model):
     """
     Lab order placed by a clinician.
@@ -250,6 +290,12 @@ class LabOrder(models.Model):
         'users.PatientProfile',
         on_delete=models.CASCADE,
         related_name='lab_orders'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_orders',
+        help_text="Facility context for this lab order"
     )
     encounter = models.ForeignKey(
         'encounters.Encounter',
@@ -327,6 +373,7 @@ class LabOrder(models.Model):
             models.Index(fields=['order_number']),
             models.Index(fields=['status', 'priority']),
             models.Index(fields=['ordered_at']),
+            models.Index(fields=['facility', 'status', 'ordered_at']),
         ]
 
     def __str__(self):
@@ -336,17 +383,16 @@ class LabOrder(models.Model):
         """Generate order number if not set."""
         if not self.order_number:
             # Generate order number: LAB-YYYYMMDD-####
-            from django.db.models import Max
-            today = timezone.now().strftime('%Y%m%d')
-            prefix = f"LAB-{today}"
-            last_order = LabOrder.objects.filter(order_number__startswith=prefix).aggregate(
-                Max('order_number')
-            )
-            if last_order['order_number__max']:
-                last_num = int(last_order['order_number__max'].split('-')[-1])
-                self.order_number = f"{prefix}-{last_num + 1:04d}"
-            else:
-                self.order_number = f"{prefix}-0001"
+            today = timezone.now().date()
+            with transaction.atomic():
+                seq, _ = LabOrderSequence.objects.select_for_update().get_or_create(
+                    date=today,
+                    defaults={'last_number': 0},
+                )
+                seq.last_number = F('last_number') + 1
+                seq.save(update_fields=['last_number'])
+                seq.refresh_from_db(fields=['last_number'])
+                self.order_number = f"LAB-{today.strftime('%Y%m%d')}-{seq.last_number:04d}"
         super().save(*args, **kwargs)
 
 
@@ -360,6 +406,12 @@ class LabOrderTest(models.Model):
         LabOrder,
         on_delete=models.CASCADE,
         related_name='order_tests'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_order_tests',
+        help_text="Facility context for this lab order test"
     )
     test = models.ForeignKey(
         LabTestCatalog,
@@ -377,6 +429,9 @@ class LabOrderTest(models.Model):
         verbose_name = 'Lab Order Test'
         verbose_name_plural = 'Lab Order Tests'
         unique_together = ['order', 'test']
+        indexes = [
+            models.Index(fields=['facility', 'status']),
+        ]
 
     def __str__(self):
         return f"{self.order.order_number} - {self.test.short_name}"
@@ -407,6 +462,12 @@ class LabSpecimen(models.Model):
         LabOrder,
         on_delete=models.CASCADE,
         related_name='specimens'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_specimens',
+        help_text="Facility context for this specimen"
     )
 
     # Specimen details
@@ -471,6 +532,7 @@ class LabSpecimen(models.Model):
             models.Index(fields=['barcode']),
             models.Index(fields=['order', 'status']),
             models.Index(fields=['status', 'is_rejected']),
+            models.Index(fields=['facility', 'status', 'collected_at']),
         ]
 
     def __str__(self):
@@ -501,6 +563,12 @@ class LabResult(models.Model):
         LabSpecimen,
         on_delete=models.CASCADE,
         related_name='results'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='lab_results',
+        help_text="Facility context for this lab result"
     )
 
     # Result values
@@ -581,6 +649,7 @@ class LabResult(models.Model):
             models.Index(fields=['order_test']),
             models.Index(fields=['flag', 'is_verified']),
             models.Index(fields=['performed_at']),
+            models.Index(fields=['facility', 'performed_at']),
         ]
 
     def __str__(self):

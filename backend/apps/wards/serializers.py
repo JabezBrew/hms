@@ -247,17 +247,20 @@ class AdmissionCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating a new Admission.
     """
+    ed_encounter_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = Admission
         fields = ['id', 'patient', 'bed', 'fhir_encounter_id', 'admission_date', 
                   'expected_discharge_date', 'admission_type', 'admission_notes', 
-                  'admitting_doctor']
+                  'admitting_doctor', 'ed_encounter_id']
         read_only_fields = ['id']
 
     def validate(self, data):
         """
         Validate that the bed is available and matches patient gender restrictions.
         """
+        ed_encounter_id = data.pop('ed_encounter_id', None)
         bed = data.get('bed')
         patient = data.get('patient')
 
@@ -282,6 +285,55 @@ class AdmissionCreateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'bed': f"Bed {bed.bed_number} is in a female-only section. Patient gender: {patient.user.get_gender_display()}"
                     })
+
+        admission_type = data.get('admission_type') or 'elective'
+        if admission_type == 'emergency':
+            from apps.core.security import get_user_facility
+
+            request = self.context.get('request')
+            facility = get_user_facility(request) if request else None
+            if not facility:
+                raise serializers.ValidationError("Facility context is required.")
+            if not patient:
+                raise serializers.ValidationError("Patient is required for emergency admissions.")
+
+            encounter = None
+            if ed_encounter_id:
+                encounter = Encounter.objects.filter(
+                    id=ed_encounter_id,
+                    patient=patient,
+                    facility=facility
+                ).first()
+                if not encounter:
+                    raise serializers.ValidationError({
+                        'ed_encounter_id': 'Emergency encounter not found for patient.'
+                    })
+            else:
+                encounters = Encounter.objects.filter(
+                    patient=patient,
+                    facility=facility,
+                    encounter_type='emergency',
+                    status__in=['planned', 'in-progress']
+                ).order_by('-start_time')
+                if not encounters.exists():
+                    raise serializers.ValidationError({
+                        'ed_encounter_id': 'Emergency admission requires an active ED encounter.'
+                    })
+                if encounters.count() > 1:
+                    raise serializers.ValidationError({
+                        'ed_encounter_id': 'Multiple ED encounters found. Provide ed_encounter_id.'
+                    })
+                encounter = encounters.first()
+
+            if encounter.encounter_type != 'emergency':
+                raise serializers.ValidationError({
+                    'ed_encounter_id': 'Encounter is not an emergency encounter.'
+                })
+            if encounter.status in ['finished', 'cancelled']:
+                raise serializers.ValidationError({
+                    'ed_encounter_id': 'Emergency encounter is not active.'
+                })
+            self._ed_encounter = encounter
 
         return data
 
@@ -503,6 +555,21 @@ class WardListSerializer(serializers.ModelSerializer):
         if obj.head_nurse and obj.head_nurse.user:
             return obj.head_nurse.user.get_full_name()
         return None
+
+
+class WardSearchSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for ward search pickers.
+    Avoids computed fields that trigger extra queries.
+    """
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
+    class Meta:
+        model = Ward
+        fields = [
+            'id', 'name', 'ward_type', 'is_active',
+            'total_beds', 'department_name'
+        ]
 
 
 class BedListSerializer(serializers.ModelSerializer):

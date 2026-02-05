@@ -5,6 +5,8 @@ This module provides the Encounter API endpoints.
 """
 import logging
 import uuid as uuid_module
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
@@ -13,16 +15,31 @@ from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, Count
 from django.conf import settings
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime, parse_date
 
-from .models import Encounter
+from .models import Encounter, OutpatientVisit, TriageQueue
 from .serializers import (
     EncounterSerializer,
     EncounterListSerializer,
     EncounterCreateSerializer,
     EncounterUpdateSerializer,
+    OutpatientVisitSerializer,
+    TriageQueueSerializer,
+    TriageQueueCreateSerializer,
 )
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+    resolve_object_facility,
+)
+from apps.users.models import PatientProfile
+from apps.organization.models import Clinic, ClinicalUnit
+from apps.appointments.models import AppointmentType
+from .services import VisitService, TriageService
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +72,8 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - patient_id: Filter by patient UUID
         - practitioner_id: Filter by practitioner UUID
         - date: Filter by encounter date (YYYY-MM-DD)
+        - department_id: Filter by department UUID
+        - clinic_id: Filter by clinic UUID
         - status: Filter by status (planned, in-progress, finished, cancelled)
         - encounter_type: Filter by type (inpatient, outpatient, emergency)
         - search: Search patient name, reason, or location
@@ -62,17 +81,29 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - page: Page number (default: 1)
         - page_size: Items per page (default: 100, max: 1000)
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
     ordering_fields = ['start_time', 'created_at', 'status']
     ordering = ['-start_time']
 
+    def _get_facility_timezone(self, facility):
+        if facility and facility.timezone:
+            try:
+                return ZoneInfo(facility.timezone)
+            except Exception:
+                pass
+        return timezone.get_current_timezone()
+
     def get_queryset(self):
         """
         Return encounters with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Encounter.objects.none()
+
         queryset = Encounter.objects.select_related(
             'patient',
             'patient__user',
@@ -80,7 +111,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff',
             'practitioner__staff__user',
             'admission',
-        ).all()
+            'clinic',
+            'department',
+            'appointment',
+        ).filter(facility=facility)
 
         user = self.request.user
         if user.user_type == 'admin':
@@ -98,6 +132,12 @@ class EncounterViewSet(viewsets.ModelViewSet):
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
             if is_valid_uuid(patient_id):
+                patient = PatientProfile.objects.filter(id=patient_id).first()
+                if not patient:
+                    return queryset.none()
+                if patient.facility_id != facility.id:
+                    raise PermissionDenied("Patient does not belong to the active facility.")
+                check_clinical_access(self.request.user, patient)
                 queryset = queryset.filter(patient_id=patient_id)
             else:
                 # Search by MRN or patient name if not a valid UUID
@@ -121,9 +161,24 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 )
 
         # Filter by date (start_time date)
-        date = self.request.query_params.get('date')
-        if date:
-            queryset = queryset.filter(start_time__date=date)
+        date_value = self.request.query_params.get('date')
+        if date_value:
+            parsed_date = parse_date(date_value)
+            if parsed_date:
+                tz = self._get_facility_timezone(facility)
+                start = timezone.make_aware(datetime.combine(parsed_date, time.min), tz)
+                end = start + timedelta(days=1)
+                queryset = queryset.filter(start_time__gte=start, start_time__lt=end)
+
+        # Filter by department
+        department_id = self.request.query_params.get('department_id')
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+
+        # Filter by clinic
+        clinic_id = self.request.query_params.get('clinic_id')
+        if clinic_id:
+            queryset = queryset.filter(clinic_id=clinic_id)
 
         # Filter by status (planned, in-progress, finished, cancelled)
         encounter_status = self.request.query_params.get('status')
@@ -156,11 +211,16 @@ class EncounterViewSet(viewsets.ModelViewSet):
         if self.request.user.user_type not in ['admin', 'doctor', 'nurse']:
             raise PermissionDenied("You do not have permission to create encounters.")
 
-        if self.request.user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
-            patient_id = serializer.validated_data.get('patient_id')
-            if patient_id:
-                from apps.users.models import PatientProfile, PractitionerProfile
-                patient = PatientProfile.objects.get(id=patient_id)
+        patient_id = serializer.validated_data.get('patient_id')
+        patient = None
+        if patient_id:
+            from apps.users.models import PatientProfile, PractitionerProfile
+            patient = PatientProfile.objects.get(id=patient_id)
+            facility = get_user_facility(self.request)
+            if not facility or patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+
+            if self.request.user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
                 try:
                     check_clinical_access(self.request.user, patient)
                 except PermissionDenied:
@@ -180,7 +240,37 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 staff__user=self.request.user
             ).first()
 
-        encounter = serializer.save(created_by=self.request.user, practitioner=practitioner)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        clinic_id = serializer.validated_data.get('clinic_id')
+        if clinic_id:
+            clinic = Clinic.objects.get(id=clinic_id)
+            if clinic.facility_id != facility.id:
+                raise PermissionDenied("Clinic does not belong to the active facility.")
+
+        department_id = serializer.validated_data.get('department_id')
+        if department_id:
+            department = ClinicalUnit.objects.get(id=department_id)
+            department_facility = resolve_object_facility(department)
+            if not department_facility or department_facility.id != facility.id:
+                raise PermissionDenied("Department does not belong to the active facility.")
+
+        appointment_id = serializer.validated_data.get('appointment_id')
+        if appointment_id:
+            from apps.appointments.models import Appointment
+            appointment = Appointment.objects.get(id=appointment_id)
+            if appointment.facility_id != facility.id:
+                raise PermissionDenied("Appointment does not belong to the active facility.")
+            if patient and appointment.patient_id != patient.id:
+                raise PermissionDenied("Appointment does not belong to the patient.")
+
+        encounter = serializer.save(
+            created_by=self.request.user,
+            practitioner=practitioner,
+            facility=facility
+        )
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
 
@@ -359,6 +449,270 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        facility = get_user_facility(request)
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+
         encounters = self.get_queryset().filter(patient_id=patient_id)
         serializer = EncounterListSerializer(encounters, many=True)
         return Response(serializer.data)
+
+
+class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for outpatient visit lifecycle actions."""
+    queryset = OutpatientVisit.objects.all()
+    serializer_class = OutpatientVisitSerializer
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+    lookup_field = 'encounter_id'
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return OutpatientVisit.objects.none()
+
+        queryset = OutpatientVisit.objects.select_related(
+            'encounter',
+            'encounter__patient',
+            'encounter__patient__user',
+            'encounter__practitioner',
+            'encounter__practitioner__staff',
+            'encounter__practitioner__staff__user',
+            'appointment',
+            'clinic',
+        ).filter(encounter__facility=facility)
+
+        user = self.request.user
+        if user.user_type == 'admin':
+            return queryset
+        if user.user_type == 'patient':
+            return queryset.filter(encounter__patient__user=user)
+        if user.user_type in ['doctor', 'nurse'] and settings.TEAM_ACCESS_STRICT:
+            accessible_patients = get_accessible_patients_for_clinician(user)
+            return queryset.filter(encounter__patient__in=accessible_patients)
+
+        return queryset
+
+    def _get_visit(self):
+        visit = self.get_object()
+        check_clinical_access(self.request.user, visit.encounter.patient)
+        return visit
+
+    @action(detail=True, methods=['post'])
+    def add_to_waiting(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.add_to_waiting(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def call(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.call_patient(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def start_consultation(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.start_consultation(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def hold(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.put_on_hold(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def end_consultation(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.end_consultation(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def checkout(self, request, encounter_id=None):
+        visit = self._get_visit()
+        force = bool(request.data.get('force', False))
+        try:
+            visit = VisitService.checkout(visit, checked_out_by=request.user, force=force)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def no_show(self, request, encounter_id=None):
+        visit = self._get_visit()
+        try:
+            visit = VisitService.mark_no_show(visit)
+            return Response({"visit_status": visit.visit_status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def waiting_room(self, request):
+        clinic_id = request.query_params.get('clinic')
+        if not clinic_id:
+            return Response({"error": "clinic parameter required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        clinic = Clinic.objects.filter(id=clinic_id).first()
+        if not clinic:
+            return Response({"error": "Clinic not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        facility = get_user_facility(request)
+        if not facility or clinic.facility_id != facility.id:
+            raise PermissionDenied("Clinic does not belong to the active facility.")
+
+        visits = VisitService.get_waiting_room(clinic)
+        data = [
+            {
+                "encounter_id": str(visit.encounter_id),
+                "queue_number": visit.queue_number,
+                "visit_status": visit.visit_status,
+                "patient_name": visit.encounter.patient_name,
+                "checked_in_at": visit.checked_in_at,
+                "called_at": visit.called_at,
+            }
+            for visit in visits
+        ]
+        return Response(data)
+
+
+class TriageQueueViewSet(viewsets.ModelViewSet):
+    """ViewSet for triage queue management."""
+    queryset = TriageQueue.objects.all()
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return TriageQueue.objects.none()
+
+        return TriageService.get_queue(
+            facility,
+            status=self.request.query_params.get('status'),
+            priority=self.request.query_params.get('priority'),
+        )
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return TriageQueueCreateSerializer
+        return TriageQueueSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        facility = get_user_facility(request)
+        patient = serializer.validated_data['patient']
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+
+        entry = TriageService.add_to_queue(
+            patient=patient,
+            facility=facility,
+            chief_complaint=serializer.validated_data.get('chief_complaint', ''),
+            priority=serializer.validated_data.get('priority', 'routine'),
+            added_by=request.user,
+        )
+
+        output = TriageQueueSerializer(entry)
+        headers = self.get_success_headers(output.data)
+        return Response(output.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=['post'])
+    def triage(self, request, pk=None):
+        entry = self.get_object()
+        priority = request.data.get('priority', entry.priority)
+        notes = request.data.get('notes', '')
+        try:
+            entry = TriageService.triage_patient(entry, priority, notes, triaged_by=request.user)
+            return Response({"status": entry.status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def assign(self, request, pk=None):
+        entry = self.get_object()
+        clinic_id = request.data.get('clinic_id')
+        appointment_type_id = request.data.get('appointment_type_id')
+        start_time_raw = request.data.get('start_time')
+        practitioner_id = request.data.get('practitioner_id')
+
+        if not clinic_id or not appointment_type_id or not start_time_raw:
+            return Response(
+                {"error": "clinic_id, appointment_type_id, and start_time are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        clinic = Clinic.objects.filter(id=clinic_id).first()
+        if not clinic:
+            return Response({"error": "Clinic not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        facility = get_user_facility(request)
+        if not facility or clinic.facility_id != facility.id:
+            raise PermissionDenied("Clinic does not belong to the active facility.")
+
+        appointment_type = AppointmentType.objects.filter(id=appointment_type_id).first()
+        if not appointment_type:
+            return Response({"error": "Appointment type not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        start_time = parse_datetime(start_time_raw)
+        if not start_time:
+            return Response({"error": "Invalid start_time"}, status=status.HTTP_400_BAD_REQUEST)
+        if timezone.is_naive(start_time):
+            start_time = timezone.make_aware(start_time)
+
+        practitioner = None
+        if practitioner_id:
+            from apps.users.models import PractitionerProfile
+            practitioner = PractitionerProfile.objects.filter(id=practitioner_id).first()
+            if not practitioner:
+                return Response({"error": "Practitioner not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            appointment = TriageService.assign_to_clinic(
+                entry,
+                clinic,
+                appointment_type,
+                start_time,
+                practitioner=practitioner,
+                assigned_by=request.user,
+            )
+            return Response({
+                "status": entry.status,
+                "appointment_id": str(appointment.id),
+            })
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        entry = self.get_object()
+        try:
+            entry = TriageService.cancel(entry)
+            return Response({"status": entry.status})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

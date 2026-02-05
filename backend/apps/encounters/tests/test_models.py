@@ -24,10 +24,12 @@ class TestEncounterModel:
 
         encounter = Encounter.objects.create(
             patient=patient,
+            facility=patient.facility,
             practitioner=practitioner,
             encounter_type='outpatient',
             status='in-progress',
-            reason='Check-up'
+            reason='Check-up',
+            admitted_by_team=None,
         )
 
         assert encounter.id is not None
@@ -46,6 +48,7 @@ class TestEncounterModel:
         assert encounter.practitioner is not None
         assert encounter.status == 'in-progress'
         assert encounter.encounter_type == 'outpatient'
+        assert encounter.admitted_by_team_id == encounter.primary_team_id
 
     def test_str_representation(self):
         """Test the string representation of an encounter."""

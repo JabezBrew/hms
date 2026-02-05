@@ -1,3 +1,13 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -12,25 +22,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  X,
-  Shield,
-  Plus,
-  Edit,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Calendar,
-  Building,
-  AlertTriangle,
-} from 'lucide-react';
+
 import {
   usePatientInsurance,
   useDeletePatientInsurance,
-} from '@/hooks/useBillingQueries';
+} from '@/features/billing/hooks';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
-import { format, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
 import { PatientInsuranceFormSlideOver } from '@/components/billing';
 
 /**

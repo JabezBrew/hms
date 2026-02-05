@@ -4,20 +4,23 @@ Encounter services for automatic encounter management.
 This module provides utilities for finding or creating active encounters
 for patients, ensuring clinical entries are always properly linked.
 """
+from datetime import datetime, time, timedelta
 from django.utils import timezone
 from django.db import transaction
 
-from .models import Encounter, Admission
+from apps.encounters.models import Encounter
+from apps.organization.services import UnitHierarchyService
+from .models import Admission
 
 
 def get_or_create_active_encounter(patient, practitioner=None, encounter_type=None, reason=None):
     """
-    Find an active encounter for a patient or create a new one.
+    Find an active encounter for a patient.
 
     Logic:
     1. If patient has an active inpatient admission, return that admission's encounter
     2. If patient has an active outpatient encounter today (same practitioner if provided), return it
-    3. Otherwise, create a new encounter
+    3. Otherwise, raise an error (explicit check-in required)
 
     Args:
         patient: PatientProfile instance
@@ -28,7 +31,9 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     Returns:
         tuple: (Encounter instance, bool created)
     """
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
 
     # Rule 1: Check for active inpatient admission
     # If patient is admitted, ALL entries should go to the admission's encounter
@@ -46,7 +51,12 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
         with transaction.atomic():
             encounter = Encounter.objects.create(
                 patient=patient,
+                facility=patient.facility,
                 practitioner=active_admission.admitting_doctor,
+                department=UnitHierarchyService.get_department_unit_for_core_department(
+                    active_admission.bed.ward.department if active_admission.bed else None,
+                    facility=patient.facility
+                ),
                 encounter_type='inpatient',
                 status='in-progress',
                 start_time=active_admission.admission_date,
@@ -54,6 +64,13 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
                 reason=reason or f"Inpatient admission",
                 location=active_admission.bed.ward.name if active_admission.bed else None,
             )
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(encounter=encounter, use_roster=True, context='inpatient')
+            if active_admission.bed:
+                TeamAssignmentService.reassign_team_on_bed_assignment(
+                    encounter=encounter,
+                    bed=active_admission.bed
+                )
             return encounter, True
 
     # Rule 2: Check for active outpatient/emergency encounter today
@@ -61,7 +78,8 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     filters = {
         'patient': patient,
         'status': 'in-progress',
-        'start_time__date': today,
+        'start_time__gte': start_of_day,
+        'start_time__lt': end_of_day,
         'encounter_type__in': ['outpatient', 'emergency'],
     }
 
@@ -79,17 +97,10 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     if any_encounter:
         return any_encounter, False
 
-    # Rule 3: Create new encounter
-    with transaction.atomic():
-        encounter = Encounter.objects.create(
-            patient=patient,
-            practitioner=practitioner,
-            encounter_type=encounter_type or 'outpatient',
-            status='in-progress',
-            start_time=timezone.now(),
-            reason=reason or 'Clinical documentation',
-        )
-        return encounter, True
+    # Rule 3: Do not auto-create encounters
+    raise ValueError(
+        "No active encounter found for patient. Start a visit/check-in before creating clinical entries."
+    )
 
 
 def get_active_encounter_for_patient(patient):
@@ -104,7 +115,9 @@ def get_active_encounter_for_patient(patient):
     Returns:
         Encounter instance or None
     """
-    today = timezone.now().date()
+    now = timezone.now()
+    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
+    end_of_day = start_of_day + timedelta(days=1)
 
     # Check for active inpatient admission first
     active_admission = Admission.objects.filter(
@@ -119,7 +132,8 @@ def get_active_encounter_for_patient(patient):
     return Encounter.objects.filter(
         patient=patient,
         status='in-progress',
-        start_time__date=today,
+        start_time__gte=start_of_day,
+        start_time__lt=end_of_day,
         encounter_type__in=['outpatient', 'emergency'],
     ).first()
 
@@ -129,6 +143,7 @@ def ensure_encounter_for_entry(patient, practitioner=None, encounter_id=None, re
     Ensure an entry has an encounter to link to.
 
     This is the main function to use when creating clinical entries (notes, vitals, prescriptions).
+    Explicit check-in is required for outpatient encounters.
 
     Args:
         patient: PatientProfile instance

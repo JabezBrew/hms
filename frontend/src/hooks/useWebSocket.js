@@ -6,8 +6,12 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { AlertWebSocket, VitalsWebSocket } from '@/lib/websocket';
-import { useAuth } from '@/contexts/auth';
+import { AlertWebSocket, VitalsWebSocket, NotificationWebSocket } from '@/lib/websocket';
+import { useAuth } from '@/lib/auth';
+import { useQueryClient } from '@tanstack/react-query';
+import { useLatest } from '@/hooks/useLatest';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { referralKeys } from '@/hooks/useReferralQueries';
 
 /**
  * Hook for subscribing to real-time nursing alerts.
@@ -34,6 +38,11 @@ export function useAlertWebSocket(options = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [connectionError, setConnectionError] = useState(null);
+
+  // Use refs for callbacks to prevent effect re-runs
+  const onAlertRef = useLatest(onAlert);
+  const onAcknowledgedRef = useLatest(onAcknowledged);
+  const onEscalatedRef = useLatest(onEscalated);
 
   // Create WebSocket instance
   useEffect(() => {
@@ -62,10 +71,10 @@ export function useAlertWebSocket(options = {}) {
       setConnectionError(new Error('Max reconnection attempts reached'));
     });
 
-    // Alert handlers
+    // Alert handlers - use refs to get latest callback without re-running effect
     ws.on('alert.new', ({ alert }) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 50)); // Keep last 50
-      onAlert?.(alert);
+      onAlertRef.current?.(alert);
     });
 
     ws.on('alert.acknowledged', ({ alert_id, acknowledged_by }) => {
@@ -74,14 +83,14 @@ export function useAlertWebSocket(options = {}) {
           a.id === alert_id ? { ...a, is_acknowledged: true, acknowledged_by } : a
         )
       );
-      onAcknowledged?.({ alert_id, acknowledged_by });
+      onAcknowledgedRef.current?.({ alert_id, acknowledged_by });
     });
 
     ws.on('alert.escalated', ({ alert, previous_severity }) => {
       setAlerts((prev) =>
         prev.map((a) => (a.id === alert.id ? alert : a))
       );
-      onEscalated?.({ alert, previous_severity });
+      onEscalatedRef.current?.({ alert, previous_severity });
     });
 
     // Connect
@@ -92,7 +101,7 @@ export function useAlertWebSocket(options = {}) {
       ws.disconnect();
       wsRef.current = null;
     };
-  }, [enabled, isAuthenticated, token, wardId, onAlert, onAcknowledged, onEscalated]);
+  }, [enabled, isAuthenticated, token, wardId, onAlertRef, onAcknowledgedRef, onEscalatedRef]);
 
   // Methods
   const subscribeToWard = useCallback((newWardId) => {
@@ -142,6 +151,10 @@ export function useVitalsWebSocket(patientId, options = {}) {
   const [latestVitals, setLatestVitals] = useState(null);
   const [vitalsHistory, setVitalsHistory] = useState([]);
 
+  // Use refs for callbacks to prevent effect re-runs
+  const onVitalsRef = useLatest(onVitals);
+  const onCriticalRef = useLatest(onCritical);
+
   useEffect(() => {
     if (!enabled || !isAuthenticated || !token || !patientId) {
       return;
@@ -161,14 +174,14 @@ export function useVitalsWebSocket(patientId, options = {}) {
     ws.on('vitals.new', ({ vitals }) => {
       setLatestVitals(vitals);
       setVitalsHistory((prev) => [vitals, ...prev].slice(0, 20)); // Keep last 20
-      onVitals?.(vitals);
+      onVitalsRef.current?.(vitals);
     });
 
     ws.on('vitals.critical', ({ vitals, alert }) => {
       setLatestVitals(vitals);
       setVitalsHistory((prev) => [vitals, ...prev].slice(0, 20));
-      onVitals?.(vitals);
-      onCritical?.({ vitals, alert });
+      onVitalsRef.current?.(vitals);
+      onCriticalRef.current?.({ vitals, alert });
     });
 
     ws.connect();
@@ -177,7 +190,7 @@ export function useVitalsWebSocket(patientId, options = {}) {
       ws.disconnect();
       wsRef.current = null;
     };
-  }, [enabled, isAuthenticated, token, patientId, onVitals, onCritical]);
+  }, [enabled, isAuthenticated, token, patientId, onVitalsRef, onCriticalRef]);
 
   return {
     isConnected,
@@ -189,23 +202,11 @@ export function useVitalsWebSocket(patientId, options = {}) {
 /**
  * Hook for checking WebSocket support and connection status.
  * Useful for showing connection indicators in the UI.
+ * Uses shared online status listener to avoid duplicate event handlers.
  */
 export function useWebSocketStatus() {
   const [isSupported] = useState(() => 'WebSocket' in window);
-  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  const isOnline = useOnlineStatus();
 
   return {
     isSupported,
@@ -213,8 +214,99 @@ export function useWebSocketStatus() {
   };
 }
 
+/**
+ * Hook for subscribing to real-time referral notifications.
+ *
+ * @param {Object} options Configuration options
+ * @param {boolean} options.enabled - Whether to connect (default: true)
+ * @param {Function} options.onNotification - Callback when new notification received
+ *
+ * @returns {Object} WebSocket state and notifications
+ *
+ * @example
+ * const { isConnected, notifications } = useNotificationWebSocket({
+ *   onNotification: (notification) => toast.info('New referral notification')
+ * });
+ */
+export function useNotificationWebSocket(options = {}) {
+  const { enabled = true, onNotification } = options;
+  const { token, isAuthenticated, user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const wsRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [connectionError, setConnectionError] = useState(null);
+
+  // Use ref for callback to prevent effect re-runs
+  const onNotificationRef = useLatest(onNotification);
+
+  // Only enable for doctors
+  const shouldConnect = enabled && isAuthenticated && token && ['doctor', 'inpatient_doctor'].includes(user?.role);
+
+  useEffect(() => {
+    if (!shouldConnect) {
+      return;
+    }
+
+    const ws = new NotificationWebSocket(token);
+    wsRef.current = ws;
+
+    // Connection handlers
+    ws.on('connection.open', () => {
+      setIsConnected(true);
+      setConnectionError(null);
+    });
+
+    ws.on('connection.close', () => {
+      setIsConnected(false);
+    });
+
+    ws.on('connection.error', ({ error }) => {
+      setConnectionError(error);
+    });
+
+    ws.on('connection.failed', () => {
+      setConnectionError(new Error('Max reconnection attempts reached'));
+    });
+
+    // Notification handler - use ref to get latest callback without re-running effect
+    ws.on('notification.new', ({ notification }) => {
+      setNotifications((prev) => [notification, ...prev].slice(0, 50)); // Keep last 50
+
+      // Invalidate React Query cache to refresh counts
+      queryClient.invalidateQueries({ queryKey: referralKeys.notifications() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.notificationCount() });
+      queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
+
+      onNotificationRef.current?.(notification);
+    });
+
+    // Connect
+    ws.connect();
+
+    // Cleanup on unmount
+    return () => {
+      ws.disconnect();
+      wsRef.current = null;
+    };
+  }, [shouldConnect, token, queryClient, onNotificationRef]);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  return {
+    isConnected,
+    connectionError,
+    notifications,
+    clearNotifications,
+  };
+}
+
 export default {
   useAlertWebSocket,
   useVitalsWebSocket,
   useWebSocketStatus,
+  useNotificationWebSocket,
 };

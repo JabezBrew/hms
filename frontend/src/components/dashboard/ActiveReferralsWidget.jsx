@@ -1,12 +1,17 @@
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import React from 'react';
-import { Send, AlertCircle, Clock, Eye, Building2 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format } from 'date-fns';
-import { useReferralInbox, useReferralsSent } from '@/hooks/useReferralQueries';
+import format from 'date-fns/format';
+import { useReferralInbox, useReferralsSent } from '@/features/referrals/hooks';
 import { useNavigate } from 'react-router-dom';
 
 /**

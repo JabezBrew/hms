@@ -1,18 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { drugSafetyApi } from '@/lib/api/drug-safety';
+import { drugSafetyApi } from '@/shared/api/drugSafety';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const drugSafetyKeyFactory = createKeyFactory('drug-safety');
+
 export const drugSafetyKeys = {
-  all: ['drug-safety'],
-  allergies: () => [...drugSafetyKeys.all, 'allergies'],
-  allergiesList: (filters) => [...drugSafetyKeys.allergies(), 'list', { filters }],
-  allergy: (id) => [...drugSafetyKeys.allergies(), id],
-  patientAllergies: (patientId) => [...drugSafetyKeys.allergies(), 'patient', patientId],
-  alerts: () => [...drugSafetyKeys.all, 'alerts'],
-  alertsList: (filters) => [...drugSafetyKeys.alerts(), 'list', { filters }],
-  alert: (id) => [...drugSafetyKeys.alerts(), id],
-  drugSearch: (query) => [...drugSafetyKeys.all, 'search', query],
-  drugForms: (rxcui) => [...drugSafetyKeys.all, 'forms', rxcui],
+  all: drugSafetyKeyFactory.all,
+  allergies: () => keyWith('drug-safety', 'allergies'),
+  allergiesList: (filters) => keyWith('drug-safety', 'allergies', 'list', { filters }),
+  allergy: (id) => keyWith('drug-safety', 'allergies', id),
+  patientAllergies: (patientId) => keyWith('drug-safety', 'allergies', 'patient', patientId),
+  alerts: () => keyWith('drug-safety', 'alerts'),
+  alertsList: (filters) => keyWith('drug-safety', 'alerts', 'list', { filters }),
+  alert: (id) => keyWith('drug-safety', 'alerts', id),
+  drugSearch: (query) => keyWith('drug-safety', 'search', query),
+  drugForms: (rxcui) => keyWith('drug-safety', 'forms', rxcui),
 };
 
 /**

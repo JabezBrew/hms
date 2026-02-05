@@ -2,10 +2,12 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import (
+    Appointment,
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
     ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 )
-from ..users.serializers import PractitionerProfileSerializer
+from ..users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
+from apps.core.security import get_user_facility
 
 
 class AppointmentTypeSerializer(serializers.ModelSerializer):
@@ -20,6 +22,63 @@ class AppointmentTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
+class AppointmentListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for appointment lists."""
+    patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
+    practitioner_name = serializers.CharField(source='practitioner.staff.user.get_full_name', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+
+    class Meta:
+        model = Appointment
+        fields = [
+            'id', 'patient', 'patient_name', 'practitioner', 'practitioner_name',
+            'clinic', 'clinic_name', 'appointment_type', 'status',
+            'start_time', 'end_time', 'source'
+        ]
+
+
+class AppointmentSerializer(serializers.ModelSerializer):
+    """Serializer for appointment detail and create/update."""
+    patient_details = PatientProfileSerializer(source='patient', read_only=True)
+    practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+
+    class Meta:
+        model = Appointment
+        fields = '__all__'
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def validate(self, data):
+        instance = getattr(self, 'instance', None)
+        start_time = data.get('start_time', getattr(instance, 'start_time', None))
+        end_time = data.get('end_time', getattr(instance, 'end_time', None))
+        practitioner = data.get('practitioner', getattr(instance, 'practitioner', None))
+        patient = data.get('patient', getattr(instance, 'patient', None))
+
+        if start_time and end_time and start_time >= end_time:
+            raise serializers.ValidationError({'end_time': 'End time must be after start time.'})
+
+        if practitioner and start_time and end_time:
+            from .services import ConflictPreventionService, AvailabilityService
+            request = self.context.get('request')
+            facility = get_user_facility(request) if request else None
+            exclude_id = str(instance.id) if instance else None
+            if not AvailabilityService.is_slot_available(practitioner, start_time, end_time, facility=facility):
+                raise serializers.ValidationError({'start_time': 'Practitioner is not available for that time.'})
+            if not ConflictPreventionService.check_practitioner_availability(
+                practitioner.id, start_time, end_time, exclude_appointment_id=exclude_id
+            ):
+                raise serializers.ValidationError({'practitioner': 'Practitioner already has an appointment during this time.'})
+
+        if patient and start_time and end_time:
+            from .services import ConflictPreventionService
+            exclude_id = str(instance.id) if instance else None
+            if not ConflictPreventionService.check_patient_availability(
+                patient.id, start_time, end_time, exclude_appointment_id=exclude_id
+            ):
+                raise serializers.ValidationError({'patient': 'Patient already has an appointment during this time.'})
+
+        return data
 
 
 class AppointmentFHIRMappingSerializer(serializers.ModelSerializer):
@@ -30,7 +89,7 @@ class AppointmentFHIRMappingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AppointmentFHIRMapping
-        fields = ['id', 'appointment_type', 'appointment_type_details', 
+        fields = ['id', 'appointment', 'appointment_type', 'appointment_type_details', 
                   'fhir_appointment_id', 'fhir_schedule_id', 'fhir_slot_id', 
                   'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']

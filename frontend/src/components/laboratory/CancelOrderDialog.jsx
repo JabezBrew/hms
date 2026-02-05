@@ -1,3 +1,5 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState } from "react";
 import {
   AlertDialog,
@@ -11,8 +13,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import { useCancelLabOrder } from "@/hooks/useLabQueries";
+
+import { useCancelLabOrder } from "@/features/laboratory/hooks";
 import { toast } from "sonner";
 
 /**

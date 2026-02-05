@@ -5,6 +5,20 @@
  * and display settings. Chronicle Design System styling.
  */
 
+import Hash from 'lucide-react/dist/esm/icons/hash.js';
+import List from 'lucide-react/dist/esm/icons/list.js';
+import Type from 'lucide-react/dist/esm/icons/type.js';
+import AlignLeft from 'lucide-react/dist/esm/icons/align-left.js';
+import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
+import Columns2 from 'lucide-react/dist/esm/icons/columns-2.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ToggleLeft from 'lucide-react/dist/esm/icons/toggle-left.js';
+import Gauge from 'lucide-react/dist/esm/icons/gauge.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,22 +43,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Hash,
-  List,
-  Type,
-  AlignLeft,
-  Calculator,
-  Columns2,
-  Clock,
-  ToggleLeft,
-  Gauge,
-  Plus,
-  Trash2,
-  AlertTriangle,
-  Loader2,
-  Check,
-} from "lucide-react";
 
 // Field type options with icons
 const FIELD_TYPES = [

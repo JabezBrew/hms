@@ -57,4 +57,15 @@ echo "Press Ctrl+C to stop all services"
 echo ""
 
 # Start all processes using honcho
+# Try to find if any process is using port 8000 and kill it to resolve port conflict
+PORT=8000
+PID=$(lsof -ti tcp:$PORT)
+if [ ! -z "$PID" ]; then
+    echo "⚠️ Port $PORT is in use by process $PID. Stopping it..."
+    kill -9 $PID
+    echo "   Process on port $PORT stopped."
+else
+    echo "Port $PORT is free."
+fi
+
 honcho start

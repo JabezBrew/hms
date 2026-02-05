@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 from typing import Dict, Any, Optional, List
 import logging
+from apps.organization.services import UnitHierarchyService
 
 def _extract_string_value(value, preferred_keys=None) -> str:
     """
@@ -472,7 +473,7 @@ class ConsultationEngine(BaseWorkflowEngine):
         return {
             'success': True,
             'workflow_id': workflow.id,
-            'encounter_id': encounter_id,
+            'encounter_id': str(encounter.id),
             'artifacts': artifacts,
         }
 
@@ -636,15 +637,24 @@ class WardRoundEngine(BaseWorkflowEngine):
     @staticmethod
     @transaction.atomic
     def complete(workflow, final_data) -> Dict[str, Any]:
-        """Complete ward round and create progress note"""
-        from apps.clinical_notes.models import NoteTemplate
+        """Complete ward round, create progress note, and process orders"""
+        from apps.clinical_notes.models import NoteTemplate, Prescription
         from apps.users.models import PractitionerProfile
         from apps.encounters.services import get_or_create_active_encounter
+        from apps.laboratory.models import (
+            LabOrder, LabOrderTest, LabTestCatalog,
+            LabOrderPriority, LabOrderStatus
+        )
 
         ward_round_data = workflow.ward_round_data
 
+        # Extract orders_placed before setting attributes
+        orders_placed = final_data.get('orders_placed', {}) if isinstance(final_data, dict) else {}
+
         # Update final data
         for field, value in final_data.items():
+            if field == 'orders_placed':
+                continue
             if hasattr(ward_round_data, field):
                 setattr(ward_round_data, field, value)
         ward_round_data.save()
@@ -734,11 +744,108 @@ class WardRoundEngine(BaseWorkflowEngine):
         if note:
             artifacts.append({'type': 'note', 'id': str(note.id)})
 
+        # Process orders if any
+        orders_created = []
+
+        # Process medication orders (prescriptions)
+        medications = orders_placed.get('medications', [])
+        facility = encounter.facility if encounter and encounter.facility_id else workflow.patient.facility
+        for med_order in medications:
+            if not practitioner:
+                logger.warning(
+                    f"Skipping prescription for ward round {workflow.id}: missing practitioner"
+                )
+                continue
+            try:
+                prescription = Prescription.objects.create(
+                    patient=workflow.patient,
+                    facility=facility,
+                    encounter=encounter,
+                    prescribed_by=practitioner,
+                    medication_name=med_order.get('medication_name', ''),
+                    dosage=med_order.get('dosage', ''),
+                    route=med_order.get('route', 'oral'),
+                    frequency=med_order.get('frequency', ''),
+                    instructions=med_order.get('instructions', ''),
+                    status='active',
+                )
+                orders_created.append({'type': 'prescription', 'id': str(prescription.id)})
+                logger.info(f"Created prescription {prescription.id} from ward round {workflow.id}")
+            except Exception as e:
+                logger.error(f"Failed to create prescription from ward round {workflow.id}: {str(e)}")
+
+        # Process lab orders
+        labs = orders_placed.get('labs', [])
+        if labs:
+            if not practitioner:
+                logger.warning(
+                    f"Skipping lab orders for ward round {workflow.id}: missing practitioner"
+                )
+            else:
+                try:
+                    # Resolve valid tests before creating lab order
+                    resolved_tests = []
+                    has_stat = False
+                    for lab in labs:
+                        test_code = lab.get('test_code', '')
+                        test_name = lab.get('test_name', test_code)
+                        urgency = lab.get('urgency', 'routine')
+
+                        catalog_test = LabTestCatalog.objects.filter(code=test_code, facility=facility).first()
+                        if not catalog_test:
+                            logger.warning(
+                                f"Skipping lab test '{test_code}' for ward round {workflow.id}: not found in catalog"
+                            )
+                            continue
+
+                        resolved_tests.append({
+                            'test': catalog_test,
+                            'notes': test_name if test_name and test_name != catalog_test.name else '',
+                        })
+                        if urgency == 'stat':
+                            has_stat = True
+
+                    if not resolved_tests:
+                        logger.warning(
+                            f"No valid lab tests found for ward round {workflow.id}; lab order skipped"
+                        )
+                    else:
+                        lab_order = LabOrder.objects.create(
+                            patient=workflow.patient,
+                            facility=facility,
+                            encounter=encounter,
+                            ordering_provider=practitioner,
+                            clinical_notes=f"Ward round order - Day {workflow.context_data.get('prep_data', {}).get('admission_days', 'N/A')}",
+                            priority=LabOrderPriority.STAT if has_stat else LabOrderPriority.ROUTINE,
+                            status=LabOrderStatus.ORDERED,
+                        )
+                        for resolved in resolved_tests:
+                            LabOrderTest.objects.create(
+                                order=lab_order,
+                                facility=facility,
+                                test=resolved['test'],
+                                status=LabOrderStatus.ORDERED,
+                                notes=resolved['notes'],
+                            )
+                        orders_created.append({'type': 'lab_order', 'id': str(lab_order.id)})
+                        logger.info(
+                            f"Created lab order {lab_order.id} with {len(resolved_tests)} tests from ward round {workflow.id}"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to create lab orders from ward round {workflow.id}: {str(e)}")
+
+        # Nursing orders are stored in the note but not as separate entities for now
+        nursing_orders = orders_placed.get('nursing', [])
+        if nursing_orders:
+            logger.info(f"Ward round {workflow.id} includes {len(nursing_orders)} nursing orders (documented in note)")
+
         return {
             'success': True,
             'workflow_id': str(workflow.id),
             'encounter_id': str(encounter.id),
+            'note_id': str(note.id) if note else None,
             'artifacts': artifacts,
+            'orders_created': orders_created,
         }
 
 
@@ -864,10 +971,29 @@ class AdmissionEngine(BaseWorkflowEngine):
                 logger.warning(f"No practitioner profile found for user {workflow.user.id}")
                 practitioner = None
 
+        # Resolve primary team from ward allocation when available
+        admitting_practitioner = practitioner
+        primary_team = None
+        if admission_data.ward_id:
+            try:
+                from apps.organization.models import UnitWardAllocation
+
+                ward = Bed.objects.get(id=admission_data.bed_id).ward if admission_data.bed_id else None
+                if ward:
+                    unit_allocation = UnitWardAllocation.objects.filter(
+                        ward=ward, is_active=True
+                    ).select_related('unit').first()
+
+                    if unit_allocation:
+                        primary_team = unit_allocation.unit
+            except Exception as e:
+                logger.warning(f"Could not resolve primary team: {e}")
+
         # Create Admission record
         admission = Admission.objects.create(
             patient=workflow.patient,
-            admitting_doctor=practitioner,
+            admitting_doctor=admitting_practitioner,
+            primary_team=primary_team,
             ward_id=admission_data.ward_id,
             bed_id=admission_data.bed_id,
             admission_date=timezone.now(),
@@ -891,15 +1017,36 @@ class AdmissionEngine(BaseWorkflowEngine):
             ['admission_reason', 'reason', 'chief_complaint']
         )
 
+        department_unit = None
+        if admission.bed and admission.bed.ward and admission.bed.ward.department:
+            department_unit = UnitHierarchyService.get_department_unit_for_core_department(
+                admission.bed.ward.department,
+                facility=workflow.patient.facility
+            )
+
         encounter = Encounter.objects.create(
             patient=workflow.patient,
-            practitioner=practitioner,
+            facility=workflow.patient.facility,
+            practitioner=admitting_practitioner,
+            department=department_unit,
             encounter_type='inpatient',
             status='in-progress',
             start_time=timezone.now(),
             reason=reason,
             admission=admission,
         )
+        from apps.organization.services import TeamAssignmentService
+        TeamAssignmentService.assign_initial_team(
+            encounter=encounter,
+            team=primary_team,
+            use_roster=True,
+            context='inpatient'
+        )
+        if admission.bed:
+            TeamAssignmentService.reassign_team_on_bed_assignment(
+                encounter=encounter,
+                bed=admission.bed
+            )
 
         workflow.encounter_id = str(encounter.id)
 

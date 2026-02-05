@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
-import { format, addDays, startOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import format from 'date-fns/format';
+import addDays from 'date-fns/addDays';
+import startOfDay from 'date-fns/startOfDay';
+import startOfMonth from 'date-fns/startOfMonth';
+import endOfMonth from 'date-fns/endOfMonth';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDebounce } from '@/hooks/use-debounce';
-import { useAvailableSlots } from '@/hooks/useAppointmentQueries';
+import { useAvailableSlots } from '@/features/appointments/hooks/useAppointmentQueries';
 
 import DoctorAvailabilityCalendarView from './DoctorAvailabilityCalendar';
 import TimeSlotsGrid from './TimeSlotsGrid';

@@ -1,18 +1,17 @@
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import HeartPulse from 'lucide-react/dist/esm/icons/heart-pulse.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Bath from 'lucide-react/dist/esm/icons/bath.js';
+import Tv from 'lucide-react/dist/esm/icons/tv.js';
+import Sun from 'lucide-react/dist/esm/icons/sun.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Accessibility from 'lucide-react/dist/esm/icons/accessibility.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import React, { useState } from 'react';
-import {
-  Wind,
-  Droplets,
-  HeartPulse,
-  Activity,
-  Bath,
-  Tv,
-  Sun,
-  Bell,
-  Shield,
-  Accessibility,
-  X,
-} from 'lucide-react';
-import { useAmenities } from '@/hooks/useWardQueries';
+
+import { useAmenities } from '@/features/wards/hooks/useWardQueries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';

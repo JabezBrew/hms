@@ -1,8 +1,11 @@
 import uuid
+import uuid
+
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
-from ..users.models import PractitionerProfile
+from ..users.models import PractitionerProfile, PatientProfile
+from ..organization.models import Clinic
 
 User = get_user_model()
 
@@ -37,6 +40,80 @@ class AppointmentType(models.Model):
         return self.name
 
 
+class Appointment(models.Model):
+    """Local appointment record (source of truth)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='appointments'
+    )
+    patient = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='appointments'
+    )
+    practitioner = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='appointments'
+    )
+    clinic = models.ForeignKey(
+        Clinic,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='appointments'
+    )
+    appointment_type = models.ForeignKey(
+        AppointmentType,
+        on_delete=models.PROTECT,
+        related_name='appointments'
+    )
+
+    STATUS_CHOICES = (
+        ('proposed', 'Proposed'),
+        ('pending', 'Pending'),
+        ('booked', 'Booked'),
+        ('arrived', 'Arrived'),
+        ('fulfilled', 'Fulfilled'),
+        ('cancelled', 'Cancelled'),
+        ('noshow', 'No Show'),
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='booked')
+
+    SOURCE_CHOICES = (
+        ('scheduled', 'Scheduled'),
+        ('walk_in', 'Walk-In'),
+    )
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='scheduled')
+
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    reason = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    slot_reference = models.CharField(max_length=100, blank=True, null=True)
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_appointments')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_appointments')
+
+    class Meta:
+        ordering = ['start_time']
+        indexes = [
+            models.Index(fields=['facility', 'status']),
+            models.Index(fields=['patient', 'status']),
+            models.Index(fields=['practitioner', 'status']),
+            models.Index(fields=['clinic', 'status']),
+            models.Index(fields=['start_time']),
+        ]
+
+    def __str__(self):
+        return f"{self.patient} @ {self.start_time.strftime('%Y-%m-%d %H:%M')}"
 
 
 class AppointmentFHIRMapping(models.Model):
@@ -44,6 +121,13 @@ class AppointmentFHIRMapping(models.Model):
     Mapping between local appointment data and FHIR resources.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appointment = models.OneToOneField(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='fhir_mapping',
+        null=True,
+        blank=True
+    )
     appointment_type = models.ForeignKey(AppointmentType, on_delete=models.CASCADE, related_name='fhir_mappings')
 
     # FHIR resource references
@@ -127,8 +211,20 @@ class ScheduleFHIRMapping(models.Model):
 class RecurringSchedule(models.Model):
     """
     Model for defining recurring practitioner availability schedules.
+
+    DEPRECATION NOTE: This model is being deprecated in favor of roster-based availability
+    via RosterEntry + DepartmentDutyType with category='clinic'. During the migration period,
+    both systems will be supported, with roster taking precedence.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='recurring_schedules',
+        help_text="Facility where this schedule applies"
+    )
     name = models.CharField(max_length=100)
     practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='recurring_schedules')
     days_of_week = ArrayField(models.IntegerField(), help_text="List of days (0=Monday, 6=Sunday)")
@@ -140,6 +236,25 @@ class RecurringSchedule(models.Model):
     breaks = models.JSONField(default=list, blank=True, help_text="List of break times, e.g. [{'start': '12:00', 'end': '13:00'}]")
     is_active = models.BooleanField(default=True)
 
+    # Migration tracking fields (for deprecation)
+    migrated_to_roster = models.BooleanField(
+        default=False,
+        help_text='Whether this schedule has been migrated to roster-based availability'
+    )
+    migrated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When this schedule was migrated to roster-based availability'
+    )
+    roster_duty_type = models.ForeignKey(
+        'organization.DepartmentDutyType',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='migrated_schedules',
+        help_text='The duty type this schedule was migrated to'
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -149,8 +264,10 @@ class RecurringSchedule(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
+            models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
             models.Index(fields=['days_of_week']),
+            models.Index(fields=['migrated_to_roster']),
         ]
 
     def __str__(self):
@@ -163,6 +280,14 @@ class BlockedTime(models.Model):
     Used to block specific time ranges that override recurring schedules.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
+        related_name='blocked_times',
+        help_text="Facility where this blocked time applies"
+    )
     practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='blocked_times')
     date = models.DateField(help_text="Date to block")
     start_time = models.TimeField(help_text="Start time of blocked period")
@@ -179,6 +304,7 @@ class BlockedTime(models.Model):
     class Meta:
         ordering = ['date', 'start_time']
         indexes = [
+            models.Index(fields=['facility', 'date']),
             models.Index(fields=['practitioner', 'date']),
             models.Index(fields=['date']),
         ]

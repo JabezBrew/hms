@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { toast } from 'sonner';
 
 // Query keys
+const workflowKeyFactory = createKeyFactory('clinical-workflows');
+
 export const workflowKeys = {
-  all: ['clinical-workflows'],
-  details: () => [...workflowKeys.all, 'detail'],
-  detail: (id) => [...workflowKeys.details(), id],
-  drafts: (type) => [...workflowKeys.all, 'drafts', type],
+  all: workflowKeyFactory.all,
+  details: workflowKeyFactory.details,
+  detail: (id) => workflowKeyFactory.detail(id),
+  drafts: (type) => keyWith('clinical-workflows', 'drafts', type),
 };
 
 /**

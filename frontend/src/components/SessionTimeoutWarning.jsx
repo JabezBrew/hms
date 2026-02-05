@@ -1,5 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
+import { getAuthValue } from '@/lib/auth-storage';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Clock } from 'lucide-react';
 
 /**
  * SessionTimeoutWarning component
@@ -30,18 +31,25 @@ export function SessionTimeoutWarning() {
 
   // Activity tracking
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const lastActivityUpdateRef = useRef(Date.now());
 
-  // Get session start time from localStorage
+  // Get session start time from local storage
   const getSessionStartTime = () => {
-    const sessionStart = localStorage.getItem("sessionStartTime");
+    const sessionStart = getAuthValue("sessionStartTime");
     return sessionStart ? parseInt(sessionStart, 10) : Date.now();
   };
 
   // Track user activity
   const updateActivity = useCallback(() => {
-    setLastActivity(Date.now());
+    const now = Date.now();
+    // Throttle high-frequency events (e.g., scroll) to reduce render churn.
+    if (now - lastActivityUpdateRef.current < 5000 && !showWarning) {
+      return;
+    }
+    lastActivityUpdateRef.current = now;
+    setLastActivity(now);
     setShowWarning(false);
-  }, []);
+  }, [showWarning]);
 
   // Handle user extending session
   const handleExtendSession = useCallback(() => {
@@ -49,11 +57,12 @@ export function SessionTimeoutWarning() {
     setShowWarning(false);
   }, [updateActivity]);
 
-  // Handle session timeout - use local-only logout for session timeouts
+  // Handle session timeout - notify backend to revoke the session
   const handleTimeout = useCallback(() => {
     setShowWarning(false);
-    // Use local-only logout since token is likely expired
-    logout(true);
+    // Try to notify backend even if token may be expired - backend logout
+    // endpoint allows unauthenticated calls and will use the refresh cookie
+    logout(false);
   }, [logout]);
 
   // Setup activity listeners
@@ -61,14 +70,18 @@ export function SessionTimeoutWarning() {
     if (!isAuthenticated) return;
 
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    // Events that benefit from passive listeners for better scroll performance
+    const passiveEvents = ['scroll', 'touchstart', 'wheel'];
 
     events.forEach((event) => {
-      window.addEventListener(event, updateActivity);
+      const options = passiveEvents.includes(event) ? { passive: true } : undefined;
+      window.addEventListener(event, updateActivity, options);
     });
 
     return () => {
       events.forEach((event) => {
-        window.removeEventListener(event, updateActivity);
+        const options = passiveEvents.includes(event) ? { passive: true } : undefined;
+        window.removeEventListener(event, updateActivity, options);
       });
     };
   }, [isAuthenticated, updateActivity]);
@@ -77,7 +90,7 @@ export function SessionTimeoutWarning() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const checkTimeout = setInterval(() => {
+    const evaluateTimeout = () => {
       const now = Date.now();
       const timeSinceActivity = now - lastActivity;
       const sessionStartTime = getSessionStartTime();
@@ -117,7 +130,13 @@ export function SessionTimeoutWarning() {
       if (!isSessionValid()) {
         handleTimeout();
       }
-    }, 1000);
+    };
+
+    // Run one immediate check so invalid/expired sessions are handled
+    // without waiting for the first polling interval.
+    evaluateTimeout();
+
+    const checkTimeout = setInterval(evaluateTimeout, showWarning ? 1000 : 30000);
 
     return () => clearInterval(checkTimeout);
   }, [isAuthenticated, lastActivity, handleTimeout, showWarning, timeoutType, isSessionValid, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT, WARNING_TIME]);

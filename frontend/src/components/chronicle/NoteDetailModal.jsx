@@ -1,20 +1,22 @@
-import { useState } from "react";
+import XIcon from 'lucide-react/dist/esm/icons/x.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import History from 'lucide-react/dist/esm/icons/history.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import { lazy, Suspense, useState } from "react";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { XIcon, Pencil, History } from "lucide-react";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import {
-  FileText,
-  Pill,
-  TestTube,
-  Activity,
-  Stethoscope,
-  ClipboardList,
-  UserPlus,
-  LogOut,
-} from "lucide-react";
-import NoteHistoryModal from "./NoteHistoryModal";
+
+const NoteHistoryModal = lazy(() => import("./NoteHistoryModal"));
 
 /**
  * NoteDetailModal - A generic modal for viewing full note content
@@ -220,13 +222,15 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
       </DialogPrimitive.Portal>
 
       {/* Version History Modal - viewable by anyone who can view the note */}
-      {isEditableNoteType && (
-        <NoteHistoryModal
-          open={historyOpen}
-          onOpenChange={setHistoryOpen}
-          noteId={entry.id}
-          noteTitle={entry.title || config.label}
-        />
+      {isEditableNoteType && historyOpen && (
+        <Suspense fallback={null}>
+          <NoteHistoryModal
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            noteId={entry.id}
+            noteTitle={entry.title || config.label}
+          />
+        </Suspense>
       )}
     </DialogPrimitive.Root>
   );
@@ -376,7 +380,6 @@ const LabResultsDetail = ({ data }) => {
     </div>
   );
 };
-
 
 /**
  * Preferred ordering for clinical note sections

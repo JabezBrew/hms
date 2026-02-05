@@ -5,15 +5,20 @@ This module provides a local-first Encounter API that syncs to FHIR in the backg
 This replaces the previous FHIR-first approach for better performance.
 """
 import uuid as uuid_module
+from datetime import datetime, time, timedelta
+import logging
 
 from rest_framework import viewsets, permissions, status, filters
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from .models import Encounter, Admission
+from ..users.models import PatientProfile
 from .serializers import (
     EncounterSerializer,
     EncounterListSerializer,
@@ -21,7 +26,17 @@ from .serializers import (
     EncounterUpdateSerializer,
 )
 from ..users.permissions import IsAdminOrOwner
-from ..core.pagination import StandardResultsSetPagination
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import (
+    FacilityScopedPermission,
+    get_user_facility,
+    get_accessible_patients_for_clinician,
+    check_clinical_access,
+)
+from apps.users.rbac import IsAdmin, IsDoctor, IsNurse
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def is_valid_uuid(value):
@@ -59,7 +74,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
         - page: Page number (default: 1)
         - page_size: Items per page (default: 100, max: 1000)
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor | IsNurse)]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
@@ -70,6 +85,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Return encounters with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Encounter.objects.none()
+
         queryset = Encounter.objects.select_related(
             'patient',
             'patient__user',
@@ -77,12 +96,23 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner__staff',
             'practitioner__staff__user',
             'admission',
-        ).all()
+        ).filter(facility=facility)
+
+        user = self.request.user
+        if user.user_type in ['doctor', 'nurse'] and getattr(settings, 'TEAM_ACCESS_STRICT', True):
+            accessible_patients = get_accessible_patients_for_clinician(user)
+            queryset = queryset.filter(patient__in=accessible_patients)
 
         # Filter by patient - supports UUID, MRN, or name search
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
             if is_valid_uuid(patient_id):
+                patient = PatientProfile.objects.filter(id=patient_id).first()
+                if not patient:
+                    return queryset.none()
+                if patient.facility_id != facility.id:
+                    raise PermissionDenied("Patient does not belong to the active facility.")
+                check_clinical_access(self.request.user, patient)
                 queryset = queryset.filter(patient_id=patient_id)
             else:
                 # Search by MRN or patient name if not a valid UUID
@@ -106,9 +136,13 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 )
 
         # Filter by date (start_time date)
-        date = self.request.query_params.get('date')
-        if date:
-            queryset = queryset.filter(start_time__date=date)
+        date_value = self.request.query_params.get('date')
+        if date_value:
+            parsed_date = parse_date(date_value)
+            if parsed_date:
+                start_dt = timezone.make_aware(datetime.combine(parsed_date, time.min))
+                end_dt = start_dt + timedelta(days=1)
+                queryset = queryset.filter(start_time__gte=start_dt, start_time__lt=end_dt)
 
         # Filter by status (planned, in-progress, finished, cancelled)
         encounter_status = self.request.query_params.get('status')
@@ -138,7 +172,13 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Set created_by on creation and trigger FHIR sync.
         """
-        encounter = serializer.save(created_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        encounter = serializer.save(created_by=self.request.user, facility=facility)
         # Queue FHIR sync task (async)
         self._queue_fhir_sync(encounter.id)
 

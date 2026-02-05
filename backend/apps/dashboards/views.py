@@ -5,17 +5,25 @@ from django.utils import timezone
 from datetime import timedelta, datetime
 import logging
 
-from apps.appointments.proxies import AppointmentProxy
+from django.core.cache import cache
+
 from apps.wards.models import Admission, Ward, Bed
 from apps.nursing.models import NursingAlert, MedicationAdministration, NursingTask
 from apps.users.models import PatientProfile, PractitionerProfile
-from apps.users.serializers import PatientProfileListSerializer
+from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.core.cache_utils import facility_cache_key_for_code
+from apps.dashboards.tasks import (
+    refresh_admin_dashboard_appointments,
+    refresh_facility_dashboard_appointments,
+    refresh_doctor_dashboard_appointments,
+)
+from .appointment_cache import extract_patient_fhir_id
 
 logger = logging.getLogger(__name__)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_work_dashboard(request):
     """
     Role-based dashboard data
@@ -43,6 +51,24 @@ def my_work_dashboard(request):
         })
 
 
+def _get_cached_appointments(facility_code, cache_key, refresh_fn):
+    cached = cache.get(facility_cache_key_for_code(facility_code, cache_key))
+    if cached is not None:
+        return cached, False
+
+    stale_key = facility_cache_key_for_code(facility_code, f"{cache_key}_stale")
+    stale = cache.get(stale_key)
+
+    lock_key = facility_cache_key_for_code(facility_code, f"{cache_key}_lock")
+    if cache.add(lock_key, "1", timeout=30):
+        refresh_fn()
+
+    if stale is not None:
+        return stale, True
+
+    return [], True
+
+
 def get_doctor_dashboard_data(user, request):
     """
     Doctor dashboard: Today's clinic with scheduled consultations
@@ -56,10 +82,19 @@ def get_doctor_dashboard_data(user, request):
             'completed': [...]
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'doctor',
+            'user_name': user.get_full_name(),
+            'error': 'Facility context is required',
+            'current_patient': None,
+            'upcoming': [],
+            'completed': [],
+        }
+
     # Get today's date
     today = timezone.now().date()
-    today_start = timezone.make_aware(datetime.combine(today, datetime.min.time()))
-    today_end = timezone.make_aware(datetime.combine(today, datetime.max.time()))
 
     # Get practitioner profile
     practitioner_id = None
@@ -76,20 +111,19 @@ def get_doctor_dashboard_data(user, request):
             'completed': [],
         }
 
-    # Fetch today's appointments for this practitioner
+    # Fetch today's appointments (cached; refreshed asynchronously)
     try:
-        # Get all appointments (returns FHIR Bundle)
-        bundle = AppointmentProxy.search(
-            practitioner_id=practitioner_id,
-            date=today.isoformat()
+        cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{today.isoformat()}"
+        all_appointments, is_stale = _get_cached_appointments(
+            facility.code,
+            cache_key,
+            lambda: refresh_doctor_dashboard_appointments.delay(
+                facility_id=str(facility.id),
+                facility_code=facility.code,
+                practitioner_id=practitioner_id,
+                date_str=today.isoformat(),
+            ),
         )
-
-        # Extract appointments from FHIR Bundle
-        all_appointments = []
-        if bundle and 'entry' in bundle:
-            for entry in bundle['entry']:
-                if 'resource' in entry:
-                    all_appointments.append(entry['resource'])
 
         # Separate by status
         current_patient = None
@@ -136,6 +170,7 @@ def get_doctor_dashboard_data(user, request):
             'current_patient': current_patient,
             'upcoming': upcoming[:10],  # Next 10 appointments
             'completed': completed_today[-5:],  # Last 5 completed
+            'appointments_stale': bool(is_stale),
         }
 
     except Exception as e:
@@ -165,6 +200,18 @@ def get_nurse_dashboard_data(user, request):
             'tasks': [...],
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'nurse',
+            'user_name': user.get_full_name(),
+            'assigned_ward': None,
+            'urgent': {},
+            'shift_patients': [],
+            'medications_schedule': [],
+            'tasks': [],
+        }
+
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -175,35 +222,47 @@ def get_nurse_dashboard_data(user, request):
     nurse_profile = getattr(user, 'practitionerprofile', None)
     assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
 
+    cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"nurse_dashboard_{assigned_ward or 'all'}_u{user.id}"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     # Build admission filter
-    admission_filter = {'status': 'admitted'}
+    admission_filter = {'status': 'admitted', 'facility': facility}
     if assigned_ward:
         admission_filter['bed__ward_id'] = assigned_ward
 
     # Get admitted patients
-    admissions = Admission.objects.filter(**admission_filter).select_related(
+    admissions_qs = Admission.objects.filter(**admission_filter).select_related(
         'patient', 'patient__user', 'bed', 'bed__ward', 'admitting_doctor', 'admitting_doctor__staff', 'admitting_doctor__staff__user'
     ).order_by('bed__bed_number')
 
-    patient_ids = [adm.patient_id for adm in admissions]
+    patient_ids_subquery = admissions_qs.values('patient_id')
+    admissions = list(admissions_qs)
 
     # Critical alerts (unacknowledged, high severity)
     critical_alerts = NursingAlert.objects.filter(
-        patient_id__in=patient_ids,
+        facility=facility,
+        patient_id__in=patient_ids_subquery,
         is_acknowledged=False,
         severity__in=['critical', 'high']
     ).select_related('patient', 'patient__user').order_by('-created_at')[:10]
 
     # Overdue medications
     overdue_meds = MedicationAdministration.objects.filter(
-        patient_id__in=patient_ids,
+        facility=facility,
+        patient_id__in=patient_ids_subquery,
         status='scheduled',
         scheduled_time__lt=now
     ).select_related('patient', 'patient__user').order_by('scheduled_time')[:10]
 
     # Medications due in next 2 hours
     medications_due = MedicationAdministration.objects.filter(
-        patient_id__in=patient_ids,
+        facility=facility,
+        patient_id__in=patient_ids_subquery,
         status='scheduled',
         scheduled_time__gte=now,
         scheduled_time__lte=now + timedelta(hours=2)
@@ -211,7 +270,8 @@ def get_nurse_dashboard_data(user, request):
 
     # Today's pending tasks
     pending_tasks = NursingTask.objects.filter(
-        patient_id__in=patient_ids,
+        facility=facility,
+        patient_id__in=patient_ids_subquery,
         status__in=['pending', 'overdue'],
         scheduled_time__gte=today_start
     ).select_related('patient', 'patient__user').order_by('scheduled_time')
@@ -282,7 +342,7 @@ def get_nurse_dashboard_data(user, request):
             'scheduled_time': task.scheduled_time.isoformat(),
         })
 
-    return {
+    data = {
         'role': 'nurse',
         'user_name': user.get_full_name(),
         'assigned_ward': str(assigned_ward) if assigned_ward else None,
@@ -295,6 +355,8 @@ def get_nurse_dashboard_data(user, request):
         'medications_schedule': meds_due_data,
         'tasks': tasks_data,
     }
+    cache.set(cache_key, data, timeout=30)
+    return data
 
 
 def get_receptionist_dashboard_data(user, request):
@@ -310,20 +372,29 @@ def get_receptionist_dashboard_data(user, request):
             'stats': {...},
         }
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'role': 'receptionist',
+            'user_name': user.get_full_name(),
+            'date': timezone.now().date().isoformat(),
+            'check_in_queue': [],
+            'schedule': {'scheduled': [], 'in_progress': []},
+            'stats': {'total_today': 0, 'waiting': 0, 'scheduled': 0, 'in_progress': 0},
+        }
+
     today = timezone.now().date()
 
-    # Get today's appointments from FHIR
-    appointments = []
-    try:
-        bundle = AppointmentProxy.search(date=today.isoformat())
-        if bundle and 'entry' in bundle:
-            for entry in bundle['entry']:
-                if 'resource' in entry:
-                    appointments.append(entry['resource'])
-    except Exception as e:
-        logger.error(f"Error fetching appointments: {e}")
-
-    # Format all appointments
+    cache_key = f"facility_dashboard_appointments_{today.isoformat()}"
+    appointments, is_stale = _get_cached_appointments(
+        facility.code,
+        cache_key,
+        lambda: refresh_facility_dashboard_appointments.delay(
+            facility_id=str(facility.id),
+            facility_code=facility.code,
+            date_str=today.isoformat(),
+        ),
+    )
     formatted_appointments = [format_appointment_for_dashboard(appt) for appt in appointments]
 
     # Categorize by status
@@ -352,6 +423,7 @@ def get_receptionist_dashboard_data(user, request):
             'scheduled': len(scheduled),
             'in_progress': len(in_progress),
         },
+        'appointments_stale': bool(is_stale),
     }
 
 
@@ -422,7 +494,7 @@ def format_appointment_for_dashboard(appointment):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def clinic_schedule(request):
     """
     Get clinic schedule for a specific date
@@ -434,6 +506,9 @@ def clinic_schedule(request):
         - practitioner_id: Filter by practitioner (defaults to current user)
     """
     user = request.user
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'error': 'Facility context is required'}, status=400)
 
     # Get date from query params
     date_str = request.query_params.get('date')
@@ -453,24 +528,19 @@ def clinic_schedule(request):
         else:
             return Response({'error': 'Practitioner profile not found'}, status=400)
 
-    # Fetch appointments
     try:
-        # Get appointments (returns FHIR Bundle)
-        bundle = AppointmentProxy.search(
-            practitioner_id=practitioner_id,
-            date=target_date.isoformat()
+        cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{target_date.isoformat()}"
+        appointments, is_stale = _get_cached_appointments(
+            facility.code,
+            cache_key,
+            lambda: refresh_doctor_dashboard_appointments.delay(
+                facility_id=str(facility.id),
+                facility_code=facility.code,
+                practitioner_id=practitioner_id,
+                date_str=target_date.isoformat(),
+            ),
         )
-
-        # Extract appointments from FHIR Bundle
-        appointments = []
-        if bundle and 'entry' in bundle:
-            for entry in bundle['entry']:
-                if 'resource' in entry:
-                    appointments.append(entry['resource'])
-
         formatted_appointments = [format_appointment_for_dashboard(appt) for appt in appointments]
-
-        # Sort by start time
         formatted_appointments.sort(key=lambda x: x.get('start_time', ''))
 
         return Response({
@@ -478,6 +548,7 @@ def clinic_schedule(request):
             'practitioner_id': practitioner_id,
             'appointments': formatted_appointments,
             'total_count': len(formatted_appointments),
+            'appointments_stale': bool(is_stale),
         })
 
     except Exception as e:
@@ -486,7 +557,7 @@ def clinic_schedule(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def nurse_dashboard(request):
     """
     Nurse-specific dashboard data
@@ -499,13 +570,20 @@ def nurse_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def inpatient_dashboard(request):
     """
     Inpatient doctor dashboard data
     GET /api/dashboards/inpatient/
     """
     user = request.user
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({
+            'error': 'Facility context is required',
+            'role': 'inpatient_doctor',
+            'user_name': user.get_full_name(),
+        })
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today_start - timedelta(days=1)
@@ -519,8 +597,17 @@ def inpatient_dashboard(request):
             'user_name': user.get_full_name(),
         })
 
+    cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"inpatient_dashboard_{practitioner.id}_u{user.id}"
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
     # New admissions (last 24 hours)
     new_admissions = Admission.objects.filter(
+        facility=facility,
         status='admitted',
         admission_date__gte=yesterday,
         admitting_doctor=practitioner
@@ -528,14 +615,17 @@ def inpatient_dashboard(request):
 
     # All my patients
     my_patients = Admission.objects.filter(
+        facility=facility,
         status='admitted',
         admitting_doctor=practitioner
     ).select_related('patient', 'patient__user', 'bed', 'bed__ward')
 
     # Planned discharges today
     planned_discharges = Admission.objects.filter(
+        facility=facility,
         status='admitted',
-        expected_discharge_date__date=today_start.date(),
+        expected_discharge_date__gte=today_start,
+        expected_discharge_date__lt=today_start + timedelta(days=1),
         admitting_doctor=practitioner
     ).select_related('patient', 'patient__user', 'bed', 'bed__ward')
 
@@ -581,7 +671,7 @@ def inpatient_dashboard(request):
             'expected_discharge_date': admission.expected_discharge_date.isoformat() if admission.expected_discharge_date else None,
         })
 
-    return Response({
+    data = {
         'role': 'inpatient_doctor',
         'user_name': user.get_full_name(),
         'new_admissions': new_admissions_data,
@@ -591,11 +681,13 @@ def inpatient_dashboard(request):
             'orders_to_sign': [],  # Future: integrate with orders system
             'results_to_review': [],  # Future: integrate with lab results
         },
-    })
+    }
+    cache.set(cache_key, data, timeout=30)
+    return Response(data)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def reception_dashboard(request):
     """
     Receptionist dashboard data
@@ -606,7 +698,7 @@ def reception_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def admin_dashboard(request):
     """
     Admin dashboard with system-wide statistics
@@ -615,15 +707,24 @@ def admin_dashboard(request):
     Optimized to avoid N+1 queries and handle slow external APIs gracefully.
     """
     from django.db.models import Count, Q
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({
+            'role': 'admin',
+            'user_name': request.user.get_full_name(),
+            'error': 'Facility context is required',
+            'stats': {},
+            'wards': [],
+        })
 
     today = timezone.now().date()
 
     # Patient count
-    total_patients = PatientProfile.objects.count()
+    total_patients = PatientProfile.objects.filter(facility=facility).count()
 
     # Bed statistics - single query with aggregation
-    bed_stats = Bed.objects.aggregate(
+    bed_stats = Bed.objects.filter(facility=facility).aggregate(
         total=Count('id'),
         occupied=Count('id', filter=Q(status='occupied')),
     )
@@ -632,34 +733,48 @@ def admin_dashboard(request):
     occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
 
     # Current admissions
-    current_admissions = Admission.objects.filter(status='admitted').count()
+    current_admissions = Admission.objects.filter(
+        facility=facility,
+        status='admitted'
+    ).count()
 
-    # Today's appointments - with timeout to avoid blocking dashboard
-    appointments_today = 0
-    try:
-        def fetch_appointments():
-            bundle = AppointmentProxy.search(date=today.isoformat())
-            return len(bundle.get('entry', [])) if bundle else 0
+    # Today's appointments - cached + refreshed async to avoid blocking on FHIR
+    cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"admin_dashboard_appointments_{today.isoformat()}"
+    )
+    stale_cache_key = facility_cache_key_for_code(
+        facility.code,
+        f"admin_dashboard_appointments_{today.isoformat()}_stale"
+    )
+    lock_key = f"{cache_key}:lock"
 
-        # Use ThreadPoolExecutor with 5-second timeout
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fetch_appointments)
+    appointments_today = cache.get(cache_key)
+    if appointments_today is None:
+        appointments_today = cache.get(stale_cache_key, 0)
+        if cache.add(lock_key, '1', timeout=30):
             try:
-                appointments_today = future.result(timeout=5)  # 5 second timeout
-            except FuturesTimeoutError:
-                logger.warning("FHIR appointment search timed out for admin dashboard")
-                appointments_today = 0
-    except Exception as e:
-        logger.warning(f"Failed to fetch appointments for admin dashboard: {e}")
-        appointments_today = 0
+                refresh_admin_dashboard_appointments.delay(
+                    facility_id=str(facility.id),
+                    facility_code=facility.code,
+                    date_str=today.isoformat(),
+                )
+            except Exception as e:
+                logger.warning("Failed to queue admin dashboard appointments refresh: %s", e)
 
     # Active staff (count practitioners whose user accounts are active)
-    active_staff = PractitionerProfile.objects.filter(staff__user__is_active=True).count()
+    active_staff = PractitionerProfile.objects.filter(
+        staff__user__is_active=True,
+        staff__primary_facility=facility
+    ).count()
 
     # Ward breakdown - optimized with annotation to avoid N+1
     # Note: Annotation names must not conflict with Ward model properties
     # (e.g., available_beds_count is a @property on Ward, so we use _annotated suffix)
-    wards = Ward.objects.filter(is_active=True).annotate(
+    wards = Ward.objects.filter(
+        is_active=True,
+        department__facility=facility
+    ).annotate(
         total_beds_annotated=Count('beds'),
         occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
         available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
@@ -696,7 +811,7 @@ def admin_dashboard(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_context_patients(request):
     """
     Return context-specific patients based on user role.
@@ -734,13 +849,23 @@ def _get_nurse_context_patients(user, request):
     """
     from django.db.models import Prefetch
 
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'ward',
+            'context_label': 'Ward Patients',
+            'ward_id': None,
+            'patients': [],
+            'total': 0,
+        }
+
     # Get ward filter from query params or nurse's assigned ward
     ward_id = request.query_params.get('ward')
     nurse_profile = getattr(user, 'practitionerprofile', None)
     assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
 
     # Build admission filter
-    admission_filter = {'status': 'admitted'}
+    admission_filter = {'status': 'admitted', 'facility': facility}
     if assigned_ward:
         admission_filter['bed__ward_id'] = assigned_ward
 
@@ -787,6 +912,16 @@ def _get_doctor_context_patients(user, request):
     Get patients for doctor context.
     Returns today's appointments + admitted patients under their care.
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'doctor',
+            'context_label': "Today's Patients",
+            'patients': [],
+            'total': 0,
+            'breakdown': {'appointments': 0, 'inpatients': 0},
+        }
+
     today = timezone.now().date()
     practitioner = getattr(user, 'practitionerprofile', None)
 
@@ -794,51 +929,52 @@ def _get_doctor_context_patients(user, request):
     appointments_patients = []
     inpatients = []
 
-    # Get today's appointments
+    # Get today's appointments (cached; refreshed asynchronously)
     if practitioner and practitioner.fhir_practitioner_id:
         try:
-            bundle = AppointmentProxy.search(
-                practitioner_id=practitioner.fhir_practitioner_id,
-                date=today.isoformat()
+            cache_key = f"doctor_dashboard_appointments_{practitioner.fhir_practitioner_id}_{today.isoformat()}"
+            appointments, _ = _get_cached_appointments(
+                facility.code,
+                cache_key,
+                lambda: refresh_doctor_dashboard_appointments.delay(
+                    facility_id=str(facility.id),
+                    facility_code=facility.code,
+                    practitioner_id=practitioner.fhir_practitioner_id,
+                    date_str=today.isoformat(),
+                ),
             )
 
-            if bundle and 'entry' in bundle:
-                # Extract patient IDs from appointments
-                appointment_patient_ids = set()
-                for entry in bundle['entry']:
-                    appt = entry.get('resource', {})
-                    # Only include upcoming or in-progress appointments
-                    if appt.get('status') not in ['fulfilled', 'cancelled', 'noshow']:
-                        for participant in appt.get('participant', []):
-                            actor = participant.get('actor', {})
-                            ref = actor.get('reference', '')
-                            if ref.startswith('Patient/'):
-                                fhir_patient_id = ref.split('/')[-1]
-                                appointment_patient_ids.add(fhir_patient_id)
+            appointment_patient_ids = set()
+            for appt in appointments:
+                if appt.get('status') not in ['fulfilled', 'cancelled', 'noshow']:
+                    patient_id = extract_patient_fhir_id(appt)
+                    if patient_id:
+                        appointment_patient_ids.add(patient_id)
 
-                # Get local patient profiles for these FHIR patients
-                if appointment_patient_ids:
-                    appointment_patients_qs = PatientProfile.objects.filter(
-                        fhir_patient_id__in=appointment_patient_ids
-                    ).select_related('user')[:30]
+            if appointment_patient_ids:
+                appointment_patients_qs = PatientProfile.objects.filter(
+                    fhir_patient_id__in=appointment_patient_ids,
+                    facility=facility,
+                ).select_related('user')[:30]
 
-                    for patient in appointment_patients_qs:
-                        appointments_patients.append({
-                            'id': str(patient.id),
-                            'name': patient.user.get_full_name(),
-                            'mrn': patient.medical_record_number,
-                            'gender': patient.user.gender,
-                            'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
-                            'current_ward': None,
-                            'current_ward_id': None,
-                            'context_type': 'appointment',
-                        })
+                for patient in appointment_patients_qs:
+                    appointments_patients.append({
+                        'id': str(patient.id),
+                        'name': patient.user.get_full_name(),
+                        'mrn': patient.medical_record_number,
+                        'gender': patient.user.gender,
+                        'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+                        'current_ward': None,
+                        'current_ward_id': None,
+                        'context_type': 'appointment',
+                    })
         except Exception as e:
             logger.warning(f"Failed to fetch appointment patients: {e}")
 
     # Get admitted patients under this doctor's care
     if practitioner:
         my_admissions = Admission.objects.filter(
+            facility=facility,
             status='admitted',
             admitting_doctor=practitioner
         ).select_related('patient', 'patient__user', 'bed', 'bed__ward')[:30]
@@ -882,41 +1018,52 @@ def _get_receptionist_context_patients(user, request):
     Get patients for receptionist context.
     Returns today's scheduled arrivals.
     """
+    facility = get_user_facility(request)
+    if not facility:
+        return {
+            'context': 'reception',
+            'context_label': "Today's Scheduled Patients",
+            'patients': [],
+            'total': 0,
+        }
+
     today = timezone.now().date()
     patients = []
 
     try:
-        bundle = AppointmentProxy.search(date=today.isoformat())
+        cache_key = f"facility_dashboard_appointments_{today.isoformat()}"
+        appointments, _ = _get_cached_appointments(
+            facility.code,
+            cache_key,
+            lambda: refresh_facility_dashboard_appointments.delay(
+                facility_id=str(facility.id),
+                facility_code=facility.code,
+                date_str=today.isoformat(),
+            ),
+        )
 
-        if bundle and 'entry' in bundle:
-            # Extract patient IDs from today's appointments
-            fhir_patient_ids = set()
-            for entry in bundle['entry']:
-                appt = entry.get('resource', {})
-                # Include booked and arrived patients
-                if appt.get('status') in ['booked', 'arrived', 'pending']:
-                    for participant in appt.get('participant', []):
-                        actor = participant.get('actor', {})
-                        ref = actor.get('reference', '')
-                        if ref.startswith('Patient/'):
-                            fhir_patient_id = ref.split('/')[-1]
-                            fhir_patient_ids.add(fhir_patient_id)
+        fhir_patient_ids = set()
+        for appt in appointments:
+            if appt.get('status') in ['booked', 'arrived', 'pending']:
+                patient_id = extract_patient_fhir_id(appt)
+                if patient_id:
+                    fhir_patient_ids.add(patient_id)
 
-            # Get local patient profiles
-            if fhir_patient_ids:
-                scheduled_patients = PatientProfile.objects.filter(
-                    fhir_patient_id__in=fhir_patient_ids
-                ).select_related('user')[:50]
+        if fhir_patient_ids:
+            scheduled_patients = PatientProfile.objects.filter(
+                fhir_patient_id__in=fhir_patient_ids,
+                facility=facility,
+            ).select_related('user')[:50]
 
-                for patient in scheduled_patients:
-                    patients.append({
-                        'id': str(patient.id),
-                        'name': patient.user.get_full_name(),
-                        'mrn': patient.medical_record_number,
-                        'gender': patient.user.gender,
-                        'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
-                        'phone': patient.user.phone_number,
-                    })
+            for patient in scheduled_patients:
+                patients.append({
+                    'id': str(patient.id),
+                    'name': patient.user.get_full_name(),
+                    'mrn': patient.medical_record_number,
+                    'gender': patient.user.gender,
+                    'date_of_birth': patient.user.date_of_birth.isoformat() if patient.user.date_of_birth else None,
+                    'phone': patient.user.phone_number,
+                })
     except Exception as e:
         logger.warning(f"Failed to fetch scheduled patients: {e}")
 

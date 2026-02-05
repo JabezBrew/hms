@@ -2,6 +2,7 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.db import models
 import logging
@@ -41,8 +42,20 @@ from .engines import (
     WardRoundEngine, AdmissionEngine, DischargeEngine
 )
 from apps.users.permissions import IsAdminOrOwner
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _require_patient_access(request, patient_id):
+    patient = get_object_or_404(PatientProfile, id=patient_id)
+    facility = get_user_facility(request)
+    if facility and patient.facility_id != facility.id:
+        raise PermissionDenied("Patient does not belong to the active facility.")
+    check_clinical_access(request.user, patient)
+    return patient
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
@@ -50,14 +63,21 @@ class WorkflowViewSet(viewsets.ModelViewSet):
     API endpoints for clinical workflows
     """
     serializer_class = ClinicalWorkflowSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter workflows by current user
         """
         user = self.request.user
-        queryset = ClinicalWorkflow.objects.filter(user=user).select_related('patient', 'patient__user')
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ClinicalWorkflow.objects.none()
+        queryset = ClinicalWorkflow.objects.filter(
+            user=user,
+            patient__facility=facility
+        ).select_related('patient', 'patient__user')
 
         # Filter by workflow type
         workflow_type = self.request.query_params.get('workflow_type')
@@ -92,6 +112,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            _require_patient_access(request, serializer.validated_data['patient_id'])
             result = ConsultationEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
@@ -259,9 +280,14 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             - workflow_type: Filter by workflow type
         """
         user = request.user
+        facility = get_user_facility(request)
+        if not facility:
+            return Response({'workflows': []})
+
         queryset = ClinicalWorkflow.objects.filter(
             user=user,
-            status__in=['draft', 'in_progress']
+            status__in=['draft', 'in_progress'],
+            patient__facility=facility,
         ).select_related('patient', 'patient__user')
 
         # Filter by patient
@@ -324,6 +350,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            _require_patient_access(request, serializer.validated_data['patient_id'])
             # Include template_id in initial_data so it's stored in context
             initial_data = serializer.validated_data.get('initial_data', {})
             if serializer.validated_data.get('template_id'):
@@ -481,6 +508,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            _require_patient_access(request, serializer.validated_data['patient_id'])
             result = WardRoundEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
@@ -602,6 +630,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            _require_patient_access(request, serializer.validated_data['patient_id'])
             result = AdmissionEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
@@ -723,6 +752,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         try:
+            _require_patient_access(request, serializer.validated_data['patient_id'])
             result = DischargeEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
@@ -831,15 +861,20 @@ class ClinicalNoteWorkflowViewSet(viewsets.ReadOnlyModelViewSet):
     Read-only API endpoints for clinical note workflow data
     """
     serializer_class = ClinicalNoteWorkflowSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter clinical note workflows by current user
         """
         user = self.request.user
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ClinicalNoteWorkflow.objects.none()
         return ClinicalNoteWorkflow.objects.filter(
-            workflow__user=user
+            workflow__user=user,
+            workflow__patient__facility=facility
         ).select_related('workflow', 'workflow__patient', 'workflow__patient__user')
 
 
@@ -848,15 +883,20 @@ class ConsultationWorkflowViewSet(viewsets.ReadOnlyModelViewSet):
     Read-only API endpoints for consultation workflow data
     """
     serializer_class = ConsultationWorkflowSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
         Filter consultation workflows by current user
         """
         user = self.request.user
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ConsultationWorkflow.objects.none()
         return ConsultationWorkflow.objects.filter(
-            workflow__user=user
+            workflow__user=user,
+            workflow__patient__facility=facility
         ).select_related('workflow', 'workflow__patient', 'workflow__patient__user')
 
 
@@ -866,6 +906,7 @@ class WorkflowTemplateViewSet(viewsets.ModelViewSet):
     """
     serializer_class = WorkflowTemplateSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """

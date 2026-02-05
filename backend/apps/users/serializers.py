@@ -1,11 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList
-from ..fhir_client.client import fhir_client
-from ..fhir_client.utils import (
-    create_human_name, create_identifier, create_contact_point,
-    create_address, generate_fhir_id
-)
+from django.db import transaction
+from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
+from apps.core.security import get_user_facility
+from .tasks import create_practitioner_in_fhir
 import random
 import string
 import datetime
@@ -147,13 +145,21 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'user', 'user_details', 'medical_record_number', 'nhis_id',
+        fields = ['id', 'user', 'user_details', 'patient_identity_id',
+                  'medical_record_number', 'nhis_id',
                   'blood_group', 'allergies', 'emergency_contact_name',
                   'emergency_contact_phone', 'emergency_contact_relationship',
                   'fhir_patient_id', 'current_ward', 'current_ward_id',
                   'current_admission_id', 'admission_status', 'admission_date',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = [
+            'id',
+            'patient_identity_id',
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by',
+        ]
 
     def _get_active_admission(self, obj):
         """
@@ -250,8 +256,8 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'medical_record_number', 'nhis_id', 'name', 'date_of_birth',
-                  'gender', 'blood_group', 'current_ward', 'admission_date']
+        fields = ['id', 'medical_record_number', 'name', 'date_of_birth',
+                  'gender', 'current_ward', 'admission_date']
 
     def get_name(self, obj):
         """Get full name directly from prefetched user."""
@@ -277,9 +283,30 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
         return None
 
 
+class PractitionerFHIRMappingListSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for practitioner FHIR mappings (list).
+    """
+    practitioner_name = serializers.SerializerMethodField()
+    employee_id = serializers.CharField(source='practitioner_profile.staff.employee_id', read_only=True)
+
+    class Meta:
+        model = PractitionerFHIRMapping
+        fields = [
+            'id', 'practitioner_profile', 'practitioner_name', 'employee_id',
+            'fhir_practitioner_id', 'last_synced', 'is_synced'
+        ]
+        read_only_fields = ['id', 'last_synced']
+
+    def get_practitioner_name(self, obj):
+        staff = getattr(obj.practitioner_profile, 'staff', None)
+        user = getattr(staff, 'user', None) if staff else None
+        return user.get_full_name() if user else None
+
+
 class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):
     """
-    Serializer for the PractitionerFHIRMapping model.
+    Serializer for the PractitionerFHIRMapping model (detail).
     """
     practitioner_profile_details = PractitionerProfileSerializer(source='practitioner_profile', read_only=True)
 
@@ -387,6 +414,9 @@ class StaffInviteSerializer(serializers.Serializer):
     def create(self, validated_data):
         request = self.context.get('request')
         actor = getattr(request, 'user', None)
+        facility = get_user_facility(request) if request else None
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
 
         email = validated_data['email'].lower()
         user_type = validated_data['user_type']
@@ -423,6 +453,13 @@ class StaffInviteSerializer(serializers.Serializer):
             user.set_unusable_password()
             user.save(update_fields=['password'])
 
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise serializers.ValidationError("User belongs to a different facility.")
+        if user.primary_facility_id is None:
+            user.primary_facility = facility
+            user.save(update_fields=['primary_facility'])
+        user.facilities.add(facility)
+
         # Ensure staff profile exists
         staff, staff_created = Staff.objects.get_or_create(
             user=user,
@@ -431,6 +468,7 @@ class StaffInviteSerializer(serializers.Serializer):
                 'department': validated_data['department'],
                 'position': validated_data['position'],
                 'hire_date': validated_data['hire_date'],
+                'primary_facility': facility,
                 'created_by': actor if getattr(actor, 'is_authenticated', False) else None,
                 'updated_by': actor if getattr(actor, 'is_authenticated', False) else None,
             }
@@ -442,7 +480,9 @@ class StaffInviteSerializer(serializers.Serializer):
             staff.hire_date = validated_data['hire_date']
             if getattr(actor, 'is_authenticated', False):
                 staff.updated_by = actor
-            staff.save(update_fields=['department', 'position', 'hire_date', 'updated_by'])
+            if staff.primary_facility_id is None:
+                staff.primary_facility = facility
+            staff.save(update_fields=['department', 'position', 'hire_date', 'updated_by', 'primary_facility'])
 
         # Practitioner profile (doctor/nurse only)
         if user_type in ['doctor', 'nurse']:
@@ -523,6 +563,11 @@ class StaffRegistrationSerializer(serializers.Serializer):
         """
         Create a new staff member with both local and FHIR resources.
         """
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
         # Check if we're reusing an existing user
         existing_user = validated_data.pop('_existing_user', None)
         user_created = existing_user is None
@@ -567,6 +612,13 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 user_type=validated_data['user_type']
             )
 
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise serializers.ValidationError("User belongs to a different facility.")
+        if user.primary_facility_id is None:
+            user.primary_facility = facility
+            user.save(update_fields=['primary_facility'])
+        user.facilities.add(facility)
+
         # Generate a unique employee ID
         employee_id = generate_unique_employee_id()
 
@@ -577,6 +629,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
             department=validated_data['department'],
             position=validated_data['position'],
             hire_date=validated_data['hire_date'],
+            primary_facility=facility,
             created_by=self.context['request'].user,
             updated_by=self.context['request'].user
         )
@@ -616,83 +669,22 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 updated_by=self.context['request'].user
             )
 
-            # Create FHIR Practitioner resource
-            fhir_practitioner_data = {
-                "resourceType": "Practitioner",
-                "id": generate_fhir_id(),
-                "active": True,
-                "name": [
-                    create_human_name(
-                        family=validated_data['last_name'],
-                        given=[validated_data['first_name']]
+            # Queue FHIR Practitioner creation (async)
+            try:
+                request_user_id = None
+                if self.context.get('request') and getattr(self.context['request'], 'user', None):
+                    request_user_id = self.context['request'].user.id
+                facility_code = getattr(self.context.get('request'), 'facility_code', None)
+                transaction.on_commit(
+                    lambda: create_practitioner_in_fhir.delay(
+                        str(practitioner_profile.id),
+                        address_fields=address_fields,
+                        requested_by_user_id=request_user_id,
+                        facility_code=facility_code
                     )
-                ],
-                "identifier": [
-                    create_identifier(
-                        system="http://hospital.example.org/fhir/identifier/employee",
-                        value=employee_id
-                    ),
-                    create_identifier(
-                        system="http://hospital.example.org/fhir/identifier/license",
-                        value=practitioner_fields['license_number']
-                    )
-                ]
-            }
-
-            # Add telecom if phone number is provided
-            if validated_data.get('phone_number'):
-                fhir_practitioner_data["telecom"] = [
-                    create_contact_point(
-                        system="phone",
-                        value=validated_data['phone_number'],
-                        use="work"
-                    )
-                ]
-
-            # Add address if provided
-            if any(address_fields.values()):
-                lines = [address_fields['address_line1']]
-                if address_fields['address_line2']:
-                    lines.append(address_fields['address_line2'])
-
-                fhir_practitioner_data["address"] = [
-                    create_address(
-                        line=lines,
-                        city=address_fields['city'],
-                        state=address_fields['state'],
-                        postalCode=address_fields['postal_code'],
-                        country=address_fields['country']
-                    )
-                ]
-
-            # Add qualification
-            if practitioner_fields['qualification']:
-                fhir_practitioner_data["qualification"] = [
-                    {
-                        "code": {
-                            "text": practitioner_fields['qualification']
-                        }
-                    }
-                ]
-
-            # Create the FHIR resource
-            # Note: No try/except with manual cleanup needed here.
-            # The view wraps this in transaction.atomic(), so any exception
-            # will automatically rollback all DB changes (User, Staff, PractitionerProfile).
-            fhir_practitioner = fhir_client.create_resource("Practitioner", fhir_practitioner_data)
-
-            # Create the mapping
-            PractitionerFHIRMapping.objects.create(
-                practitioner_profile=practitioner_profile,
-                fhir_practitioner_id=fhir_practitioner["id"],
-                fhir_resource_version=fhir_practitioner.get("meta", {}).get("versionId"),
-                created_by=self.context['request'].user,
-                updated_by=self.context['request'].user
-            )
-
-            # Update the practitioner profile with the FHIR ID
-            practitioner_profile.fhir_practitioner_id = fhir_practitioner["id"]
-            practitioner_profile.save()
+                )
+            except Exception:
+                logger.warning("Failed to queue FHIR practitioner creation")
 
         return staff
 
@@ -768,6 +760,36 @@ class StaffListSerializer(serializers.ModelSerializer):
         return None
 
 
+class StaffSearchSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for staff search results.
+    Returns minimal fields for picker UIs.
+    """
+    name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source='user.email', read_only=True)
+    user_type = serializers.CharField(source='user.user_type', read_only=True)
+    user_id = serializers.UUIDField(source='user.id', read_only=True)
+    practitioner_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Staff
+        fields = [
+            'id', 'user_id', 'name', 'email', 'user_type',
+            'employee_id', 'practitioner_id'
+        ]
+
+    def get_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name()
+        return None
+
+    def get_practitioner_id(self, obj):
+        try:
+            return obj.practitioner_profile.id
+        except Exception:
+            return None
+
+
 class PractitionerProfileListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for practitioner lists.
@@ -827,7 +849,7 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         model = PatientProfile
         fields = [
             'id', 'user', 'user_details', 'name', 'email', 'phone', 'gender',
-            'date_of_birth', 'medical_record_number', 'blood_group', 'nhis_id',
+            'date_of_birth', 'medical_record_number',
             'current_ward', 'current_ward_id', 'admission_date'
         ]
 
@@ -945,3 +967,56 @@ class UserPatientListCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+
+class UserSessionListSerializer(serializers.ModelSerializer):
+    is_current = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = [
+            'id',
+            'device_label',
+            'ip_address',
+            'location',
+            'created_at',
+            'last_seen_at',
+            'expires_at',
+            'revoked_at',
+            'is_active',
+            'is_current',
+        ]
+        read_only_fields = fields
+
+    def get_location(self, obj):
+        """Return formatted location string."""
+        parts = []
+        if obj.location_city:
+            parts.append(obj.location_city)
+        if obj.location_country:
+            parts.append(obj.location_country)
+        return ', '.join(parts) if parts else None
+
+    def get_is_current(self, obj):
+        current_session_id = self._get_current_session_id()
+        return bool(current_session_id and current_session_id == obj.id)
+
+    def get_is_active(self, obj):
+        return obj.is_active
+
+    def _get_current_session_id(self):
+        if 'current_session_id' in self.context:
+            return self.context.get('current_session_id')
+
+        request = self.context.get('request')
+        if not request:
+            self.context['current_session_id'] = None
+            return None
+
+        from .session_service import get_current_session_from_request
+        current_session = get_current_session_from_request(request)
+        current_session_id = current_session.id if current_session else None
+        self.context['current_session_id'] = current_session_id
+        return current_session_id

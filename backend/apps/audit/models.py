@@ -51,6 +51,13 @@ class AuditAction:
     PASSWORD_CHANGE = 'PASSWORD_CHANGE'
     OFFSITE_ACCESS = 'OFFSITE_ACCESS'
 
+    # MFA
+    MFA_TOTP_ENROLL = 'MFA_TOTP_ENROLL'
+    MFA_WEBAUTHN_ENROLL = 'MFA_WEBAUTHN_ENROLL'
+    MFA_RECOVERY_GENERATE = 'MFA_RECOVERY_GENERATE'
+    MFA_RECOVERY_USED = 'MFA_RECOVERY_USED'
+    MFA_DEVICE_REMOVE = 'MFA_DEVICE_REMOVE'
+
     # CRUD
     CREATE = 'CREATE'
     READ = 'READ'
@@ -147,6 +154,12 @@ class AuditAction:
         (LOGIN_FAILED, 'Login Failed'),
         (PASSWORD_CHANGE, 'Password Change'),
         (OFFSITE_ACCESS, 'Off-Site Access'),
+        # MFA
+        (MFA_TOTP_ENROLL, 'MFA TOTP Enrolled'),
+        (MFA_WEBAUTHN_ENROLL, 'MFA WebAuthn Enrolled'),
+        (MFA_RECOVERY_GENERATE, 'MFA Recovery Codes Generated'),
+        (MFA_RECOVERY_USED, 'MFA Recovery Code Used'),
+        (MFA_DEVICE_REMOVE, 'MFA Device Removed'),
         (CREATE, 'Create'),
         (READ, 'Read'),
         (UPDATE, 'Update'),
@@ -224,6 +237,14 @@ class AuditLog(models.Model):
     Optimized with composite indexes for efficient querying.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='audit_logs',
+        help_text="Facility context for this audit event"
+    )
 
     # Who performed the action
     user = models.ForeignKey(
@@ -258,6 +279,7 @@ class AuditLog(models.Model):
         db_table = 'audit_logs'
         ordering = ['-timestamp']
         indexes = [
+            models.Index(fields=['facility', '-timestamp'], name='audit_facility_ts_idx'),
             models.Index(fields=['user', '-timestamp'], name='audit_user_ts_idx'),
             models.Index(fields=['category', '-timestamp'], name='audit_cat_ts_idx'),
             models.Index(fields=['action', '-timestamp'], name='audit_act_ts_idx'),

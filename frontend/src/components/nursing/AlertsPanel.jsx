@@ -1,3 +1,6 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,9 +15,9 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, Check, Bell } from 'lucide-react';
+
 import { useState } from 'react';
-import { useAcknowledgeAlert } from '@/hooks/useNursingQueries';
+import { useAcknowledgeAlert } from '@/features/nursing/hooks';
 import { toast } from 'sonner';
 
 export function AlertsPanel({ alerts, isLoading }) {

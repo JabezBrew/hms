@@ -14,6 +14,7 @@ export { ChartEntryForm } from './ChartEntryForm';
 export { ChartFieldRenderer } from './ChartFieldRenderer';
 export { ChartDataGrid } from './ChartDataGrid';
 export { ChartTrendGraph } from './ChartTrendGraph';
+export { LazyChartTrendGraph } from './LazyChartTrendGraph';
 
 // Assignment Management
 export { ChartAssignmentCard } from './ChartAssignmentCard';

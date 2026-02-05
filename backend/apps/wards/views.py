@@ -1,14 +1,16 @@
 from rest_framework import viewsets, permissions, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction, models
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 from django.core.cache import cache
 from django.db.models import Count, Avg, Sum, F, Q
 from django.db.models.functions import TruncDate
-from rest_framework.pagination import PageNumberPagination
+from apps.core.pagination import StandardResultsSetPagination
 from datetime import timedelta, datetime
 
 # Cache key constants for invalidation
@@ -17,7 +19,7 @@ WARD_ANALYTICS_CACHE_KEY = 'ward_analytics_view'
 
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
-    WardSerializer, WardListSerializer,
+    WardSerializer, WardListSerializer, WardSearchSerializer,
     BedSerializer, BedListSerializer,
     AdmissionSerializer, AdmissionListSerializer,
     BedAllocationLogSerializer,
@@ -28,12 +30,9 @@ from .serializers import (
     WardStaffAssignmentCreateSerializer, StaffRoleSerializer
 )
 from ..users.permissions import IsAdminOrOwner
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    page_size = 100
-    page_size_query_param = 'page_size'
-    max_page_size = 1000
+from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.organization.services import UnitHierarchyService
+from ..users.models import PatientProfile
 
 
 def invalidate_ward_caches():
@@ -74,7 +73,7 @@ class WardViewSet(viewsets.ModelViewSet):
     """
     queryset = Ward.objects.prefetch_related('beds').all()
     serializer_class = WardSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     filterset_fields = ['ward_type', 'is_active']
     pagination_class = StandardResultsSetPagination
 
@@ -87,7 +86,11 @@ class WardViewSet(viewsets.ModelViewSet):
         """
         Override get_queryset to add search functionality.
         """
-        queryset = super().get_queryset()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Ward.objects.none()
+
+        queryset = super().get_queryset().filter(department__facility=facility)
         search_query = self.request.query_params.get('search', None)
 
         if search_query:
@@ -98,6 +101,47 @@ class WardViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Search wards by name for picker UIs.
+        """
+        query = (request.query_params.get('q') or '').strip()
+        if not query or len(query) < 2:
+            return Response(
+                {"detail": "Search query must be at least 2 characters long."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        include_inactive = request.query_params.get('include_inactive') == 'true'
+        ward_type = request.query_params.get('ward_type')
+        department = request.query_params.get('department')
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        queryset = Ward.objects.select_related('department').filter(
+            department__facility=facility
+        )
+
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+
+        if ward_type:
+            queryset = queryset.filter(ward_type=ward_type)
+
+        if department:
+            queryset = queryset.filter(department_id=department)
+
+        queryset = queryset.filter(name__icontains=query).order_by('name')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = WardSearchSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        serializer = WardSearchSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         # Get values from validated_data before saving
@@ -122,6 +166,10 @@ class WardViewSet(viewsets.ModelViewSet):
 
             # Create beds automatically
             with transaction.atomic():
+                facility = ward.facility or get_user_facility(self.request)
+                if not facility:
+                    raise PermissionDenied("Facility context is required.")
+
                 # Calculate grid size (square root of total beds, rounded up)
                 import math
                 grid_size = math.ceil(math.sqrt(total_beds))
@@ -134,6 +182,7 @@ class WardViewSet(viewsets.ModelViewSet):
 
                     Bed.objects.create(
                         ward=ward,
+                        facility=facility,
                         bed_number=f"{i:03d}",  # Format: 001, 002, etc.
                         bed_type=default_bed_type,
                         status='available',
@@ -234,6 +283,7 @@ class WardViewSet(viewsets.ModelViewSet):
         serializer = AdmissionSerializer(admissions, many=True)
         return Response(serializer.data)
 
+    @method_decorator(vary_on_headers('X-Facility-Code'))
     @method_decorator(cache_page(60 * 15))  # Cache for 15 minutes
     @action(detail=False, methods=['get'])
     def analytics(self, request):
@@ -261,7 +311,13 @@ class WardViewSet(viewsets.ModelViewSet):
             end_date = timezone.now()
 
         # Build base queryset - prefetch beds for total_beds calculation
-        wards = Ward.objects.prefetch_related('beds').all()
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        wards = Ward.objects.prefetch_related('beds').filter(
+            department__facility=facility
+        )
         if ward_id and ward_id != 'all':
             wards = wards.filter(id=ward_id)
 
@@ -501,16 +557,29 @@ class BedViewSet(viewsets.ModelViewSet):
     """
     queryset = Bed.objects.select_related('ward').prefetch_related('admissions').all()
     serializer_class = BedSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     filterset_fields = ['ward', 'status', 'bed_type']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
             return BedListSerializer
         return BedSerializer
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Bed.objects.none()
+        return super().get_queryset().filter(facility=facility)
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        ward = serializer.validated_data.get('ward')
+        if ward and ward.department and ward.department.facility_id != facility.id:
+            raise PermissionDenied("Ward does not belong to the active facility.")
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         # Get the old status before saving
@@ -525,6 +594,7 @@ class BedViewSet(viewsets.ModelViewSet):
             if old_status != new_status:
                 BedAllocationLog.objects.create(
                     bed=bed,
+                    facility=bed.facility,
                     previous_status=old_status,
                     new_status=new_status,
                     created_by=self.request.user
@@ -565,7 +635,14 @@ class BedViewSet(viewsets.ModelViewSet):
         Filters: ward, section, gender (M/F for patient), accommodation_tier,
                  isolation_capable, amenities (comma-separated codes)
         """
-        queryset = Bed.objects.select_related('ward', 'section').prefetch_related('amenities').filter(status='available')
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        queryset = Bed.objects.select_related('ward', 'section').prefetch_related('amenities').filter(
+            status='available',
+            facility=facility
+        )
 
         # Filter by ward
         ward_id = request.query_params.get('ward')
@@ -627,8 +704,9 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         'admitting_doctor__staff',
         'admitting_doctor__staff__user'
     ).all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     filterset_fields = ['patient', 'bed', 'status', 'admission_type', 'is_billed']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -637,49 +715,125 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             return AdmissionListSerializer
         return AdmissionSerializer
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Admission.objects.none()
+        queryset = super().get_queryset().filter(facility=facility)
+        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
+        return queryset
+
     def perform_create(self, serializer):
         with transaction.atomic():
+            facility = get_user_facility(self.request)
+            if not facility:
+                raise PermissionDenied("Facility context is required.")
             # Get the bed from validated data
             bed = serializer.validated_data.get('bed')
+            patient = serializer.validated_data.get('patient')
+            if patient and patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            if patient:
+                check_clinical_access(self.request.user, patient)
+            if bed and bed.ward and bed.ward.department and bed.ward.department.facility_id != facility.id:
+                raise PermissionDenied("Bed does not belong to the active facility.")
 
             # Create the admission with daily_rate set from the bed
             admission = serializer.save(
                 created_by=self.request.user,
                 updated_by=self.request.user,
                 status='admitted',
-                daily_rate=bed.total_rate if bed else 0
+                daily_rate=bed.total_rate if bed else 0,
+                facility=facility
             )
 
-            # Create local Encounter (syncs to FHIR in background)
-            try:
-                encounter = Encounter.objects.create(
-                    patient=admission.patient,
-                    practitioner=admission.admitting_doctor,
-                    encounter_type='inpatient',
-                    status='in-progress',
-                    start_time=admission.admission_date,
-                    service_type=f"Admission to {admission.bed.ward.name}",
-                    location=admission.bed.ward.name,
-                    admission=admission,
-                    created_by=self.request.user,
+            department_unit = None
+            if admission.bed and admission.bed.ward and admission.bed.ward.department:
+                department_unit = UnitHierarchyService.get_department_unit_for_core_department(
+                    admission.bed.ward.department,
+                    facility=facility
                 )
 
-                # Update the admission with the encounter reference (for backwards compatibility)
-                admission.fhir_encounter_id = str(encounter.id)
+            ed_encounter = getattr(serializer, '_ed_encounter', None)
+            if ed_encounter:
+                location = admission.bed.ward.name if admission.bed else "Waiting List"
+                encounter_updates = {
+                    'encounter_type': 'inpatient',
+                    'status': 'in-progress' if admission.bed else 'planned',
+                    'admission': admission,
+                    'location': location,
+                    'service_type': f"Admission to {location}",
+                    'admission_source': 'emergency',
+                    'updated_by': self.request.user,
+                }
+                if department_unit:
+                    encounter_updates['department'] = department_unit
+                for field, value in encounter_updates.items():
+                    setattr(ed_encounter, field, value)
+                ed_encounter.save(update_fields=list(encounter_updates.keys()) + ['updated_at'])
+
+                if admission.bed:
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=ed_encounter,
+                        bed=admission.bed
+                    )
+
+                admission.fhir_encounter_id = str(ed_encounter.id)
                 admission.save(update_fields=['fhir_encounter_id'])
 
-                # Queue FHIR sync in background
                 try:
                     from .tasks import sync_encounter_to_fhir
-                    sync_encounter_to_fhir.delay(str(encounter.id))
+                    sync_encounter_to_fhir.delay(str(ed_encounter.id))
                 except Exception:
-                    pass  # Celery not available, will sync later
+                    pass
+            else:
+                # Create local Encounter (syncs to FHIR in background)
+                try:
+                    encounter = Encounter.objects.create(
+                        patient=admission.patient,
+                        facility=facility,
+                        practitioner=admission.admitting_doctor,
+                        department=department_unit,
+                        encounter_type='inpatient',
+                        status='in-progress',
+                        start_time=admission.admission_date,
+                        service_type=f"Admission to {admission.bed.ward.name}",
+                        location=admission.bed.ward.name,
+                        admission=admission,
+                        created_by=self.request.user,
+                    )
 
-            except Exception as e:
-                # Log the error but continue (we don't want to roll back the admission)
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
+                    if admission.bed:
+                        from apps.organization.services import TeamAssignmentService
+                        TeamAssignmentService.reassign_team_on_bed_assignment(
+                            encounter=encounter,
+                            bed=admission.bed
+                        )
+
+                    # Update the admission with the encounter reference (for backwards compatibility)
+                    admission.fhir_encounter_id = str(encounter.id)
+                    admission.save(update_fields=['fhir_encounter_id'])
+
+                    # Queue FHIR sync in background
+                    try:
+                        from .tasks import sync_encounter_to_fhir
+                        sync_encounter_to_fhir.delay(str(encounter.id))
+                    except Exception:
+                        pass  # Celery not available, will sync later
+
+                except Exception as e:
+                    # Log the error but continue (we don't want to roll back the admission)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
 
             # Store the previous bed status before updating
             previous_status = bed.status
@@ -692,6 +846,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             # Create a bed allocation log
             BedAllocationLog.objects.create(
                 bed=admission.bed,
+                facility=facility,
                 previous_status=previous_status,
                 new_status='occupied',
                 admission=admission,
@@ -738,6 +893,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 # Create a bed allocation log
                 BedAllocationLog.objects.create(
                     bed=admission.bed,
+                    facility=admission.facility,
                     previous_status='occupied',
                     new_status='available',
                     admission=admission,
@@ -759,8 +915,19 @@ class BedAllocationLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = BedAllocationLog.objects.all()
     serializer_class = BedAllocationLogSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     filterset_fields = ['bed', 'previous_status', 'new_status', 'created_by']
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return BedAllocationLog.objects.none()
+        return BedAllocationLog.objects.select_related(
+            'bed',
+            'bed__ward',
+            'bed__ward__department'
+        ).filter(facility=facility)
 
 
 class WardTransferViewSet(viewsets.ModelViewSet):
@@ -769,16 +936,45 @@ class WardTransferViewSet(viewsets.ModelViewSet):
     """
     queryset = WardTransfer.objects.all()
     serializer_class = WardTransferSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     filterset_fields = ['patient', 'from_admission', 'to_admission', 'created_by']
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
             return WardTransferListSerializer
         return WardTransferSerializer
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return WardTransfer.objects.none()
+        queryset = WardTransfer.objects.select_related(
+            'from_admission',
+            'from_admission__patient',
+            'to_admission',
+            'to_admission__patient'
+        ).filter(facility=facility)
+        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
+        return queryset
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        from_admission = serializer.validated_data.get('from_admission')
+        if from_admission and from_admission.patient.facility_id != facility.id:
+            raise PermissionDenied("Admission does not belong to the active facility.")
+        if from_admission:
+            check_clinical_access(self.request.user, from_admission.patient)
+        serializer.save(created_by=self.request.user, facility=facility)
 
     @action(detail=False, methods=['post'])
     def request_transfer(self, request):
@@ -793,6 +989,29 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 from_admission = serializer.validated_data['from_admission']
                 to_bed = serializer.validated_data['to_bed']
                 reason = serializer.validated_data['reason']
+                facility = get_user_facility(request)
+                if not facility:
+                    raise PermissionDenied("Facility context is required.")
+                if from_admission.patient.facility_id != facility.id:
+                    raise PermissionDenied("Admission does not belong to the active facility.")
+                check_clinical_access(request.user, from_admission.patient)
+                if to_bed.ward.department and to_bed.ward.department.facility_id != facility.id:
+                    raise PermissionDenied("Destination bed does not belong to the active facility.")
+
+                # Resolve primary team from ward allocation when available
+                dest_practitioner = from_admission.admitting_doctor
+                primary_team = from_admission.primary_team
+                try:
+                    from apps.organization.models import UnitWardAllocation
+
+                    unit_allocation = UnitWardAllocation.objects.filter(
+                        ward=to_bed.ward, is_active=True
+                    ).select_related('unit').first()
+
+                    if unit_allocation:
+                        primary_team = unit_allocation.unit
+                except Exception:
+                    pass
 
                 # Create a new admission for the destination bed
                 to_admission = Admission.objects.create(
@@ -805,9 +1024,11 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     admission_type=from_admission.admission_type,
                     admission_notes=f"Transferred from {from_admission.bed.ward.name}: {reason}",
                     daily_rate=to_bed.total_rate,
-                    admitting_doctor=from_admission.admitting_doctor,
+                    admitting_doctor=dest_practitioner,
+                    primary_team=primary_team,
                     created_by=request.user,
-                    updated_by=request.user
+                    updated_by=request.user,
+                    facility=facility
                 )
 
                 # Create the transfer record
@@ -816,8 +1037,16 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                     from_admission=from_admission,
                     to_admission=to_admission,
                     reason=reason,
-                    created_by=request.user
+                    created_by=request.user,
+                    facility=facility
                 )
+
+                if getattr(from_admission, 'encounter', None):
+                    from apps.organization.services import TeamAssignmentService
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=from_admission.encounter,
+                        bed=to_bed
+                    )
 
                 # Update bed statuses
                 source_bed = from_admission.bed
@@ -834,6 +1063,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
                 # Create bed allocation logs
                 BedAllocationLog.objects.create(
                     bed=source_bed,
+                    facility=facility,
                     previous_status='occupied',
                     new_status='available',
                     admission=from_admission,
@@ -843,6 +1073,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
 
                 BedAllocationLog.objects.create(
                     bed=to_bed,
+                    facility=facility,
                     previous_status='available',
                     new_status='occupied',
                     admission=to_admission,
@@ -865,7 +1096,7 @@ class WardSectionViewSet(viewsets.ModelViewSet):
     """
     queryset = WardSection.objects.select_related('ward').prefetch_related('beds').all()
     serializer_class = WardSectionSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     filterset_fields = ['ward', 'gender_restriction', 'accommodation_tier', 'is_isolation_capable', 'is_active']
     search_fields = ['name', 'description']
     ordering_fields = ['display_order', 'name', 'created_at']
@@ -881,7 +1112,11 @@ class WardSectionViewSet(viewsets.ModelViewSet):
         """
         Override to allow filtering by ward and add search.
         """
-        queryset = super().get_queryset()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return WardSection.objects.none()
+
+        queryset = super().get_queryset().filter(ward__department__facility=facility)
         ward_id = self.request.query_params.get('ward', None)
         search_query = self.request.query_params.get('search', None)
 
@@ -897,6 +1132,12 @@ class WardSectionViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        ward = serializer.validated_data.get('ward')
+        if ward and ward.department and ward.department.facility_id != facility.id:
+            raise PermissionDenied("Ward does not belong to the active facility.")
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -964,6 +1205,7 @@ class StaffRoleViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code', 'description']
     ordering_fields = ['category', 'name']
     ordering = ['category', 'name']
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """Add search and filter only active by default."""
@@ -999,16 +1241,17 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
     queryset = WardStaffAssignment.objects.select_related(
         'ward', 'practitioner__staff__user', 'role', 'assigned_by'
     ).all()
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     filterset_fields = ['ward', 'practitioner', 'role', 'is_active', 'is_primary']
     ordering_fields = ['assigned_at', 'role__category', 'role__name']
     ordering = ['role__category', 'role__name', '-assigned_at']
+    pagination_class = StandardResultsSetPagination
 
     def get_permissions(self):
         """Only admins can create/update/delete assignments."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+            return [permissions.IsAdminUser(), FacilityScopedPermission()]
+        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -1021,7 +1264,11 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
         """
         Filter by ward, practitioner, role category, or active status.
         """
-        queryset = super().get_queryset()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return WardStaffAssignment.objects.none()
+
+        queryset = super().get_queryset().filter(ward__department__facility=facility)
 
         # Filter by ward
         ward_id = self.request.query_params.get('ward', None)
@@ -1047,6 +1294,12 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Set assigned_by on create."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        ward = serializer.validated_data.get('ward')
+        if ward and ward.department and ward.department.facility_id != facility.id:
+            raise PermissionDenied("Ward does not belong to the active facility.")
         serializer.save(assigned_by=self.request.user)
 
     def perform_update(self, serializer):

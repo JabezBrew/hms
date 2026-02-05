@@ -1,9 +1,10 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Loader2 } from 'lucide-react';
+import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -32,8 +33,8 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { usePractitioners } from '@/hooks/useStaffQueries';
-import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/hooks/useAppointmentQueries';
+import { usePractitioners } from '@/features/staff/hooks';
+import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/features/appointments/hooks/useAppointmentQueries';
 
 const formSchema = z.object({
     practitioner_id: z.string().min(1, 'Practitioner is required'),

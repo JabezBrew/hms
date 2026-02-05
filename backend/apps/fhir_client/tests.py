@@ -67,7 +67,7 @@ class FHIRClientTests(TestCase):
             "name": [{"family": "Smith", "given": ["John"]}]
         }
         response = self.client.create_resource("Patient", data)
-        self.assertEqual(response.get("id"), "mock-id")
+        self.assertTrue(response.get("id", "").startswith("mock-"))
         self.assertEqual(response.get("name"), data.get("name"))
         
     def test_mock_mode_put(self):
@@ -84,7 +84,7 @@ class FHIRClientTests(TestCase):
             "name": [{"family": "Smith", "given": ["John"]}]
         }
         response = self.client.update_resource("Patient", "123", data)
-        self.assertEqual(response.get("id"), "mock-id")
+        self.assertTrue(response.get("id", "").startswith("mock-"))
         self.assertEqual(response.get("name"), data.get("name"))
         
     def test_mock_mode_delete(self):

@@ -22,6 +22,7 @@ from apps.users.tests.factories import (
     UserFactory, PatientProfileFactory, PractitionerProfileFactory, StaffFactory
 )
 from apps.encounters.tests.factories import EncounterFactory
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 class LabTestCatalogFactory(DjangoModelFactory):
@@ -30,6 +31,7 @@ class LabTestCatalogFactory(DjangoModelFactory):
     class Meta:
         model = LabTestCatalog
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     code = factory.Sequence(lambda n: f'TEST-{n:04d}')
     loinc_code = factory.Sequence(lambda n: f'{1000 + n}-0')
     name = factory.Sequence(lambda n: f'Test Name {n}')
@@ -59,6 +61,7 @@ class LabPanelFactory(DjangoModelFactory):
     class Meta:
         model = LabPanel
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     code = factory.Sequence(lambda n: f'PANEL-{n:04d}')
     name = factory.Sequence(lambda n: f'Panel Name {n}')
     description = factory.Faker('paragraph')
@@ -84,6 +87,7 @@ class LabOrderFactory(DjangoModelFactory):
         model = LabOrder
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     encounter = factory.SubFactory(EncounterFactory)
     ordering_provider = factory.SubFactory(PractitionerProfileFactory)
     priority = 'routine'
@@ -101,6 +105,7 @@ class LabOrderTestFactory(DjangoModelFactory):
         model = LabOrderTest
 
     order = factory.SubFactory(LabOrderFactory)
+    facility = factory.SelfAttribute('order.facility')
     test = factory.SubFactory(LabTestCatalogFactory)
     status = 'ordered'
     notes = ''
@@ -114,6 +119,7 @@ class LabSpecimenFactory(DjangoModelFactory):
 
     barcode = factory.Sequence(lambda n: f'SPEC-{n:08d}')
     order = factory.SubFactory(LabOrderFactory)
+    facility = factory.SelfAttribute('order.facility')
     specimen_type = 'Serum'
     container_type = 'Red Top'
     volume_collected = '5 mL'
@@ -132,6 +138,7 @@ class LabResultFactory(DjangoModelFactory):
 
     order_test = factory.SubFactory(LabOrderTestFactory)
     specimen = factory.SubFactory(LabSpecimenFactory)
+    facility = factory.SelfAttribute('order_test.order.facility')
     value = '25.5'
     unit = 'mg/dL'
     reference_low = Decimal('10.0')

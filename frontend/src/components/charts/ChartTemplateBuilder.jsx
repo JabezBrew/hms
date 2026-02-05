@@ -8,6 +8,27 @@
  * 4. Preview (show how data entry will look)
  */
 
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import GripVertical from 'lucide-react/dist/esm/icons/grip-vertical.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import ListOrdered from 'lucide-react/dist/esm/icons/list-ordered.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import Brain from 'lucide-react/dist/esm/icons/brain.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Bandage from 'lucide-react/dist/esm/icons/bandage.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,29 +60,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  X,
-  ClipboardList,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Loader2,
-  Plus,
-  GripVertical,
-  Pencil,
-  Trash2,
-  Eye,
-  Settings,
-  ListOrdered,
-  Info,
-  Brain,
-  Heart,
-  Wind,
-  Beaker,
-  Activity,
-  Bandage,
-  MoreHorizontal,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import { ChartFieldEditor } from "./ChartFieldEditor";
 import { ChartFieldRenderer } from "./ChartFieldRenderer";
@@ -75,7 +74,9 @@ import {
   useUpdateChartField,
   useDeleteChartField,
   useReorderChartFields,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
+import { PageHeader } from "@/shared/components/page/PageHeader";
+import { PageShell } from "@/shared/components/page/PageShell";
 
 // Category icons
 const CATEGORY_ICONS = {
@@ -458,34 +459,36 @@ const ChartTemplateBuilder = ({
   }, [fields]);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+    <PageShell className="fixed inset-0 z-[100] flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <h1 className="font-display text-xl text-foreground">
-              {templateId ? "Edit Chart Template" : "New Chart Template"}
-            </h1>
-            {formData.name && (
-              <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                {formData.name}
-              </p>
+      <header className="border-b border-border bg-card">
+        <div className="px-6 py-4">
+          <PageHeader
+            wrap={false}
+            title={(
+              <span className="flex items-center gap-3">
+                <span className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </span>
+                {templateId ? "Edit Chart Template" : "New Chart Template"}
+              </span>
             )}
-          </div>
+            description={formData.name || null}
+            descriptionClassName="font-mono text-xs text-muted-foreground mt-0.5"
+            titleClassName="text-xl"
+            actions={(
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onClose}
+                className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+              >
+                <X className="h-4 w-4 mr-1.5" />
+                Close
+              </Button>
+            )}
+          />
         </div>
-
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
-        >
-          <X className="h-4 w-4 mr-1.5" />
-          Close
-        </Button>
       </header>
 
       {/* Step indicator */}
@@ -901,7 +904,7 @@ const ChartTemplateBuilder = ({
         onSave={handleSaveField}
         existingFieldKeys={fields.map((f) => f.field_key).filter((k) => k !== editingField?.field_key)}
       />
-    </div>
+    </PageShell>
   );
 };
 

@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.users.models import User, Staff, PractitionerProfile, PatientProfile, UserPatientList
+from apps.core.tests.factories import DefaultFacilityFactory
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory, NurseUserFactory,
     PatientUserFactory, StaffFactory, PractitionerProfileFactory,
@@ -21,11 +22,16 @@ from .factories import (
 )
 
 
-def get_authenticated_client(user):
+def get_authenticated_client(user, facility=None):
     """Get an API client authenticated as the given user."""
     client = APIClient()
     refresh = RefreshToken.for_user(user)
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    if facility is None:
+        facility = getattr(user, 'primary_facility', None) or DefaultFacilityFactory()
+    client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return client
 
 

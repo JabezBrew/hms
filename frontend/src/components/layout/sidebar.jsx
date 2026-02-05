@@ -1,25 +1,30 @@
-import {
-  LayoutDashboard,
-  Calendar,
-  Inbox,
-  Settings,
-  Activity,
-  FileText,
-  Pill,
-  FlaskConical,
-  CreditCard,
-  Shield,
-  Package,
-  Clock,
-  BookOpen,
-  ClipboardList,
-  FileSearch,
-  TestTube2,
-  Droplet,
-  ArrowLeftRight,
-  BarChart3,
-} from "lucide-react"
-
+import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import BookOpen from 'lucide-react/dist/esm/icons/book-open.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import FileSearch from 'lucide-react/dist/esm/icons/file-search.js';
+import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
+import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js';
+import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
+import FileBox from 'lucide-react/dist/esm/icons/file-box.js';
+import Truck from 'lucide-react/dist/esm/icons/truck.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import {
   SidebarContent,
   SidebarGroup,
@@ -29,11 +34,17 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarMenuBadge,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 import { useAuth } from "@/lib/auth"
+import { useInboxCount } from "@/features/inbox/hooks"
+import { useSidebarState } from "@/hooks/useSidebarState"
 
 // Helper function to check if a user has access to a menu item
 const hasAccess = (userRole, allowedRoles) => {
@@ -44,6 +55,8 @@ const hasAccess = (userRole, allowedRoles) => {
 export function AppSidebar() {
   const { user } = useAuth()
   const userRole = user?.role || ''
+  const { count: inboxCount } = useInboxCount()
+  const { getCollapsibleProps } = useSidebarState()
 
   // Get role-specific dashboard URL
   // Support staff are redirected to their workflow pages instead of a generic dashboard
@@ -89,16 +102,18 @@ export function AppSidebar() {
       shiftHandoff: ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'],
       noteTemplates: ['admin', 'doctor', 'nurse', 'practitioner', 'physician'],
       chartTemplates: ['admin', 'doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'practitioner', 'physician'],
-      inventory: ['admin', 'pharmacist'],
+      inventory: ['admin', 'pharmacist', 'store_keeper'],
       billing: ['admin', 'billing', 'receptionist'],
       laboratory: ['admin', 'lab_technician', 'doctor'],
       labWorklist: ['admin', 'lab_technician'],
       labCollection: ['admin', 'lab_technician', 'nurse', 'head_nurse', 'nurse_practitioner'],
       labOrders: ['admin', 'lab_technician', 'doctor', 'nurse', 'physician', 'practitioner'],
       labResults: ['admin', 'lab_technician', 'doctor', 'physician', 'practitioner'],
-      pharmacy: ['admin', 'pharmacist', 'pharmacy_tech', 'doctor'],
+      pharmacy: ['admin', 'pharmacist', 'pharmacy_tech'],
       encounters: ['admin', 'billing'], // Moved here for admin/billing access only
       staff: ['admin'],
+      organization: ['admin'],
+      dutyRoster: ['admin', 'head_nurse'],
       auditLogs: ['admin'],
     }
   }
@@ -141,7 +156,9 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Inbox" href="/inbox">
                   <Inbox />
                   <span>Inbox</span>
-                  <SidebarMenuBadge>3</SidebarMenuBadge>
+                  {inboxCount > 0 && (
+                    <SidebarMenuBadge>{inboxCount > 99 ? '99+' : inboxCount}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
@@ -274,12 +291,75 @@ export function AppSidebar() {
             )}
 
             {hasAccess(userRole, menuItems.management.inventory) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Inventory" href="/inventory">
-                  <Package />
-                  <span>Inventory</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('inventory')}>
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton tooltip="Inventory">
+                      <Package />
+                      <span>Inventory</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory">
+                          <LayoutDashboard className="h-4 w-4" />
+                          <span>Dashboard</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/items">
+                          <Package className="h-4 w-4" />
+                          <span>Items</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/locations">
+                          <Warehouse className="h-4 w-4" />
+                          <span>Locations</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/requisitions">
+                          <ClipboardList className="h-4 w-4" />
+                          <span>Requisitions</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/purchase-orders">
+                          <ShoppingCart className="h-4 w-4" />
+                          <span>Purchase Orders</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/grns">
+                          <FileBox className="h-4 w-4" />
+                          <span>GRNs</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/transfers">
+                          <Truck className="h-4 w-4" />
+                          <span>Transfers</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/controlled">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span>Controlled</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton href="/inventory/analytics">
+                          <BarChart3 className="h-4 w-4" />
+                          <span>Analytics</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             )}
 
             {hasAccess(userRole, menuItems.management.staff) && (
@@ -287,6 +367,24 @@ export function AppSidebar() {
                 <SidebarMenuButton tooltip="Staff" href="/staff">
                   <Shield />
                   <span>Staff</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.organization) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Organization" href="/admin/organization">
+                  <FolderTree />
+                  <span>Organization</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {hasAccess(userRole, menuItems.management.dutyRoster) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Duty Roster" href="/admin/organization/duty-roster">
+                  <CalendarClock />
+                  <span>Duty Roster</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

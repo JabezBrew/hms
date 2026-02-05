@@ -41,6 +41,12 @@ def authenticated_client(api_client, db):
     return api_client, user
 
 
+@pytest.fixture(autouse=True)
+def disable_mfa_for_tests(settings):
+    settings.MFA_REQUIRED_FOR_ALL = False
+    settings.MFA_REQUIRED_FOR_ADMIN = False
+
+
 # =============================================================================
 # Login Tests
 # =============================================================================

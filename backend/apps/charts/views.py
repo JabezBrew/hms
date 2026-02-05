@@ -8,7 +8,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count, OuterRef, Subquery
 from django.conf import settings
@@ -19,21 +19,22 @@ from apps.charts.serializers import (
     ChartTemplateListSerializer, ChartTemplateSerializer, ChartTemplateCreateSerializer,
     ChartFieldSerializer, ChartFieldCreateSerializer,
     ChartAssignmentListSerializer, ChartAssignmentSerializer, ChartAssignmentCreateSerializer,
-    ChartEntryListSerializer, ChartEntrySerializer, ChartEntryCreateSerializer,
+    ChartEntryListSerializer, ChartEntryListWithDataSerializer,
+    ChartEntrySerializer, ChartEntryCreateSerializer,
     ChartEntrySummarySerializer, ChartEntryTrendSerializer,
 )
 from apps.charts.permissions import (
     ChartTemplatePermission, ChartAssignmentPermission, ChartEntryPermission
 )
 from apps.charts.services import ChartEntryService
-from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination for charts endpoints."""
-    page_size = 25
-    page_size_query_param = 'page_size'
-    max_page_size = 100
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
+from apps.users.models import PatientProfile
 
 
 class ChartTemplateViewSet(viewsets.ModelViewSet):
@@ -49,7 +50,7 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
     categories: Get available category choices
     """
 
-    permission_classes = [IsAuthenticated, ChartTemplatePermission]
+    permission_classes = [IsAuthenticated, ChartTemplatePermission, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category', 'visibility', 'is_active']
@@ -60,10 +61,20 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter templates based on visibility rules."""
         user = self.request.user
-        queryset = ChartTemplate.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ChartTemplate.objects.none()
+
+        queryset = ChartTemplate.objects.filter(facility=facility)
 
         # Build visibility filter
-        visibility_q = Q(visibility='facility')
+        facility_visibility = Q(visibility='facility')
+        facility_visibility &= (
+            Q(created_by__primary_facility=facility) |
+            Q(created_by__facilities=facility) |
+            Q(created_by__isnull=True)
+        )
+        visibility_q = facility_visibility
 
         # Private templates created by user
         visibility_q |= Q(visibility='private', created_by=user)
@@ -81,7 +92,7 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
             if dept:
                 visibility_q |= Q(visibility='department', department=dept)
 
-        queryset = queryset.filter(visibility_q)
+        queryset = queryset.filter(visibility_q).distinct()
 
         # Annotate with field count for list view
         if self.action == 'list':
@@ -99,7 +110,10 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
         return ChartTemplateSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(created_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -285,7 +299,7 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     discontinue: Discontinue chart with reason
     """
 
-    permission_classes = [IsAuthenticated, ChartAssignmentPermission]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission, ChartAssignmentPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['patient', 'admission', 'template', 'status']
@@ -293,9 +307,13 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ChartAssignment.objects.none()
+
         queryset = ChartAssignment.objects.select_related(
             'template', 'patient__user', 'admission', 'ordered_by__staff__user'
-        )
+        ).filter(patient__facility=facility)
 
         user = self.request.user
         if user.user_type == 'admin':
@@ -326,6 +344,16 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
         else:
             queryset = queryset.prefetch_related('entries')
 
+        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
+            queryset = queryset.filter(patient_id=patient_id)
+
         return queryset
 
     def get_serializer_class(self):
@@ -344,6 +372,9 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data.get('patient')
         if patient:
             check_clinical_access(self.request.user, patient)
+            facility = get_user_facility(self.request)
+            if facility and patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
 
         serializer.save(
             created_by=self.request.user,
@@ -360,7 +391,17 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        queryset = self.get_queryset().filter(patient_id=patient_id)
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return Response(
+                {"error": "Patient not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        facility = get_user_facility(request)
+        if not facility or patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+        queryset = self.get_queryset().filter(patient_id=patient_id, patient__facility=facility)
 
         # Optional status filter
         status_filter = request.query_params.get('status')
@@ -436,6 +477,17 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
         return Response(ChartAssignmentSerializer(assignment).data)
 
 
+class ChartEntryPagination(StandardResultsSetPagination):
+    def get_page_size(self, request):
+        size = super().get_page_size(request)
+        include_data = request.query_params.get('include_data', '').lower() == 'true'
+        if include_data:
+            if size is None:
+                return 12
+            return min(size, 12)
+        return size
+
+
 class ChartEntryViewSet(viewsets.ModelViewSet):
     """
     ViewSet for chart entries (observations).
@@ -449,20 +501,24 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
     trends: Get trend data for visualization
     """
 
-    permission_classes = [IsAuthenticated, ChartEntryPermission]
-    pagination_class = StandardResultsSetPagination
+    permission_classes = [IsAuthenticated, FacilityScopedPermission, ChartEntryPermission]
+    pagination_class = ChartEntryPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['assignment', 'has_critical_values']
     ordering_fields = ['observation_datetime', 'created_at']
     ordering = ['-observation_datetime']
 
     def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ChartEntry.objects.none()
+
         queryset = ChartEntry.objects.filter(is_deleted=False).select_related(
             'assignment__template',
             'assignment__patient__user',
             'recorded_by__staff__user',
             'created_by',
-        )
+        ).filter(assignment__patient__facility=facility)
 
         user = self.request.user
         if user.user_type == 'admin':
@@ -489,7 +545,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return ChartEntryListSerializer
+            include_data = self.request.query_params.get('include_data', '').lower() == 'true'
+            return ChartEntryListWithDataSerializer if include_data else ChartEntryListSerializer
         elif self.action == 'create':
             return ChartEntryCreateSerializer
         return ChartEntrySerializer
@@ -501,6 +558,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         observation_datetime = serializer.validated_data.get('observation_datetime')
 
         check_clinical_access(self.request.user, assignment.patient)
+        facility = get_user_facility(self.request)
+        if facility and assignment.patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
 
         # Get practitioner profile
         recorded_by = None
@@ -547,6 +607,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             )
 
         check_clinical_access(request.user, assignment.patient)
+        facility = get_user_facility(request)
+        if facility and assignment.patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
 
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
@@ -580,6 +643,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             )
 
         check_clinical_access(request.user, assignment.patient)
+        facility = get_user_facility(request)
+        if facility and assignment.patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
 
         trend_data = ChartEntryService.get_trend_data(
             assignment, field_key=field_key, limit=limit
@@ -607,6 +673,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         check_clinical_access(request.user, patient)
+        facility = get_user_facility(request)
+        if facility and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
 
         queryset = self.get_queryset().filter(assignment__patient_id=patient_id)
 
@@ -619,5 +688,7 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         limit = int(request.query_params.get('limit', 100))
         queryset = queryset[:limit]
 
-        serializer = ChartEntryListSerializer(queryset, many=True)
+        include_data = request.query_params.get('include_data', '').lower() == 'true'
+        serializer_class = ChartEntryListWithDataSerializer if include_data else ChartEntryListSerializer
+        serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,9 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { apiClient } from '@/lib/api';
-import { format } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import format from 'date-fns/format';
+import DeferredMount from '@/components/ui/DeferredMount';
+
+const VitalSignsTrendsChart = lazy(() => import('./VitalSignsTrendsChart'));
 
 export function VitalSignsRecorder({ patient }) {
   const [loading, setLoading] = useState(true);
@@ -148,6 +149,8 @@ export function VitalSignsRecorder({ patient }) {
       diastolic: parseInt(vs.blood_pressure_diastolic),
     })).reverse();
   };
+
+  const chartData = useMemo(() => prepareChartData(), [vitalSigns]);
 
   if (loading) {
     return (
@@ -380,61 +383,11 @@ export function VitalSignsRecorder({ patient }) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-8">
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Temperature (°C)</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[36, 38]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="temperature" stroke="#8884d8" activeDot={{ r: 8 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Heart Rate (bpm)</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[50, 120]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="heart_rate" stroke="#82ca9d" activeDot={{ r: 8 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Blood Pressure (mmHg)</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[40, 160]} />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="systolic" stroke="#ff7300" activeDot={{ r: 8 }} />
-                      <Line type="monotone" dataKey="diastolic" stroke="#387908" activeDot={{ r: 8 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Oxygen Saturation (%)</h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={prepareChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[90, 100]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="oxygen_saturation" stroke="#0088FE" activeDot={{ r: 8 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+              <DeferredMount placeholder={<Skeleton className="h-64 w-full" />}>
+                <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+                  <VitalSignsTrendsChart data={chartData} />
+                </Suspense>
+              </DeferredMount>
             </CardContent>
           </Card>
         </TabsContent>

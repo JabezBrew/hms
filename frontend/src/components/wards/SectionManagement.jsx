@@ -1,3 +1,11 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Home from 'lucide-react/dist/esm/icons/house.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -33,17 +41,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Plus,
-  Edit,
-  Trash2,
-  Users,
-  Home,
-  Sparkles,
-  Shield,
-  AlertCircle
-} from 'lucide-react';
-import { useWardSections, useCreateSection, useUpdateSection, useDeleteSection } from '@/hooks/useWardQueries';
+
+import { useWardSections, useCreateSection, useUpdateSection, useDeleteSection } from '@/features/wards/hooks/useWardQueries';
 import { toast } from 'sonner';
 
 /**

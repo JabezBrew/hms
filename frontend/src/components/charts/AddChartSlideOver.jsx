@@ -5,6 +5,13 @@
  * monitoring settings for a patient.
  */
 
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,15 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  X,
-  ClipboardList,
-  Check,
-  Loader2,
-  Search,
-  Clock,
-  Info,
-} from "lucide-react";
+
 import { toast } from "sonner";
 import { ChartTemplateCard } from "./ChartTemplateCard";
 import {
@@ -35,7 +34,7 @@ import {
   useChartCategories,
   useChartIntervals,
   useCreateChartAssignment,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
 
 const AddChartSlideOver = ({
   open,

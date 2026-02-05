@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.db import IntegrityError
 
 from apps.core.models import Facility, Department
+from apps.core.cache_utils import facility_cache_key
 from apps.core.tests.factories import (
     FacilityFactory,
     HeadquartersFacilityFactory,
@@ -92,8 +93,8 @@ class TestFacilityModel:
 
     def test_facility_str_representation(self):
         """Test string representation of facility."""
-        facility = FacilityFactory(name='Test Hospital', code='TEST')
-        assert str(facility) == 'Test Hospital (TEST)'
+        facility = FacilityFactory(name='Test Hospital', code='TESTSTR')
+        assert str(facility) == 'Test Hospital (TESTSTR)'
 
     def test_facility_types(self):
         """Test creating facilities of different types."""
@@ -127,7 +128,7 @@ class TestFacilityCaching:
         assert len(facilities) >= 3
 
         # Second call should use cache
-        cached = cache.get('active_facilities')
+        cached = cache.get(facility_cache_key('active_facilities'))
         assert cached is not None
 
     def test_get_by_code_caches_result(self):
@@ -139,7 +140,7 @@ class TestFacilityCaching:
         assert result == facility
 
         # Check cache
-        cached = cache.get('facility_TESTCACHE')
+        cached = cache.get(facility_cache_key('facility_TESTCACHE'))
         assert cached is not None
 
     def test_facility_save_clears_cache(self):
@@ -150,16 +151,16 @@ class TestFacilityCaching:
         Facility.get_active_facilities()
         Facility.get_by_code('CLEARCACHE')
 
-        assert cache.get('active_facilities') is not None
-        assert cache.get('facility_CLEARCACHE') is not None
+        assert cache.get(facility_cache_key('active_facilities')) is not None
+        assert cache.get(facility_cache_key('facility_CLEARCACHE')) is not None
 
         # Save the facility
         facility.name = 'Updated Name'
         facility.save()
 
         # Cache should be cleared
-        assert cache.get('active_facilities') is None
-        assert cache.get('facility_CLEARCACHE') is None
+        assert cache.get(facility_cache_key('active_facilities')) is None
+        assert cache.get(facility_cache_key('facility_CLEARCACHE')) is None
 
 
 # =============================================================================
@@ -278,7 +279,7 @@ class TestDepartmentCaching:
         assert len(departments) >= 3
 
         # Check cache
-        cache_key = f'facility_departments_{facility.id}'
+        cache_key = facility_cache_key(f'facility_departments_{facility.id}')
         cached = cache.get(cache_key)
         assert cached is not None
 
@@ -289,7 +290,7 @@ class TestDepartmentCaching:
 
         # Populate cache
         Department.get_facility_departments(facility.id)
-        cache_key = f'facility_departments_{facility.id}'
+        cache_key = facility_cache_key(f'facility_departments_{facility.id}')
         assert cache.get(cache_key) is not None
 
         # Save department

@@ -46,16 +46,16 @@ export function useDashboardActions() {
     },
   });
 
-  // Check-in patient for appointment
+  // Check-in patient for appointment (starts outpatient visit)
   const checkInPatient = useMutation({
     mutationFn: async ({ appointmentId }) => {
-      return await apiClient.post(`/appointments/${appointmentId}/check-in/`, {
-        checked_in_at: new Date().toISOString(),
-      });
+      return await apiClient.post(`/appointments/appointments/${appointmentId}/start_visit/`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['dashboards']);
       queryClient.invalidateQueries(['appointments']);
+      queryClient.invalidateQueries(['visits']);
+      queryClient.invalidateQueries(['encounters']);
       toast.success('Patient checked in successfully');
     },
     onError: (error) => {

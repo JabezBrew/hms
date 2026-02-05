@@ -20,12 +20,13 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from apps.clinical_notes.models import NoteEntry, Prescription
 from apps.nursing.models import VitalSigns
 from apps.encounters.models import Encounter
 from apps.wards.models import Admission
+from apps.organization.services import UnitHierarchyService
 
 
 class Command(BaseCommand):
@@ -83,6 +84,8 @@ class Command(BaseCommand):
             tuple: (Encounter, created: bool, action: str)
         """
         entry_date = entry_datetime.date()
+        start_of_day = timezone.make_aware(datetime.combine(entry_date, time.min))
+        end_of_day = start_of_day + timedelta(days=1)
 
         # Check for active inpatient admission at the time of entry
         admission = Admission.objects.filter(
@@ -102,7 +105,12 @@ class Command(BaseCommand):
             if apply_changes:
                 encounter = Encounter.objects.create(
                     patient=patient,
+                    facility=patient.facility,
                     practitioner=admission.admitting_doctor,
+                    department=UnitHierarchyService.get_department_unit_for_core_department(
+                        admission.bed.ward.department if admission.bed else None,
+                        facility=patient.facility
+                    ),
                     encounter_type='inpatient',
                     status='in-progress' if admission.status == 'admitted' else 'finished',
                     start_time=admission.admission_date,
@@ -111,13 +119,26 @@ class Command(BaseCommand):
                     reason=reason,
                     location=admission.bed.ward.name if admission.bed else None,
                 )
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    team=admission.primary_team,
+                    use_roster=False,
+                    context='inpatient'
+                )
+                if admission.bed:
+                    TeamAssignmentService.reassign_team_on_bed_assignment(
+                        encounter=encounter,
+                        bed=admission.bed
+                    )
                 return encounter, True, 'created_for_admission'
             return None, True, 'would_create_for_admission'
 
         # Check for existing outpatient encounter on the same day
         filters = {
             'patient': patient,
-            'start_time__date': entry_date,
+            'start_time__gte': start_of_day,
+            'start_time__lt': end_of_day,
             'encounter_type__in': ['outpatient', 'emergency'],
         }
 
@@ -140,12 +161,19 @@ class Command(BaseCommand):
 
             encounter = Encounter.objects.create(
                 patient=patient,
+                facility=patient.facility,
                 practitioner=practitioner,
                 encounter_type='outpatient',
                 status='finished',  # Historical entries are finished
                 start_time=start_time,
                 end_time=start_time,  # Same day
                 reason=reason,
+            )
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(
+                encounter=encounter,
+                use_roster=False,
+                context='outpatient'
             )
             return encounter, True, 'created_new_outpatient'
 

@@ -1,7 +1,13 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { usePatients, useSearchPatients } from "@/hooks/usePatientQueries";
+import { usePatients, useSearchPatients } from "@/features/patients/hooks/usePatientQueries";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,17 +32,21 @@ import {
 } from "@/components/ui/pagination";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Plus, Loader2, Calendar as CalendarIcon, X } from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { cn, normalizeApiResults } from "@/lib/utils";
 
 const PatientList = ({ onPatientSelect, onAddPatient }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWard, setSelectedWard] = useState("all");
   const [admissionDate, setAdmissionDate] = useState();
   const [currentPage, setCurrentPage] = useState(1);
   const patientsPerPage = 10;
+
+  // Only admin and receptionist can register patients
+  const canRegisterPatients = ['admin', 'receptionist'].includes(user?.role);
 
   // Use React Query hooks for data fetching
   const {
@@ -261,7 +271,6 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     updateSearch({ query });
   };
 
-
   const handleDateChange = (date) => {
     setAdmissionDate(date);
     updateSearch({ admission_date: date ? format(date, "yyyy-MM-dd") : "" });
@@ -347,10 +356,12 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
     <Card className="w-full">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Patients</CardTitle>
-        <Button onClick={handleAddPatient}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Patient
-        </Button>
+        {canRegisterPatients && (
+          <Button onClick={handleAddPatient}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Patient
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         <div className="mb-4 space-y-4">

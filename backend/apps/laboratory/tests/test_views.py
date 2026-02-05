@@ -234,7 +234,10 @@ class TestLabSpecimenViewSet:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+        )
 
         specimen = LabSpecimenFactory(status='in_transit')
         data = {
@@ -257,7 +260,10 @@ class TestLabSpecimenViewSet:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+        )
 
         specimen = LabSpecimenFactory(status='in_transit')
         data = {
@@ -315,7 +321,10 @@ class TestLabResultViewSet:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+        )
 
         result = LabResultFactory(is_verified=False, verified_by=None, verified_at=None)
         # Verify action uses current user as verifier

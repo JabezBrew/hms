@@ -1,17 +1,15 @@
+import Building from 'lucide-react/dist/esm/icons/building.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Building,
-  ChevronRight,
-  Stethoscope,
-  Shield,
-  ClipboardList,
-  Pill,
-  FlaskConical,
-  Receipt,
-  Calendar
-} from "lucide-react";
 
 /**
  * StaffChronicleCard - Chronicle-style staff card

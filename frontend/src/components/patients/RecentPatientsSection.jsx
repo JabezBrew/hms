@@ -1,7 +1,8 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, ChevronRight } from "lucide-react";
 
 /**
  * RecentPatientsSection - Horizontal scrollable row of recently accessed patients
@@ -11,16 +12,24 @@ import { Clock, ChevronRight } from "lucide-react";
  * - Maximum 10 patients
  * - Click navigates to patient chronicle
  */
-const RecentPatientsSection = ({ patients = [], isLoading = false, className }) => {
+const RecentPatientsSection = ({
+  patients = [],
+  isLoading = false,
+  className,
+  showHeader = true,
+  onPrefetchPatient,
+}) => {
   const navigate = useNavigate();
 
   if (isLoading) {
     return (
       <section className={cn("space-y-3", className)}>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <h2 className="font-heading text-sm font-medium">Recent</h2>
-        </div>
+        {showHeader && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            <h2 className="font-heading text-sm font-medium">Recent</h2>
+          </div>
+        )}
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-20 w-40 flex-shrink-0 rounded-xl" />
@@ -43,11 +52,13 @@ const RecentPatientsSection = ({ patients = [], isLoading = false, className }) 
 
   return (
     <section className={cn("space-y-3", className)}>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Clock className="h-4 w-4" />
-        <h2 className="font-heading text-sm font-medium">Recent</h2>
-        <span className="text-xs">({patients.length})</span>
-      </div>
+      {showHeader && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Clock className="h-4 w-4" />
+          <h2 className="font-heading text-sm font-medium">Recent</h2>
+          <span className="text-xs">({patients.length})</span>
+        </div>
+      )}
 
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin snap-x snap-mandatory">
         {patients.map((recentEntry, index) => {
@@ -57,6 +68,7 @@ const RecentPatientsSection = ({ patients = [], isLoading = false, className }) 
               key={getPatientId(patient) || index}
               patient={patient}
               onClick={() => handlePatientClick(patient)}
+              onIntent={() => onPrefetchPatient?.(getPatientId(patient))}
             />
           );
         })}
@@ -68,7 +80,7 @@ const RecentPatientsSection = ({ patients = [], isLoading = false, className }) 
 /**
  * RecentPatientCard - Compact patient card for horizontal scroll
  */
-const RecentPatientCard = ({ patient, onClick }) => {
+const RecentPatientCard = ({ patient, onClick, onIntent }) => {
   const name = getDisplayName(patient);
   const mrn = getPatientMRN(patient);
   const ward = getPatientWard(patient);
@@ -80,6 +92,8 @@ const RecentPatientCard = ({ patient, onClick }) => {
   return (
     <button
       onClick={onClick}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
       className={cn(
         "flex-shrink-0 w-44 snap-start",
         "bg-card hover:bg-accent/50 border border-border rounded-xl p-3",

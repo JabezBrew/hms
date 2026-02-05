@@ -3,10 +3,12 @@ from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 from django.db.models import Sum, F, Q, Avg, Count, Case, When, Value
 from decimal import Decimal
 from ..fhir_client.client import fhir_client
@@ -32,6 +34,7 @@ from .serializers import (
 )
 from ..users.permissions import IsBillingStaff
 from apps.core.pagination import StandardResultsSetPagination as CorePagination
+from apps.core.security import FacilityScopedPermission, get_user_facility, check_billing_access
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 
@@ -49,15 +52,25 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     """
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ServiceCategory.objects.none()
+        return ServiceCategory.objects.filter(facility=facility)
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
+
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -69,12 +82,18 @@ class ServiceViewSet(viewsets.ModelViewSet):
     """
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'code', 'category__name']
     ordering_fields = ['name', 'base_price', 'category__name', 'created_at']
     ordering = ['category__name', 'name']
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Service.objects.none()
+        return Service.objects.filter(facility=facility).select_related('category')
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -82,7 +101,13 @@ class ServiceViewSet(viewsets.ModelViewSet):
         return ServiceSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        category = serializer.validated_data.get('category')
+        if category and category.facility_id != facility.id:
+            raise PermissionDenied("Service category does not belong to the active facility.")
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -92,7 +117,10 @@ class ServiceViewSet(viewsets.ModelViewSet):
         """
         Get services grouped by category.
         """
-        categories = ServiceCategory.objects.filter(is_active=True)
+        facility = get_user_facility(request)
+        if not facility:
+            return Response([])
+        categories = ServiceCategory.objects.filter(is_active=True, facility=facility)
         result = []
 
         for category in categories:
@@ -109,18 +137,37 @@ class ServiceViewSet(viewsets.ModelViewSet):
 class InsuranceProviderViewSet(viewsets.ModelViewSet):
     """
     API endpoint for insurance providers.
+
+    Read access (list, retrieve, plans): Admin, billing, receptionist
+    Write access (create, update, delete): Admin, billing only
     """
     queryset = InsuranceProvider.objects.all()
     serializer_class = InsuranceProviderSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'contact_person', 'email', 'phone']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return InsuranceProvider.objects.none()
+        return InsuranceProvider.objects.filter(facility=facility)
+
+    def get_permissions(self):
+        # Allow read-only access for receptionists (needed for patient registration)
+        if self.action in ['list', 'retrieve', 'plans']:
+            if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
+                return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+        return super().get_permissions()
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -145,18 +192,40 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
 class InsurancePlanViewSet(viewsets.ModelViewSet):
     """
     API endpoint for insurance plans.
+
+    Read access (list, retrieve): Admin, billing, receptionist
+    Write access (create, update, delete): Admin, billing only
     """
     queryset = InsurancePlan.objects.all()
     serializer_class = InsurancePlanSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description', 'provider__name']
     ordering_fields = ['name', 'provider__name', 'coverage_percentage', 'created_at']
     ordering = ['provider__name', 'name']
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return InsurancePlan.objects.none()
+        return InsurancePlan.objects.filter(facility=facility).select_related('provider')
+
+    def get_permissions(self):
+        # Allow read-only access for receptionists (needed for patient registration)
+        if self.action in ['list', 'retrieve']:
+            if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
+                return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+        return super().get_permissions()
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        provider = serializer.validated_data.get('provider')
+        if provider and provider.facility_id != facility.id:
+            raise PermissionDenied("Insurance provider does not belong to the active facility.")
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -168,16 +237,22 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
     """
     queryset = PatientInsurance.objects.all()
     serializer_class = PatientInsuranceSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'policy_number', 'plan__name', 'plan__provider__name']
     ordering_fields = ['valid_from', 'valid_until', 'created_at']
     ordering = ['-valid_from']
 
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientInsurance.objects.none()
+        return PatientInsurance.objects.filter(patient__facility=facility).select_related('plan', 'plan__provider')
+
     def get_permissions(self):
         if self.action == 'for_patient':
-            return [permissions.IsAuthenticated()]
+            return [permissions.IsAuthenticated(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -186,6 +261,15 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
         return PatientInsuranceSerializer
 
     def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        plan = serializer.validated_data.get('plan')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if plan and plan.facility_id != facility.id:
+            raise PermissionDenied("Insurance plan does not belong to the active facility.")
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -203,10 +287,8 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: Allow admin/billing or users with demographics access to view insurance
-        if request.user.user_type not in ['admin', 'billing']:
-            from apps.core.security import check_demographics_access
-            check_demographics_access(request.user, patient_id)
+        # SECURITY: Billing access only (admin/billing/patient self)
+        check_billing_access(request.user, patient_id)
 
         insurances = self.get_queryset().filter(patient_id=patient_id)
 
@@ -231,7 +313,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     API endpoint for invoices.
     """
     queryset = Invoice.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
@@ -240,7 +322,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'for_patient':
-            return [permissions.IsAuthenticated()]
+            return [permissions.IsAuthenticated(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -259,19 +341,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             queryset=Payment.objects.select_related('receipt', 'created_by')
         )
 
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Invoice.objects.none()
+
         queryset = super().get_queryset().select_related(
             'patient__user', 'facility', 'patient_insurance__plan__provider'
-        ).prefetch_related('items', payments_prefetch)
+        ).prefetch_related('items', payments_prefetch).filter(facility=facility)
 
         # Filter by status
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
 
-        # Filter by facility
+        # Filter by facility (explicit filter must match active facility)
         facility_id = self.request.query_params.get('facility')
-        if facility_id:
-            queryset = queryset.filter(facility_id=facility_id)
+        if facility_id and str(facility_id) != str(facility.id):
+            raise PermissionDenied("Facility filter does not match active facility.")
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
@@ -307,10 +393,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: Allow admin/billing or users with demographics access to view invoices
-        if request.user.user_type not in ['admin', 'billing']:
-            from apps.core.security import check_demographics_access
-            check_demographics_access(request.user, patient_id)
+        # SECURITY: Billing access only (admin/billing/patient self)
+        check_billing_access(request.user, patient_id)
 
         invoices = self.get_queryset().filter(patient_id=patient_id)
 
@@ -562,7 +646,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsBillingStaff]
+    permission_classes = [permissions.IsAuthenticated, IsBillingStaff, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
@@ -580,20 +664,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # Use select_related for all foreign keys to avoid N+1 queries
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Payment.objects.none()
+
         queryset = super().get_queryset().select_related(
             'invoice__patient__user', 'invoice__facility',
             'receipt', 'created_by'
-        )
+        ).filter(invoice__facility=facility)
 
         # Filter by payment method
         payment_method = self.request.query_params.get('payment_method')
         if payment_method:
             queryset = queryset.filter(payment_method=payment_method)
 
-        # Filter by facility
+        # Filter by facility (explicit filter must match active facility)
         facility_id = self.request.query_params.get('facility')
-        if facility_id:
-            queryset = queryset.filter(invoice__facility_id=facility_id)
+        if facility_id and str(facility_id) != str(facility.id):
+            raise PermissionDenied("Facility filter does not match active facility.")
 
         # Filter by date range
         date_from = self.request.query_params.get('date_from')
@@ -960,6 +1048,7 @@ class BillingDashboardViewSet(viewsets.ViewSet):
     """
     permission_classes = [permissions.IsAuthenticated]
 
+    @method_decorator(vary_on_headers('X-Facility-Code'))
     @method_decorator(cache_page(30))  # Cache for 30 seconds
     @action(detail=False, methods=['get'])
     def metrics(self, request):

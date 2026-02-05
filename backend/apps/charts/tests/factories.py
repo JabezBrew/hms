@@ -11,6 +11,7 @@ from django.utils import timezone
 from apps.charts.models import ChartTemplate, ChartField, ChartAssignment, ChartEntry
 from apps.users.tests.factories import UserFactory, PatientProfileFactory, PractitionerProfileFactory
 from apps.wards.tests.factories import AdmissionFactory
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 class ChartTemplateFactory(DjangoModelFactory):
@@ -19,6 +20,7 @@ class ChartTemplateFactory(DjangoModelFactory):
     class Meta:
         model = ChartTemplate
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     name = factory.Sequence(lambda n: f"Test Chart Template {n}")
     description = factory.Faker('paragraph')
     icon = 'clipboard-list'

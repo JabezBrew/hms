@@ -12,7 +12,6 @@ from django.utils import timezone
 from datetime import timedelta
 
 from apps.core.models import Facility, Department, BreakGlassEvent
-from apps.users.tests.factories import DoctorUserFactory, PatientProfileFactory
 
 User = get_user_model()
 
@@ -59,6 +58,19 @@ class FacilityFactory(factory.django.DjangoModelFactory):
     def updated_by(self):
         """Same as created_by for initial creation."""
         return self.created_by
+
+
+class DefaultFacilityFactory(FacilityFactory):
+    """Factory for creating a shared default facility for tests."""
+
+    class Meta:
+        model = Facility
+        django_get_or_create = ('code',)
+
+    code = 'TEST'
+    name = 'Test Facility'
+    created_by = None
+    updated_by = None
 
 
 class HeadquartersFacilityFactory(FacilityFactory):
@@ -141,8 +153,8 @@ class BreakGlassEventFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BreakGlassEvent
 
-    user = factory.SubFactory(DoctorUserFactory)
-    patient = factory.SubFactory(PatientProfileFactory)
+    user = factory.SubFactory('apps.users.tests.factories.DoctorUserFactory')
+    patient = factory.SubFactory('apps.users.tests.factories.PatientProfileFactory')
     scope = 'clinical'
     reason = factory.Faker('sentence')
     expires_at = factory.LazyFunction(lambda: timezone.now() + timedelta(minutes=30))

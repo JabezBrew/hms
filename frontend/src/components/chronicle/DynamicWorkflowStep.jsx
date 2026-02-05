@@ -1,13 +1,18 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Gauge from 'lucide-react/dist/esm/icons/gauge.js';
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  FileText, Activity, Pill, Stethoscope, AlertCircle,
-  Thermometer, Heart, Wind, Gauge
-} from "lucide-react";
 
 /**
  * VitalsInput - Grid of vital signs inputs

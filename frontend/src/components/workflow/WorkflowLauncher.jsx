@@ -1,3 +1,6 @@
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,13 +19,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Stethoscope, UserPlus, UserCheck } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import {
   useWardRoundWorkflow,
   useAdmissionWorkflow,
   useDischargeWorkflow,
-} from '@/hooks/useWorkflowQueries';
+} from '@/features/workflows/hooks';
 
 /**
  * WorkflowLauncher - Component to start clinical workflows

@@ -1,3 +1,6 @@
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import { useState, useEffect } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,10 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {toast} from 'sonner';
-import { format, parseISO, isToday, isSameDay } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+import isToday from 'date-fns/isToday';
+import isSameDay from 'date-fns/isSameDay';
+
 import { useNavigate } from 'react-router-dom';
-import { fetchAppointments } from '@/lib/api';
+import { fetchAppointments } from '@/features/appointments/api';
 
 const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreateAppointment }) => {
   const [date, setDate] = useState(new Date());

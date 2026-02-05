@@ -1,8 +1,14 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { FileText, Pill, MessageSquare, AlertTriangle, ShieldAlert, Activity } from "lucide-react"
-import { differenceInYears, parseISO } from "date-fns"
+import differenceInYears from "date-fns/differenceInYears";
+import parseISO from "date-fns/parseISO";
 
 export function PatientHeader({ patient, onAction }) {
     if (!patient) return null

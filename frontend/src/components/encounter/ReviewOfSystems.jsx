@@ -1,6 +1,7 @@
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const SYSTEMS = [

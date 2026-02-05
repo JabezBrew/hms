@@ -14,13 +14,15 @@ const AUTH_ENDPOINTS = [
   '/auth/password-reset/',
   '/auth/password-reset/confirm/',
   '/auth/password-reset/validate-token/',
-  '/auth/logout/'
+  '/auth/logout/',
+  '/auth/mfa/'
 ];
 
 // Token provider - will be set by the auth context
 let getAccessToken = () => null;
 let setAccessTokenFn = () => {};
 let onRefreshFailure = async () => {};
+let getFacilityCode = () => null;
 
 // Flag to track if a token refresh is in progress (singleton across all callers)
 let isRefreshing = false;
@@ -39,6 +41,10 @@ export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHan
   getAccessToken = tokenGetter;
   setAccessTokenFn = tokenSetter;
   onRefreshFailure = refreshFailureHandler;
+}
+
+export function setFacilityCodeProvider(facilityGetter) {
+  getFacilityCode = facilityGetter;
 }
 
 /**
@@ -75,9 +81,15 @@ export async function performTokenRefresh() {
 
   refreshPromise = (async () => {
     try {
+      const refreshHeaders = { 'Content-Type': 'application/json' };
+      const facilityCode = getFacilityCode();
+      if (facilityCode) {
+        refreshHeaders['X-Facility-Code'] = facilityCode;
+      }
+
       const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: refreshHeaders,
         credentials: 'include', // Include cookies for refresh token
       });
 
@@ -153,6 +165,11 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   // Add auth token if available
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const facilityCode = getFacilityCode();
+  if (facilityCode && !headers['X-Facility-Code']) {
+    headers['X-Facility-Code'] = facilityCode;
   }
 
   // Add CSRF token for non-GET requests
@@ -323,9 +340,38 @@ async function fetchAllPages(endpoint, options = {}) {
 /**
  * API client with methods for different request types
  */
+function appendQueryParams(endpoint, params) {
+  if (!params || typeof params !== 'object') {
+    return endpoint;
+  }
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null && item !== '') {
+          searchParams.append(key, String(item));
+        }
+      });
+      return;
+    }
+    searchParams.append(key, String(value));
+  });
+  const queryString = searchParams.toString();
+  if (!queryString) {
+    return endpoint;
+  }
+  const separator = endpoint.includes('?') ? '&' : '?';
+  return `${endpoint}${separator}${queryString}`;
+}
+
 export const apiClient = {
   get: async (endpoint, options = {}) => {
-    const response = await fetchWithAuth(endpoint, { ...options, method: 'GET' });
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    const response = await fetchWithAuth(url, { ...rest, method: 'GET' });
     return handlePaginatedResponse(response);
   },
 
@@ -333,8 +379,11 @@ export const apiClient = {
    * Get all pages of a paginated response
    * Use this when you need all results from a paginated endpoint
    */
-  getAll: (endpoint, options = {}) => 
-    fetchAllPages(endpoint, options),
+  getAll: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchAllPages(url, rest);
+  },
 
   post: (endpoint, data, options = {}) => 
     fetchWithAuth(endpoint, { 
@@ -364,8 +413,11 @@ export const apiClient = {
    * Get the full response including pagination metadata
    * Use this when you need access to pagination info (count, next, previous)
    */
-  getWithPagination: (endpoint, options = {}) =>
-    fetchWithAuth(endpoint, { ...options, method: 'GET' }),
+  getWithPagination: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchWithAuth(url, { ...rest, method: 'GET' });
+  },
 };
 
 /**

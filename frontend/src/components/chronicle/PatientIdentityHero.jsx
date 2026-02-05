@@ -1,19 +1,23 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
+import Phone from 'lucide-react/dist/esm/icons/phone.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  AlertTriangle,
-  Calendar,
-  MapPin,
-  Phone,
-  FileText,
-  Activity,
-  Pill,
-  MoreHorizontal,
-  ClipboardList,
-  Droplets,
-  BarChart3,
-  Shield,
-} from "lucide-react";
+
+import { VisitStatusBadge } from "@/components/visits/VisitStatusBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,13 +42,18 @@ const PatientIdentityHero = ({
   onPrescribe,
   onOrderLabs,
   onRequestConsult,
+  onShareRecord,
+  onReceiveRecord,
+  onActionIntent,
   onScheduleFollowUp,
   onViewTreatmentSheet,
   onRecordFluids,
   onAssignChart,
+  onStartWardRound,
   onManageInsurance,
   insurance = [],
   activeAdmission,
+  activeVisit,
   className
 }) => {
   // ============================================
@@ -230,6 +239,12 @@ const PatientIdentityHero = ({
   // Render
   // ============================================
 
+  const prefetchAction = (action) => {
+    if (onActionIntent) {
+      onActionIntent(action);
+    }
+  };
+
   return (
     <header className={cn(
       "relative bg-card border-b border-border",
@@ -288,6 +303,17 @@ const PatientIdentityHero = ({
               </span>
             )}
 
+            {/* Active Visit Status */}
+            {activeVisit && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
+                  <Users className="h-3.5 w-3.5" />
+                  #{activeVisit.queue_number}
+                </span>
+                <VisitStatusBadge status={activeVisit.visit_status} size="sm" />
+              </div>
+            )}
+
             {/* Insurance Badge */}
             {onManageInsurance && (
               <button
@@ -341,6 +367,8 @@ const PatientIdentityHero = ({
             size="sm"
             className="font-mono text-xs"
             onClick={onAddNote}
+            onPointerEnter={() => prefetchAction('note')}
+            onFocus={() => prefetchAction('note')}
           >
             <FileText className="h-3.5 w-3.5 mr-1.5" />
             Add Note
@@ -351,6 +379,8 @@ const PatientIdentityHero = ({
             size="sm"
             className="font-mono text-xs"
             onClick={onRecordVitals}
+            onPointerEnter={() => prefetchAction('vitals')}
+            onFocus={() => prefetchAction('vitals')}
           >
             <Activity className="h-3.5 w-3.5 mr-1.5" />
             Vitals
@@ -361,6 +391,8 @@ const PatientIdentityHero = ({
             size="sm"
             className="font-mono text-xs"
             onClick={onPrescribe}
+            onPointerEnter={() => prefetchAction('prescription')}
+            onFocus={() => prefetchAction('prescription')}
           >
             <Pill className="h-3.5 w-3.5 mr-1.5" />
             Prescribe
@@ -380,32 +412,97 @@ const PatientIdentityHero = ({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onPointerEnter={() => {
+                  prefetchAction('labs');
+                  prefetchAction('referral');
+                  prefetchAction('charts');
+                }}
+                onFocus={() => {
+                  prefetchAction('labs');
+                  prefetchAction('referral');
+                  prefetchAction('charts');
+                }}
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onOrderLabs}>Order Labs</DropdownMenuItem>
-              <DropdownMenuItem onClick={onRequestConsult}>Request Consult</DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onOrderLabs}
+                onPointerEnter={() => prefetchAction('labs')}
+                onFocus={() => prefetchAction('labs')}
+              >
+                Order Labs
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onRequestConsult}
+                onPointerEnter={() => prefetchAction('referral')}
+                onFocus={() => prefetchAction('referral')}
+              >
+                Request Consult
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
               {onAssignChart && (
-                <DropdownMenuItem onClick={onAssignChart}>
+                <DropdownMenuItem
+                  onClick={onAssignChart}
+                  onPointerEnter={() => prefetchAction('charts')}
+                  onFocus={() => prefetchAction('charts')}
+                >
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Assign Chart
                 </DropdownMenuItem>
               )}
-              {activeAdmission && onRecordFluids && (
+              {activeAdmission && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onRecordFluids}>
-                    <Droplets className="h-4 w-4 mr-2" />
-                    Record Fluids
-                  </DropdownMenuItem>
+                  {onStartWardRound && (
+                    <DropdownMenuItem
+                      onClick={onStartWardRound}
+                      onPointerEnter={() => prefetchAction('wardRound')}
+                      onFocus={() => prefetchAction('wardRound')}
+                    >
+                      <Stethoscope className="h-4 w-4 mr-2" />
+                      Ward Round
+                    </DropdownMenuItem>
+                  )}
+                  {onRecordFluids && (
+                    <DropdownMenuItem
+                      onClick={onRecordFluids}
+                      onPointerEnter={() => prefetchAction('fluids')}
+                      onFocus={() => prefetchAction('fluids')}
+                    >
+                      <Droplets className="h-4 w-4 mr-2" />
+                      Record Fluids
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => window.print()}>Print Summary</DropdownMenuItem>
-              <DropdownMenuItem>Export Record</DropdownMenuItem>
+              {onShareRecord && (
+                <DropdownMenuItem
+                  onClick={onShareRecord}
+                  onPointerEnter={() => prefetchAction('crossFacility')}
+                  onFocus={() => prefetchAction('crossFacility')}
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Share Record
+                </DropdownMenuItem>
+              )}
+              {onReceiveRecord && (
+                <DropdownMenuItem
+                  onClick={onReceiveRecord}
+                  onPointerEnter={() => prefetchAction('receiveRecord')}
+                  onFocus={() => prefetchAction('receiveRecord')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Receive Record
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

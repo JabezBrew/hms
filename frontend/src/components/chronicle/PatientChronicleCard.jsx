@@ -1,7 +1,14 @@
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Star from 'lucide-react/dist/esm/icons/star.js';
+import StarOff from 'lucide-react/dist/esm/icons/star-off.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import UserMinus from 'lucide-react/dist/esm/icons/user-minus.js';
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Activity, AlertTriangle, Clock, ChevronRight, Star, StarOff, UserPlus, UserMinus } from "lucide-react";
 
 /**
  * PatientChronicleCard - A magazine-style patient card for the Chronicle design system
@@ -17,9 +24,11 @@ const PatientChronicleCard = ({
   patient,
   index = 0,
   onStartRound,
+  onStartConsultation,
   onAddToMyPatients,
   onRemoveFromMyPatients,
   onTogglePin,
+  onPrefetchPatient,
   showMyPatientsActions = false,
   isInMyPatients = false,
   className
@@ -168,6 +177,16 @@ const PatientChronicleCard = ({
     return patient?.pending_orders || 0;
   };
 
+  const getIsAdmitted = (patient) => {
+    return !!(
+      patient?.current_admission_id ||
+      patient?.local_data?.current_admission_id ||
+      patient?.patient_profile_details?.current_admission_id ||
+      patient?.admission_status === 'admitted' ||
+      patient?.local_data?.admission_status === 'admitted'
+    );
+  };
+
   // ============================================
   // Extracted data
   // ============================================
@@ -186,6 +205,7 @@ const PatientChronicleCard = ({
   const vitals = getVitals(patient);
   const status = getPatientStatus(patient);
   const pendingOrders = getPendingOrders(patient);
+  const isAdmitted = getIsAdmitted(patient);
 
   // Build location string
   const location = [ward, bed ? `Bed ${bed}` : null].filter(Boolean).join(', ');
@@ -207,10 +227,23 @@ const PatientChronicleCard = ({
     }
   };
 
+  const handleIntentPrefetch = () => {
+    if (onPrefetchPatient && patientId) {
+      onPrefetchPatient(patientId);
+    }
+  };
+
   const handleStartRound = (e) => {
     e.stopPropagation();
     if (onStartRound) {
       onStartRound(patient);
+    }
+  };
+
+  const handleStartConsultation = (e) => {
+    e.stopPropagation();
+    if (onStartConsultation) {
+      onStartConsultation(patient);
     }
   };
 
@@ -242,15 +275,29 @@ const PatientChronicleCard = ({
   // Render
   // ============================================
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleViewRecord();
+    }
+  };
+
   return (
     <article
       onClick={handleViewRecord}
+      onKeyDown={handleKeyDown}
+      onPointerEnter={handleIntentPrefetch}
+      onFocus={handleIntentPrefetch}
+      tabIndex={0}
+      role="button"
+      aria-label={`View patient ${displayName}, ${mrn}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
         "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
         "hover:border-primary/30 transition-all duration-500",
         "hover:shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
         "animate-chronicle-enter",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
       style={{ animationDelay: `${index * 50}ms` }}
@@ -278,7 +325,7 @@ const PatientChronicleCard = ({
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2 shrink-0">
           {status === 'critical' && (
             <span className="badge-chronicle-rose flex items-center gap-1 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-              <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
               <span className="hidden sm:inline">CRITICAL</span>
             </span>
           )}
@@ -369,19 +416,19 @@ const PatientChronicleCard = ({
           {/* Pinned indicator for My Patients */}
           {isPinned && (
             <span className="flex items-center gap-1 text-primary">
-              <Star className="h-3 w-3 fill-current" />
+              <Star className="h-3 w-3 fill-current" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
             </span>
           )}
           {!isPinned && pendingOrders > 0 && (
             <>
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
             </>
           )}
           {!isPinned && pendingOrders === 0 && (
             <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-3 w-3" aria-hidden="true" />
               No pending items
             </span>
           )}
@@ -440,13 +487,23 @@ const PatientChronicleCard = ({
           >
             View Record
           </Button>
-          {onStartRound && (
+          {onStartRound && isAdmitted && (
             <Button
               size="sm"
               className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
               onClick={handleStartRound}
             >
               Start Round
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          )}
+          {onStartConsultation && !isAdmitted && (
+            <Button
+              size="sm"
+              className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
+              onClick={handleStartConsultation}
+            >
+              Consult
               <ChevronRight className="h-3 w-3 ml-1" />
             </Button>
           )}

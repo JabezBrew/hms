@@ -2,7 +2,7 @@
 # Install with: pip install -r requirements-dev.txt
 
 # Test Framework
-pytest==7.4.3
+pytest==8.3.3
 pytest-django==4.7.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0
@@ -22,3 +22,4 @@ flake8==6.1.0
 
 # Coverage Reporting
 coverage==7.3.2
+cryptography>=42.0.0

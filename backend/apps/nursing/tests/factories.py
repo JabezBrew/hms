@@ -21,6 +21,7 @@ from apps.nursing.models import (
     MedicationAdministration, ShiftHandoff,
     TreatmentSheetEntry, SupplyRequest
 )
+from apps.core.tests.factories import DepartmentFactory, DefaultFacilityFactory
 from apps.users.tests.factories import (
     AdminUserFactory, DoctorUserFactory, NurseUserFactory,
     PatientProfileFactory, PractitionerProfileFactory, StaffFactory
@@ -45,6 +46,10 @@ class WardFactory(factory.django.DjangoModelFactory):
     is_active = True
     total_beds = factory.Faker('random_int', min=10, max=50)
     base_rate_per_night = factory.Faker('pydecimal', left_digits=3, right_digits=2, positive=True)
+    department = factory.SubFactory(
+        DepartmentFactory,
+        facility=factory.SubFactory(DefaultFacilityFactory)
+    )
 
     @factory.lazy_attribute
     def created_by(self):
@@ -66,6 +71,7 @@ class BedFactory(factory.django.DjangoModelFactory):
         model = 'wards.Bed'
 
     ward = factory.SubFactory(WardFactory)
+    facility = factory.SelfAttribute('ward.department.facility')
     bed_number = factory.Sequence(lambda n: f"B{n:03d}")
     bed_type = 'standard'
     status = 'available'
@@ -79,6 +85,7 @@ class EncounterFactory(factory.django.DjangoModelFactory):
         model = 'encounters.Encounter'
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     practitioner = factory.SubFactory(PractitionerProfileFactory)
     encounter_type = 'outpatient'
     status = 'in-progress'
@@ -102,7 +109,10 @@ class AdmissionFactory(factory.django.DjangoModelFactory):
         model = 'wards.Admission'
 
     patient = factory.SubFactory(PatientProfileFactory)
-    bed = factory.SubFactory(BedFactory)
+    bed = factory.SubFactory(
+        BedFactory
+    )
+    facility = factory.SelfAttribute('patient.facility')
     admission_date = factory.LazyFunction(timezone.now)
     status = 'admitted'
     admission_type = 'elective'
@@ -132,6 +142,7 @@ class VitalSignsFactory(factory.django.DjangoModelFactory):
         model = VitalSigns
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     recorded_by = factory.SubFactory(PractitionerProfileFactory)
     encounter = factory.SubFactory(EncounterFactory)
 
@@ -171,6 +182,7 @@ class NursingTaskFactory(factory.django.DjangoModelFactory):
         model = NursingTask
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     task_type = factory.Faker('random_element', elements=[
         'medication', 'assessment', 'vitals', 'wound_care',
         'hygiene', 'nutrition', 'mobility', 'documentation', 'other'
@@ -221,6 +233,7 @@ class NursingAlertFactory(factory.django.DjangoModelFactory):
         model = NursingAlert
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     alert_type = factory.Faker('random_element', elements=[
         'vital_signs', 'medication', 'task_overdue',
         'patient_fall', 'deterioration', 'equipment', 'other'
@@ -260,6 +273,7 @@ class MedicationAdministrationFactory(factory.django.DjangoModelFactory):
         model = MedicationAdministration
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     medication_name = factory.Faker('random_element', elements=[
         'Paracetamol', 'Amoxicillin', 'Omeprazole', 'Metformin',
         'Atenolol', 'Lisinopril', 'Aspirin', 'Ibuprofen'
@@ -320,6 +334,7 @@ class ShiftHandoffFactory(factory.django.DjangoModelFactory):
         model = ShiftHandoff
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     shift_date = factory.LazyFunction(lambda: date.today())
     shift_type = factory.Faker('random_element', elements=['day', 'evening', 'night'])
     from_nurse = factory.SubFactory(PractitionerProfileFactory)
@@ -353,8 +368,15 @@ class TreatmentSheetEntryFactory(factory.django.DjangoModelFactory):
         model = TreatmentSheetEntry
 
     patient = factory.SubFactory(PatientProfileFactory)
-    admission = factory.SubFactory(AdmissionFactory)
-    encounter = factory.SubFactory(EncounterFactory)
+    admission = factory.SubFactory(
+        AdmissionFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    encounter = factory.SubFactory(
+        EncounterFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    facility = factory.SelfAttribute('patient.facility')
 
     medication_name = factory.Faker('random_element', elements=[
         'Paracetamol', 'Amoxicillin', 'Omeprazole', 'Metformin'
@@ -396,6 +418,7 @@ class SupplyRequestFactory(factory.django.DjangoModelFactory):
         model = SupplyRequest
 
     treatment_entry = factory.SubFactory(TreatmentSheetEntryFactory)
+    facility = factory.SelfAttribute('treatment_entry.facility')
     quantity_requested = factory.Faker('random_int', min=5, max=20)
     status = 'pending'
     requested_by = factory.SubFactory(PractitionerProfileFactory)
@@ -429,7 +452,11 @@ class FluidBalanceFactory(factory.django.DjangoModelFactory):
         model = 'nursing.FluidBalance'
 
     patient = factory.SubFactory(PatientProfileFactory)
-    admission = factory.SubFactory(AdmissionFactory)
+    admission = factory.SubFactory(
+        AdmissionFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    facility = factory.SelfAttribute('patient.facility')
     entry_type = factory.Faker('random_element', elements=['intake', 'output'])
     category = factory.LazyAttribute(
         lambda o: factory.Faker('random_element', elements=['oral', 'iv', 'enteral', 'blood']).evaluate(

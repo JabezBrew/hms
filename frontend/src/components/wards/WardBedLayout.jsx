@@ -1,3 +1,14 @@
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Wrench from 'lucide-react/dist/esm/icons/wrench.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Home from 'lucide-react/dist/esm/icons/house.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import React from 'react';
 import { cn } from '@/lib/utils';
 import {
@@ -7,20 +18,10 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import {
-  Bed,
-  User,
-  Calendar,
-  Clock,
-  Wrench,
-  AlertCircle,
-  ChevronRight,
-  Users,
-  Home,
-  Shield,
-  Sparkles
-} from 'lucide-react';
-import { useWardSections } from '@/hooks/useWardQueries';
+import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedList from '@/components/ui/VirtualizedList';
+
+import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 
 /**
  * WardBedLayout - Chronicle-style bed visualization
@@ -301,15 +302,19 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
             {/* Section Header */}
             <SectionHeader section={section} />
 
-            {/* Beds Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {beds.map((bed) => {
+            <VirtualizedGrid
+              items={beds}
+              minItemWidth={160}
+              rowHeight={200}
+              gap={16}
+              getItemKey={(bed) => bed.id}
+              renderItem={(bed) => {
                 const config = statusConfig[bed.status] || statusConfig.available;
                 const StatusIcon = config.icon;
                 const patientInfo = getPatientInfo(bed.id);
 
                 return (
-                  <TooltipProvider key={bed.id}>
+                  <TooltipProvider>
                     <Tooltip delayDuration={200}>
                       <TooltipTrigger asChild>
                         <div
@@ -321,7 +326,6 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                             config.borderClass
                           )}
                         >
-                          {/* Bed Icon & Number */}
                           <div className="flex items-start justify-between mb-3">
                             <div className={cn("p-2 rounded-lg", `bg-${config.color}-500/20`)}>
                               <Bed className={cn("h-5 w-5", config.iconClass)} />
@@ -334,7 +338,6 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                             </span>
                           </div>
 
-                          {/* Status & Type */}
                           <div className="space-y-1">
                             <div className={cn(
                               "flex items-center gap-1.5",
@@ -350,7 +353,6 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                             </p>
                           </div>
 
-                          {/* Patient Preview (for occupied beds) */}
                           {patientInfo && (
                             <div className="mt-3 pt-3 border-t border-border/50">
                               <p className="text-sm font-medium text-foreground truncate">
@@ -375,8 +377,8 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                     </Tooltip>
                   </TooltipProvider>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
         );
       })}
@@ -415,16 +417,18 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
             {/* Section Header */}
             <SectionHeader section={section} />
 
-            {/* Beds List */}
-            <div className="space-y-2">
-              {beds.map((bed) => {
+            <VirtualizedList
+              items={beds}
+              estimateSize={120}
+              gap={8}
+              getItemKey={(bed) => bed.id}
+              renderItem={(bed) => {
                 const config = statusConfig[bed.status] || statusConfig.available;
                 const StatusIcon = config.icon;
                 const patientInfo = getPatientInfo(bed.id);
 
                 return (
                   <div
-                    key={bed.id}
                     onClick={() => onBedClick(bed.id)}
                     className={cn(
                       "flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all",
@@ -432,7 +436,6 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       "bg-card/50 border-border/50"
                     )}
                   >
-                    {/* Bed Icon */}
                     <div className={cn(
                       "p-3 rounded-xl shrink-0",
                       config.bgClass
@@ -440,7 +443,6 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       <Bed className={cn("h-5 w-5", config.iconClass)} />
                     </div>
 
-                    {/* Bed Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3">
                         <span className="font-mono text-lg font-bold text-foreground">
@@ -459,7 +461,6 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                         </span>
                       </div>
 
-                      {/* Patient Info */}
                       {patientInfo ? (
                         <div className="flex items-center gap-4 mt-1.5">
                           <div className="flex items-center gap-1.5 text-sm text-foreground">
@@ -488,7 +489,6 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       )}
                     </div>
 
-                    {/* Rate */}
                     {bed.total_rate && (
                       <div className="text-right shrink-0">
                         <p className="font-mono text-sm font-medium text-foreground">
@@ -500,12 +500,11 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       </div>
                     )}
 
-                    {/* Arrow */}
                     <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
                   </div>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
         );
       })}

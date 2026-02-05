@@ -1,6 +1,9 @@
+import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
+import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,7 +48,7 @@ import {
   useCreateAppointmentType,
   useUpdateAppointmentType,
   useDeleteAppointmentType
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 
 /**
  * Component for managing appointment types

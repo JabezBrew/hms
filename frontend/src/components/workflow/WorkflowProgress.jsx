@@ -1,4 +1,7 @@
-import { CheckCircle, Circle, ArrowRight } from 'lucide-react';
+
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import Circle from 'lucide-react/dist/esm/icons/circle.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import { cn } from '@/lib/utils';
 
 /**

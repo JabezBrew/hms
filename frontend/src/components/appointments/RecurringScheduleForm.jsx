@@ -1,11 +1,15 @@
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format } from 'date-fns';
-import { Plus, Trash2, CalendarIcon, Eye, X } from 'lucide-react';
+import format from 'date-fns/format';
+
 import { toast } from 'sonner';
-import { useDebounce } from '@/hooks/use-debounce';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -27,13 +31,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -42,17 +39,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { TimePicker } from '@/components/ui/time-picker';
 import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { useAuth } from '@/lib/auth';
 
 import {
   useCreateRecurringSchedule,
   useUpdateRecurringSchedule
-} from '@/hooks/useAppointmentQueries';
+} from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useSearchPractitioners
-} from '@/hooks/useStaffQueries';
-import { previewSlots } from '@/lib/api';
+} from '@/features/staff/hooks';
+import { previewSlots } from '@/features/appointments/api';
 
 // Form validation schema
 const formSchema = z.object({
@@ -88,22 +86,28 @@ const formSchema = z.object({
 });
 
 const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
+  const { user } = useAuth();
+  const isDoctor = user?.role === 'doctor';
+  const currentUserPractitionerId = user?.practitionerId;
+  const currentUserName = user ? `${user.firstName} ${user.lastName}` : '';
+
   const [submitting, setSubmitting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [previewData, setPreviewData] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const isEditing = !!initialData;
 
-  // Use React Query hooks for data fetching
+  // Determine if practitioner should be auto-filled (doctor creating their own schedule)
+  const shouldAutoFillPractitioner = isDoctor && currentUserPractitionerId && !isEditing;
+
+  // Use React Query hooks for data fetching - only enable search when not auto-filling
   const {
     data: practitioners = [],
     isLoading,
     isError: isPractitionersError,
-    error: practitionersError
+    error: practitionersError,
+    setSearchTerm
   } = useSearchPractitioners(false, {
-    enabled: debouncedSearchQuery.length >= 2 || (isEditing && !!initialData?.practitioner),
     minLength: 2
   });
 
@@ -119,13 +123,13 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
     }
   }, [isPractitionersError, practitionersError]);
 
-  // Set search query when editing to load the current practitioner
+  // Set search term when editing to load the current practitioner
   useEffect(() => {
-    if (isEditing && initialData?.practitioner) {
-      // Set the search query to the practitioner ID to trigger a search
-      setSearchQuery(initialData.practitioner);
+    if (isEditing && initialData?.practitioner_name) {
+      // Set the search term to the practitioner name to trigger a search
+      setSearchTerm(initialData.practitioner_name);
     }
-  }, [isEditing, initialData]);
+  }, [isEditing, initialData, setSearchTerm]);
 
   // Days of week options
   const daysOfWeek = [
@@ -139,11 +143,12 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   ];
 
   // Initialize form with default values or initial data
+  // Auto-fill practitioner for doctors creating their own schedule
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: initialData?.name || '',
-      practitioner: initialData?.practitioner || '',
+      practitioner: initialData?.practitioner || (shouldAutoFillPractitioner ? currentUserPractitionerId : ''),
       days_of_week: initialData?.days_of_week || [],
       start_time: initialData?.start_time || '09:00',
       end_time: initialData?.end_time || '17:00',
@@ -248,22 +253,23 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
         {/* Schedule Name */}
         <FormField
           control={form.control}
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Schedule Name</FormLabel>
+              <FormLabel className="font-heading text-sm font-medium">Schedule Name</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="e.g., Dr. Smith Regular Hours"
+                  placeholder="e.g., Regular Office Hours"
+                  className="font-mono text-sm"
                   {...field}
                   disabled={submitting}
                 />
               </FormControl>
-              <FormDescription>
+              <FormDescription className="text-xs text-muted-foreground">
                 A descriptive name for this recurring schedule.
               </FormDescription>
               <FormMessage />
@@ -271,125 +277,175 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           )}
         />
 
-        {/* Practitioner Selection */}
-        <FormField
-          control={form.control}
-          name="practitioner"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Practitioner</FormLabel>
-              <FormControl>
-                <SearchBar
-                  options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                    // Check for simple name field first (from search API)
-                    if (practitioner?.name) {
-                      return {
-                        label: practitioner.name,
-                        value: practitioner.id
-                      };
-                    } else if (practitioner.fhir_resource) {
-                      // New structure with FHIR resource
-                      const name = practitioner.fhir_resource.name?.[0];
-                      const given = name?.given?.join(' ') || '';
-                      const family = name?.family || '';
-                      const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
-                      return {
-                        label: displayName,
-                        value: practitioner.fhir_resource.id
-                      };
-                    } else {
-                      // Old structure with staff_details
-                      return {
-                        label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`.replace(/\s+/g, ' ').trim(),
-                        value: practitioner.id
-                      };
-                    }
-                  }) : []}
-                  value={field.value}
-                  onChange={field.onChange}
-                  onInputChange={setSearchQuery}
-                  placeholder="Select a practitioner"
-                  emptyMessage={isLoading ? "Searching..." : "No practitioners found."}
-                  searchPlaceholder="Search by name, employee ID, or license number..."
-                  disabled={submitting || isEditing} // Can't change practitioner when editing
-                  maxHeight="20rem"
-                  isLoading={isLoading}
-                />
-              </FormControl>
-              <FormDescription>
-                The practitioner this schedule applies to. Search by name, employee ID, or license number.
-                {isEditing && " Practitioner cannot be changed after creation."}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {/* Practitioner Selection - Show read-only display for doctors creating their own schedule */}
+        {shouldAutoFillPractitioner ? (
+          <FormItem>
+            <FormLabel className="font-heading text-sm font-medium">Practitioner</FormLabel>
+            <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <User className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-display text-sm font-medium truncate">{currentUserName}</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Your Schedule</p>
+              </div>
+            </div>
+            <FormDescription className="text-xs text-muted-foreground">
+              This schedule will be created for you.
+            </FormDescription>
+          </FormItem>
+        ) : (
+          <FormField
+            control={form.control}
+            name="practitioner"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="font-heading text-sm font-medium">Practitioner</FormLabel>
+                <FormControl>
+                  <SearchBar
+                    options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
+                      // Check for simple name field first (from search API)
+                      if (practitioner?.name) {
+                        return {
+                          label: practitioner.name,
+                          value: practitioner.id
+                        };
+                      } else if (practitioner.fhir_resource) {
+                        // New structure with FHIR resource
+                        const name = practitioner.fhir_resource.name?.[0];
+                        const given = name?.given?.join(' ') || '';
+                        const family = name?.family || '';
+                        const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
+                        return {
+                          label: displayName,
+                          value: practitioner.fhir_resource.id
+                        };
+                      } else {
+                        // Old structure with staff_details
+                        return {
+                          label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`.replace(/\s+/g, ' ').trim(),
+                          value: practitioner.id
+                        };
+                      }
+                    }) : []}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onInputChange={setSearchTerm}
+                    placeholder="Select a practitioner"
+                    emptyMessage={isLoading ? "Searching..." : "No practitioners found."}
+                    searchPlaceholder="Search by name, employee ID, or license number..."
+                    disabled={submitting || isEditing} // Can't change practitioner when editing
+                    maxHeight="20rem"
+                    isLoading={isLoading}
+                  />
+                </FormControl>
+                <FormDescription className="text-xs text-muted-foreground">
+                  The practitioner this schedule applies to. Search by name, employee ID, or license number.
+                  {isEditing && " Practitioner cannot be changed after creation."}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         {/* Days of Week */}
         <FormField
           control={form.control}
           name="days_of_week"
-          render={() => (
-            <FormItem>
-              <FormLabel>Days of Week</FormLabel>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                {daysOfWeek.map((day) => (
-                  <FormField
-                    key={day.id}
-                    control={form.control}
-                    name="days_of_week"
-                    render={({ field }) => {
-                      return (
-                        <FormItem
-                          key={day.id}
-                          className="flex flex-row items-center space-x-2 space-y-0"
-                        >
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value?.includes(day.id)}
-                              onCheckedChange={(checked) => {
-                                return checked
-                                  ? field.onChange([...field.value, day.id])
-                                  : field.onChange(
-                                    field.value?.filter(
-                                      (value) => value !== day.id
-                                    )
-                                  );
-                              }}
-                              disabled={submitting}
-                            />
-                          </FormControl>
-                          <FormLabel className="font-normal">
-                            {day.label}
-                          </FormLabel>
-                        </FormItem>
-                      );
-                    }}
-                  />
-                ))}
-              </div>
-              <FormDescription>
-                Select the days of the week when this schedule applies.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field }) => {
+            const allDayIds = daysOfWeek.map(d => d.id);
+            const weekdayIds = [0, 1, 2, 3, 4]; // Mon-Fri
+            const allSelected = allDayIds.every(id => field.value?.includes(id));
+            const weekdaysSelected = weekdayIds.every(id => field.value?.includes(id));
+
+            return (
+              <FormItem>
+                <div className="flex items-center justify-between">
+                  <FormLabel className="font-heading text-sm font-medium">Days of Week</FormLabel>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 font-mono text-[10px]"
+                      onClick={() => field.onChange(weekdaysSelected ? [] : weekdayIds)}
+                      disabled={submitting}
+                    >
+                      {weekdaysSelected ? 'Clear' : 'Weekdays'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 font-mono text-[10px]"
+                      onClick={() => field.onChange(allSelected ? [] : allDayIds)}
+                      disabled={submitting}
+                    >
+                      {allSelected ? 'None' : 'All'}
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 mt-2">
+                  {daysOfWeek.map((day) => {
+                    const isChecked = field.value?.includes(day.id);
+                    return (
+                      <label
+                        key={day.id}
+                        className={cn(
+                          "flex items-center justify-center rounded-md border px-2 py-2 cursor-pointer transition-colors text-center",
+                          isChecked
+                            ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                            : "border-border hover:bg-muted/50"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              field.onChange([...field.value, day.id]);
+                            } else {
+                              field.onChange(field.value?.filter(v => v !== day.id));
+                            }
+                          }}
+                          disabled={submitting}
+                        />
+                        <span className={cn(
+                          "font-mono text-xs",
+                          isChecked ? "text-amber-700 dark:text-amber-400 font-medium" : "text-muted-foreground"
+                        )}>
+                          {day.label.slice(0, 3)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <FormDescription className="text-xs text-muted-foreground">
+                  Select the days of the week when this schedule applies.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
         />
 
         {/* Time Range */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           {/* Start Time */}
           <FormField
             control={form.control}
             name="start_time"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Start Time</FormLabel>
+                <FormLabel className="font-heading text-sm font-medium">Start Time</FormLabel>
                 <FormControl>
-                  <Input
-                    type="time"
-                    {...field}
+                  <TimePicker
+                    value={field.value}
+                    onChange={field.onChange}
                     disabled={submitting}
+                    placeholder="Select start time"
                   />
                 </FormControl>
                 <FormMessage />
@@ -403,12 +459,13 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
             name="end_time"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>End Time</FormLabel>
+                <FormLabel className="font-heading text-sm font-medium">End Time</FormLabel>
                 <FormControl>
-                  <Input
-                    type="time"
-                    {...field}
+                  <TimePicker
+                    value={field.value}
+                    onChange={field.onChange}
                     disabled={submitting}
+                    placeholder="Select end time"
                   />
                 </FormControl>
                 <FormMessage />
@@ -418,48 +475,58 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         </div>
 
         {/* Breaks Section */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <FormLabel className="text-base">Breaks</FormLabel>
+            <FormLabel className="font-heading text-sm font-medium">Breaks</FormLabel>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => append({ start: "", end: "" })}
+              className="font-mono text-xs h-7"
+              onClick={() => append({ start: "12:00", end: "13:00" })}
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add Break
             </Button>
           </div>
 
           {fields.length === 0 && (
-            <p className="text-sm text-muted-foreground italic">No breaks defined.</p>
+            <p className="text-xs text-muted-foreground italic py-2">No breaks defined.</p>
           )}
 
           <div className="space-y-2">
             {fields.map((field, index) => (
-              <div key={field.id} className="flex items-end gap-2">
+              <div key={field.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2">
                 <FormField
                   control={form.control}
                   name={`breaks.${index}.start`}
                   render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel className="text-xs">Start</FormLabel>
+                    <FormItem className="flex-1 space-y-0">
                       <FormControl>
-                        <Input type="time" {...field} />
+                        <TimePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Start"
+                          className="h-8"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+                <span className="text-muted-foreground text-xs">to</span>
                 <FormField
                   control={form.control}
                   name={`breaks.${index}.end`}
                   render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel className="text-xs">End</FormLabel>
+                    <FormItem className="flex-1 space-y-0">
                       <FormControl>
-                        <Input type="time" {...field} />
+                        <TimePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="End"
+                          className="h-8"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -469,10 +536,10 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="mb-2 text-destructive"
+                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                   onClick={() => remove(index)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
             ))}
@@ -485,19 +552,23 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           name="slot_duration"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Slot Duration (minutes)</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  min={5}
-                  step={5}
-                  {...field}
-                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                  disabled={submitting}
-                />
-              </FormControl>
-              <FormDescription>
-                The duration of each appointment slot in minutes.
+              <FormLabel className="font-heading text-sm font-medium">Slot Duration</FormLabel>
+              <div className="flex items-center gap-2">
+                <FormControl>
+                  <Input
+                    type="number"
+                    min={5}
+                    step={5}
+                    className="font-mono text-sm w-24"
+                    {...field}
+                    onChange={(e) => field.onChange(parseInt(e.target.value))}
+                    disabled={submitting}
+                  />
+                </FormControl>
+                <span className="font-mono text-xs text-muted-foreground">minutes</span>
+              </div>
+              <FormDescription className="text-xs text-muted-foreground">
+                The duration of each appointment slot.
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -505,21 +576,21 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         />
 
         {/* Date Range */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           {/* Active From */}
           <FormField
             control={form.control}
             name="active_from"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Active From</FormLabel>
+                <FormLabel className="font-heading text-sm font-medium">Active From</FormLabel>
                 <Popover>
                   <PopoverTrigger asChild>
                     <FormControl>
                       <Button
-                        variant={"outline"}
+                        variant="outline"
                         className={cn(
-                          "w-full pl-3 text-left font-normal",
+                          "w-full pl-3 text-left font-mono text-sm",
                           !field.value && "text-muted-foreground"
                         )}
                         disabled={submitting}
@@ -533,7 +604,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent className="w-auto p-0 z-[400]" align="start" side="bottom" avoidCollisions>
                     <Calendar
                       mode="single"
                       selected={field.value}
@@ -542,8 +613,8 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                     />
                   </PopoverContent>
                 </Popover>
-                <FormDescription>
-                  The date from which this schedule becomes active.
+                <FormDescription className="text-xs text-muted-foreground">
+                  When this schedule becomes active.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -556,14 +627,14 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
             name="active_to"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Active To (Optional)</FormLabel>
+                <FormLabel className="font-heading text-sm font-medium">Active To</FormLabel>
                 <Popover>
                   <PopoverTrigger asChild>
                     <FormControl>
                       <Button
-                        variant={"outline"}
+                        variant="outline"
                         className={cn(
-                          "w-full pl-3 text-left font-normal",
+                          "w-full pl-3 text-left font-mono text-sm",
                           !field.value && "text-muted-foreground"
                         )}
                         disabled={submitting}
@@ -577,7 +648,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent className="w-auto p-0 z-[400]" align="start" side="bottom" avoidCollisions>
                     <Calendar
                       mode="single"
                       selected={field.value}
@@ -586,8 +657,8 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                     />
                   </PopoverContent>
                 </Popover>
-                <FormDescription>
-                  Optional end date for this schedule. Leave blank for indefinite schedules.
+                <FormDescription className="text-xs text-muted-foreground">
+                  Optional. Leave blank for indefinite.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -600,11 +671,11 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           control={form.control}
           name="is_active"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <FormItem className="flex flex-row items-center justify-between rounded-md border border-border bg-muted/30 px-4 py-3">
               <div className="space-y-0.5">
-                <FormLabel className="text-base">Active Status</FormLabel>
-                <FormDescription>
-                  Whether this schedule is active and can be used to generate slots.
+                <FormLabel className="font-heading text-sm font-medium">Active Status</FormLabel>
+                <FormDescription className="text-xs text-muted-foreground">
+                  Enable to generate appointment slots.
                 </FormDescription>
               </div>
               <FormControl>
@@ -618,30 +689,32 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           )}
         />
 
-        {/* Submit Button */}
-        <div className="flex justify-between pt-4">
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-border">
           <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
             <DialogTrigger asChild>
               <Button
                 type="button"
-                variant="secondary"
+                variant="ghost"
+                size="sm"
+                className="font-mono text-xs"
                 onClick={handlePreview}
                 disabled={isPreviewLoading}
               >
                 {isPreviewLoading ? (
-                  <>Generating Preview...</>
+                  <>Generating...</>
                 ) : (
                   <>
-                    <Eye className="mr-2 h-4 w-4" />
+                    <Eye className="mr-1.5 h-3.5 w-3.5" />
                     Preview Slots
                   </>
                 )}
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
+            <DialogContent className="sm:max-w-[500px] z-[300]">
               <DialogHeader>
-                <DialogTitle>Slot Preview</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className="font-display text-lg">Slot Preview</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
                   Preview of slots generated based on current settings (for a single day).
                 </DialogDescription>
               </DialogHeader>
@@ -649,24 +722,28 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                 {previewData && previewData.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
                     {previewData.map((slot, i) => (
-                      <div key={i} className="bg-secondary/50 p-2 rounded text-center text-sm border">
+                      <div key={i} className="font-mono text-xs bg-muted/50 px-2 py-1.5 rounded text-center border border-border">
                         {slot.start} - {slot.end}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className="text-center py-8 text-xs text-muted-foreground">
                     No slots generated. Check your time range and breaks.
                   </div>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground mt-2">
+              <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mt-2">
                 Total slots: {previewData?.length || 0}
               </div>
             </DialogContent>
           </Dialog>
 
-          <Button type="submit" disabled={submitting}>
+          <Button
+            type="submit"
+            disabled={submitting}
+            className="bg-amber-600 hover:bg-amber-700 font-mono text-xs"
+          >
             {submitting ? 'Saving...' : isEditing ? 'Update Schedule' : 'Create Schedule'}
           </Button>
         </div>

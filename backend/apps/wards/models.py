@@ -222,6 +222,12 @@ class Bed(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ward = models.ForeignKey(Ward, on_delete=models.CASCADE, related_name='beds')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='ward_beds',
+        help_text="Facility context for this bed"
+    )
     bed_number = models.CharField(max_length=20)
 
     # Bed type
@@ -321,6 +327,7 @@ class Bed(models.Model):
             models.Index(fields=['accommodation_tier']),
             models.Index(fields=['current_isolation_type']),
             models.Index(fields=['is_isolation_capable']),
+            models.Index(fields=['facility', 'status']),
         ]
 
     def __str__(self):
@@ -382,6 +389,12 @@ class Admission(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='admissions')
     bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='admissions', null=True, blank=True)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='admissions',
+        help_text="Facility context for this admission"
+    )
 
     # FHIR Encounter reference
     fhir_encounter_id = models.CharField(max_length=100, blank=True, null=True)
@@ -420,10 +433,29 @@ class Admission(models.Model):
 
     # Staff
     admitting_doctor = models.ForeignKey(
-        PractitionerProfile, 
-        on_delete=models.SET_NULL, 
+        PractitionerProfile,
+        on_delete=models.SET_NULL,
         null=True,
         related_name='admissions_handled'
+    )
+
+    # Clinical Unit (Team) - for flexible organizational hierarchy
+    # DEPRECATED: Use encounter.primary_team instead. Kept for backward compatibility.
+    primary_team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='primary_admissions',
+        help_text='DEPRECATED: Use encounter.primary_team instead. Kept for backward compatibility.'
+    )
+    # DEPRECATED: Use encounter.consulting_teams / EncounterCareTeam instead.
+    consulting_teams = models.ManyToManyField(
+        'organization.ClinicalUnit',
+        through='CareTeamAssignment',
+        related_name='consulting_admissions',
+        blank=True,
+        help_text='DEPRECATED: Use encounter.consulting_teams instead.'
     )
 
     # Audit fields
@@ -441,6 +473,8 @@ class Admission(models.Model):
             models.Index(fields=['patient', 'status']),
             models.Index(fields=['admission_date']),
             models.Index(fields=['fhir_encounter_id']),
+            models.Index(fields=['primary_team', 'status']),  # For team-based filtering
+            models.Index(fields=['facility', 'status', 'admission_date']),
         ]
 
     def __str__(self):
@@ -501,6 +535,19 @@ class Admission(models.Model):
         super().save(*args, **kwargs)
 
     @property
+    def effective_primary_team(self):
+        """
+        Get primary team from encounter (preferred) or admission (fallback).
+
+        The source of truth for primary_team is now Encounter.primary_team.
+        This property provides backward compatibility by checking the linked
+        encounter first, then falling back to the admission's own primary_team.
+        """
+        if hasattr(self, 'encounter') and self.encounter and self.encounter.primary_team:
+            return self.encounter.primary_team
+        return self.primary_team
+
+    @property
     def length_of_stay(self):
         """
         Calculate the length of stay in days.
@@ -531,12 +578,92 @@ class Admission(models.Model):
         self.bed.save()
 
 
+class CareTeamAssignment(models.Model):
+    """
+    Consulting/co-managing teams for an admission.
+    Primary team is stored on Admission.primary_team (not here).
+
+    Note: 'primary' role is NOT included - that's on Admission.primary_team only.
+    This avoids sync issues and enables fast primary-team filters.
+    """
+    ROLE_CHOICES = [
+        ('consulting', 'Consulting'),
+        ('co_managing', 'Co-Managing'),
+        ('procedure', 'Procedure Team'),
+    ]
+
+    STATUS_CHOICES = [
+        ('requested', 'Requested'),
+        ('accepted', 'Accepted'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('declined', 'Declined'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    admission = models.ForeignKey(
+        Admission,
+        on_delete=models.CASCADE,
+        related_name='care_team_assignments'
+    )
+    team = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.PROTECT,
+        related_name='care_team_assignments'
+    )
+
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='consulting')
+
+    # Consult workflow
+    consult_reason = models.TextField(blank=True)
+    consult_requested_at = models.DateTimeField(null=True, blank=True)
+    consult_accepted_at = models.DateTimeField(null=True, blank=True)
+    consult_completed_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_care_team_assignments'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['admission', 'team'],
+                name='unique_admission_team'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['admission', 'status', 'is_active']),
+            models.Index(fields=['team', 'status', 'is_active']),
+        ]
+        verbose_name = 'Care Team Assignment'
+        verbose_name_plural = 'Care Team Assignments'
+
+    def __str__(self):
+        return f'{self.team.name} ({self.get_role_display()}) for {self.admission}'
+
+
 class BedAllocationLog(models.Model):
     """
     Model to track bed allocation and status changes.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     bed = models.ForeignKey(Bed, on_delete=models.CASCADE, related_name='allocation_logs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='bed_allocation_logs',
+        help_text="Facility context for this bed allocation log"
+    )
 
     # Status change
     previous_status = models.CharField(max_length=20, choices=Bed.STATUS_CHOICES)
@@ -554,6 +681,9 @@ class BedAllocationLog(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['facility', '-timestamp']),
+        ]
 
     def __str__(self):
         return f"{self.bed} - {self.previous_status} to {self.new_status} - {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
@@ -570,6 +700,12 @@ class WardTransfer(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='transfers')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='ward_transfers',
+        help_text="Facility context for this ward transfer"
+    )
 
     # Transfer details
     from_admission = models.ForeignKey(
@@ -595,6 +731,9 @@ class WardTransfer(models.Model):
 
     class Meta:
         ordering = ['-transfer_time']
+        indexes = [
+            models.Index(fields=['facility', '-transfer_time']),
+        ]
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.from_admission.bed.ward.name} to {self.to_admission.bed.ward.name}"

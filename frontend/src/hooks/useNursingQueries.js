@@ -1,11 +1,63 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api';
+import { apiClient } from '@/lib/api-client';
+import { keyWith } from '@/shared/lib/queryKeys';
+
+export const nursingKeys = {
+  patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
+  patientMonitoringAll: () => keyWith('patient-monitoring'),
+  patientDetail: (patientId) => keyWith('patient-detail', patientId),
+  vitalSigns: (patient, admission, date, startDate, endDate) =>
+    keyWith('vital-signs', patient, admission, date, startDate, endDate),
+  vitalSignsWindow: (patientId, window) => keyWith('vital-signs', patientId, window),
+  vitalSignsAll: () => keyWith('vital-signs'),
+  vitalSignsTrends: (patientId, days) => keyWith('vital-signs-trends', patientId, days),
+  vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
+  nursingTasks: (patient, status, ward, date) => keyWith('nursing-tasks', patient, status, ward, date),
+  nursingTasksAll: () => keyWith('nursing-tasks'),
+  nursingTasksToday: () => keyWith('nursing-tasks-today'),
+  nursingAlerts: (patient, ward, severity, status) => keyWith('nursing-alerts', patient, ward, severity, status),
+  nursingAlertsAll: () => keyWith('nursing-alerts'),
+  nursingAlertsActive: () => keyWith('nursing-alerts-active'),
+  medicationAdministrations: (patient, admission, date, status) =>
+    keyWith('medication-administrations', patient, admission, date, status),
+  medicationAdministrationsAll: () => keyWith('medication-administrations'),
+  medicationsDueNow: () => keyWith('medications-due-now'),
+  medicationsOverdue: () => keyWith('medications-overdue'),
+  patientMar: (patientId, date) => keyWith('patient-mar', patientId, date),
+  patientMarAll: () => keyWith('patient-mar'),
+  marGrid: (admissionId, startDate, days) => keyWith('mar-grid', admissionId, startDate, days),
+  marGridAll: () => keyWith('mar-grid'),
+  pendingDispensing: (patientId) => keyWith('pending-dispensing', patientId),
+  pendingDispensingAll: () => keyWith('pending-dispensing'),
+  readyForAdmin: (patientId) => keyWith('ready-for-admin', patientId),
+  readyForAdminAll: () => keyWith('ready-for-admin'),
+  shiftHandoffs: (ward, date, shift) => keyWith('shift-handoffs', ward, date, shift),
+  shiftHandoffsAll: () => keyWith('shift-handoffs'),
+  shiftHandoffsToday: () => keyWith('shift-handoffs-today'),
+  treatmentSheet: (admissionId) => keyWith('treatment-sheet', admissionId),
+  treatmentSheetAll: () => keyWith('treatment-sheet'),
+  treatmentSheetEntry: (entryId) => keyWith('treatment-sheet-entry', entryId),
+  treatmentSheetLowSupply: () => keyWith('treatment-sheet-low-supply'),
+  supplyStatus: (entryId) => keyWith('supply-status', entryId),
+  supplyRequests: (status) => keyWith('supply-requests', status),
+  supplyRequestsAll: () => keyWith('supply-requests'),
+  supplyRequest: (requestId) => keyWith('supply-request', requestId),
+  fluidBalance: (patientId, entryType, date, startDate, endDate) =>
+    keyWith('fluid-balance', patientId, entryType, date, startDate, endDate),
+  fluidBalanceAll: () => keyWith('fluid-balance'),
+  fluidBalanceSummary: (patientId, date) => keyWith('fluid-balance-summary', patientId, date),
+  fluidBalanceSummaryAll: () => keyWith('fluid-balance-summary'),
+  fluidBalanceToday: (patientId) => keyWith('fluid-balance-today', patientId),
+  fluidBalanceTodayAll: () => keyWith('fluid-balance-today'),
+  fluidBalanceSettings: () => keyWith('fluid-balance-settings'),
+  fluidBalanceAlerts: (patientId, date) => keyWith('fluid-balance-alerts', patientId, date),
+};
 
 // ========== Patient Monitoring ==========
 
 export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => {
   return useQuery({
-    queryKey: ['patient-monitoring', wardId, page, pageSize],
+    queryKey: nursingKeys.patientMonitoring(wardId, page, pageSize),
     queryFn: async () => {
       const params = new URLSearchParams();
       if (wardId) params.append('ward', wardId);
@@ -64,7 +116,7 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
 
 export const usePatientDetail = (patientId) => {
   return useQuery({
-    queryKey: ['patient-detail', patientId],
+    queryKey: nursingKeys.patientDetail(patientId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/monitoring/patient_detail/?patient=${patientId}`);
       // Ensure we always return an object
@@ -88,7 +140,7 @@ export const useVitalSigns = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['vital-signs', patient, admission, date, start_date, end_date],
+    queryKey: nursingKeys.vitalSigns(patient, admission, date, start_date, end_date),
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`);
@@ -104,7 +156,7 @@ export const useVitalSigns = (filters = {}) => {
 
 export const useVitalSignsTrends = (patientId, days = 7) => {
   return useQuery({
-    queryKey: ['vital-signs-trends', patientId, days],
+    queryKey: nursingKeys.vitalSignsTrends(patientId, days),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`);
       // apiClient.get returns data directly, not response.data
@@ -126,10 +178,10 @@ export const useCreateVitalSigns = () => {
       return result;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['vital-signs'] });
-      queryClient.invalidateQueries({ queryKey: ['vital-signs-trends', data?.patient] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-detail', data?.patient] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.vitalSignsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.vitalSignsTrendsByPatient(data?.patient) });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientDetail(data?.patient) });
     },
   });
 };
@@ -142,7 +194,7 @@ export const useNursingTasks = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['nursing-tasks', patient, status, ward, date],
+    queryKey: nursingKeys.nursingTasks(patient, status, ward, date),
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/tasks/?${params.toString()}`);
@@ -158,7 +210,7 @@ export const useNursingTasks = (filters = {}) => {
 
 export const useTodayTasks = () => {
   return useQuery({
-    queryKey: ['nursing-tasks-today'],
+    queryKey: nursingKeys.nursingTasksToday(),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/tasks/today/');
       // apiClient.get returns data directly, not response.data
@@ -179,9 +231,9 @@ export const useCreateNursingTask = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks-today'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
     },
   });
 };
@@ -195,9 +247,9 @@ export const useCompleteTask = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks-today'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
     },
   });
 };
@@ -211,8 +263,8 @@ export const useUpdateTask = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['nursing-tasks-today'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
     },
   });
 };
@@ -225,7 +277,7 @@ export const useNursingAlerts = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['nursing-alerts', patient, ward, severity, status],
+    queryKey: nursingKeys.nursingAlerts(patient, ward, severity, status),
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`);
@@ -242,7 +294,7 @@ export const useNursingAlerts = (filters = {}) => {
 
 export const useActiveAlerts = () => {
   return useQuery({
-    queryKey: ['nursing-alerts-active'],
+    queryKey: nursingKeys.nursingAlertsActive(),
     queryFn: async () => {
       // Use getWithPagination to avoid auto-extraction of results
       const data = await apiClient.getWithPagination('/nursing/alerts/active/');
@@ -276,9 +328,9 @@ export const useAcknowledgeAlert = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['nursing-alerts-active'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingAlertsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingAlertsActive() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
     },
   });
 };
@@ -291,7 +343,7 @@ export const useMedicationAdministrations = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['medication-administrations', patient, admission, date, status],
+    queryKey: nursingKeys.medicationAdministrations(patient, admission, date, status),
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/medications/?${params.toString()}`);
@@ -307,7 +359,7 @@ export const useMedicationAdministrations = (filters = {}) => {
 
 export const useMedicationsDueNow = () => {
   return useQuery({
-    queryKey: ['medications-due-now'],
+    queryKey: nursingKeys.medicationsDueNow(),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/medications/due_now/');
       // Ensure we always return an array
@@ -321,7 +373,7 @@ export const useMedicationsDueNow = () => {
 
 export const useOverdueMedications = () => {
   return useQuery({
-    queryKey: ['medications-overdue'],
+    queryKey: nursingKeys.medicationsOverdue(),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/medications/overdue/');
       // Ensure we always return an array
@@ -342,9 +394,9 @@ export const useCreateMedicationAdministration = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
     },
   });
 };
@@ -358,11 +410,11 @@ export const useAdministerMedication = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-overdue'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
-      queryClient.invalidateQueries({ queryKey: ['mar-grid'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsOverdue() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.marGridAll() });
     },
   });
 };
@@ -377,11 +429,11 @@ export const useCreateAndAdminister = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-overdue'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
-      queryClient.invalidateQueries({ queryKey: ['mar-grid'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsOverdue() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.marGridAll() });
     },
   });
 };
@@ -390,7 +442,7 @@ export const useCreateAndAdminister = () => {
 
 export const usePatientMAR = (patientId, date = null) => {
   return useQuery({
-    queryKey: ['patient-mar', patientId, date],
+    queryKey: nursingKeys.patientMar(patientId, date),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append('patient', patientId);
@@ -415,10 +467,10 @@ export const useGenerateMAR = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
-      queryClient.invalidateQueries({ queryKey: ['medications-due-now'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
     },
   });
 };
@@ -428,7 +480,7 @@ export const useGenerateMAR = () => {
 
 export const usePendingDispensing = (patientId = null) => {
   return useQuery({
-    queryKey: ['pending-dispensing', patientId],
+    queryKey: nursingKeys.pendingDispensing(patientId),
     queryFn: async () => {
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending/${params}`);
@@ -441,7 +493,7 @@ export const usePendingDispensing = (patientId = null) => {
 
 export const useReadyForAdmin = (patientId = null) => {
   return useQuery({
-    queryKey: ['ready-for-admin', patientId],
+    queryKey: nursingKeys.readyForAdmin(patientId),
     queryFn: async () => {
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/ready-for-admin/${params}`);
@@ -461,10 +513,10 @@ export const useDispenseMedication = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-dispensing'] });
-      queryClient.invalidateQueries({ queryKey: ['ready-for-admin'] });
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.readyForAdminAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
     },
   });
 };
@@ -480,10 +532,10 @@ export const useBulkDispense = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-dispensing'] });
-      queryClient.invalidateQueries({ queryKey: ['ready-for-admin'] });
-      queryClient.invalidateQueries({ queryKey: ['medication-administrations'] });
-      queryClient.invalidateQueries({ queryKey: ['patient-mar'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.readyForAdminAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
     },
   });
 };
@@ -496,7 +548,7 @@ export const useShiftHandoffs = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: ['shift-handoffs', ward, date, shift],
+    queryKey: nursingKeys.shiftHandoffs(ward, date, shift),
     queryFn: async () => {
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/handoffs/?${params.toString()}`);
@@ -512,7 +564,7 @@ export const useShiftHandoffs = (filters = {}) => {
 
 export const useTodayHandoffs = () => {
   return useQuery({
-    queryKey: ['shift-handoffs-today'],
+    queryKey: nursingKeys.shiftHandoffsToday(),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/handoffs/today/');
       // apiClient.get returns data directly or response.data depending on implementation
@@ -533,8 +585,8 @@ export const useCreateShiftHandoff = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shift-handoffs'] });
-      queryClient.invalidateQueries({ queryKey: ['shift-handoffs-today'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsToday() });
     },
   });
 };
@@ -548,8 +600,8 @@ export const useUpdateShiftHandoff = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shift-handoffs'] });
-      queryClient.invalidateQueries({ queryKey: ['shift-handoffs-today'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsToday() });
     },
   });
 };
@@ -558,7 +610,7 @@ export const useUpdateShiftHandoff = () => {
 
 export const useMARGrid = (admissionId, startDate = null, days = 7) => {
   return useQuery({
-    queryKey: ['mar-grid', admissionId, startDate, days],
+    queryKey: nursingKeys.marGrid(admissionId, startDate, days),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append('admission_id', admissionId);
@@ -579,7 +631,7 @@ export const useMARGrid = (admissionId, startDate = null, days = 7) => {
 
 export const useTreatmentSheetByAdmission = (admissionId) => {
   return useQuery({
-    queryKey: ['treatment-sheet', admissionId],
+    queryKey: nursingKeys.treatmentSheet(admissionId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/treatment-sheet/by-admission/?admission_id=${admissionId}`);
       // Ensure we always return an array
@@ -594,7 +646,7 @@ export const useTreatmentSheetByAdmission = (admissionId) => {
 
 export const useTreatmentSheetEntry = (entryId) => {
   return useQuery({
-    queryKey: ['treatment-sheet-entry', entryId],
+    queryKey: nursingKeys.treatmentSheetEntry(entryId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`);
       // apiClient.get returns data directly, not response.data
@@ -608,7 +660,7 @@ export const useTreatmentSheetEntry = (entryId) => {
 
 export const useLowSupplyEntries = () => {
   return useQuery({
-    queryKey: ['treatment-sheet-low-supply'],
+    queryKey: nursingKeys.treatmentSheetLowSupply(),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/treatment-sheet/low-supply/');
       return response.data || response || [];
@@ -620,7 +672,7 @@ export const useLowSupplyEntries = () => {
 
 export const useSupplyStatus = (entryId) => {
   return useQuery({
-    queryKey: ['supply-status', entryId],
+    queryKey: nursingKeys.supplyStatus(entryId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/supply-status/`);
       // apiClient.get returns data directly, not response.data
@@ -641,8 +693,8 @@ export const useCreateTreatmentEntry = () => {
       return response.data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet', data.admission] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheet(data.admission) });
     },
   });
 };
@@ -656,8 +708,8 @@ export const useDiscontinueTreatmentEntry = () => {
       return response.data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-entry', data.id] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetEntry(data.id) });
     },
   });
 };
@@ -674,10 +726,10 @@ export const useRequestSupply = () => {
       return response.data;
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-entry', variables.entryId] });
-      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['supply-status', variables.entryId] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetEntry(variables.entryId) });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequestsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyStatus(variables.entryId) });
     },
   });
 };
@@ -686,7 +738,7 @@ export const useRequestSupply = () => {
 
 export const usePendingSupplyRequests = () => {
   return useQuery({
-    queryKey: ['supply-requests', 'pending'],
+    queryKey: nursingKeys.supplyRequests('pending'),
     queryFn: async () => {
       const response = await apiClient.get('/nursing/supply-requests/pending-queue/');
       return response.data || response || [];
@@ -698,7 +750,7 @@ export const usePendingSupplyRequests = () => {
 
 export const useSupplyRequest = (requestId) => {
   return useQuery({
-    queryKey: ['supply-request', requestId],
+    queryKey: nursingKeys.supplyRequest(requestId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/supply-requests/${requestId}/`);
       // apiClient.get returns data directly, not response.data
@@ -721,10 +773,10 @@ export const useDispenseSupply = () => {
       return response.data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['supply-request', data.id] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-low-supply'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequestsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequest(data.id) });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetLowSupply() });
     },
   });
 };
@@ -738,8 +790,8 @@ export const useRejectSupplyRequest = () => {
       return response.data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['supply-request', data.id] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequestsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequest(data.id) });
     },
   });
 };
@@ -755,9 +807,9 @@ export const useBulkDispenseSupply = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['supply-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet'] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-sheet-low-supply'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.supplyRequestsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.treatmentSheetLowSupply() });
     },
   });
 };
@@ -777,7 +829,7 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: ['fluid-balance', patientId, entry_type, date, start_date, end_date],
+    queryKey: nursingKeys.fluidBalance(patientId, entry_type, date, start_date, end_date),
     queryFn: async () => {
       const params = new URLSearchParams();
       if (patientId) params.append('patient', patientId);
@@ -807,7 +859,7 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
 export const useFluidBalanceSummary = (patientId, date = null, options = {}) => {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ['fluid-balance-summary', patientId, date],
+    queryKey: nursingKeys.fluidBalanceSummary(patientId, date),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append('patient', patientId);
@@ -839,7 +891,7 @@ export const useFluidBalanceSummary = (patientId, date = null, options = {}) => 
 export const useTodayFluidBalance = (patientId, options = {}) => {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ['fluid-balance-today', patientId],
+    queryKey: nursingKeys.fluidBalanceToday(patientId),
     queryFn: async () => {
       const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`);
       // apiClient.get returns data directly, not response.data
@@ -873,12 +925,12 @@ export const useCreateFluidBalance = () => {
     onSuccess: (data) => {
       // Invalidate all fluid balance queries for this patient
       if (data?.patient) {
-        queryClient.invalidateQueries({ queryKey: ['fluid-balance', data.patient] });
-        queryClient.invalidateQueries({ queryKey: ['fluid-balance-summary', data.patient] });
-        queryClient.invalidateQueries({ queryKey: ['fluid-balance-today', data.patient] });
+        queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAll() });
+        queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceSummaryAll() });
+        queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTodayAll() });
       }
       // Also invalidate general fluid balance queries
-      queryClient.invalidateQueries({ queryKey: ['fluid-balance'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAll() });
     },
   });
 };
@@ -895,9 +947,9 @@ export const useDeleteFluidBalance = () => {
       return entryId;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['fluid-balance'] });
-      queryClient.invalidateQueries({ queryKey: ['fluid-balance-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['fluid-balance-today'] });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceSummaryAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTodayAll() });
     },
   });
 };
@@ -907,7 +959,7 @@ export const useDeleteFluidBalance = () => {
  */
 export const useFluidBalanceSettings = () => {
   return useQuery({
-    queryKey: ['fluid-balance-settings'],
+    queryKey: nursingKeys.fluidBalanceSettings(),
     queryFn: async () => {
       const response = await apiClient.get('/settings/fluid-balance/');
       const data = response?.data ?? response;
@@ -933,7 +985,7 @@ export const useFluidBalanceSettings = () => {
  */
 export const useFluidBalanceAlerts = (patientId, date = null) => {
   return useQuery({
-    queryKey: ['fluid-balance-alerts', patientId, date],
+    queryKey: nursingKeys.fluidBalanceAlerts(patientId, date),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append('patient', patientId);

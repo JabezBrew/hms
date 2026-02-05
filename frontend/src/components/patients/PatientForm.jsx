@@ -1,4 +1,11 @@
-import { useState, useEffect } from "react";
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -7,13 +14,14 @@ import {
   useUpdatePatientWithFHIR,
   useRegisterPatient,
   usePatientValidationRules
-} from "@/hooks/usePatientQueries";
-import { useWards, useWardBeds } from "@/hooks/useWardQueries";
+} from "@/features/patients/hooks/usePatientQueries";
+import { useWards, useWardBeds } from "@/features/wards/hooks/useWardQueries";
+import { useDepartments, useRosterOnDutyDepartment } from "@/features/admin/hooks";
 import {
   useInsuranceProviders,
   useInsurancePlans,
   useCreatePatientInsurance,
-} from "@/hooks/useBillingQueries";
+} from "@/features/billing/hooks";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,8 +46,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { Calendar as CalendarIcon, Shield } from "lucide-react";
-import { format } from "date-fns";
+import { TeamSelectionField } from "@/components/registration/TeamSelectionField";
+
+import format from "date-fns/format";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -80,6 +89,11 @@ const PatientForm = ({ patient, onSuccess }) => {
   const [admissionType, setAdmissionType] = useState("outpatient");
   const [selectedWard, setSelectedWard] = useState("");
   const [isWaitingList, setIsWaitingList] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState("");
+  const [selectedClinic, setSelectedClinic] = useState("");
+  const [selectedPrimaryTeam, setSelectedPrimaryTeam] = useState("");
+  const [activeClinicOptions, setActiveClinicOptions] = useState([]);
+  const [clinicSelectionRequired, setClinicSelectionRequired] = useState(false);
   const isEditMode = !!patient;
 
   // Use React Query hooks
@@ -94,6 +108,49 @@ const PatientForm = ({ patient, onSuccess }) => {
   // Ward queries
   const { data: wards = [] } = useWards();
   const { data: beds = [] } = useWardBeds(selectedWard, { status: 'available' });
+
+  // Department and clinic queries
+  const { data: departmentsData, isLoading: isDepartmentsLoading } = useDepartments();
+  // Filter to only show clinical departments (exclude ancillary like Lab/Radiology and ops_only like Administration)
+  const allUnits = Array.isArray(departmentsData) ? departmentsData : [];
+  const departments = allUnits.filter(unit =>
+    unit.unit_type_code === 'department' && unit.unit_category === 'clinical'
+  );
+
+  // Fetch on-duty roster entries for the department (includes active clinics)
+  const { data: onDutyData } = useRosterOnDutyDepartment(
+    selectedDepartment,
+    {},
+    { enabled: !!selectedDepartment && admissionType === 'outpatient' }
+  );
+
+  // Extract active clinics from roster entries with category='clinic'
+  const activeClinics = useMemo(() => {
+    const results = onDutyData?.results || [];
+    // Filter to only clinic-category duty types
+    const clinicEntries = results.filter(
+      (entry) => entry.duty_type_category === 'clinic'
+    );
+    // Deduplicate by clinic_id (or duty_type_id if no clinic linked)
+    const seen = new Set();
+    return clinicEntries.reduce((acc, entry) => {
+      // Use clinic_id if available, otherwise use duty_type_id as the identifier
+      const uniqueId = entry.clinic_id || entry.duty_type_id;
+      if (!seen.has(uniqueId)) {
+        seen.add(uniqueId);
+        acc.push({
+          // If clinic is linked, use clinic info; otherwise use duty type as the "clinic"
+          id: entry.clinic_id || entry.duty_type_id,
+          name: entry.clinic_name || entry.duty_type_name,
+          duty_type_id: entry.duty_type_id,
+          duty_type_name: entry.duty_type_name,
+          // Flag to indicate if this is a duty-type-as-clinic
+          is_duty_type: !entry.clinic_id,
+        });
+      }
+      return acc;
+    }, []);
+  }, [onDutyData]);
 
   // Insurance queries and state
   const { data: providersData } = useInsuranceProviders();
@@ -176,6 +233,28 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
   }, [isEditMode, patient, form]);
 
+  // Determine active clinics based on published roster entries
+  useEffect(() => {
+    if (admissionType !== 'outpatient' || !selectedDepartment) {
+      setActiveClinicOptions([]);
+      setClinicSelectionRequired(false);
+      return;
+    }
+
+    // Active clinics come from roster entries with category='clinic'
+    setActiveClinicOptions(activeClinics);
+
+    if (activeClinics.length === 1) {
+      setSelectedClinic(activeClinics[0].id);
+      setClinicSelectionRequired(false);
+    } else if (activeClinics.length > 1) {
+      setClinicSelectionRequired(true);
+      setSelectedClinic("");
+    } else {
+      setClinicSelectionRequired(false);
+    }
+  }, [activeClinics, selectedDepartment, admissionType]);
+
   // No need to fetch validation rules as React Query handles this
 
   const onSubmit = (data) => {
@@ -254,24 +333,59 @@ const PatientForm = ({ patient, onSuccess }) => {
         }
       );
     } else {
+      // Validate department selection
+      if (!selectedDepartment) {
+        toast.error("Please select a department");
+        setIsLoading(false);
+        return;
+      }
+
+      // Validate clinic selection for outpatient
+      if (admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinic) {
+        toast.error("Please select a clinic");
+        setIsLoading(false);
+        return;
+      }
+
       // Format data for registration
       const formattedData = {
         ...data,
         date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd')
       };
 
-      // Add admission details if inpatient
-      if (admissionType === 'inpatient') {
-        formattedData.admission_details = {
-          type: 'inpatient',
-          bed_id: isWaitingList ? null : data.bed_id,
-          notes: data.admission_notes
-        };
-      } else {
-        formattedData.admission_details = {
-          type: 'outpatient'
-        };
+      // Build admission details with department and clinic scoping
+      const admissionDetails = {
+        type: admissionType,
+        department_id: selectedDepartment,
+        notes: data.admission_notes || ''
+      };
+
+      // Add primary team for inpatient/emergency encounters
+      if ((admissionType === 'inpatient' || admissionType === 'emergency') && selectedPrimaryTeam) {
+        admissionDetails.primary_team_id = selectedPrimaryTeam;
       }
+
+      if (admissionType === 'outpatient' && selectedClinic) {
+        // Find the selected clinic option to check if it's a duty-type-as-clinic
+        const selectedClinicOption = activeClinicOptions.find(c => c.id === selectedClinic);
+        if (selectedClinicOption?.is_duty_type) {
+          // Use duty_type_id for scheduling, no clinic_id
+          admissionDetails.duty_type_id = selectedClinic;
+        } else {
+          admissionDetails.clinic_id = selectedClinic;
+        }
+      }
+
+      if (admissionType === 'inpatient') {
+        if (!isWaitingList && data.bed_id) {
+          admissionDetails.bed_id = data.bed_id;
+        }
+        if (!isWaitingList && selectedWard && !data.bed_id) {
+          admissionDetails.ward_id = selectedWard;
+        }
+      }
+
+      formattedData.admission_details = admissionDetails;
 
       // Register new patient using mutation
       registerPatientMutation.mutate(
@@ -788,27 +902,132 @@ const PatientForm = ({ patient, onSuccess }) => {
               </TabsContent>
 
               <TabsContent value="admission" className="space-y-4 mt-4">
-                <div className="space-y-4">
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Admission Type</FormLabel>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <Stethoscope className="h-4 w-4" />
+                    Encounter Type
+                  </label>
                   <RadioGroup
-                    defaultValue="outpatient"
                     value={admissionType}
-                    onValueChange={setAdmissionType}
-                    className="flex flex-col space-y-1"
+                    onValueChange={(val) => {
+                      setAdmissionType(val);
+                      setSelectedDepartment("");
+                      setSelectedClinic("");
+                      setSelectedPrimaryTeam("");
+                      setSelectedWard("");
+                      form.setValue("bed_id", "");
+                    }}
+                    className="flex flex-col space-y-2"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="outpatient" id="outpatient" />
-                      <FormLabel htmlFor="outpatient" className="font-normal cursor-pointer">Outpatient (No admission)</FormLabel>
+                      <label htmlFor="outpatient" className="font-normal cursor-pointer">
+                        Outpatient (Clinic visit)
+                      </label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="inpatient" id="inpatient" />
-                      <FormLabel htmlFor="inpatient" className="font-normal cursor-pointer">Inpatient (Admit to ward)</FormLabel>
+                      <label htmlFor="inpatient" className="font-normal cursor-pointer">
+                        Inpatient (Admit to ward)
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="emergency" id="emergency" />
+                      <label htmlFor="emergency" className="font-normal cursor-pointer">
+                        Emergency (ED triage)
+                      </label>
                     </div>
                   </RadioGroup>
                 </div>
 
-                {admissionType === 'inpatient' && (
+                <Separator className="my-4" />
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <Building2 className="h-4 w-4" />
+                    Department
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <Select
+                    value={selectedDepartment}
+                    onValueChange={(val) => {
+                      setSelectedDepartment(val);
+                      setSelectedClinic("");
+                      setSelectedPrimaryTeam("");
+                    }}
+                  >
+                    <SelectTrigger className="font-mono">
+                      <SelectValue placeholder={isDepartmentsLoading ? "Loading departments..." : "Select department"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id} className="font-mono">
+                          {dept.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {admissionType === 'outpatient' && selectedDepartment && (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      <Stethoscope className="h-4 w-4" />
+                      Clinic
+                      {clinicSelectionRequired && <span className="text-rose-500">*</span>}
+                    </label>
+
+                    {activeClinicOptions.length === 0 ? (
+                      <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
+                            No clinics currently scheduled for this department
+                          </p>
+                        </div>
+                      </div>
+                    ) : activeClinicOptions.length === 1 ? (
+                      <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                        <div className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                            Auto-selected: <span className="font-mono font-medium">{activeClinicOptions[0].name}</span>
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <Select value={selectedClinic} onValueChange={setSelectedClinic}>
+                        <SelectTrigger className="font-mono">
+                          <SelectValue placeholder="Select clinic" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeClinicOptions.map((clinic) => (
+                            <SelectItem key={clinic.id} value={clinic.id} className="font-mono">
+                              {clinic.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {clinicSelectionRequired && !selectedClinic && (
+                      <p className="text-xs text-rose-500 font-mono">
+                        Multiple clinics are active; please select one
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {admissionType === 'inpatient' && selectedDepartment && (
                   <>
+                    {/* Care Team Selection */}
+                    <TeamSelectionField
+                      departmentId={selectedDepartment}
+                      encounterType={admissionType}
+                      value={selectedPrimaryTeam}
+                      onChange={setSelectedPrimaryTeam}
+                    />
+
                     <div className="flex items-center space-x-2 mb-4">
                       <input
                         type="checkbox"
@@ -833,11 +1052,9 @@ const PatientForm = ({ patient, onSuccess }) => {
                         <FormItem>
                           <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</FormLabel>
                           <Select onValueChange={setSelectedWard} value={selectedWard}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select ward" />
-                              </SelectTrigger>
-                            </FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select ward" />
+                            </SelectTrigger>
                             <SelectContent>
                               {wards.map((ward) => (
                                 <SelectItem key={ward.id} value={ward.id}>
@@ -855,11 +1072,9 @@ const PatientForm = ({ patient, onSuccess }) => {
                             <FormItem>
                               <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Bed</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value} disabled={!selectedWard}>
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder={selectedWard ? "Select bed" : "Select ward first"} />
-                                  </SelectTrigger>
-                                </FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={selectedWard ? "Select bed" : "Select ward first"} />
+                                </SelectTrigger>
                                 <SelectContent>
                                   {beds.map((bed) => (
                                     <SelectItem key={bed.id} value={bed.id}>
@@ -892,6 +1107,60 @@ const PatientForm = ({ patient, onSuccess }) => {
                       )}
                     />
                   </>
+                )}
+
+                {/* Emergency: Show team selection and triage notes */}
+                {admissionType === 'emergency' && selectedDepartment && (
+                  <>
+                    {/* Care Team Selection for Emergency */}
+                    <TeamSelectionField
+                      departmentId={selectedDepartment}
+                      encounterType={admissionType}
+                      value={selectedPrimaryTeam}
+                      onChange={setSelectedPrimaryTeam}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="admission_notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                            Triage Notes
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Chief complaint, initial assessment..."
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+
+                {/* Outpatient: Show visit notes only (no team selection) */}
+                {admissionType === 'outpatient' && selectedDepartment && (
+                  <FormField
+                    control={form.control}
+                    name="admission_notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Visit Notes
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Reason for visit..."
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 )}
               </TabsContent>
 

@@ -16,6 +16,12 @@ class VitalSigns(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='vital_signs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='vital_sign_records',
+        help_text="Facility context for this vital sign record"
+    )
     recorded_by = models.ForeignKey(PractitionerProfile, on_delete=models.SET_NULL, null=True, related_name='recorded_vitals')
 
     # Link to encounter - required, groups vitals by clinical visit
@@ -93,6 +99,7 @@ class VitalSigns(models.Model):
         indexes = [
             models.Index(fields=['patient', '-recorded_at']),
             models.Index(fields=['is_critical', '-recorded_at']),
+            models.Index(fields=['facility', '-recorded_at']),
         ]
         verbose_name = 'Vital Sign'
         verbose_name_plural = 'Vital Signs'
@@ -139,6 +146,7 @@ class VitalSigns(models.Model):
         if self.is_critical:
             NursingAlert.objects.create(
                 patient=self.patient,
+                facility=self.facility,
                 alert_type='vital_signs',
                 severity='high',
                 message=f"Critical vital signs recorded: {self.get_critical_values_message()}",
@@ -197,6 +205,12 @@ class NursingTask(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='nursing_tasks')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nursing_tasks',
+        help_text="Facility context for this nursing task"
+    )
     task_type = models.CharField(max_length=20, choices=TASK_TYPE_CHOICES)
     description = models.TextField()
 
@@ -236,6 +250,7 @@ class NursingTask(models.Model):
             models.Index(fields=['patient', 'status', 'scheduled_time']),
             models.Index(fields=['assigned_to', 'status']),
             models.Index(fields=['priority', 'scheduled_time']),
+            models.Index(fields=['facility', 'status', 'scheduled_time']),
         ]
 
     def __str__(self):
@@ -243,6 +258,8 @@ class NursingTask(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to update status based on time."""
+        if not self.facility_id and self.patient_id:
+            self.facility = self.patient.facility
         if self.status == 'pending' and self.scheduled_time < timezone.now():
             self.status = 'overdue'
 
@@ -272,6 +289,12 @@ class NursingAlert(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='nursing_alerts')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nursing_alerts',
+        help_text="Facility context for this nursing alert"
+    )
     alert_type = models.CharField(max_length=20, choices=ALERT_TYPE_CHOICES)
     severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES)
     message = models.TextField()
@@ -314,6 +337,7 @@ class NursingAlert(models.Model):
             models.Index(fields=['patient', 'is_acknowledged', '-created_at']),
             models.Index(fields=['severity', 'is_acknowledged']),
             models.Index(fields=['alert_type', '-created_at']),
+            models.Index(fields=['facility', 'is_acknowledged', '-created_at']),
         ]
 
     def __str__(self):
@@ -344,6 +368,12 @@ class MedicationAdministration(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='medication_administrations')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='medication_administrations',
+        help_text="Facility context for this medication administration"
+    )
 
     # Medication details
     medication_name = models.CharField(max_length=200)
@@ -407,6 +437,32 @@ class MedicationAdministration(models.Model):
         related_name='dispensed_medications'
     )
 
+    # Inventory integration (Phase 2: Clinical Integration)
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='medication_administrations',
+        help_text="Linked inventory item for this medication"
+    )
+    batch_used = models.ForeignKey(
+        'inventory.ExpiryTracker',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='medication_administrations',
+        help_text="Batch/lot used for this administration (FEFO tracking)"
+    )
+    dispensing_location = models.ForeignKey(
+        'inventory.StorageLocation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispensed_medications',
+        help_text="Location from which medication was dispensed"
+    )
+
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -419,6 +475,7 @@ class MedicationAdministration(models.Model):
             models.Index(fields=['patient', 'status', 'scheduled_time'], name='nursing_med_patient_status_idx'),  # For dashboard prefetch
             models.Index(fields=['status', 'scheduled_time']),
             models.Index(fields=['administered_by', 'administered_time']),
+            models.Index(fields=['facility', 'status', 'scheduled_time']),
         ]
 
     def __str__(self):
@@ -426,6 +483,36 @@ class MedicationAdministration(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to create alerts for overdue medications."""
+        if self.facility_id is None:
+            facility_id = None
+
+            if self.treatment_entry_id:
+                entry_obj = getattr(self, 'treatment_entry', None)
+                facility_id = getattr(entry_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = TreatmentSheetEntry.objects.filter(
+                        id=self.treatment_entry_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.prescription_id:
+                prescription_obj = getattr(self, 'prescription', None)
+                facility_id = getattr(prescription_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.clinical_notes.models import Prescription
+                    facility_id = Prescription.objects.filter(
+                        id=self.prescription_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                facility_id = getattr(patient_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+
+            self.facility_id = facility_id
+
         super().save(*args, **kwargs)
 
         # Create alert if medication is overdue by more than 30 minutes
@@ -434,6 +521,7 @@ class MedicationAdministration(models.Model):
             if time_diff.total_seconds() > 1800:  # 30 minutes
                 NursingAlert.objects.get_or_create(
                     patient=self.patient,
+                    facility=self.facility,
                     alert_type='medication',
                     defaults={
                         'severity': 'medium',
@@ -454,6 +542,12 @@ class ShiftHandoff(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='shift_handoffs')
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='shift_handoffs',
+        help_text="Facility context for this shift handoff"
+    )
 
     # Shift details
     shift_date = models.DateField(default=timezone.now)
@@ -497,6 +591,7 @@ class ShiftHandoff(models.Model):
             models.Index(fields=['patient', '-shift_date']),
             models.Index(fields=['shift_date', 'shift_type']),
             models.Index(fields=['from_nurse', 'to_nurse']),
+            models.Index(fields=['facility', '-shift_date']),
         ]
 
     def __str__(self):
@@ -523,6 +618,12 @@ class TreatmentSheetEntry(models.Model):
         PatientProfile,
         on_delete=models.CASCADE,
         related_name='treatment_sheet_entries'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='treatment_sheet_entries',
+        help_text="Facility context for this treatment sheet entry"
     )
     admission = models.ForeignKey(
         'wards.Admission',
@@ -574,6 +675,16 @@ class TreatmentSheetEntry(models.Model):
         help_text="Total doses actually administered to patient"
     )
 
+    # Link to inventory item (for stock tracking)
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='treatment_entries',
+        help_text="Linked inventory item for stock depletion on dispense"
+    )
+
     # Link to source prescription (optional)
     prescription = models.ForeignKey(
         'clinical_notes.Prescription',
@@ -610,12 +721,56 @@ class TreatmentSheetEntry(models.Model):
             models.Index(fields=['admission', 'status']),
             models.Index(fields=['patient', 'status', '-start_datetime']),
             models.Index(fields=['status', '-start_datetime']),
+            models.Index(fields=['facility', 'status', '-start_datetime']),
         ]
         verbose_name = 'Treatment Sheet Entry'
         verbose_name_plural = 'Treatment Sheet Entries'
 
     def __str__(self):
         return f"{self.patient.user.get_full_name()} - {self.medication_name} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        if self.facility_id is None:
+            facility_id = None
+
+            if self.admission_id:
+                admission_obj = getattr(self, 'admission', None)
+                facility_id = getattr(admission_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.wards.models import Admission
+                    facility_id = Admission.objects.filter(
+                        id=self.admission_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.encounter_id:
+                encounter_obj = getattr(self, 'encounter', None)
+                facility_id = getattr(encounter_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.encounters.models import Encounter
+                    facility_id = Encounter.objects.filter(
+                        id=self.encounter_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                facility_id = getattr(patient_obj, 'facility_id', None)
+                if facility_id is None:
+                    facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if facility_id is None and self.prescription_id:
+                prescription_obj = getattr(self, 'prescription', None)
+                facility_id = getattr(prescription_obj, 'facility_id', None)
+                if facility_id is None:
+                    from apps.clinical_notes.models import Prescription
+                    facility_id = Prescription.objects.filter(
+                        id=self.prescription_id
+                    ).values_list('facility_id', flat=True).first()
+
+            self.facility_id = facility_id
+
+        super().save(*args, **kwargs)
 
     @property
     def supply_remaining(self):
@@ -671,6 +826,12 @@ class SupplyRequest(models.Model):
         on_delete=models.CASCADE,
         related_name='supply_requests'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='supply_requests',
+        help_text="Facility context for this supply request"
+    )
 
     # Request details
     quantity_requested = models.PositiveIntegerField(
@@ -715,6 +876,7 @@ class SupplyRequest(models.Model):
             models.Index(fields=['status', '-requested_at']),
             models.Index(fields=['treatment_entry', '-requested_at']),
             models.Index(fields=['requested_by', 'status']),
+            models.Index(fields=['facility', 'status', '-requested_at']),
         ]
         verbose_name = 'Supply Request'
         verbose_name_plural = 'Supply Requests'
@@ -760,6 +922,12 @@ class FluidBalance(models.Model):
         PatientProfile,
         on_delete=models.CASCADE,
         related_name='fluid_balance_records'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='fluid_balance_entries',
+        help_text="Facility context for this fluid balance entry"
     )
     admission = models.ForeignKey(
         'wards.Admission',
@@ -847,6 +1015,7 @@ class FluidBalance(models.Model):
             models.Index(fields=['patient', 'entry_type', '-recorded_at']),
             models.Index(fields=['admission', '-recorded_at']),
             models.Index(fields=['is_deleted', '-recorded_at']),
+            models.Index(fields=['facility', 'entry_type', '-recorded_at']),
         ]
         verbose_name = 'Fluid Balance Entry'
         verbose_name_plural = 'Fluid Balance Entries'

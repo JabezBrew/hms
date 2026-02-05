@@ -13,6 +13,7 @@ from apps.clinical_notes.models import (
 from apps.users.tests.factories import (
     UserFactory, DoctorUserFactory, PatientProfileFactory, PractitionerProfileFactory
 )
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 class NoteTemplateFactory(factory.django.DjangoModelFactory):
@@ -21,6 +22,7 @@ class NoteTemplateFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = NoteTemplate
 
+    facility = factory.SubFactory(DefaultFacilityFactory)
     title = factory.Sequence(lambda n: f'Template {n}')
     description = factory.Faker('sentence')
     is_active = True
@@ -157,8 +159,10 @@ class NoteEntryFactory(factory.django.DjangoModelFactory):
     template = factory.SubFactory(NoteTemplateFactory)
     patient = factory.SubFactory(PatientProfileFactory)
     encounter = factory.SubFactory(
-        'apps.nursing.tests.factories.EncounterFactory'
+        'apps.nursing.tests.factories.EncounterFactory',
+        patient=factory.SelfAttribute('..patient')
     )
+    facility = factory.SelfAttribute('patient.facility')
     practitioner = factory.SubFactory(PractitionerProfileFactory)
     composition_fhir_id = None
     data = factory.LazyFunction(lambda: {
@@ -197,6 +201,7 @@ class NoteEntryVersionFactory(factory.django.DjangoModelFactory):
         model = NoteEntryVersion
 
     note_entry = factory.SubFactory(NoteEntryFactory)
+    facility = factory.SelfAttribute('note_entry.facility')
     version_number = factory.Sequence(lambda n: n + 1)
     data = factory.LazyFunction(lambda: {
         'Chief Complaint': 'Original complaint',
@@ -214,6 +219,7 @@ class PrescriptionFactory(factory.django.DjangoModelFactory):
         model = Prescription
 
     patient = factory.SubFactory(PatientProfileFactory)
+    facility = factory.SelfAttribute('patient.facility')
     prescribed_by = factory.SubFactory(PractitionerProfileFactory)
     medication_name = factory.Faker('sentence', nb_words=2)
     dosage = '500mg'
@@ -226,7 +232,8 @@ class PrescriptionFactory(factory.django.DjangoModelFactory):
     reason = factory.Faker('sentence')
     status = 'active'
     encounter = factory.SubFactory(
-        'apps.nursing.tests.factories.EncounterFactory'
+        'apps.nursing.tests.factories.EncounterFactory',
+        patient=factory.SelfAttribute('..patient')
     )
 
 
@@ -302,6 +309,7 @@ def create_note_with_versions(num_versions=3, **kwargs):
     for i in range(1, num_versions + 1):
         version = NoteEntryVersion.objects.create(
             note_entry=note,
+            facility=note.facility,
             version_number=i,
             data={'version': i, 'content': f'Version {i} content'},
             edit_reason=f'Edit {i}'

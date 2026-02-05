@@ -1,3 +1,15 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
+import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import History from 'lucide-react/dist/esm/icons/history.js';
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,21 +30,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  X,
-  Droplets,
-  ArrowDownCircle,
-  ArrowUpCircle,
-  Check,
-  Loader2,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  CalendarIcon,
-  Plus,
-  History
-} from "lucide-react";
-import { format, addDays, subDays, isToday, startOfDay } from "date-fns";
+
+import format from "date-fns/format";
+import addDays from "date-fns/addDays";
+import subDays from "date-fns/subDays";
+import isToday from "date-fns/isToday";
+import startOfDay from "date-fns/startOfDay";
 import { toast } from "sonner";
 import {
   useFluidBalance,
@@ -40,7 +43,7 @@ import {
   useTodayFluidBalance,
   useCreateFluidBalance,
   useDeleteFluidBalance
-} from "@/hooks/useNursingQueries";
+} from "@/features/nursing/hooks";
 
 /**
  * AddFluidBalanceSlideOver - Chronicle-styled split-screen panel for fluid balance

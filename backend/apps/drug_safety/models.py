@@ -32,6 +32,12 @@ class PatientAllergy(models.Model):
         on_delete=models.CASCADE,
         related_name='structured_allergies'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='patient_allergies',
+        help_text="Facility context for this allergy record"
+    )
 
     # Allergy identification
     allergen_name = models.CharField(
@@ -117,6 +123,7 @@ class PatientAllergy(models.Model):
         indexes = [
             models.Index(fields=['patient', 'is_active']),
             models.Index(fields=['allergen_code']),
+            models.Index(fields=['facility', 'is_active']),
         ]
 
     def __str__(self):

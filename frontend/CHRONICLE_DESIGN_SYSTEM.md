@@ -28,7 +28,15 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 
 ## Color Palette
 
-### Base (Warm Stone)
+### Base
+
+#### Light (Warm Cream)
+- Background: `oklch(0.98 0.005 60)` - warm cream
+- Foreground: `oklch(0.15 0.01 50)` - warm charcoal text
+- Card: `oklch(1 0 0)` - elevated surface
+- Border: `oklch(0.90 0.005 60)` - subtle dividers
+
+#### Dark (Warm Stone)
 - Background: `oklch(0.14 0.01 50)` - warm charcoal
 - Foreground: `oklch(0.97 0.005 60)` - warm white
 - Card: `oklch(0.18 0.01 50)` - elevated surface
@@ -45,6 +53,47 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 ---
 
 ## Components
+
+### PageShell
+Base page container for Chronicle layouts.
+- Applies `min-h-screen bg-background` and consistent padding.
+- Use as the outer wrapper for page content.
+
+```jsx
+import { PageShell } from '@/shared/components/page/PageShell';
+
+<PageShell>
+  {/* page content */}
+</PageShell>
+```
+
+### PageHeader
+Chronicle-aligned page header with title, description, metadata, and actions.
+
+```jsx
+import { PageHeader } from '@/shared/components/page/PageHeader';
+
+<PageHeader
+  title="Scheduling"
+  description="Appointments and templates"
+  meta="Updated 2 minutes ago"
+  actions={<Button size="sm">New</Button>}
+/>
+```
+
+### PageState
+Standardized loading, error, and empty states.
+
+```jsx
+import { PageState } from '@/shared/components/page/PageState';
+
+<PageState
+  variant="error"
+  title="Failed to load"
+  description="Try again in a moment."
+  action={() => refetch()}
+/>
+```
 
 ### PatientChronicleCard
 Magazine-style patient list card with:
@@ -77,10 +126,10 @@ import { TimelineEntry, TimelineGroup } from '@/components/chronicle';
 <TimelineGroup date="Today" entries={entries} />
 ```
 
-Entry types: `progress_note`, `vitals`, `medication`, `lab_result`, `order`, `consult`, `admission`, `discharge`, `procedure`
+Entry types: `progress_note`, `soap_note`, `vitals`, `medication`, `prescription`, `lab_result`, `order`, `consult`, `consult_note`, `admission`, `admission_note`, `discharge`, `discharge_note`, `nursing_note`, `procedure`, `referral`
 
 ### ClinicalSummarySidebar
-Always-visible patient context:
+Desktop-visible patient context (hidden on mobile and when a slide-over is open):
 - Active problems with severity
 - Current medications
 - High-visibility allergies
@@ -115,6 +164,14 @@ import { PatientIdentityHero } from '@/components/chronicle';
   onPrescribe={handlePrescribe}
 />
 ```
+
+---
+
+## Performance & Responsiveness
+
+- Chronicle must stay responsive on modest client hardware; the default UI should not assume high-end devices.
+- Favor light DOM and predictable render cost: virtualize long lists and defer heavy charts/calendars.
+- Keep motion minimal and honor `prefers-reduced-motion`.
 
 ---
 
@@ -183,8 +240,10 @@ Flash highlight when vitals update.
 ## Page Layouts
 
 ### Patient List (PatientChronicleListPage)
-- Hero header with stats
-- Search + ward filter + view toggle
+- Editorial header with title + description
+- Search + view toggle
+- All Patients / My Patients tabs (clinical roles)
+- Recent + context sections
 - Grid (default) or list view
 - Staggered card animations
 
@@ -201,6 +260,7 @@ Flash highlight when vitals update.
 ### Do
 - Use `font-display` for patient names
 - Use `font-mono` for all clinical data (MRNs, vitals, timestamps)
+- Use `PageShell`, `PageHeader`, and `PageState` for consistent Chronicle page framing
 - Show allergies prominently with rose accent
 - Use timeline as primary navigation metaphor
 - Stagger animations on list renders
@@ -219,7 +279,7 @@ Flash highlight when vitals update.
 
 ```
 frontend/src/components/chronicle/
-├── index.js                    # Exports
+├── index.js                    # Exports (authoritative list)
 ├── PatientChronicleCard.jsx    # List card component
 ├── TimelineEntry.jsx           # Timeline components
 ├── ClinicalSummarySidebar.jsx  # Context sidebar
@@ -420,8 +480,8 @@ This applies to ALL popover-based components inside slide-overs:
 - `SelectContent` → `className="z-[200]"`
 - `DropdownMenuContent` → `className="z-[200]"`
 - `PopoverContent` → `className="z-[200]"`
-- `ComboboxContent` → `className="z-[200]"`
-- `DatePicker popover` → `className="z-[200]"`
+- `Combobox` popover (`PopoverContent`) → ensure `className="z-[200]"`
+- `DatePicker` popover (`PopoverContent`) → `className="z-[200]"`
 
 ### Slide-Over Styling
 

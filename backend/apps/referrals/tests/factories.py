@@ -8,9 +8,9 @@ import factory
 from factory.django import DjangoModelFactory
 from django.utils import timezone
 
-from apps.referrals.models import Referral
+from apps.referrals.models import Referral, ReferralNotification
 from apps.users.tests.factories import (
-    PatientProfileFactory, PractitionerProfileFactory
+    PatientProfileFactory, PractitionerProfileFactory, DoctorUserFactory
 )
 from apps.encounters.tests.factories import EncounterFactory
 
@@ -22,7 +22,11 @@ class ReferralFactory(DjangoModelFactory):
         model = Referral
 
     patient = factory.SubFactory(PatientProfileFactory)
-    encounter = factory.SubFactory(EncounterFactory)
+    encounter = factory.SubFactory(
+        EncounterFactory,
+        patient=factory.SelfAttribute('..patient')
+    )
+    facility = factory.SelfAttribute('patient.facility')
     referring_provider = factory.SubFactory(PractitionerProfileFactory)
     referring_department = factory.Faker('random_element', elements=[
         'Internal Medicine', 'Emergency', 'General Practice', 'Pediatrics'
@@ -39,3 +43,33 @@ class ReferralFactory(DjangoModelFactory):
     questions_for_specialist = factory.Faker('sentence')
     referral_type = 'opd'
     fhir_synced = False
+
+
+class ReferralNotificationFactory(DjangoModelFactory):
+    """Factory for creating ReferralNotification instances."""
+
+    class Meta:
+        model = ReferralNotification
+
+    referral = factory.SubFactory(ReferralFactory)
+    facility = factory.SelfAttribute('referral.facility')
+    recipient = factory.SubFactory(
+        DoctorUserFactory,
+        primary_facility=factory.SelfAttribute('..facility')
+    )
+    actor = factory.SubFactory(
+        DoctorUserFactory,
+        primary_facility=factory.SelfAttribute('..facility')
+    )
+    event = 'submitted'
+    status = factory.LazyAttribute(lambda o: o.referral.status)
+    urgency = factory.LazyAttribute(lambda o: o.referral.urgency)
+    is_read = False
+
+    @factory.post_generation
+    def sync_facility(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if self.referral.facility_id != self.facility_id:
+            self.referral.facility = self.facility
+            self.referral.save(update_fields=['facility'])

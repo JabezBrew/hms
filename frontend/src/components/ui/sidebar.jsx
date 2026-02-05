@@ -1,8 +1,8 @@
+import PanelLeftIcon from 'lucide-react/dist/esm/icons/panel-left.js';
 import { useState, useEffect, useMemo, useCallback, useContext, createContext } from 'react'
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Slot } from "@radix-ui/react-slot"
 import { cva } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -485,29 +485,23 @@ function SidebarMenuButton({
 }) {
   const Comp = asChild ? Slot : "button"
   const { isMobile, state } = useSidebar()
-  const navigate = useNavigate()
-
-  const handleClick = (e) => {
-    if (href) {
-      e.preventDefault();
-      navigate(href);
-    }
-
-    // Call the original onClick if it exists
-    if (props.onClick) {
-      props.onClick(e);
-    }
-  };
+  const isLink = Boolean(href) && !asChild
+  const Component = isLink ? Link : Comp
+  const componentProps = isLink ? { to: href } : {}
+  const childProps = asChild && href ? { href } : {}
+  const buttonProps = !isLink && !asChild ? { type: "button" } : {}
 
   const button = (
-    <Comp
+    <Component
       data-slot="sidebar-menu-button"
       data-sidebar="menu-button"
       data-size={size}
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-      onClick={handleClick}
-      {...props} />
+      {...buttonProps}
+      {...childProps}
+      {...props}
+      {...componentProps} />
   )
 
   if (!tooltip) {
@@ -647,12 +641,18 @@ function SidebarMenuSubButton({
   size = "md",
   isActive = false,
   className,
+  href,
   ...props
 }) {
-  const Comp = asChild ? Slot : "a"
+  const Comp = asChild ? Slot : "button"
+  const isLink = Boolean(href) && !asChild
+  const Component = isLink ? Link : Comp
+  const componentProps = isLink ? { to: href } : {}
+  const childProps = asChild && href ? { href } : {}
+  const buttonProps = !isLink && !asChild ? { type: "button" } : {}
 
   return (
-    <Comp
+    <Component
       data-slot="sidebar-menu-sub-button"
       data-sidebar="menu-sub-button"
       data-size={size}
@@ -665,7 +665,10 @@ function SidebarMenuSubButton({
         "group-data-[collapsible=icon]:hidden",
         className
       )}
-      {...props} />
+      {...buttonProps}
+      {...childProps}
+      {...props}
+      {...componentProps} />
   );
 }
 

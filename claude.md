@@ -109,6 +109,32 @@ class MyViewSet(viewsets.ModelViewSet):
 **Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod, date-fns, lucide-react, sonner
 **Backend:** Django 4+, DRF, PostgreSQL, Celery, Redis, JWT
 
+## Frontend Performance Budget
+
+- Assume many deployments run on modest client hardware; the default UI must remain fast without opt-in.
+- Keep initial JS and render work low: defer charts/calendars, virtualize long lists, and avoid render-time side effects.
+- Keep motion lightweight and honor reduced-motion preferences.
+
+---
+
+## Frontend Modularization (Current)
+
+- Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.js`, `index.js`.
+- `frontend/src/pages/*` are route wrappers only. Keep page logic in feature `pages/`.
+- Shared primitives belong in `frontend/src/shared/` (page shell, meta hooks, constants, utils).
+- Route metadata is centralized in `frontend/src/app/routes/*` and rendered via `renderRoutes` with role gating.
+- Prefer `PageShell`, `PageHeader`, and `PageState` for consistent Chronicle layout and error/loading states.
+- Use `usePageMeta` to set titles and breadcrumbs; avoid per-page ad hoc `Helmet` + breadcrumb wiring.
+- Prefer feature/shared API modules over `frontend/src/lib/api.js` (legacy compatibility only).
+- Standardize React Query keys with `shared/lib/queryKeys.js` and feature key exports.
+
+### shadcn/ui Components
+If a UI component doesn't exist in `frontend/src/components/ui/`, install it:
+```bash
+cd frontend && npx shadcn@latest add <component-name> -y
+```
+Example: `npx shadcn@latest add accordion -y`
+
 ---
 
 ## Chronicle Design System
@@ -191,7 +217,7 @@ python manage.py makemigrations && python manage.py migrate
 # Frontend (from frontend/)
 npm run test                              # Unit tests
 npm run test -- path/to/test.test.jsx     # Specific file
-npm run test:e2e                          # E2E (requires dev server)
+npm run test:coverage                     # Coverage run
 ```
 
 **Markers:** `@pytest.mark.tier1` (critical), `@pytest.mark.integration`, `@pytest.mark.rbac`

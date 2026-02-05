@@ -96,15 +96,19 @@ class IsClinicalProvider(permissions.BasePermission):
 
 
 # Define custom permissions for specific actions
-def create_custom_permissions():
+def create_custom_permissions(using=None):
     """
     Create custom permissions for the RBAC system.
     """
+    db_alias = using or 'default'
+    content_types = ContentType.objects.db_manager(db_alias)
+    permissions = Permission.objects.using(db_alias)
+
     # Define content types for models
-    user_content_type = ContentType.objects.get_for_model(User)
-    staff_content_type = ContentType.objects.get_for_model(Staff)
-    practitioner_content_type = ContentType.objects.get_for_model(PractitionerProfile)
-    patient_content_type = ContentType.objects.get_for_model(PatientProfile)
+    user_content_type = content_types.get_for_model(User)
+    staff_content_type = content_types.get_for_model(Staff)
+    practitioner_content_type = content_types.get_for_model(PractitionerProfile)
+    patient_content_type = content_types.get_for_model(PatientProfile)
     
     # Create custom permissions
     permissions_to_create = [
@@ -139,7 +143,7 @@ def create_custom_permissions():
     
     # Create permissions if they don't exist
     for codename, name, content_type in permissions_to_create:
-        Permission.objects.get_or_create(
+        permissions.get_or_create(
             codename=codename,
             name=name,
             content_type=content_type
@@ -147,22 +151,26 @@ def create_custom_permissions():
 
 
 # Define function to set up groups with permissions
-def setup_groups_and_permissions():
+def setup_groups_and_permissions(using=None):
     """
     Set up groups and assign permissions according to the RBAC matrix.
     """
+    db_alias = using or 'default'
+    groups = Group.objects.using(db_alias)
+    permissions = Permission.objects.using(db_alias)
+
     # Create groups if they don't exist
-    admin_group, _ = Group.objects.get_or_create(name='Admin')
-    doctor_group, _ = Group.objects.get_or_create(name='Doctor')
-    nurse_group, _ = Group.objects.get_or_create(name='Nurse')
-    receptionist_group, _ = Group.objects.get_or_create(name='Receptionist')
-    lab_tech_group, _ = Group.objects.get_or_create(name='Lab Technician')
-    pharmacist_group, _ = Group.objects.get_or_create(name='Pharmacist')
-    billing_group, _ = Group.objects.get_or_create(name='Billing')
-    patient_group, _ = Group.objects.get_or_create(name='Patient')
+    admin_group, _ = groups.get_or_create(name='Admin')
+    doctor_group, _ = groups.get_or_create(name='Doctor')
+    nurse_group, _ = groups.get_or_create(name='Nurse')
+    receptionist_group, _ = groups.get_or_create(name='Receptionist')
+    lab_tech_group, _ = groups.get_or_create(name='Lab Technician')
+    pharmacist_group, _ = groups.get_or_create(name='Pharmacist')
+    billing_group, _ = groups.get_or_create(name='Billing')
+    patient_group, _ = groups.get_or_create(name='Patient')
     
     # Ensure custom permissions exist
-    create_custom_permissions()
+    create_custom_permissions(using=db_alias)
     
     # Clear existing permissions
     admin_group.permissions.clear()
@@ -177,11 +185,11 @@ def setup_groups_and_permissions():
     # Assign permissions based on the RBAC matrix
     
     # Admin - Full access to all permissions
-    all_permissions = Permission.objects.all()
+    all_permissions = permissions.all()
     admin_group.permissions.add(*all_permissions)
     
     # Doctor permissions
-    doctor_permissions = Permission.objects.filter(codename__in=[
+    doctor_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_staff',
         'can_view_practitioner',
@@ -197,7 +205,7 @@ def setup_groups_and_permissions():
     doctor_group.permissions.add(*doctor_permissions)
     
     # Nurse permissions
-    nurse_permissions = Permission.objects.filter(codename__in=[
+    nurse_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_staff',
         'can_view_practitioner',
@@ -211,7 +219,7 @@ def setup_groups_and_permissions():
     nurse_group.permissions.add(*nurse_permissions)
     
     # Receptionist permissions
-    receptionist_permissions = Permission.objects.filter(codename__in=[
+    receptionist_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_staff',
         'can_view_patient_profile',
@@ -222,7 +230,7 @@ def setup_groups_and_permissions():
     receptionist_group.permissions.add(*receptionist_permissions)
     
     # Lab Technician permissions
-    lab_tech_permissions = Permission.objects.filter(codename__in=[
+    lab_tech_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_patient_profile',
         'can_view_lab_results',
@@ -230,7 +238,7 @@ def setup_groups_and_permissions():
     lab_tech_group.permissions.add(*lab_tech_permissions)
     
     # Pharmacist permissions
-    pharmacist_permissions = Permission.objects.filter(codename__in=[
+    pharmacist_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_patient_profile',
         'can_create_prescription',
@@ -238,7 +246,7 @@ def setup_groups_and_permissions():
     pharmacist_group.permissions.add(*pharmacist_permissions)
     
     # Billing Officer permissions
-    billing_permissions = Permission.objects.filter(codename__in=[
+    billing_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_patient_profile',
         'can_view_lab_results',
@@ -247,7 +255,7 @@ def setup_groups_and_permissions():
     billing_group.permissions.add(*billing_permissions)
     
     # Patient permissions (if patient portal is enabled)
-    patient_permissions = Permission.objects.filter(codename__in=[
+    patient_permissions = permissions.filter(codename__in=[
         'can_view_user_profile',
         'can_view_patient_profile',
         'can_view_lab_results',
@@ -262,9 +270,10 @@ def assign_user_to_group(sender, instance, created, **kwargs):
     Signal handler to automatically assign users to groups based on their user_type.
     """
     if created or instance.user_type:
+        db_alias = instance._state.db or 'default'
         # Remove user from all groups first
         instance.groups.clear()
-        
+
         # Map user_type to group name
         user_type_to_group = {
             'admin': 'Admin',
@@ -276,15 +285,15 @@ def assign_user_to_group(sender, instance, created, **kwargs):
             'billing': 'Billing',
             'patient': 'Patient',
         }
-        
+
         # Get the group for this user_type
         group_name = user_type_to_group.get(instance.user_type)
         if group_name:
             try:
-                group = Group.objects.get(name=group_name)
+                group = Group.objects.using(db_alias).get(name=group_name)
                 instance.groups.add(group)
             except Group.DoesNotExist:
                 # Group doesn't exist yet, create it
-                setup_groups_and_permissions()
-                group = Group.objects.get(name=group_name)
+                setup_groups_and_permissions(using=db_alias)
+                group = Group.objects.using(db_alias).get(name=group_name)
                 instance.groups.add(group)

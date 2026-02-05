@@ -1,3 +1,10 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Send from 'lucide-react/dist/esm/icons/send.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,9 +20,9 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { X, Send, AlertCircle, User, Building2, FileText, Clock } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useCreateReferral, useSubmitReferral } from "@/hooks/useReferralQueries";
+import { useCreateReferral, useSubmitReferral } from "@/features/referrals/hooks";
 import { toast } from "sonner";
 
 /**
@@ -180,6 +187,9 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="referral-form-title"
       className={cn(
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
@@ -191,10 +201,10 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-            <Send className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <Send className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="font-display text-xl text-foreground">
+            <h2 id="referral-form-title" className="font-display text-xl text-foreground">
               Request Consult
             </h2>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
@@ -209,7 +219,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="h-4 w-4 mr-1.5" aria-hidden="true" />
           Close
         </Button>
       </header>
@@ -289,8 +299,12 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
                 {Object.entries(urgencyConfig).map(([key, config]) => (
                   <div
                     key={key}
+                    role="radio"
+                    aria-checked={formData.urgency === key}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFormData((prev) => ({ ...prev, urgency: key })); } }}
                     className={cn(
-                      "border-2 rounded-lg p-4 cursor-pointer transition-colors",
+                      "border-2 rounded-lg p-4 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                       formData.urgency === key
                         ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
                         : "border-border hover:border-muted-foreground/50"
@@ -308,6 +322,8 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
                             setFormData((prev) => ({ ...prev, urgency: key }))
                           }
                           className="mt-1"
+                          aria-hidden="true"
+                          tabIndex={-1}
                         />
                         <div>
                           <div className="flex items-center gap-2 mb-1">

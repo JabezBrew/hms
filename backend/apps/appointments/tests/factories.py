@@ -101,6 +101,7 @@ class RecurringScheduleFactory(DjangoModelFactory):
 
     name = factory.Sequence(lambda n: f'Schedule {n}')
     practitioner = factory.SubFactory(PractitionerProfileFactory)
+    facility = factory.SelfAttribute('practitioner.staff.primary_facility')
     days_of_week = [0, 1, 2, 3, 4]  # Monday to Friday
     start_time = time(9, 0)
     end_time = time(17, 0)
@@ -120,6 +121,7 @@ class BlockedTimeFactory(DjangoModelFactory):
         model = BlockedTime
 
     practitioner = factory.SubFactory(PractitionerProfileFactory)
+    facility = factory.SelfAttribute('practitioner.staff.primary_facility')
     date = factory.LazyFunction(lambda: date.today() + timedelta(days=7))
     start_time = time(12, 0)
     end_time = time(13, 0)

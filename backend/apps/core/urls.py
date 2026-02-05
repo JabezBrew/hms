@@ -2,10 +2,14 @@
 Core URL configuration for system-wide settings APIs.
 """
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from . import views
 
 app_name = 'core'
+
+router = DefaultRouter()
+router.register(r'facilities', views.FacilityViewSet, basename='facility')
 
 urlpatterns = [
     # Fluid Balance Settings
@@ -20,3 +24,5 @@ urlpatterns = [
         name='fluid-balance-settings-update'
     ),
 ]
+
+urlpatterns += router.urls

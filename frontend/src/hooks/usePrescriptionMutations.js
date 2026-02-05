@@ -2,17 +2,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { timelineKeys } from './useTimelineQueries';
 import { toast } from 'sonner';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 /**
  * Prescription mutation hooks for managing prescription lifecycle
  */
 
 // Query keys for prescriptions
+const prescriptionKeyFactory = createKeyFactory('prescriptions');
+
 export const prescriptionKeys = {
-  all: ['prescriptions'],
-  list: (patientId) => [...prescriptionKeys.all, 'list', patientId],
-  detail: (id) => [...prescriptionKeys.all, 'detail', id],
-  active: (patientId) => [...prescriptionKeys.all, 'active', patientId],
+  all: prescriptionKeyFactory.all,
+  list: (patientId) => keyWith('prescriptions', 'list', patientId),
+  detail: (id) => keyWith('prescriptions', 'detail', id),
+  active: (patientId) => keyWith('prescriptions', 'active', patientId),
 };
 
 /**

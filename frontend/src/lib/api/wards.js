@@ -32,6 +32,36 @@ export const wardsApi = {
   },
 
   /**
+   * Search wards by name for picker UIs
+   * @param {string} query - Search query
+   * @param {Object} filters - Optional filters
+   * @returns {Promise<Array>} List of matching wards
+   */
+  searchWards: async (query, filters = {}) => {
+    try {
+      if (!query || query.length < 2) {
+        return [];
+      }
+
+      const params = new URLSearchParams({ q: query });
+
+      if (filters.wardType) {
+        params.append('ward_type', filters.wardType);
+      }
+      if (filters.department) {
+        params.append('department', filters.department);
+      }
+      if (filters.includeInactive) {
+        params.append('include_inactive', 'true');
+      }
+
+      return await apiClient.get(`/wards/wards/search/?${params.toString()}`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to search wards'));
+    }
+  },
+
+  /**
    * Get a single ward by ID
    * @param {string} id - Ward ID
    * @returns {Promise<Object>} Ward data

@@ -1,3 +1,5 @@
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,9 +8,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info, AlertTriangle } from 'lucide-react';
-import { fetchWards, fetchBeds } from '@/lib/api';
-import { useAvailableBeds } from '@/hooks/useWardQueries';
+
+import { wardsApi } from '@/features/wards/api';
+import { useAvailableBeds } from '@/features/wards/hooks/useWardQueries';
 import { SectionSelector } from './SectionSelector';
 import { BedAmenityPicker } from './BedAmenityPicker';
 
@@ -83,7 +85,7 @@ export function BedAssignment({
           params.search = searchQuery;
         }
 
-        const data = await fetchWards(params);
+        const data = await wardsApi.getWards(params);
         // Ensure data is an array
         const wardsArray = Array.isArray(data) ? data : [];
         setWards(wardsArray);
@@ -187,7 +189,7 @@ export function BedAssignment({
         {/* Gender compatibility alert */}
         {patientGender && (
           <Alert>
-            <Info className="h-4 w-4" />
+            <Info className="h-4 w-4" aria-hidden="true" />
             <AlertDescription>
               Showing beds compatible with {getGenderDisplay()} patients. Gender-restricted sections are automatically filtered.
             </AlertDescription>
@@ -265,7 +267,7 @@ export function BedAssignment({
           {/* No compatible beds warning */}
           {patientGender && availableBeds.length === 0 && selectedWard && (
             <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
               <AlertDescription>
                 No beds available that are compatible with {getGenderDisplay()} patients in this ward.
                 {selectedSection || selectedAmenities.length > 0
@@ -285,11 +287,15 @@ export function BedAssignment({
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+              <div role="listbox" aria-label="Available beds" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
                 {availableBeds.map(bed => (
                   <div
                     key={bed.id}
-                    className={`h-24 border-2 rounded-md p-2 flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow ${getStatusColor(bed.status)} ${selectedBedId === bed.id ? 'ring-2 ring-primary' : ''}`}
+                    role="option"
+                    aria-selected={selectedBedId === bed.id}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBedSelect(bed); } }}
+                    className={`h-24 border-2 rounded-md p-2 flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${getStatusColor(bed.status)} ${selectedBedId === bed.id ? 'ring-2 ring-primary' : ''}`}
                     onClick={() => onBedSelect(bed)}
                   >
                     <div className="flex justify-between items-start">

@@ -112,12 +112,16 @@ class ReadReplicaRouter:
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         """
-        Only allow migrations on the primary database.
+        Block migrations on read replicas only.
 
-        Replica databases receive schema changes through streaming replication,
-        not through direct migrations.
+        Multi-database deployments (control-plane + facility DBs) still need
+        migrations, but replicas should never be migrated directly.
         """
-        return db == 'default'
+        from django.conf import settings
+        replica_names = set(getattr(settings, 'DATABASE_REPLICA_NAMES', []) or [])
+        if 'replica' in settings.DATABASES:
+            replica_names.add('replica')
+        return db not in replica_names
 
 
 class RandomReplicaRouter(ReadReplicaRouter):

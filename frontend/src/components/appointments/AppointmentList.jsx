@@ -1,21 +1,21 @@
-import { useState } from 'react';
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
 import { cn } from '@/lib/utils';
-import {
-  Calendar as CalendarIcon,
-  Clock,
-  User,
-  UserRound,
-  Search,
-  Plus,
-  Filter,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  AlertTriangle,
-  RefreshCw
-} from 'lucide-react';
+import VirtualizedList from '@/components/ui/VirtualizedList';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,17 +36,27 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { useAppointments } from '@/hooks/useAppointmentQueries';
+import { useAppointments } from '@/features/appointments/hooks/useAppointmentQueries';
+import { PageState } from '@/shared/components/page/PageState';
+import { useListFilters } from '@/shared/hooks/useListFilters';
 
 const AppointmentList = () => {
   const { user } = useAuth();
   const userRole = user?.role || user?.user_type;
   const canOpenContext = ['receptionist', 'admin'].includes(userRole);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(10);
+  const {
+    search,
+    status,
+    date,
+    page,
+    pageSize,
+    setPage,
+    updateSearch,
+    updateStatus,
+    updateDate,
+    clearFilters,
+    hasActiveFilters,
+  } = useListFilters({ initialStatus: 'all', pageSize: 10 });
   const [showFilters, setShowFilters] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [contextAppointment, setContextAppointment] = useState(null);
@@ -54,18 +64,19 @@ const AppointmentList = () => {
   const navigate = useNavigate();
 
   // Build query parameters
+  // Note: Backend automatically filters by practitioner for doctors/nurses
   const queryParams = {};
 
-  if (statusFilter && statusFilter !== 'all') {
-    queryParams.status = statusFilter;
+  if (status && status !== 'all') {
+    queryParams.status = status;
   }
 
-  if (dateFilter) {
-    queryParams.date = dateFilter;
+  if (date) {
+    queryParams.date = date;
   }
 
   // Add pagination
-  queryParams.page = currentPage;
+  queryParams.page = page;
   queryParams.limit = pageSize;
 
   // Use React Query to fetch appointments
@@ -94,7 +105,7 @@ const AppointmentList = () => {
     }
 
     // Apply client-side search if needed
-    if (searchTerm) {
+    if (search) {
       appointments = appointments.filter(appointment => {
         // Search in patient and practitioner names
         const patientName = appointment.participant?.find(p =>
@@ -108,10 +119,10 @@ const AppointmentList = () => {
         const comment = appointment.comment || '';
 
         return (
-          patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          practitionerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          comment.toLowerCase().includes(searchTerm.toLowerCase())
+          patientName.toLowerCase().includes(search.toLowerCase()) ||
+          practitionerName.toLowerCase().includes(search.toLowerCase()) ||
+          description.toLowerCase().includes(search.toLowerCase()) ||
+          comment.toLowerCase().includes(search.toLowerCase())
         );
       });
     }
@@ -122,38 +133,26 @@ const AppointmentList = () => {
   }
 
   // Show error toast if query fails
-  if (isError) {
-    toast.error(error?.message || 'Failed to load appointments. Please try again.');
-  }
+  useEffect(() => {
+    if (isError) {
+      toast.error(error?.message || 'Failed to load appointments. Please try again.');
+    }
+  }, [isError, error]);
 
   // Handle search
   const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
-    setCurrentPage(1);
+    updateSearch(e.target.value);
   };
 
   // Handle status filter change
   const handleStatusFilterChange = (value) => {
-    setStatusFilter(value);
-    setCurrentPage(1);
+    updateStatus(value);
   };
 
   // Handle date filter change
   const handleDateFilterChange = (value) => {
-    setDateFilter(value);
-    setCurrentPage(1);
+    updateDate(value);
   };
-
-  // Clear all filters
-  const clearFilters = () => {
-    setSearchTerm('');
-    setStatusFilter('all');
-    setDateFilter('');
-    setCurrentPage(1);
-  };
-
-  // Check if filters are active
-  const hasActiveFilters = searchTerm || statusFilter !== 'all' || dateFilter;
 
   // Navigate to appointment detail
   const viewAppointmentDetail = (appointmentId) => {
@@ -216,19 +215,14 @@ const AppointmentList = () => {
   // Render error state
   if (isError) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-2xl text-foreground">Error Loading Appointments</h2>
-          <p className="text-muted-foreground">{error?.message || 'Failed to load appointments.'}</p>
-          <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
+      <PageState
+        variant="error"
+        title="Error Loading Appointments"
+        description={error?.message || 'Failed to load appointments.'}
+        action={() => refetch()}
+        fullHeight={false}
+        className="min-h-[60vh]"
+      />
     );
   }
 
@@ -241,7 +235,7 @@ const AppointmentList = () => {
           <Input
             placeholder="Search appointments..."
             className="pl-10 font-mono text-sm"
-            value={searchTerm}
+            value={search}
             onChange={handleSearch}
           />
         </div>
@@ -287,7 +281,7 @@ const AppointmentList = () => {
               <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                 Status
               </label>
-              <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+              <Select value={status} onValueChange={handleStatusFilterChange}>
                 <SelectTrigger className="w-[180px] font-mono text-sm">
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
@@ -312,14 +306,14 @@ const AppointmentList = () => {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-[180px] font-mono text-sm justify-start">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFilter ? format(parseISO(dateFilter), 'MMM d, yyyy') : 'Select date'}
+                    {date ? format(parseISO(date), 'MMM d, yyyy') : 'Select date'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
                   <Calendar
                     mode="single"
-                    selected={dateFilter ? parseISO(dateFilter) : undefined}
-                    onSelect={(date) => handleDateFilterChange(date ? format(date, 'yyyy-MM-dd') : '')}
+                    selected={date ? parseISO(date) : undefined}
+                    onSelect={(nextDate) => handleDateFilterChange(nextDate ? format(nextDate, 'yyyy-MM-dd') : '')}
                     initialFocus={true}
                   />
                 </PopoverContent>
@@ -348,10 +342,13 @@ const AppointmentList = () => {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {appointments.map((appointment, index) => (
+        <VirtualizedList
+          items={appointments}
+          estimateSize={140}
+          gap={12}
+          getItemKey={(appointment) => appointment.id}
+          renderItem={(appointment, index) => (
             <AppointmentCard
-              key={appointment.id}
               appointment={appointment}
               index={index}
               formatDateTime={formatDateTime}
@@ -360,22 +357,22 @@ const AppointmentList = () => {
               onClick={() => viewAppointmentDetail(appointment.id)}
               onPatientContext={canOpenContext ? handlePatientContext : null}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="font-mono text-xs text-muted-foreground">
-            Page {currentPage} of {totalPages}
+            Page {page} of {totalPages}
           </p>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
+              onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+              disabled={page === 1}
               className="font-mono text-xs"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
@@ -384,8 +381,8 @@ const AppointmentList = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={page === totalPages}
               className="font-mono text-xs"
             >
               Next

@@ -1,19 +1,17 @@
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
+import Clipboard from 'lucide-react/dist/esm/icons/clipboard.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import {
-  Calendar,
-  Clock,
-  User,
-  Building2,
-  Activity,
-  FileText,
-  Stethoscope,
-  CalendarClock,
-  Clipboard,
-  ClipboardList,
-} from 'lucide-react';
 
 /**
  * Documentation Mode Layout

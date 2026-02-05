@@ -1,3 +1,20 @@
+import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Filter from 'lucide-react/dist/esm/icons/funnel.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronsLeft from 'lucide-react/dist/esm/icons/chevrons-left.js';
+import ChevronsRight from 'lucide-react/dist/esm/icons/chevrons-right.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -8,27 +25,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
-import { format, parseISO, isValid } from 'date-fns';
-import { useEncounters } from '@/hooks/useEncounterQueries';
-import {
-  PlusCircle,
-  Search,
-  Filter,
-  Clock,
-  Calendar,
-  User,
-  Building2,
-  Activity,
-  FileText,
-  ChevronRight,
-  ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
-  AlertTriangle,
-  RefreshCw,
-  X,
-  Stethoscope
-} from 'lucide-react';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+import isValid from 'date-fns/isValid';
+import { useEncounters } from '@/features/encounters/hooks/useEncounterQueries';
 
 const PAGE_SIZE = 20;
 

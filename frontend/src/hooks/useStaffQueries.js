@@ -1,17 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { staffApi } from '@/lib/api/staff';
+import { staffApi } from '@/features/staff/api';
 import { useSearchQuery } from './useSearchQuery';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const staffKeyFactory = createKeyFactory('staff');
+
 export const staffKeys = {
-  all: ['staff'],
-  lists: () => [...staffKeys.all, 'list'],
-  list: (filters) => [...staffKeys.lists(), { filters }],
-  details: () => [...staffKeys.all, 'detail'],
-  detail: (id) => [...staffKeys.details(), id],
-  practitioners: () => [...staffKeys.all, 'practitioners'],
-  practitionersList: (filters) => [...staffKeys.practitioners(), 'list', { filters }],
-  practitioner: (id) => [...staffKeys.practitioners(), id],
+  all: staffKeyFactory.all,
+  lists: staffKeyFactory.lists,
+  list: (filters) => staffKeyFactory.list(filters),
+  search: () => keyWith('staff', 'search'),
+  details: staffKeyFactory.details,
+  detail: (id) => staffKeyFactory.detail(id),
+  practitioners: () => keyWith('staff', 'practitioners'),
+  practitionersList: (filters) => keyWith('staff', 'practitioners', 'list', { filters }),
+  practitioner: (id) => keyWith('staff', 'practitioners', id),
 };
 
 /**
@@ -205,6 +209,23 @@ export function useSearchPractitioners(doctorsOnly = false, options = {}) {
     (query) => staffApi.searchPractitioners(query, doctorsOnly),
     {
       staleTime: 5 * 60 * 1000, // 5 minutes - practitioners list changes less frequently
+      ...options,
+    }
+  );
+}
+
+/**
+ * Search staff (local only) by name or employee ID
+ * @param {Object} filters - Optional filters
+ * @param {Object} options - Search options
+ * @returns {Object} Search query result
+ */
+export function useSearchStaff(filters = {}, options = {}) {
+  return useSearchQuery(
+    [...staffKeys.search(), { filters }],
+    (query) => staffApi.searchStaff(query, filters),
+    {
+      staleTime: 60 * 1000,
       ...options,
     }
   );

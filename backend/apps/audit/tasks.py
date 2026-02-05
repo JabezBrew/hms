@@ -21,6 +21,7 @@ def log_audit_async(
     user_type=None,
     resource_name=None,
     changes=None,
+    facility_id=None,
 ):
     """
     Asynchronous task to create an audit log entry.
@@ -59,6 +60,7 @@ def log_audit_async(
             user_type = 'system' if not user_id else 'unknown'
 
         AuditLog.objects.create(
+            facility_id=facility_id,
             user=user,
             user_email=user_email,
             user_type=user_type,

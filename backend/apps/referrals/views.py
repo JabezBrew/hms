@@ -1,41 +1,38 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.pagination import PageNumberPagination
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 import logging
 
-from .models import Referral, ReferralStatus
+from .models import Referral, ReferralStatus, ReferralNotification, ReferralNotificationEvent
 from .serializers import (
     ReferralSerializer, ReferralCreateSerializer,
     ReferralSubmitSerializer, ReferralAcceptSerializer,
     ReferralDeclineSerializer, ReferralScheduleSerializer,
     ReferralCompleteSerializer, ReferralResponseSerializer,
-    ReferralSearchSerializer, ReferralListSerializer
+    ReferralSearchSerializer, ReferralListSerializer, ReferralNotificationSerializer
 )
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
+from .notifications import create_referral_notifications
+from .tasks import send_referral_status_update
 from ..encounters.models import Encounter
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.users.models import PatientProfile
+from rest_framework.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    """Standard pagination for referrals endpoints."""
-    page_size = 25
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
 
 class ReferralViewSet(viewsets.ModelViewSet):
     """
     API endpoint for referrals with workflow management.
     """
     queryset = Referral.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrDoctor]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -55,20 +52,43 @@ class ReferralViewSet(viewsets.ModelViewSet):
             return ReferralListSerializer
         return ReferralSerializer
 
+    def _get_inbox_queryset(self, practitioner):
+        return self.get_queryset().filter(
+            Q(referred_to_provider=practitioner) |
+            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
+        ).exclude(
+            status__in=[
+                ReferralStatus.DRAFT,
+                ReferralStatus.COMPLETED,
+                ReferralStatus.DECLINED,
+                ReferralStatus.CANCELLED,
+            ]
+        )
+
     def get_queryset(self):
         """
         Filter referrals with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Referral.objects.none()
+
         queryset = Referral.objects.select_related(
             'patient__user',
             'referring_provider__staff__user',
             'referred_to_provider__staff__user',
             'encounter'
-        )
+        ).filter(facility=facility)
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by referring provider
@@ -127,17 +147,29 @@ class ReferralViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """Create referral with referring provider set to current user."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_clinical_access(self.request.user, patient)
+        encounter = serializer.validated_data.get('encounter')
+        if encounter and encounter.facility_id != facility.id:
+            raise PermissionDenied("Encounter does not belong to the active facility.")
+
         # If referring_provider not specified, use current user
         if not serializer.validated_data.get('referring_provider'):
             try:
                 practitioner = self.request.user.staff_profile.practitioner_profile
-                serializer.save(referring_provider=practitioner)
+                serializer.save(referring_provider=practitioner, facility=facility)
             except AttributeError:
                 # Current user is not a practitioner - raise error
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("Only practitioners can create referrals. Your account is not linked to a practitioner profile.")
         else:
-            serializer.save()
+            serializer.save(facility=facility)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic
@@ -158,6 +190,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.status = ReferralStatus.PENDING
         referral.submitted_at = timezone.now()
         referral.save()
+
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.SUBMITTED,
+                actor=request.user
+            )
+        )
 
         logger.info(
             f"Referral {referral.referral_number} submitted by {request.user.get_full_name()} "
@@ -206,6 +246,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         referral.save()
 
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.ACCEPTED,
+                actor=request.user
+            )
+        )
+
         logger.info(
             f"Referral {referral.referral_number} accepted by {request.user.get_full_name()}"
         )
@@ -237,6 +285,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.decline_reason = decline_serializer.validated_data['decline_reason']
         referral.save()
 
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.DECLINED,
+                actor=request.user
+            )
+        )
+
         logger.info(
             f"Referral {referral.referral_number} declined by {request.user.get_full_name()}. "
             f"Reason: {referral.decline_reason}"
@@ -267,6 +323,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.status = ReferralStatus.SCHEDULED
         referral.scheduled_appointment_id = schedule_serializer.validated_data['scheduled_appointment_id']
         referral.save()
+
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.SCHEDULED,
+                actor=request.user
+            )
+        )
 
         logger.info(
             f"Referral {referral.referral_number} scheduled with appointment "
@@ -309,6 +373,20 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.specialist_notes = complete_serializer.validated_data['specialist_notes']
         referral.recommendations = complete_serializer.validated_data.get('recommendations', '')
         referral.save()
+
+        transaction.on_commit(
+            lambda: create_referral_notifications(
+                referral,
+                ReferralNotificationEvent.COMPLETED,
+                actor=request.user
+            )
+        )
+        transaction.on_commit(
+            lambda: send_referral_status_update.delay(
+                referral.id,
+                ReferralNotificationEvent.COMPLETED
+            )
+        )
 
         logger.info(
             f"Referral {referral.referral_number} completed by {request.user.get_full_name()}"
@@ -354,10 +432,17 @@ class ReferralViewSet(viewsets.ModelViewSet):
             try:
                 encounter = Encounter.objects.create(
                     patient=referral.patient,
+                    facility=referral.patient.facility,
                     practitioner=practitioner,
                     encounter_type='outpatient',
                     status='in-progress',
                     reason=f"Specialist consultation: {referral.reason[:200] if referral.reason else 'Referral consultation'}",
+                )
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    use_roster=True,
+                    context='outpatient'
                 )
                 encounter_id = str(encounter.id)
                 referral.consultation_encounter = encounter
@@ -393,6 +478,14 @@ class ReferralViewSet(viewsets.ModelViewSet):
             referral.consultation_workflow = workflow
             referral.status = ReferralStatus.SCHEDULED
             referral.save()
+
+            transaction.on_commit(
+                lambda: create_referral_notifications(
+                    referral,
+                    ReferralNotificationEvent.SCHEDULED,
+                    actor=request.user
+                )
+            )
 
             # Also link workflow back to referral
             workflow.source_referral = referral
@@ -470,19 +563,30 @@ class ReferralViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Get referrals sent to this practitioner or pending for their department
-        queryset = self.get_queryset().filter(
-            Q(referred_to_provider=practitioner) |
-            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
-        ).exclude(
-            status__in=[ReferralStatus.DRAFT, ReferralStatus.COMPLETED, ReferralStatus.DECLINED, ReferralStatus.CANCELLED]
-        )
+        queryset = self._get_inbox_queryset(practitioner)
+        total = queryset.count()
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({
-            'count': queryset.count(),
+            'count': total,
             'referrals': serializer.data
         })
+
+    @action(detail=False, methods=['get'], url_path='inbox-count', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    def inbox_count(self, request):
+        """
+        Get referral inbox count for the current user.
+        """
+        try:
+            practitioner = request.user.staff_profile.practitioner_profile
+        except AttributeError:
+            return Response(
+                {'error': 'Only practitioners have an inbox'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        total = self._get_inbox_queryset(practitioner).count()
+        return Response({'count': total})
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     def sent(self, request):
@@ -521,3 +625,41 @@ class ReferralViewSet(viewsets.ModelViewSet):
             'count': queryset.count(),
             'referrals': serializer.data
         })
+
+
+class ReferralNotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    In-app notifications for referral workflow events.
+    """
+    serializer_class = ReferralNotificationSerializer
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ReferralNotification.objects.none()
+        return ReferralNotification.objects.select_related('referral').filter(
+            recipient=self.request.user,
+            facility=facility
+        )
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save(update_fields=['is_read', 'updated_at'])
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        queryset = self.get_queryset().filter(is_read=False)
+        return Response({'count': queryset.count()})
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        queryset = self.get_queryset().filter(is_read=False)
+        updated = queryset.update(is_read=True)
+        return Response({'updated': updated})

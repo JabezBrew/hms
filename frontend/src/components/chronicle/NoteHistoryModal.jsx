@@ -1,4 +1,11 @@
-import { useState } from "react";
+import History from 'lucide-react/dist/esm/icons/history.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import { lazy, Suspense, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -11,17 +18,9 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  History,
-  ChevronRight,
-  Clock,
-  User,
-  FileText,
-  ArrowLeftRight,
-  ArrowRight,
-} from "lucide-react";
-import { useNoteEntryHistory, useCompareNoteVersions } from "@/hooks/useClinicalNotesQueries";
-import DiffRenderer from "./DiffRenderer";
+
+import { useNoteEntryHistory, useCompareNoteVersions } from "@/features/clinical-notes/hooks";
+const DiffRenderer = lazy(() => import("./DiffRenderer"));
 
 /**
  * NoteHistoryModal - Modal for viewing clinical note version history
@@ -368,7 +367,9 @@ const CompareView = ({ comparison, isLoading }) => {
 
       {/* Diff content */}
       <ScrollArea className="flex-1">
-        <DiffRenderer oldData={comparison.data_a} newData={comparison.data_b} />
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <DiffRenderer oldData={comparison.data_a} newData={comparison.data_b} />
+        </Suspense>
       </ScrollArea>
     </div>
   );

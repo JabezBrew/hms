@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { useDebounce } from '@/hooks/use-debounce';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 import { useForm } from "react-hook-form";
@@ -36,7 +36,7 @@ import {
   useEncounter,
   useSearchPatientsForEncounter,
   useSearchPractitioners
-} from '@/hooks/useEncounterQueries';
+} from '@/features/encounters/hooks/useEncounterQueries';
 
 // Form validation schema
 const encounterFormSchema = z.object({

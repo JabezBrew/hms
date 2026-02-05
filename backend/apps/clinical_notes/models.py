@@ -36,6 +36,12 @@ class NoteTemplate(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='note_templates',
+        help_text="Facility that owns this note template"
+    )
     title = models.CharField(max_length=100)  # e.g., "SOAP Note", "Nurse Shift Note"
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
@@ -95,6 +101,7 @@ class NoteTemplate(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
+            models.Index(fields=['facility', 'visibility']),
             models.Index(fields=['visibility', 'is_active']),
             models.Index(fields=['category', 'is_active']),
             models.Index(fields=['created_by', 'visibility']),
@@ -136,6 +143,12 @@ class NoteEntry(models.Model):
         related_name='note_entries',
         help_text="The patient this note is for"
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='note_entries',
+        help_text="Facility context for this clinical note"
+    )
 
     # Encounter - required link to group notes by clinical visit
     # The auto-encounter logic in views ensures this is always set
@@ -172,6 +185,7 @@ class NoteEntry(models.Model):
         indexes = [
             models.Index(fields=['patient', '-created_at']),
             models.Index(fields=['encounter', '-created_at']),
+            models.Index(fields=['facility', '-created_at']),
         ]
 
     def __str__(self):
@@ -191,6 +205,12 @@ class NoteEntryVersion(models.Model):
         on_delete=models.CASCADE,
         related_name='versions',
         help_text="The note entry this version belongs to"
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='note_entry_versions',
+        help_text="Facility context for this note entry version"
     )
     version_number = models.PositiveIntegerField(
         help_text="Sequential version number (1 = first version)"
@@ -220,6 +240,7 @@ class NoteEntryVersion(models.Model):
         indexes = [
             models.Index(fields=['note_entry', '-version_number']),
             models.Index(fields=['note_entry', '-created_at']),
+            models.Index(fields=['facility', 'note_entry', '-created_at']),
         ]
 
     def __str__(self):
@@ -245,6 +266,7 @@ class NoteEntryVersion(models.Model):
 
         return cls.objects.create(
             note_entry=note_entry,
+            facility=note_entry.facility,
             version_number=next_version,
             data=note_entry.data,  # Snapshot current data before update
             edited_by=edited_by,
@@ -309,6 +331,12 @@ class Prescription(models.Model):
         on_delete=models.CASCADE,
         related_name='prescriptions'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='prescriptions',
+        help_text="Facility context for this prescription"
+    )
 
     # Prescriber - the doctor who prescribed
     prescribed_by = models.ForeignKey(
@@ -362,6 +390,9 @@ class Prescription(models.Model):
     class Meta:
         ordering = ['-created_at']
         db_table = 'clinical_prescriptions'
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at']),
+        ]
 
     def __str__(self):
         return f"{self.medication_name} {self.dosage} - {self.patient}"
@@ -370,6 +401,31 @@ class Prescription(models.Model):
         # Calculate end_date from duration if provided
         if self.duration_days and not self.end_date:
             self.end_date = self.start_date + timedelta(days=self.duration_days)
+
+        # Backward compatibility: derive facility from encounter/patient when omitted.
+        if self.facility_id is None:
+            encounter_facility_id = None
+            if self.encounter_id:
+                encounter_obj = getattr(self, 'encounter', None)
+                encounter_facility_id = getattr(encounter_obj, 'facility_id', None)
+                if encounter_facility_id is None:
+                    from apps.encounters.models import Encounter
+                    encounter_facility_id = Encounter.objects.filter(
+                        id=self.encounter_id
+                    ).values_list('facility_id', flat=True).first()
+
+            if encounter_facility_id is not None:
+                self.facility_id = encounter_facility_id
+            elif self.patient_id:
+                patient_obj = getattr(self, 'patient', None)
+                patient_facility_id = getattr(patient_obj, 'facility_id', None)
+                if patient_facility_id is None:
+                    from apps.users.models import PatientProfile
+                    patient_facility_id = PatientProfile.objects.filter(
+                        id=self.patient_id
+                    ).values_list('facility_id', flat=True).first()
+                self.facility_id = patient_facility_id
+
         super().save(*args, **kwargs)
 
     @property

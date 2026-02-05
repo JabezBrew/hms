@@ -9,6 +9,8 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.utils import timezone
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 
 from apps.charts.models import ChartTemplate, ChartField, ChartAssignment, ChartEntry
 from apps.charts.tests.factories import (
@@ -24,12 +26,15 @@ def api_client():
 
 
 @pytest.fixture
-def authenticated_user(api_client):
+def authenticated_user(api_client, settings):
+    settings.TEAM_ACCESS_STRICT = False
+
     # Create staff with user, then create practitioner profile
     staff = StaffFactory()
     user = staff.user
     PractitionerProfileFactory(staff=staff)
     api_client.force_authenticate(user=user)
+    api_client.credentials(HTTP_X_FACILITY_CODE=staff.primary_facility.code)
     return user
 
 
@@ -311,6 +316,33 @@ class TestChartEntryViewSet:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data['results']) == 2
+
+    def test_list_entries_include_data_caps_page_size(self, api_client, authenticated_user):
+        """Ensure include_data caps page size to 12."""
+        assignment = ChartAssignmentFactory()
+        ChartEntryFactory.create_batch(20, assignment=assignment)
+
+        url = reverse('chart-entry-list')
+        response = api_client.get(url, {
+            'assignment': str(assignment.id),
+            'include_data': 'true',
+            'page_size': 50,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 12
+
+    def test_list_entries_query_count(self, api_client, authenticated_user):
+        """Entry list should be O(1) queries per page."""
+        assignment = ChartAssignmentFactory()
+        ChartEntryFactory.create_batch(5, assignment=assignment)
+
+        url = reverse('chart-entry-list')
+        with CaptureQueriesContext(connection) as ctx:
+            response = api_client.get(url, {'assignment': str(assignment.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(ctx) <= 8
 
     def test_create_entry(self, api_client, authenticated_user):
         """Test creating a chart entry."""

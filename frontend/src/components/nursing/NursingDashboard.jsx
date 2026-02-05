@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,13 +11,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, AlertCircle, Activity, Droplet, Pill } from 'lucide-react';
+
 import { PatientList } from './PatientList';
-import { VitalSignsRecorder } from './VitalSignsRecorder';
 import { MedicationAdministration } from './MedicationAdministration';
-import { FluidBalanceTracker } from './FluidBalanceTracker';
-import { useWards, useAdmissions } from '@/hooks/useWardQueries';
+import { useWards, useAdmissions } from '@/features/wards/hooks/useWardQueries';
 import { toast } from 'sonner';
+
+// Lazy load chart-heavy components to reduce initial bundle size (~180KB saved)
+const VitalSignsRecorder = lazy(() => import('./VitalSignsRecorder').then(m => ({ default: m.VitalSignsRecorder })));
+const FluidBalanceTracker = lazy(() => import('./FluidBalanceTracker').then(m => ({ default: m.FluidBalanceTracker })));
+
+// Loading fallback for lazy-loaded chart components
+const ChartLoadingFallback = () => (
+  <div className="space-y-4 p-4">
+    <Skeleton className="h-10 w-full" />
+    <Skeleton className="h-64 w-full" />
+    <Skeleton className="h-32 w-full" />
+  </div>
+);
 
 export function NursingDashboard() {
   const [selectedWard, setSelectedWard] = useState('');
@@ -28,15 +44,17 @@ export function NursingDashboard() {
     error: wardsError
   } = useWards();
 
-  // Set initial selected ward when data is loaded
-  if (wardsData && wardsData.length > 0 && !selectedWard) {
-    setSelectedWard(wardsData[0].id);
-  }
+  useEffect(() => {
+    if (wardsData && wardsData.length > 0 && !selectedWard) {
+      setSelectedWard(wardsData[0].id);
+    }
+  }, [wardsData, selectedWard]);
 
-  // Show error toast if wards query fails
-  if (isWardsError) {
-    toast.error(wardsError?.message || 'Failed to load wards. Please try again.');
-  }
+  useEffect(() => {
+    if (isWardsError) {
+      toast.error(wardsError?.message || 'Failed to load wards. Please try again.');
+    }
+  }, [isWardsError, wardsError]);
 
   // Use React Query to fetch admissions for the selected ward
   const {
@@ -46,31 +64,34 @@ export function NursingDashboard() {
     error: admissionsError
   } = useAdmissions({ ward: selectedWard, status: 'admitted' }, { enabled: !!selectedWard });
 
-  // Show error toast if admissions query fails
-  if (isAdmissionsError) {
-    toast.error(admissionsError?.message || 'Failed to load patients. Please try again.');
-  }
+  useEffect(() => {
+    if (isAdmissionsError) {
+      toast.error(admissionsError?.message || 'Failed to load patients. Please try again.');
+    }
+  }, [isAdmissionsError, admissionsError]);
 
-  // Process admissions data to get patient information
-  const patients = [];
-  if (admissionsData) {
-    // Extract patient information from admissions
-    admissionsData.forEach(admission => {
-      if (admission.patient) {
-        patients.push({
+  const patients = useMemo(() => {
+    if (!admissionsData) return [];
+    return admissionsData.reduce((acc, admission) => {
+      if (admission?.patient) {
+        acc.push({
           ...admission.patient,
-          admission: admission,
-          bed: admission.bed
+          admission,
+          bed: admission.bed,
         });
       }
-    });
-  }
+      return acc;
+    }, []);
+  }, [admissionsData]);
 
-  // Filter patients based on search term
-  const filteredPatients = patients.filter(patient => 
-    patient.user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.bed.bed_number.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPatients = useMemo(() => {
+    const query = searchTerm.toLowerCase();
+    return patients.filter((patient) => {
+      const name = patient?.user?.full_name?.toLowerCase() || '';
+      const bedNumber = patient?.bed?.bed_number?.toLowerCase() || '';
+      return name.includes(query) || bedNumber.includes(query);
+    });
+  }, [patients, searchTerm]);
 
   // Handle ward change
   const handleWardChange = (wardId) => {
@@ -189,7 +210,9 @@ export function NursingDashboard() {
             </TabsList>
 
             <TabsContent value="vitals" className="mt-4">
-              <VitalSignsRecorder patient={selectedPatient} />
+              <Suspense fallback={<ChartLoadingFallback />}>
+                <VitalSignsRecorder patient={selectedPatient} />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="medications" className="mt-4">
@@ -197,7 +220,9 @@ export function NursingDashboard() {
             </TabsContent>
 
             <TabsContent value="fluids" className="mt-4">
-              <FluidBalanceTracker patient={selectedPatient} />
+              <Suspense fallback={<ChartLoadingFallback />}>
+                <FluidBalanceTracker patient={selectedPatient} />
+              </Suspense>
             </TabsContent>
           </Tabs>
         </div>

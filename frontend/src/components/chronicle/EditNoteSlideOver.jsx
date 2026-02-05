@@ -1,3 +1,6 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -6,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, Save, Loader2 } from "lucide-react";
-import { useUpdateNoteEntry } from "@/hooks/useClinicalNotesQueries";
+
+import { useUpdateNoteEntry } from "@/features/clinical-notes/hooks";
 import { toast } from "sonner";
 
 /**

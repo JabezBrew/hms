@@ -31,6 +31,8 @@ from typing import Any, Optional, Tuple
 
 from django.conf import settings
 from django.core.cache import cache
+
+from apps.core.cache_utils import facility_cache_key
 from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 def _get_cache_key(idempotency_key: str, operation_type: str) -> str:
     """Generate cache key for idempotency lookup."""
-    return f"idempotent:{operation_type}:{idempotency_key}"
+    return facility_cache_key(f"idempotent:{operation_type}:{idempotency_key}")
 
 
 def _hash_request_body(body: dict) -> str:

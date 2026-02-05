@@ -7,6 +7,7 @@ for credentials. This is safe to run on every deployment.
 import os
 from django.core.management.base import BaseCommand
 from apps.users.models import User
+from apps.core.models import Facility
 
 
 class Command(BaseCommand):
@@ -28,6 +29,19 @@ class Command(BaseCommand):
         email = options['email']
         password = options['password']
 
+        default_facility = None
+        try:
+            from django.conf import settings
+            default_code = getattr(settings, 'DEFAULT_FACILITY_CODE', None)
+            if default_code:
+                default_facility = Facility.objects.filter(code=default_code.strip().upper()).first()
+        except Exception:
+            default_facility = None
+
+        if default_facility is None:
+            if Facility.objects.count() == 1:
+                default_facility = Facility.objects.first()
+
         # Check if any superuser exists
         if User.objects.filter(is_superuser=True).exists():
             superuser = User.objects.filter(is_superuser=True).first()
@@ -42,6 +56,10 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.SUCCESS(f'Updated user_type to admin')
                 )
+            if default_facility and superuser.primary_facility_id is None:
+                superuser.primary_facility = default_facility
+                superuser.save(update_fields=['primary_facility'])
+                superuser.facilities.add(default_facility)
             return
 
         # Create admin user
@@ -58,6 +76,11 @@ class Command(BaseCommand):
             last_name='User',
             user_type='admin',
         )
+
+        if default_facility:
+            user.primary_facility = default_facility
+            user.save(update_fields=['primary_facility'])
+            user.facilities.add(default_facility)
 
         self.stdout.write(
             self.style.SUCCESS(f'Admin user created successfully: {user.email}')

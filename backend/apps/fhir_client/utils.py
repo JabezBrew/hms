@@ -229,6 +229,56 @@ def create_human_name(family: str, given: List[str], prefix: Optional[List[str]]
     return name
 
 
+def _extract_primary_name(resource: Dict[str, Any]) -> Dict[str, Any]:
+    if not resource:
+        return {}
+    names = resource.get("name") or []
+    if not names:
+        return {}
+    primary = names[0] if isinstance(names, list) else {}
+    if not isinstance(primary, dict):
+        return {}
+    family = primary.get("family")
+    given = primary.get("given") or []
+    if isinstance(given, list):
+        given_text = " ".join([str(part) for part in given if part])
+    else:
+        given_text = str(given) if given else ""
+    text = primary.get("text") or " ".join([part for part in [given_text, family] if part]).strip()
+    return {
+        "text": text or None,
+        "family": family,
+        "given": given if isinstance(given, list) else [given] if given else [],
+    }
+
+
+def project_fhir_patient(resource: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a minimal, safe projection of a FHIR Patient resource.
+    """
+    if not resource:
+        return {}
+    return {
+        "id": resource.get("id"),
+        "name": _extract_primary_name(resource),
+        "gender": resource.get("gender"),
+        "birthDate": resource.get("birthDate"),
+    }
+
+
+def project_fhir_practitioner(resource: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a minimal, safe projection of a FHIR Practitioner resource.
+    """
+    if not resource:
+        return {}
+    return {
+        "id": resource.get("id"),
+        "name": _extract_primary_name(resource),
+        "gender": resource.get("gender"),
+    }
+
+
 def create_address(line: List[str], city: str, state: str, postalCode: str, 
                   country: str, use: str = "home") -> Dict[str, Any]:
     """

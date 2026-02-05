@@ -1,5 +1,7 @@
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
 import React from 'react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

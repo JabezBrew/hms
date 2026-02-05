@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { billingApi } from '@/lib/api/billing';
+import { billingApi } from '@/features/billing/api';
+import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
+const billingKeyFactory = createKeyFactory('billing');
+
 export const billingKeys = {
-  all: ['billing'],
+  all: billingKeyFactory.all,
   // Dashboard
   dashboard: () => [...billingKeys.all, 'dashboard'],
   dashboardMetrics: (params) => [...billingKeys.dashboard(), 'metrics', params],

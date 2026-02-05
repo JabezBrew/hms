@@ -22,6 +22,12 @@ class ServiceCategory(models.Model):
     Model for categorizing billable services.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='service_categories',
+        help_text="Facility that owns this service category"
+    )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -35,6 +41,9 @@ class ServiceCategory(models.Model):
     class Meta:
         verbose_name_plural = "Service Categories"
         ordering = ['name']
+        indexes = [
+            models.Index(fields=['facility', 'name']),
+        ]
     
     def __str__(self):
         return self.name
@@ -45,10 +54,16 @@ class Service(models.Model):
     Model for billable services.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='services',
+        help_text="Facility that owns this service"
+    )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(ServiceCategory, on_delete=models.CASCADE, related_name='services')
-    code = models.CharField(max_length=20, unique=True)
+    code = models.CharField(max_length=20)
     
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -65,6 +80,13 @@ class Service(models.Model):
     
     class Meta:
         ordering = ['category__name', 'name']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'code'], name='service_facility_code_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'code']),
+            models.Index(fields=['facility', 'is_active']),
+        ]
     
     def __str__(self):
         return f"{self.name} ({self.code})"
@@ -127,6 +149,14 @@ class ServicePrice(models.Model):
         related_name='service_prices',
         help_text="Specific department for this price (null = all departments)"
     )
+    clinical_unit = models.ForeignKey(
+        'organization.ClinicalUnit',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='service_prices',
+        help_text="Specific clinical unit for this price (null = all units)"
+    )
 
     # Time context
     price_context = models.CharField(
@@ -185,12 +215,13 @@ class ServicePrice(models.Model):
         # Ensure unique combination of scope and context for a given effective date
         constraints = [
             models.UniqueConstraint(
-                fields=['service', 'facility', 'department', 'price_context', 'effective_from'],
-                name='unique_service_price_override'
+                fields=['service', 'facility', 'department', 'clinical_unit', 'price_context', 'effective_from'],
+                name='unique_service_price_override_v2'
             )
         ]
         indexes = [
             models.Index(fields=['service', 'facility', 'department', 'price_context']),
+            models.Index(fields=['service', 'clinical_unit', 'price_context']),
             models.Index(fields=['service', 'is_active']),
             models.Index(fields=['effective_from', 'effective_until']),
         ]
@@ -866,8 +897,14 @@ class InsuranceProvider(models.Model):
     Model for insurance providers.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='insurance_providers',
+        help_text="Facility that owns this insurance provider"
+    )
     name = models.CharField(max_length=100)
-    code = models.CharField(max_length=20, unique=True)
+    code = models.CharField(max_length=20)
     contact_person = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
@@ -884,6 +921,12 @@ class InsuranceProvider(models.Model):
     
     class Meta:
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'code'], name='insurance_provider_facility_code_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'name']),
+        ]
     
     def __str__(self):
         return self.name
@@ -894,6 +937,12 @@ class InsurancePlan(models.Model):
     Model for insurance plans.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='insurance_plans',
+        help_text="Facility that owns this insurance plan"
+    )
     provider = models.ForeignKey(InsuranceProvider, on_delete=models.CASCADE, related_name='plans')
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20)
@@ -913,8 +962,13 @@ class InsurancePlan(models.Model):
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_insurance_plans')
     
     class Meta:
-        unique_together = ['provider', 'code']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'provider', 'code'], name='insurance_plan_facility_provider_code_uniq'),
+        ]
         ordering = ['provider__name', 'name']
+        indexes = [
+            models.Index(fields=['facility', 'provider']),
+        ]
     
     def __str__(self):
         return f"{self.provider.name} - {self.name}"
@@ -996,6 +1050,14 @@ class Invoice(models.Model):
         blank=True,
         related_name='invoices',
         help_text="Department for department-specific pricing"
+    )
+    rendering_unit = models.ForeignKey(
+        'organization.ClinicalUnit',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rendered_invoices',
+        help_text="Clinical unit that rendered the services"
     )
 
     # Clinical context

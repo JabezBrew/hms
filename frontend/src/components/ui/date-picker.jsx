@@ -1,10 +1,8 @@
 "use client"
 
-import * as React from "react"
-import { format } from "date-fns"
-import { Calendar as CalendarIcon } from "lucide-react"
-
-import { cn } from "@/lib/utils"
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
+import format from "date-fns/format";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import {
@@ -12,7 +10,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover"
-import {useState} from "react";
+import { useState } from "react";
 
 export function DatePicker({ date, setDate, className, placeholder = "Pick a date", dateFormat = "PP" }) {
     // Use props or fallback to internal state

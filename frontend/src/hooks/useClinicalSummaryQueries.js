@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys for clinical summary data
+const clinicalSummaryKeyFactory = createKeyFactory('clinical-summary');
+
 export const clinicalSummaryKeys = {
-  all: ['clinical-summary'],
-  patient: (patientId) => [...clinicalSummaryKeys.all, patientId],
-  medications: (patientId) => [...clinicalSummaryKeys.patient(patientId), 'medications'],
-  vitals: (patientId) => [...clinicalSummaryKeys.patient(patientId), 'vitals'],
-  problems: (patientId) => [...clinicalSummaryKeys.patient(patientId), 'problems'],
+  all: clinicalSummaryKeyFactory.all,
+  patient: (patientId) => keyWith('clinical-summary', patientId),
+  medications: (patientId) => keyWith('clinical-summary', patientId, 'medications'),
+  vitals: (patientId) => keyWith('clinical-summary', patientId, 'vitals'),
+  problems: (patientId) => keyWith('clinical-summary', patientId, 'problems'),
 };
 
 /**

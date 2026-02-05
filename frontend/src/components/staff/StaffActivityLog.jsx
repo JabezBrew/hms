@@ -1,5 +1,24 @@
+import History from 'lucide-react/dist/esm/icons/history.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Download from 'lucide-react/dist/esm/icons/download.js';
+import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Key from 'lucide-react/dist/esm/icons/key.js';
 import { useState } from 'react';
-import { format } from 'date-fns';
+import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,28 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/hooks/useAuditLogs';
-import {
-  History,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  LogIn,
-  LogOut,
-  UserPlus,
-  Edit,
-  Trash2,
-  FileText,
-  Eye,
-  Shield,
-  Activity,
-  Stethoscope,
-  FlaskConical,
-  Pill,
-  Calendar,
-  AlertCircle,
-  Key,
-} from 'lucide-react';
+import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/features/admin/hooks';
 
 /**
  * StaffActivityLog - Display audit trail for a specific staff member

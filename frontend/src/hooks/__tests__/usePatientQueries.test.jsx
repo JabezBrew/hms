@@ -306,12 +306,13 @@ describe('useUpdatePatient', () => {
     queryClient.setQueryData(patientKeys.detail(mockPatient.id), mockPatient)
 
     server.use(
-      http.put('/api/patients/:id/', async ({ params, request }) => {
+      http.put('/api/patients/:id/update_patient/', async ({ params, request }) => {
         const body = await request.json()
+        const updatedData = body?.local_data ?? body
         return HttpResponse.json({
           ...mockPatient,
           id: params.id,
-          ...body,
+          ...updatedData,
         })
       })
     )
@@ -340,12 +341,13 @@ describe('useUpdatePatient', () => {
     queryClient.setQueryData(patientKeys.detail(mockPatient.id), mockPatient)
 
     server.use(
-      http.put('/api/patients/:id/', async ({ params, request }) => {
+      http.put('/api/patients/:id/update_patient/', async ({ params, request }) => {
         const body = await request.json()
+        const updatedData = body?.local_data ?? body
         return HttpResponse.json({
           ...mockPatient,
           id: params.id,
-          ...body,
+          ...updatedData,
         })
       })
     )
@@ -377,7 +379,7 @@ describe('useUpdatePatient', () => {
     queryClient.setQueryData(patientKeys.detail(mockPatient.id), { ...mockPatient })
 
     server.use(
-      http.put('/api/patients/:id/', () => {
+      http.put('/api/patients/:id/update_patient/', () => {
         return HttpResponse.json({ detail: 'Server error' }, { status: 500 })
       })
     )

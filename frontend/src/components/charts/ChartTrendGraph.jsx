@@ -5,6 +5,9 @@
  * Highlights critical values with color coding.
  */
 
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,9 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, TrendingUp, AlertTriangle } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { useChartEntryTrends, useChartAssignment } from "@/hooks/useChartQueries";
+
+import format from "date-fns/format";
+import parseISO from "date-fns/parseISO";
+import { useChartEntryTrends, useChartAssignment } from "@/features/charts/hooks";
 
 const ChartTrendGraph = ({
   assignmentId,

@@ -5,7 +5,7 @@ Treat PHI as toxic waste and p99 latency as a safety issue. When in doubt,
 favor correctness, least privilege, and predictable performance.
 
 ## Source of Truth
-- Read `docs/ai-agent-review.md` before making changes. It consolidates current
+- Read `claude.md` and this `agents.md` before making changes. It consolidates current
   security, systems, and DB reliability findings.
 
 ## Project Structure
@@ -13,6 +13,16 @@ favor correctness, least privilege, and predictable performance.
 - Shared backend settings: `backend/hms_backend/`.
 - Workflows and dashboards: `backend/workflows/`, `backend/dashboards/`.
 - Frontend: `frontend/src/` with built assets in `frontend/public/`.
+
+## Frontend Modularization Rules
+- Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.js`, `index.js` exports.
+- `frontend/src/pages/*` are thin route wrappers that import feature pages; do not put logic there.
+- Shared cross-cutting primitives live in `frontend/src/shared/` (components, hooks, constants, utils).
+- Routes are defined in `frontend/src/app/routes/*` with `roles`, `layout`, `title`, `breadcrumbs` and rendered via `renderRoutes`.
+- Use `PageShell`, `PageHeader`, and `PageState` for page structure and loading/error/empty states.
+- Use `usePageMeta` for titles and breadcrumbs when values are static or derived in-page.
+- Prefer feature/shared API modules over `frontend/src/lib/api.js`; treat `lib/api.js` as legacy compatibility only.
+- Centralize React Query keys with `shared/lib/queryKeys.js` helpers and feature key exports. Avoid ad-hoc `queryKey: ['...']`.
 
 ## Build, Test, and Development Commands
 - `cd backend && python manage.py runserver` starts the Django API.
@@ -43,6 +53,9 @@ favor correctness, least privilege, and predictable performance.
 - Never log PHI. Avoid logging request bodies and free-text clinical data.
 - Use least-privilege serializers: list endpoints should not return full objects.
 - Treat FHIR calls as external and unsafe; never block request threads on FHIR.
+- WebSocket subscriptions must enforce facility + patient/ward access before joining groups.
+- Cache keys must include user scope when access varies by role or assignment.
+- FHIR data exposed to clients must be projected to minimal safe fields.
 
 ## Performance Rules (p99 < 200ms for clinical views)
 - List endpoints must be O(1) queries per page. No N+1s.
@@ -50,6 +63,15 @@ favor correctness, least privilege, and predictable performance.
 - Use `select_related` and `annotate` for counts/exists instead of per-row queries.
 - Defer or exclude large JSON/BLOB fields in list endpoints.
 - Keep external I/O (FHIR, PDFs, emails) async via Celery.
+- Never use `__date` or `DATE(column)` filters. Always use `[start, end)` ranges.
+- Avoid `distinct()` on join filters for search; prefer `Exists` subqueries.
+- For dashboards, use cached projections + async refresh with stale reads; no FHIR in request path.
+- List endpoints should accept `include_data` or `expand` flags for large JSON payloads.
+
+## Frontend Performance Budget
+- Assume many deployments use modest client hardware; the default experience must stay fast without a special mode.
+- Defer heavy widgets (charts, calendars), virtualize large lists, and avoid render-time side effects.
+- Keep motion lightweight and honor reduced-motion preferences.
 
 ## Database Reliability Rules
 - Avoid table scans: no `DATE(column)` filters; use range predicates.
@@ -58,6 +80,7 @@ favor correctness, least privilege, and predictable performance.
 - Partition time-series tables (`audit_logs`, `vital_signs`, `chart_entries`,
   `lab_results`) by time to keep indexes small.
 - Beware write amplification: every index is a tax on inserts.
+- Use per-day sequence tables for order numbers; never scan with `Max()` on hot paths.
 
 ## Query Hygiene (Django ORM)
 - Prefer `.select_related()` for FK joins and `.prefetch_related()` only when bounded.
@@ -74,6 +97,7 @@ favor correctness, least privilege, and predictable performance.
 - Cache read-heavy list endpoints with short TTLs and invalidate on writes.
 - Use WebSockets for real-time updates; polling is only a fallback.
 - For heavy lists, debounce search inputs and virtualize client-side lists >100 items.
+- Use lock-based single-flight to prevent cache stampedes; do not block request threads waiting on FHIR.
 
 ## Concurrency and Transactions
 - Never keep a DB transaction open while waiting on network calls.
@@ -85,6 +109,7 @@ favor correctness, least privilege, and predictable performance.
 - Add tests for serializers, viewsets, Celery tasks, and access control.
 - Always run tests after code changes; fix failures before moving on.
 - Use scoped tests for bug fixes and full suite for refactors when feasible.
+- Add query-count tests for hot endpoints to enforce O(1) query behavior.
 - For migrations, include data backfill checks and index creation where needed.
 - When adding FKs to models moved across apps, add explicit migration dependencies
   (e.g., `('encounters', '0001_initial')`) to avoid fresh-DB ordering failures.
@@ -102,6 +127,17 @@ favor correctness, least privilege, and predictable performance.
 - Document new dependencies or IAM needs in `docs/`.
 
 ## Design System (Frontend)
-- Use Chronicle design system patterns and components when building clinical UIs.
+- Use Chronicle design system (/Users/jebre/Desktop/hms/frontend/CHRONICLE_DESIGN_SYSTEM.md) patterns and components when building clinical UIs.
 - Fonts: Fraunces (display), DM Sans (headings), IBM Plex Mono (data).
 - Visual language: editorial medical journal aesthetic; avoid generic dashboards.
+
+## Running tests
+- Backend tests: Activate virtual environment and run `pytest`. This is how to activate the virtual environment in the backend directory:
+- Ensure Postgres is running and accessible on the configured host/port before running tests.
+
+```bash
+source .venv/bin/activate
+```
+
+## Debugging
+- When it comes to debugging, never stipulate what the cause "could be". Always investigate the codebase for the actual cause and provide a solution. The solution should be robust and not some quick patch.

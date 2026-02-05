@@ -13,9 +13,9 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = ServiceCategory
-        fields = ['id', 'name', 'description', 'is_active',
+        fields = ['id', 'facility', 'name', 'description', 'is_active',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -27,10 +27,10 @@ class ServiceSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Service
-        fields = ['id', 'name', 'description', 'category', 'category_name',
+        fields = ['id', 'facility', 'name', 'description', 'category', 'category_name',
                   'code', 'base_price', 'tax_rate', 'is_active', 'total_price',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class InsuranceProviderSerializer(serializers.ModelSerializer):
@@ -39,10 +39,10 @@ class InsuranceProviderSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = InsuranceProvider
-        fields = ['id', 'name', 'code', 'contact_person', 'email', 'phone',
+        fields = ['id', 'facility', 'name', 'code', 'contact_person', 'email', 'phone',
                   'address', 'is_active', 'created_at', 'updated_at',
                   'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class InsurancePlanSerializer(serializers.ModelSerializer):
@@ -53,10 +53,10 @@ class InsurancePlanSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InsurancePlan
-        fields = ['id', 'provider', 'provider_name', 'name', 'code',
+        fields = ['id', 'facility', 'provider', 'provider_name', 'name', 'code',
                   'description', 'coverage_percentage', 'annual_limit',
                   'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class PatientInsuranceSerializer(serializers.ModelSerializer):

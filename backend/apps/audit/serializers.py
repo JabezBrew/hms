@@ -28,6 +28,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'description',
             'changes',
             'ip_address',
+            'user_agent',
             'timestamp',
             'time_ago',
         ]
@@ -81,3 +82,4 @@ class AuditLogStatsSerializer(serializers.Serializer):
     category_breakdown = serializers.DictField()
     action_breakdown = serializers.DictField()
     most_active_users = serializers.ListField()
+    active_sessions = serializers.IntegerField()

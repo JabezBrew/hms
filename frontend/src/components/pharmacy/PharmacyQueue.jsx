@@ -1,3 +1,12 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Package from 'lucide-react/dist/esm/icons/package.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -7,18 +16,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { format } from 'date-fns';
-import {
-  Search, Package, CheckCircle, AlertCircle,
-  RefreshCw, User, Pill, AlertTriangle, Clock
-} from 'lucide-react';
+import format from 'date-fns/format';
+
 import { toast } from 'sonner';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
   usePendingDispensing,
   useDispenseMedication,
   useBulkDispense
-} from '@/hooks/useNursingQueries';
+} from '@/features/nursing/hooks';
 
 export function PharmacyQueue() {
   const [searchTerm, setSearchTerm] = useState('');

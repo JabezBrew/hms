@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
 import { ThemeProvider, useTheme } from '../theme-provider';
+import { safeStorage } from '@/lib/safe-storage';
 
 // Test component that uses the useTheme hook
 function TestComponent() {
@@ -77,18 +78,18 @@ describe('ThemeProvider', () => {
     fireEvent.click(screen.getByTestId('toggle-button'));
     
     // Check localStorage
-    expect(localStorage.getItem('theme')).toBe('dark');
+    expect(safeStorage.get('theme')).toBe('dark');
     
     // Toggle back to light
     fireEvent.click(screen.getByTestId('toggle-button'));
     
     // Check localStorage again
-    expect(localStorage.getItem('theme')).toBe('light');
+    expect(safeStorage.get('theme')).toBe('light');
   });
 
   it('uses the theme from localStorage if available', () => {
     // Set theme in localStorage
-    localStorage.setItem('theme', 'dark');
+    safeStorage.set('theme', 'dark');
     
     render(
       <ThemeProvider>

@@ -30,22 +30,16 @@ class TestGetOrCreateActiveEncounter:
     """Tests for get_or_create_active_encounter function."""
 
     def test_creates_new_encounter_for_new_patient(self):
-        """Test creates new encounter when patient has no active encounters."""
+        """Test raises when no active encounter exists."""
         patient = PatientProfileFactory()
         practitioner = PractitionerProfileFactory()
 
-        encounter, created = get_or_create_active_encounter(
-            patient=patient,
-            practitioner=practitioner,
-            reason='Check-up'
-        )
-
-        assert created is True
-        assert encounter.patient == patient
-        assert encounter.practitioner == practitioner
-        assert encounter.status == 'in-progress'
-        assert encounter.encounter_type == 'outpatient'
-        assert encounter.reason == 'Check-up'
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(
+                patient=patient,
+                practitioner=practitioner,
+                reason='Check-up'
+            )
 
     def test_returns_existing_active_encounter(self):
         """Test returns existing in-progress encounter for same day."""
@@ -126,9 +120,8 @@ class TestGetOrCreateActiveEncounter:
             start_time=timezone.now() - timedelta(days=1)
         )
 
-        encounter, created = get_or_create_active_encounter(patient=patient)
-
-        assert created is True
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
     def test_does_not_return_finished_encounter(self):
         """Test doesn't return finished encounters."""
@@ -140,9 +133,8 @@ class TestGetOrCreateActiveEncounter:
             start_time=timezone.now()
         )
 
-        encounter, created = get_or_create_active_encounter(patient=patient)
-
-        assert created is True
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
     def test_does_not_return_cancelled_encounter(self):
         """Test doesn't return cancelled encounters."""
@@ -154,9 +146,8 @@ class TestGetOrCreateActiveEncounter:
             start_time=timezone.now()
         )
 
-        encounter, created = get_or_create_active_encounter(patient=patient)
-
-        assert created is True
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
 
 @pytest.mark.django_db
@@ -336,10 +327,8 @@ class TestInpatientAdmissionEncounter:
             admission=discharged_admission
         )
 
-        encounter, created = get_or_create_active_encounter(patient=patient)
-
-        assert created is True
-        assert encounter.encounter_type == 'outpatient'
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
     def test_uses_most_recent_admission_if_multiple(self):
         """Test uses most recent admission when multiple exist (edge case fix)."""
@@ -387,25 +376,21 @@ class TestEncounterTypeForwarding:
     """Tests for encounter_type parameter forwarding (edge case fix)."""
 
     def test_creates_outpatient_by_default(self):
-        """Test creates outpatient encounter by default."""
+        """Test raises when no outpatient encounter exists."""
         patient = PatientProfileFactory()
 
-        encounter, created = get_or_create_active_encounter(patient=patient)
-
-        assert created is True
-        assert encounter.encounter_type == 'outpatient'
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
     def test_creates_emergency_when_specified(self):
-        """Test creates emergency encounter when specified."""
+        """Test raises when no emergency encounter exists."""
         patient = PatientProfileFactory()
 
-        encounter, created = get_or_create_active_encounter(
-            patient=patient,
-            encounter_type='emergency'
-        )
-
-        assert created is True
-        assert encounter.encounter_type == 'emergency'
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(
+                patient=patient,
+                encounter_type='emergency'
+            )
 
     def test_returns_emergency_for_emergency_request(self):
         """Test returns existing emergency encounter for emergency request."""
@@ -432,17 +417,15 @@ class TestCreatedByAuditField:
     """Tests for created_by audit field (edge case fix)."""
 
     def test_sets_created_by_on_new_encounter(self):
-        """Test sets created_by when creating new encounter."""
+        """Test raises when no encounter exists."""
         patient = PatientProfileFactory()
         user = UserFactory()
 
-        encounter, created = get_or_create_active_encounter(
-            patient=patient,
-            created_by=user
-        )
-
-        assert created is True
-        assert encounter.created_by == user
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(
+                patient=patient,
+                created_by=user
+            )
 
     def test_created_by_not_changed_on_existing(self):
         """Test created_by not changed when returning existing encounter."""
@@ -471,18 +454,16 @@ class TestEnsureEncounterForEntry:
     """Tests for ensure_encounter_for_entry function."""
 
     def test_creates_encounter_when_none_provided(self):
-        """Test creates encounter when no encounter_id provided."""
+        """Test raises when no encounter exists."""
         patient = PatientProfileFactory()
         practitioner = PractitionerProfileFactory()
 
-        encounter, created = ensure_encounter_for_entry(
-            patient=patient,
-            practitioner=practitioner,
-            reason='Vitals check'
-        )
-
-        assert created is True
-        assert encounter.patient == patient
+        with pytest.raises(ValueError):
+            ensure_encounter_for_entry(
+                patient=patient,
+                practitioner=practitioner,
+                reason='Vitals check'
+            )
 
     def test_returns_valid_encounter_when_provided(self):
         """Test returns encounter when valid encounter_id provided."""
@@ -572,29 +553,25 @@ class TestEnsureEncounterForEntry:
         assert encounter.id == planned.id
 
     def test_forwards_encounter_type(self):
-        """Test forwards encounter_type when creating new encounter."""
+        """Test raises when no encounter exists."""
         patient = PatientProfileFactory()
 
-        encounter, created = ensure_encounter_for_entry(
-            patient=patient,
-            encounter_type='emergency'
-        )
-
-        assert created is True
-        assert encounter.encounter_type == 'emergency'
+        with pytest.raises(ValueError):
+            ensure_encounter_for_entry(
+                patient=patient,
+                encounter_type='emergency'
+            )
 
     def test_forwards_created_by(self):
-        """Test forwards created_by when creating new encounter."""
+        """Test raises when no encounter exists."""
         patient = PatientProfileFactory()
         user = UserFactory()
 
-        encounter, created = ensure_encounter_for_entry(
-            patient=patient,
-            created_by=user
-        )
-
-        assert created is True
-        assert encounter.created_by == user
+        with pytest.raises(ValueError):
+            ensure_encounter_for_entry(
+                patient=patient,
+                created_by=user
+            )
 
 
 @pytest.mark.django_db
@@ -707,22 +684,11 @@ class TestRaceConditionPrevention:
         assert 'select_for_update' in source, "Service should use select_for_update"
 
     def test_sequential_calls_return_same_encounter(self, db):
-        """Test sequential calls return the same encounter (simpler version)."""
+        """Test sequential calls require an existing encounter."""
         patient = PatientProfileFactory()
 
-        # First call creates
-        encounter1, created1 = get_or_create_active_encounter(patient=patient)
-        assert created1 is True
-
-        # Second call returns existing
-        encounter2, created2 = get_or_create_active_encounter(patient=patient)
-        assert created2 is False
-        assert encounter1.id == encounter2.id
-
-        # Third call still returns same
-        encounter3, created3 = get_or_create_active_encounter(patient=patient)
-        assert created3 is False
-        assert encounter1.id == encounter3.id
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
     def test_sequential_planned_transition(self, db):
         """Test sequential calls properly transition planned encounter."""

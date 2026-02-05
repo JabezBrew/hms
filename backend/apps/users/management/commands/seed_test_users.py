@@ -168,5 +168,6 @@ class Command(BaseCommand):
         self.stdout.write('')
         self.stdout.write('Staff emails use: v2tui.{tag}@inbox.testmail.app')
         self.stdout.write('Invited users must set a password via the reset link email.')
-        for user_data in TEST_USERS:
-            self.stdout.write(f"  - {user_data['email']} / TestPass123! ({user_data['user_type']})")
+        for user_data in TEST_STAFF:
+            email = f"v2tui.{user_data['tag']}@inbox.testmail.app".lower()
+            self.stdout.write(f"  - {email} ({user_data['user_type']})")

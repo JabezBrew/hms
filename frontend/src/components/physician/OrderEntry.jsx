@@ -1,3 +1,7 @@
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import ImageIcon from 'lucide-react/dist/esm/icons/image.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,8 +14,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Pill, FlaskConical, ImageIcon, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 
 export function OrderEntry({ patient }) {
   const [activeTab, setActiveTab] = useState('medications');

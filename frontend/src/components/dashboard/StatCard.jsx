@@ -1,5 +1,8 @@
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
+import Minus from 'lucide-react/dist/esm/icons/minus.js';
 import React from 'react';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -58,17 +61,28 @@ export default function StatCard({
     : trend?.direction === 'down' ? 'text-rose-400'
     : 'text-muted-foreground';
 
+  const handleKeyDown = (e) => {
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <article
       className={cn(
         'group relative rounded-xl sm:rounded-2xl p-4 sm:p-6',
         'bg-card border border-border',
         'hover:border-primary/30 transition-all duration-200',
-        onClick && 'cursor-pointer hover:shadow-lg hover:shadow-primary/10',
+        onClick && 'cursor-pointer hover:shadow-lg hover:shadow-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'animate-chronicle-enter',
         className
       )}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      aria-label={onClick ? `${title}: ${value}` : undefined}
     >
       {/* Top row - Icon and trend */}
       <div className="flex items-start justify-between mb-3">
@@ -79,12 +93,12 @@ export default function StatCard({
             config.border,
             'border'
           )}>
-            <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', config.accent)} />
+            <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', config.accent)} aria-hidden="true" />
           </div>
         )}
         {trend && (
           <div className="flex items-center gap-1 text-xs font-mono">
-            <TrendIcon className={cn('h-3 w-3', trendColor)} />
+            <TrendIcon className={cn('h-3 w-3', trendColor)} aria-hidden="true" />
             <span className={trendColor}>{trend.value}</span>
           </div>
         )}

@@ -1,3 +1,6 @@
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,10 +22,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Droplet, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { toast } from "sonner";
-import { useCreateLabSpecimen, useCollectLabOrder } from "@/hooks/useLabQueries";
+import { useCreateLabSpecimen, useCollectLabOrder } from "@/features/laboratory/hooks";
 
 /**
  * SpecimenCollectionDialog - Dialog for recording specimen collection

@@ -1,9 +1,10 @@
+import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { staffApi } from "@/lib/api/staff";
+import { staffApi } from '@/features/staff/api';
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -25,8 +26,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Calendar as CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,

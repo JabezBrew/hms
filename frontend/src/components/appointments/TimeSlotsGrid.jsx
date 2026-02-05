@@ -1,6 +1,8 @@
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState } from 'react';
-import { format, parseISO } from 'date-fns';
-import { Clock } from 'lucide-react';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';

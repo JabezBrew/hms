@@ -102,6 +102,24 @@ class MinimalLabTestSerializer(serializers.Serializer):
     specimen_type = serializers.CharField(read_only=True)
 
 
+class FacilityListSerializer(serializers.Serializer):
+    """
+    Lightweight serializer for facility lookups and selectors.
+    """
+    id = serializers.UUIDField(read_only=True)
+    code = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    facility_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    provisioned_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    parent_facility_code = serializers.CharField(
+        source='parent_facility.code',
+        read_only=True,
+        allow_null=True
+    )
+
+
 class FacilityFluidBalanceSettingsSerializer(serializers.Serializer):
     """
     Serializer for facility-level fluid balance alert threshold settings.

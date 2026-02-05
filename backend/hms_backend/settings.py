@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import environ
 import logging.config
+from urllib.parse import urlparse, parse_qs
 
 
 
@@ -44,6 +45,31 @@ def env_required(var_name, default=None):
     # In production, default=None means it will raise ImproperlyConfigured if missing
     return env(var_name, default=default) if default is not None else env(var_name)
 
+
+def _parse_database_url(db_url):
+    parsed = urlparse(db_url)
+    if parsed.scheme in ('postgres', 'postgresql', 'psql'):
+        engine = 'django.db.backends.postgresql'
+    elif parsed.scheme in ('sqlite',):
+        engine = 'django.db.backends.sqlite3'
+    else:
+        raise ValueError(f"Unsupported database scheme: {parsed.scheme}")
+
+    db_name = parsed.path.lstrip('/') if parsed.path else ''
+    options = {}
+    if parsed.query:
+        options = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+
+    return {
+        'ENGINE': engine,
+        'NAME': db_name,
+        'USER': parsed.username or '',
+        'PASSWORD': parsed.password or '',
+        'HOST': parsed.hostname or '',
+        'PORT': parsed.port or '',
+        'OPTIONS': options,
+    }
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
@@ -77,10 +103,13 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'mptt',  # Tree structures for organizational hierarchy
 
     # Local apps
     'apps.core.apps.CoreConfig',  # Shared utilities for API optimization
     'apps.users.apps.UsersConfig',  # Use this instead of 'apps.users'
+    'apps.mpi.apps.MPIConfig',  # Control-plane MPI
+    'apps.consent.apps.ConsentConfig',  # Control-plane consent
     'apps.fhir_client',
     'apps.appointments',
     'apps.patients',
@@ -98,6 +127,9 @@ INSTALLED_APPS = [
     'apps.referrals.apps.ReferralsConfig',
     'apps.charts.apps.ChartsConfig',
     'apps.pharmacy.apps.PharmacyConfig',
+    'apps.organization.apps.OrganizationConfig',  # Flexible organizational hierarchy
+    'apps.interop.apps.InteropConfig',  # Cross-facility record exchange
+    'apps.notifications.apps.NotificationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -108,6 +140,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'hms_backend.middleware.FacilityContextMiddleware',  # Resolve facility context for scoping
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'hms_backend.middleware.JWTUserTypeValidationMiddleware',  # Validate JWT claims
     'hms_backend.middleware.OffSiteDetectionMiddleware',  # Off-site read-only mode detection
@@ -191,6 +224,18 @@ else:
         }
     }
 
+CONTROL_PLANE_DB_ALIAS = env('CONTROL_PLANE_DB_ALIAS', default='control')
+if "pytest" in sys.modules:
+    CONTROL_PLANE_DB_ALIAS = 'default'
+CONTROL_PLANE_DATABASE_URL = env('CONTROL_PLANE_DATABASE_URL', default=None)
+if not IS_BUILD:
+    if CONTROL_PLANE_DATABASE_URL:
+        DATABASES[CONTROL_PLANE_DB_ALIAS] = _parse_database_url(CONTROL_PLANE_DATABASE_URL)
+    else:
+        if CONTROL_PLANE_DB_ALIAS not in DATABASES:
+            DATABASES[CONTROL_PLANE_DB_ALIAS] = DATABASES['default'].copy()
+
+
 if not IS_BUILD:
     # Add connection pooling and health checks
     DATABASES['default'].update({
@@ -221,8 +266,11 @@ if not IS_BUILD:
                 'connect_timeout': 10,
             },
         }
-        # Enable the read replica router
         DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']
+    else:
+        DATABASE_ROUTERS = []
+else:
+    DATABASE_ROUTERS = []
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -279,15 +327,54 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom user model
 AUTH_USER_MODEL = 'users.User'
 
+# Facility context settings
+FACILITY_HEADER_NAME = env('FACILITY_HEADER_NAME', default='X-Facility-Code')
+DEFAULT_FACILITY_CODE = env('DEFAULT_FACILITY_CODE', default=None)
+if "pytest" in sys.modules and not DEFAULT_FACILITY_CODE:
+    DEFAULT_FACILITY_CODE = 'TEST'
+
+MFA_REQUIRED_FOR_ADMIN = env.bool('MFA_REQUIRED_FOR_ADMIN', default=True)
+MFA_REQUIRED_FOR_ALL = env.bool('MFA_REQUIRED_FOR_ALL', default=True)
+MFA_TOTP_ISSUER = env('MFA_TOTP_ISSUER', default='HMS')
+MFA_SESSION_TTL_MINUTES = env.int('MFA_SESSION_TTL_MINUTES', default=5)
+MFA_ENROLLMENT_TTL_MINUTES = env.int('MFA_ENROLLMENT_TTL_MINUTES', default=30)
+MFA_ENCRYPTION_KEY = env('MFA_ENCRYPTION_KEY', default=None)
+
+WEBAUTHN_RP_ID = env('WEBAUTHN_RP_ID', default='localhost')
+WEBAUTHN_RP_NAME = env('WEBAUTHN_RP_NAME', default='HMS')
+WEBAUTHN_ALLOWED_ORIGINS = env.list(
+    'WEBAUTHN_ALLOWED_ORIGINS',
+    default=['http://localhost:5173'],
+)
+WEBAUTHN_TIMEOUT_MS = env.int('WEBAUTHN_TIMEOUT_MS', default=60000)
+FACILITY_CONTEXT_REQUIRED = env.bool('FACILITY_CONTEXT_REQUIRED', default=True)
+MULTI_FACILITY_MODE = env.bool('MULTI_FACILITY_MODE', default=False)
+ALLOW_CROSS_FACILITY_ACCESS = env.bool('ALLOW_CROSS_FACILITY_ACCESS', default=False)
+
+# Record export security
+RECORD_EXPORT_FERNET_KEY = env('RECORD_EXPORT_FERNET_KEY', default='')
+RECORD_EXPORT_TTL_HOURS = env.int('RECORD_EXPORT_TTL_HOURS', default=24)
+
 # Cache configuration
 if DEBUG or IS_BUILD:
-    CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-            'LOCATION': 'hms-local',
-            'TIMEOUT': 300,  # 5 minutes default
+    _dev_redis_url = env('REDIS_URL', default=None)
+    if _dev_redis_url:
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                'LOCATION': _dev_redis_url,
+                'KEY_PREFIX': 'hms',
+                'TIMEOUT': 300,  # 5 minutes default
+            }
         }
-    }
+    else:
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'hms-local',
+                'TIMEOUT': 300,  # 5 minutes default
+            }
+        }
 else:
     CACHES = {
         'default': {
@@ -358,6 +445,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'user-agent',
     'x-csrftoken',
+    'x-facility-code',
     'x-requested-with',
 ]
 
@@ -448,6 +536,10 @@ JWT_AUTH_REFRESH_COOKIE = 'refresh_token'  # Store refresh token in cookie
 JWT_AUTH_SECURE = env.bool('JWT_AUTH_SECURE', default=False if DEBUG else True)  # Secure cookie in prod, not in local dev
 JWT_AUTH_HTTPONLY = True  # Use HttpOnly cookie for refresh token
 JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='None' if not DEBUG else 'Lax')  # Cross-origin requires 'None'; local dev uses 'Lax'
+
+# Session tracking hash salt (defaults to SECRET_KEY)
+SESSION_HASH_SALT = env('SESSION_HASH_SALT', default=SECRET_KEY)
+USER_SESSION_RETENTION_DAYS = env.int('USER_SESSION_RETENTION_DAYS', default=90)
 
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
@@ -568,5 +660,16 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-expired-password-tokens-daily': {
         'task': 'apps.users.tasks.cleanup_expired_tokens',
         'schedule': timedelta(days=1),  # Run once a day
+    },
+    'cleanup-user-sessions-daily': {
+        'task': 'apps.users.tasks.cleanup_user_sessions',
+        'schedule': timedelta(days=1),  # Run once a day
+    },
+    'refresh-admin-dashboard-appointments': {
+        'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
+        'schedule': 60.0,  # Every 60 seconds
+        'options': {
+            'expires': 50,
+        },
     },
 }

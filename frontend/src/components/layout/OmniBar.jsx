@@ -1,17 +1,15 @@
+import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Smile from 'lucide-react/dist/esm/icons/smile.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import Menu from 'lucide-react/dist/esm/icons/menu.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js';
 import * as React from "react"
-import {
-    Calculator,
-    Calendar,
-    CreditCard,
-    Settings,
-    Smile,
-    User,
-    Search,
-    Bell,
-    Menu,
-    LogOut,
-    UserCircle
-} from "lucide-react"
 
 import {
     CommandDialog,
@@ -27,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
 import { ThemeToggle } from "../theme-toggle"
+import { FacilitySwitcher } from "./FacilitySwitcher"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -37,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useNavigate } from "react-router-dom"
 
-import AppointmentNotifications from "../appointments/AppointmentNotifications"
+import NotificationCenter from "./NotificationCenter"
 
 export function OmniBar() {
     const [open, setOpen] = React.useState(false)
@@ -79,8 +78,10 @@ export function OmniBar() {
             </div>
 
             <div className="ml-auto flex items-center space-x-4">
-                {/* Only show appointment notifications for roles that have access to appointments */}
-                {user && ['admin', 'doctor', 'nurse', 'receptionist'].includes(user.role) && <AppointmentNotifications />}
+                {/* Unified notification center */}
+                <NotificationCenter />
+
+                <FacilitySwitcher />
 
                 <ThemeToggle />
 
@@ -93,9 +94,13 @@ export function OmniBar() {
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                         <DropdownMenuLabel className="font-normal">
                             <div className="flex flex-col space-y-1">
-                                <p className="text-sm font-medium leading-none">{user?.name || "User"}</p>
-                                <p className="text-xs leading-none text-muted-foreground">
-                                    {user?.email || ""}
+                                <p className="font-display text-sm leading-none">
+                                    {user?.firstName && user?.lastName
+                                        ? `${user.firstName} ${user.lastName}`
+                                        : user?.firstName || user?.lastName || "User"}
+                                </p>
+                                <p className="font-mono text-[10px] leading-none text-muted-foreground uppercase tracking-wide">
+                                    {user?.role || ""}
                                 </p>
                             </div>
                         </DropdownMenuLabel>

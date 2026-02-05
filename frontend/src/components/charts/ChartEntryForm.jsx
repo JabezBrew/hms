@@ -5,28 +5,27 @@
  * Includes real-time formula calculations and critical value warnings.
  */
 
+import X from 'lucide-react/dist/esm/icons/x.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  X,
-  ClipboardList,
-  Check,
-  Loader2,
-  AlertTriangle,
-  Clock,
-  Calendar,
-} from "lucide-react";
-import { format } from "date-fns";
+
+import format from "date-fns/format";
 import { toast } from "sonner";
 import { ChartFieldRenderer } from "./ChartFieldRenderer";
 import {
   useChartAssignment,
   useCreateChartEntry,
-} from "@/hooks/useChartQueries";
+} from "@/features/charts/hooks";
 
 /**
  * ChartEntryForm - Slide-over for recording chart observations

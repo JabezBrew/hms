@@ -5,19 +5,20 @@
  * and quick action to record new entry.
  */
 
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import PauseCircle from 'lucide-react/dist/esm/icons/circle-pause.js';
+import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
+import Ban from 'lucide-react/dist/esm/icons/ban.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  ClipboardList,
-  Clock,
-  AlertTriangle,
-  CheckCircle2,
-  PauseCircle,
-  PlayCircle,
-  Ban,
-  ChevronRight,
-} from "lucide-react";
-import { formatDistanceToNow, isPast, format } from "date-fns";
+
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
+import isPast from "date-fns/isPast";
+import format from "date-fns/format";
 
 // Status configuration
 const STATUS_CONFIG = {

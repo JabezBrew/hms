@@ -1,5 +1,8 @@
+import Search from 'lucide-react/dist/esm/icons/search.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useRef, useEffect } from "react";
-import { Search, X, Loader2 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
@@ -112,7 +115,7 @@ const SearchBar = ({
           </div>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0 w-[var(--radix-popover-trigger-width)]"
+          className="p-0 w-[var(--radix-popover-trigger-width)] z-[400]"
           align="start"
           sideOffset={5}
         >

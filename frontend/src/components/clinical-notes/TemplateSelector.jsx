@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useActiveNoteTemplates } from '@/hooks/useClinicalNotesQueries';
+import { useActiveNoteTemplates } from '@/features/clinical-notes/hooks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';

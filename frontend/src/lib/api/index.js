@@ -13,3 +13,8 @@ export { drugSafetyApi } from './drug-safety';
 export { laboratoryApi } from './laboratory';
 export { referralsApi } from './referrals';
 export { myPatientsApi } from './my-patients';
+export { consentApi } from './consent';
+export { interopApi } from './interop';
+export { facilitiesApi } from './facilities';
+export { notificationsApi } from './notifications';
+export { inventoryApi } from './inventory';

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSidebar } from '@/components/ui/sidebar';
 
 /**
@@ -23,15 +23,21 @@ export function useSlideOver(initialState = false) {
   const [isOpen, setIsOpen] = useState(initialState);
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const previousSidebarState = useRef(sidebarOpen);
+  const sidebarOpenRef = useRef(sidebarOpen);
+
+  // Keep the ref updated with the current sidebar state
+  useEffect(() => {
+    sidebarOpenRef.current = sidebarOpen;
+  }, [sidebarOpen]);
 
   const open = useCallback(() => {
-    // Store the current sidebar state before collapsing
-    previousSidebarState.current = sidebarOpen;
+    // Store the current sidebar state before collapsing (using ref for latest value)
+    previousSidebarState.current = sidebarOpenRef.current;
     // Collapse the sidebar
     setSidebarOpen(false);
     // Open the slide-over
     setIsOpen(true);
-  }, [sidebarOpen, setSidebarOpen]);
+  }, [setSidebarOpen]);
 
   const close = useCallback(() => {
     // Close the slide-over
@@ -68,6 +74,12 @@ export function useMultipleSlideOvers(slideOverNames = []) {
   const [activeSlideOver, setActiveSlideOver] = useState(null);
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const previousSidebarState = useRef(sidebarOpen);
+  const sidebarOpenRef = useRef(sidebarOpen);
+
+  // Keep the ref updated with the current sidebar state
+  useEffect(() => {
+    sidebarOpenRef.current = sidebarOpen;
+  }, [sidebarOpen]);
 
   const open = useCallback((name) => {
     if (!slideOverNames.includes(name)) {
@@ -75,14 +87,15 @@ export function useMultipleSlideOvers(slideOverNames = []) {
       return;
     }
     // Store the current sidebar state before collapsing (only if no slide-over is currently open)
-    if (!activeSlideOver) {
-      previousSidebarState.current = sidebarOpen;
-    }
+    setActiveSlideOver((prev) => {
+      if (!prev) {
+        previousSidebarState.current = sidebarOpenRef.current;
+      }
+      return name;
+    });
     // Collapse the sidebar
     setSidebarOpen(false);
-    // Open the slide-over
-    setActiveSlideOver(name);
-  }, [slideOverNames, sidebarOpen, setSidebarOpen, activeSlideOver]);
+  }, [slideOverNames, setSidebarOpen]);
 
   const close = useCallback(() => {
     // Close the slide-over

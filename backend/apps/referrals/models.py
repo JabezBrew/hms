@@ -40,6 +40,12 @@ class Referral(models.Model):
         on_delete=models.CASCADE,
         related_name='referrals'
     )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='referrals',
+        help_text="Facility context for this referral"
+    )
     encounter = models.ForeignKey(
         'encounters.Encounter',
         on_delete=models.CASCADE,
@@ -199,6 +205,7 @@ class Referral(models.Model):
             models.Index(fields=['referred_to_department', 'status']),
             models.Index(fields=['urgency', 'status']),
             models.Index(fields=['submitted_at']),
+            models.Index(fields=['facility', 'status']),
         ]
 
     def __str__(self):
@@ -237,3 +244,57 @@ class Referral(models.Model):
     def requires_action(self):
         """Check if referral requires action (pending or scheduled without completion)."""
         return self.status in [ReferralStatus.PENDING, ReferralStatus.SCHEDULED]
+
+
+class ReferralNotificationEvent(models.TextChoices):
+    SUBMITTED = 'submitted', 'Submitted'
+    ACCEPTED = 'accepted', 'Accepted'
+    DECLINED = 'declined', 'Declined'
+    SCHEDULED = 'scheduled', 'Scheduled'
+    COMPLETED = 'completed', 'Completed'
+
+
+class ReferralNotification(models.Model):
+    """
+    In-app notification for referral workflow events.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recipient = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='referral_notifications'
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='referral_notifications_sent'
+    )
+    referral = models.ForeignKey(
+        'referrals.Referral',
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='referral_notifications'
+    )
+    event = models.CharField(max_length=20, choices=ReferralNotificationEvent.choices)
+    status = models.CharField(max_length=20, choices=ReferralStatus.choices)
+    urgency = models.CharField(max_length=20, choices=ReferralUrgency.choices)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient', 'is_read', '-created_at']),
+            models.Index(fields=['facility', '-created_at']),
+            models.Index(fields=['event', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Referral {self.referral.referral_number} - {self.get_event_display()}"

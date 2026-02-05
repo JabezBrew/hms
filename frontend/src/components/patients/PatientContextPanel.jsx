@@ -1,3 +1,11 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,20 +19,11 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { usePatient } from "@/hooks/usePatientQueries";
-import { usePatientInsurance, usePatientInvoices } from "@/hooks/useBillingQueries";
-import { useAppointments } from "@/hooks/useAppointmentQueries";
-import {
-  X,
-  User,
-  Shield,
-  AlertTriangle,
-  ClipboardList,
-  Calendar,
-  FileText,
-  ChevronDown,
-} from "lucide-react";
-import { format } from "date-fns";
+import { usePatient } from "@/features/patients/hooks/usePatientQueries";
+import { usePatientInsurance, usePatientInvoices } from "@/features/billing/hooks";
+import { useAppointments } from "@/features/appointments/hooks/useAppointmentQueries";
+
+import format from "date-fns/format";
 
 const formatDate = (value) => {
   if (!value) return "-";

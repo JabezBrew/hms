@@ -1,13 +1,14 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Prefetch, Count, Exists, OuterRef
 import logging
 
-from ..core.pagination import LargeResultsSetPagination, StandardResultsSetPagination
+from ..core.pagination import StandardResultsSetPagination
 
 from .models import (
     LabTestCatalog, LabPanel, LabOrder, LabOrderTest,
@@ -32,7 +33,8 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
 from ..users.rbac import IsLabTechnician
-from ..core.security import check_lab_access
+from ..users.models import PatientProfile
+from ..core.security import FacilityScopedPermission, check_lab_access, get_user_facility
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 
@@ -50,8 +52,8 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     - DELETE /tests/{id}/ - Only allowed for custom (non-system) tests
     """
     queryset = LabTestCatalog.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
-    pagination_class = LargeResultsSetPagination
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -66,7 +68,10 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter tests by category, active status, and customization flags."""
-        queryset = LabTestCatalog.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return LabTestCatalog.objects.none()
+        queryset = LabTestCatalog.objects.filter(facility=facility)
 
         # Filter by category
         category = self.request.query_params.get('category')
@@ -106,8 +111,14 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Admin-only for create/update/delete/customize."""
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser(), FacilityScopedPermission()]
+        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(facility=facility)
 
     def destroy(self, request, *args, **kwargs):
         """Only allow deletion of custom (non-system) tests."""
@@ -209,8 +220,8 @@ class LabPanelViewSet(viewsets.ModelViewSet):
     """
     queryset = LabPanel.objects.prefetch_related('tests').all()
     serializer_class = LabPanelSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    pagination_class = LargeResultsSetPagination
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -223,7 +234,10 @@ class LabPanelViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter panels by active status and customization flags."""
-        queryset = LabPanel.objects.prefetch_related('tests').all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return LabPanel.objects.none()
+        queryset = LabPanel.objects.prefetch_related('tests').filter(facility=facility)
 
         # Filter by active status
         is_active = self.request.query_params.get('is_active')
@@ -254,8 +268,14 @@ class LabPanelViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Admin-only for create/update/delete/customize."""
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser(), FacilityScopedPermission()]
+        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(facility=facility)
 
     def destroy(self, request, *args, **kwargs):
         """Only allow deletion of custom (non-system) panels."""
@@ -343,7 +363,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
     API endpoint for lab orders with lifecycle management.
     """
     queryset = LabOrder.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -380,11 +400,15 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         """
         Filter orders with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return LabOrder.objects.none()
+
         queryset = LabOrder.objects.select_related(
             'patient__user',
             'ordering_provider__staff__user',
             'encounter'
-        )
+        ).filter(facility=facility)
 
         expand = self.request.query_params.get('expand', '')
         expand_list = [e.strip() for e in expand.split(',') if e.strip()]
@@ -411,9 +435,14 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
             # SECURITY: Check if user has permission to access this patient's data
-            check_lab_access(self.request.user, patient_id)
-            queryset = queryset.filter(patient_id=patient_id)
+            check_lab_access(self.request.user, patient)
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            queryset = queryset.filter(patient=patient)
 
         # Filter by status
         status_filter = self.request.query_params.get('status')
@@ -466,16 +495,28 @@ class LabOrderViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """Create order with ordering provider set to current user."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+
         # If ordering_provider not specified, use current user
         if not serializer.validated_data.get('ordering_provider'):
             try:
                 practitioner = self.request.user.staff_profile.practitioner_profile
-                serializer.save(ordering_provider=practitioner)
+                if practitioner and practitioner.staff.primary_facility_id != facility.id:
+                    raise PermissionDenied("Ordering provider does not belong to the active facility.")
+                serializer.save(ordering_provider=practitioner, facility=facility)
             except AttributeError:
                 # Current user is not a practitioner
-                serializer.save()
+                serializer.save(facility=facility)
         else:
-            serializer.save()
+            ordering_provider = serializer.validated_data.get('ordering_provider')
+            if ordering_provider and ordering_provider.staff.primary_facility_id != facility.id:
+                raise PermissionDenied("Ordering provider does not belong to the active facility.")
+            serializer.save(facility=facility)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic
@@ -721,7 +762,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
     """
     queryset = LabSpecimen.objects.all()
     serializer_class = LabSpecimenSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -735,11 +776,15 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter specimens with optimized queries."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            return LabSpecimen.objects.none()
+
         queryset = LabSpecimen.objects.select_related(
             'order__patient__user',
             'collected_by__user',
             'received_by__user'
-        )
+        ).filter(facility=facility)
 
         # Filter by order
         order_id = self.request.query_params.get('order')
@@ -764,6 +809,12 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         Create specimen and set collected_by to current user.
         Auto-generate barcode if not provided.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        order = serializer.validated_data.get('order')
+        if order and order.patient and order.patient.facility_id != facility.id:
+            raise PermissionDenied("Order does not belong to the active facility.")
         # Generate barcode if not provided
         if not serializer.validated_data.get('barcode'):
             # Simple barcode generation: SPEC-YYYYMMDD-UUID
@@ -776,11 +827,11 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         if not serializer.validated_data.get('collected_by'):
             try:
                 staff = self.request.user.staff_profile
-                specimen = serializer.save(collected_by=staff)
+                specimen = serializer.save(collected_by=staff, facility=facility)
             except AttributeError:
-                specimen = serializer.save()
+                specimen = serializer.save(facility=facility)
         else:
-            specimen = serializer.save()
+            specimen = serializer.save(facility=facility)
 
         # Audit log - specimen collected
         AuditService.log(
@@ -859,7 +910,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
     API endpoint for lab results.
     """
     queryset = LabResult.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -873,6 +924,10 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter results with optimized queries."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            return LabResult.objects.none()
+
         queryset = LabResult.objects.select_related(
             'order_test__test',
             'order_test__order__patient__user',
@@ -882,7 +937,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'verified_by__user'
         ).prefetch_related(
             'order_test__order__panels'  # M2M field
-        )
+        ).filter(facility=facility)
 
         # Filter by order
         order_id = self.request.query_params.get('order')
@@ -892,9 +947,14 @@ class LabResultViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
             # SECURITY: Check if user has permission to access this patient's data
-            check_lab_access(self.request.user, patient_id)
-            queryset = queryset.filter(order_test__order__patient_id=patient_id)
+            check_lab_access(self.request.user, patient)
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            queryset = queryset.filter(order_test__order__patient=patient)
 
         # Filter by verification status
         is_verified = self.request.query_params.get('is_verified')
@@ -916,11 +976,18 @@ class LabResultViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        order_test = serializer.validated_data.get('order_test')
+        order = getattr(order_test, 'order', None)
+        if order and order.patient and order.patient.facility_id != facility.id:
+            raise PermissionDenied("Order does not belong to the active facility.")
         try:
             staff = self.request.user.staff_profile
-            serializer.save(performed_by=staff)
+            serializer.save(performed_by=staff, facility=facility)
         except AttributeError:
-            serializer.save()
+            serializer.save(facility=facility)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor | IsLabTechnician])
     @transaction.atomic

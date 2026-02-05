@@ -5,6 +5,9 @@
  * with Chronicle Design System styling.
  */
 
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Info from 'lucide-react/dist/esm/icons/info.js';
+import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -19,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AlertTriangle, Info, Calculator } from "lucide-react";
 
 /**
  * Main field renderer component

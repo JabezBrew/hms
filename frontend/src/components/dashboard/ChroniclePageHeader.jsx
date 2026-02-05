@@ -1,8 +1,9 @@
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar } from 'lucide-react';
-import { format } from 'date-fns';
+
+import format from 'date-fns/format';
 
 /**
  * ChroniclePageHeader - Dashboard page header with Chronicle styling

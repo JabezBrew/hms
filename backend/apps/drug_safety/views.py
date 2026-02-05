@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -17,6 +18,9 @@ from .services.interaction_checker import InteractionChecker
 from .services.allergy_checker import AllergyChecker
 from .services.rxnorm_service import RxNormService
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse, IsDoctorOnly
+from apps.core.pagination import StandardResultsSetPagination
+from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,8 @@ class PatientAllergyViewSet(viewsets.ModelViewSet):
     Supports CRUD operations with proper permission controls.
     """
     queryset = PatientAllergy.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -36,10 +41,19 @@ class PatientAllergyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter allergies by patient if patient_id is provided."""
-        queryset = PatientAllergy.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return PatientAllergy.objects.none()
+        queryset = PatientAllergy.objects.filter(facility=facility)
         patient_id = self.request.query_params.get('patient')
 
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by active status
@@ -52,7 +66,15 @@ class PatientAllergyViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """Set created_by to current user."""
-        serializer.save(created_by=self.request.user)
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        patient = serializer.validated_data.get('patient')
+        if patient and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_clinical_access(self.request.user, patient)
+        serializer.save(created_by=self.request.user, facility=facility)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     def verify(self, request, pk=None):
@@ -93,14 +115,24 @@ class DrugSafetyAlertViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = DrugSafetyAlert.objects.all()
     serializer_class = DrugSafetyAlertSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """Filter alerts by patient or prescription."""
-        queryset = DrugSafetyAlert.objects.all()
+        facility = get_user_facility(self.request)
+        if not facility:
+            return DrugSafetyAlert.objects.none()
+        queryset = DrugSafetyAlert.objects.filter(patient__facility=facility)
 
         patient_id = self.request.query_params.get('patient')
         if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return queryset.none()
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         prescription_id = self.request.query_params.get('prescription')
@@ -173,7 +205,7 @@ class DrugSafetyCheckView(viewsets.ViewSet):
     - check: Doctors only (clinical prescribing function)
     - search_drugs, drug_forms, patient_allergies: All authenticated clinical staff
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
 
     def get_permissions(self):
         """Return different permissions based on action."""
@@ -197,6 +229,14 @@ class DrugSafetyCheckView(viewsets.ViewSet):
         patient_id = check_serializer.validated_data['patient_id']
         medication_name = check_serializer.validated_data['medication_name']
         encounter_id = check_serializer.validated_data.get('encounter_id')
+
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            raise PermissionDenied("Patient not found.")
+        facility = get_user_facility(request)
+        if facility and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         # Perform safety check
         alerts = InteractionChecker.check_prescription_safety(
@@ -270,6 +310,14 @@ class DrugSafetyCheckView(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            raise PermissionDenied("Patient not found.")
+        facility = get_user_facility(request)
+        if facility and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+
         allergies = AllergyChecker.get_patient_active_allergies(patient_id)
         serializer = PatientAllergySerializer(allergies, many=True)
 
@@ -287,6 +335,7 @@ class DrugInteractionCacheViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DrugInteractionCache.objects.all()
     serializer_class = DrugInteractionCacheSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """Filter by drug RxCUIs."""

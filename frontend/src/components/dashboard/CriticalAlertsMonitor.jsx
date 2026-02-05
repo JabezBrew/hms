@@ -1,12 +1,15 @@
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import React, { useEffect, useRef } from 'react';
 import {
   useNurseDashboard,
   useAdminDashboard,
   useInpatientDashboard,
-} from '@/hooks/useDashboardQueries';
+} from '@/features/dashboards/hooks';
 import { toast } from 'sonner';
-import { AlertTriangle, Bell } from 'lucide-react';
+
 import { useAuth } from '@/lib/auth';
+import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 
 /**
  * CriticalAlertsMonitor - Background component that monitors for critical alerts
@@ -15,17 +18,16 @@ import { useAuth } from '@/lib/auth';
  * This component should be mounted in the app root for nurses, doctors, and admins
  */
 export default function CriticalAlertsMonitor() {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
+  const { isPageActive } = usePageVisibility();
   const previousAlertsRef = useRef(new Set());
-
-  // Early return if not authenticated - security safeguard
-  if (!isAuthenticated || !user) {
-    return null;
-  }
 
   // Determine which dashboard to monitor based on role
   const userRole = user?.role;
-  const shouldMonitor = userRole && ['nurse', 'head_nurse', 'nurse_practitioner', 'doctor', 'inpatient_doctor', 'admin'].includes(userRole);
+  const shouldMonitor =
+    isPageActive &&
+    userRole &&
+    ['nurse', 'head_nurse', 'nurse_practitioner', 'doctor', 'inpatient_doctor', 'admin'].includes(userRole);
 
   // Use role-appropriate dashboard hook
   const isNurse = ['nurse', 'head_nurse', 'nurse_practitioner'].includes(userRole);
@@ -64,7 +66,7 @@ export default function CriticalAlertsMonitor() {
     : null;
 
   useEffect(() => {
-    if (!dashboardData?.urgent) return;
+    if (!shouldMonitor || !dashboardData?.urgent) return;
 
     const currentAlerts = dashboardData.urgent.critical_alerts || [];
     const newAlerts = currentAlerts.filter(
@@ -106,10 +108,10 @@ export default function CriticalAlertsMonitor() {
     // Update the set of seen alerts
     const alertIds = new Set(currentAlerts.map((a) => a.id));
     previousAlertsRef.current = alertIds;
-  }, [dashboardData]);
+  }, [dashboardData, shouldMonitor]);
 
   useEffect(() => {
-    if (!dashboardData?.urgent) return;
+    if (!shouldMonitor || !dashboardData?.urgent) return;
 
     const overdueMeds = dashboardData.urgent.overdue_medications || [];
     const newOverdueMeds = overdueMeds.filter(
@@ -149,7 +151,7 @@ export default function CriticalAlertsMonitor() {
       // Add to seen set
       previousAlertsRef.current.add(`med-${med.id}`);
     });
-  }, [dashboardData]);
+  }, [dashboardData, shouldMonitor]);
 
   // This component doesn't render anything
   return null;

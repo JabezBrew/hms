@@ -9,30 +9,35 @@ import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // =============================================================================
 // Query Keys
 // =============================================================================
 
+const chartKeyFactory = createKeyFactory('charts');
+
 export const chartKeys = {
-  all: ['charts'],
-  templates: () => [...chartKeys.all, 'templates'],
-  templateList: (filters) => [...chartKeys.templates(), 'list', filters],
-  templateDetail: (id) => [...chartKeys.templates(), 'detail', id],
-  categories: () => [...chartKeys.templates(), 'categories'],
-  intervals: () => [...chartKeys.templates(), 'intervals'],
+  all: chartKeyFactory.all,
+  templates: () => keyWith('charts', 'templates'),
+  templateList: (filters) => keyWith('charts', 'templates', 'list', filters),
+  templateDetail: (id) => keyWith('charts', 'templates', 'detail', id),
+  categories: () => keyWith('charts', 'templates', 'categories'),
+  intervals: () => keyWith('charts', 'templates', 'intervals'),
 
-  assignments: () => [...chartKeys.all, 'assignments'],
-  assignmentList: (filters) => [...chartKeys.assignments(), 'list', filters],
-  assignmentDetail: (id) => [...chartKeys.assignments(), 'detail', id],
-  assignmentsByPatient: (patientId, status) => [...chartKeys.assignments(), 'patient', patientId, status],
+  assignments: () => keyWith('charts', 'assignments'),
+  assignmentList: (filters) => keyWith('charts', 'assignments', 'list', filters),
+  assignmentListParams: (patient, admission, template, status) =>
+    keyWith('charts', 'assignments', 'list', patient, admission, template, status),
+  assignmentDetail: (id) => keyWith('charts', 'assignments', 'detail', id),
+  assignmentsByPatient: (patientId, status) => keyWith('charts', 'assignments', 'patient', patientId, status),
 
-  entries: () => [...chartKeys.all, 'entries'],
-  entryList: (filters) => [...chartKeys.entries(), 'list', filters],
-  entryDetail: (id) => [...chartKeys.entries(), 'detail', id],
-  entrySummary: (assignmentId) => [...chartKeys.entries(), 'summary', assignmentId],
-  entryTrends: (assignmentId, fieldKey) => [...chartKeys.entries(), 'trends', assignmentId, fieldKey],
-  entriesByPatient: (patientId) => [...chartKeys.entries(), 'patient', patientId],
+  entries: () => keyWith('charts', 'entries'),
+  entryList: (filters) => keyWith('charts', 'entries', 'list', filters),
+  entryDetail: (id) => keyWith('charts', 'entries', 'detail', id),
+  entrySummary: (assignmentId) => keyWith('charts', 'entries', 'summary', assignmentId),
+  entryTrends: (assignmentId, fieldKey) => keyWith('charts', 'entries', 'trends', assignmentId, fieldKey),
+  entriesByPatient: (patientId) => keyWith('charts', 'entries', 'patient', patientId),
 };
 
 // =============================================================================
@@ -55,7 +60,7 @@ export function useChartTemplates(filters = {}) {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: ['charts', 'templates', 'list', category, visibility, search, is_active],
+    queryKey: keyWith('charts', 'templates', 'list', category, visibility, search, is_active),
     queryFn: async () => {
       return await apiClient.get(`/charts/templates/?${params.toString()}`);
     },
@@ -317,7 +322,7 @@ export function useChartAssignments(filters = {}, options = {}) {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: ['charts', 'assignments', 'list', patient, admission, template, status],
+    queryKey: chartKeys.assignmentListParams(patient, admission, template, status),
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },
@@ -502,8 +507,13 @@ export function useChartEntries(filters = {}) {
   if (filters.assignment) params.append('assignment', filters.assignment);
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
+  if (filters.ordering) params.append('ordering', filters.ordering);
   if (filters.has_critical_values !== undefined) {
     params.append('has_critical_values', filters.has_critical_values);
+  }
+  if (filters.include_data) {
+    params.append('include_data', 'true');
+    params.append('page_size', '12');
   }
 
   return useQuery({

@@ -119,6 +119,17 @@ export const referralsApi = {
     }
   },
 
+  getReferralInboxCount: async () => {
+    try {
+      const response = await apiClient.get('/referrals/inbox-count/');
+      return response?.count || 0;
+    } catch (error) {
+      // Return 0 on error to avoid breaking the UI
+      console.error('Failed to fetch referral inbox count:', error);
+      return 0;
+    }
+  },
+
   getReferralsSent: async () => {
     try {
       return await apiClient.get('/referrals/sent/');
@@ -132,6 +143,36 @@ export const referralsApi = {
       return await apiClient.get('/referrals/pending/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch pending referrals'));
+    }
+  },
+
+  // Notification endpoints
+  getNotifications: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/referrals/notifications/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getAll(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral notifications'));
+    }
+  },
+
+  markNotificationRead: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/notifications/${id}/mark-read/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to mark notification as read'));
+    }
+  },
+
+  getUnreadNotificationCount: async () => {
+    try {
+      const response = await apiClient.get('/referrals/notifications/unread-count/');
+      return response?.count || 0;
+    } catch (error) {
+      // Return 0 on error to avoid breaking the UI
+      console.error('Failed to fetch unread count:', error);
+      return 0;
     }
   },
 };

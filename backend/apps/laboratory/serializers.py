@@ -5,6 +5,7 @@ from .models import (
     LabSpecimen, LabResult, LabOrderStatus, LabOrderPriority
 )
 from ..users.models import PractitionerProfile
+from ..core.security import get_user_facility
 
 
 class LabTestCatalogSerializer(serializers.ModelSerializer):
@@ -18,7 +19,7 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabTestCatalog
         fields = [
-            'id', 'code', 'loinc_code', 'name', 'short_name',
+            'id', 'facility', 'code', 'loinc_code', 'name', 'short_name',
             'category', 'category_display', 'description',
             'specimen_type', 'container_type', 'volume_required',
             'special_instructions', 'reference_ranges', 'unit',
@@ -27,7 +28,7 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
             'can_reset', 'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'created_at', 'updated_at', 'category_display',
+            'id', 'facility', 'created_at', 'updated_at', 'category_display',
             'is_system_default', 'system_defaults', 'can_reset'
         ]
 
@@ -51,9 +52,13 @@ class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_code(self, value):
-        """Ensure test code is unique."""
-        if LabTestCatalog.objects.filter(code=value.upper()).exists():
-            raise serializers.ValidationError("Test with this code already exists.")
+        """Ensure test code is unique within the facility."""
+        facility = None
+        request = self.context.get('request')
+        if request:
+            facility = get_user_facility(request)
+        if facility and LabTestCatalog.objects.filter(facility=facility, code=value.upper()).exists():
+            raise serializers.ValidationError("Test with this code already exists in this facility.")
         return value.upper()
 
     def validate_reference_ranges(self, value):
@@ -145,16 +150,24 @@ class LabPanelSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabPanel
         fields = [
-            'id', 'code', 'name', 'description',
+            'id', 'facility', 'code', 'name', 'description',
             'tests', 'test_ids', 'test_count',
             'price', 'is_active',
             'is_system_default', 'is_facility_modified', 'system_defaults', 'can_reset',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'created_at', 'updated_at', 'test_count',
+            'id', 'facility', 'created_at', 'updated_at', 'test_count',
             'is_system_default', 'system_defaults', 'can_reset'
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request:
+            facility = get_user_facility(request)
+            if facility and 'test_ids' in self.fields:
+                self.fields['test_ids'].queryset = LabTestCatalog.objects.filter(facility=facility)
 
     def get_test_count(self, obj):
         """Return number of tests in panel."""
@@ -199,6 +212,14 @@ class LabOrderTestSerializer(serializers.ModelSerializer):
         write_only=True,
         source='test'
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request:
+            facility = get_user_facility(request)
+            if facility:
+                self.fields['test_id'].queryset = LabTestCatalog.objects.filter(facility=facility)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
@@ -568,7 +589,7 @@ class LabOrderCreateSerializer(serializers.ModelSerializer):
                     LabOrderTest.objects.get_or_create(
                         order=order,
                         test=test,
-                        defaults={'status': LabOrderStatus.ORDERED}
+                        defaults={'status': LabOrderStatus.ORDERED, 'facility': order.facility}
                     )
 
         # Add individual tests
@@ -577,7 +598,7 @@ class LabOrderCreateSerializer(serializers.ModelSerializer):
                 LabOrderTest.objects.get_or_create(
                     order=order,
                     test=test,
-                    defaults={'status': LabOrderStatus.ORDERED}
+                    defaults={'status': LabOrderStatus.ORDERED, 'facility': order.facility}
                 )
 
         return order

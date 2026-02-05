@@ -1,9 +1,14 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import Save from 'lucide-react/dist/esm/icons/save.js';
+import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
+import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { WorkflowProgress } from './WorkflowProgress';
-import { ArrowLeft, ArrowRight, Save, CheckCircle, AlertTriangle } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**

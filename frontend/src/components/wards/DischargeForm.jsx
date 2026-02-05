@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { apiClient } from '@/lib/api';
+import { apiClient } from '@/lib/api-client';
+import { admissionsApi } from '@/features/admissions/api';
 
 export function DischargeForm({ admission, onDischargeComplete }) {
   const navigate = useNavigate();
@@ -43,7 +44,7 @@ export function DischargeForm({ admission, onDischargeComplete }) {
       setSubmitting(true);
       
       // Discharge the patient
-      await apiClient.post(`/admissions/${admission.id}/discharge/`, {
+      await admissionsApi.dischargePatient(admission.id, {
         discharge_notes: formData.discharge_notes,
       });
       
@@ -55,7 +56,6 @@ export function DischargeForm({ admission, onDischargeComplete }) {
             invoice_type: 'inpatient',
           });
         } catch (err) {
-          console.error('Error generating invoice:', err);
           // Continue with discharge even if invoice generation fails
         }
       }
@@ -75,7 +75,6 @@ export function DischargeForm({ admission, onDischargeComplete }) {
             status: 'scheduled',
           });
         } catch (err) {
-          console.error('Error scheduling follow-up:', err);
           // Continue with discharge even if follow-up scheduling fails
         }
       }
@@ -88,7 +87,6 @@ export function DischargeForm({ admission, onDischargeComplete }) {
         navigate(`/wards/${admission.bed.ward.id}`);
       }
     } catch (err) {
-      console.error('Error discharging patient:', err);
       setError('Failed to discharge patient. Please try again.');
       setSubmitting(false);
     }

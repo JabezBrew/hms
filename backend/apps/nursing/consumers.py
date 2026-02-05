@@ -15,8 +15,49 @@ from datetime import datetime
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
+from django.conf import settings
+from rest_framework.exceptions import PermissionDenied
+
+from apps.core.security import get_user_facility_codes, check_clinical_access
+from apps.users.models import PatientProfile, PractitionerProfile
+from apps.wards.models import WardStaffAssignment
 
 logger = logging.getLogger(__name__)
+
+
+@database_sync_to_async
+def _can_access_patient(user, patient_id):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    patient = PatientProfile.objects.select_related('facility').filter(id=patient_id).first()
+    if not patient:
+        return False
+    allowed_codes = get_user_facility_codes(user)
+    allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+    if allowed_codes and patient.facility:
+        if patient.facility.code not in allowed_codes and not (allow_cross_facility and user.user_type == 'admin'):
+            return False
+    try:
+        check_clinical_access(user, patient)
+        return True
+    except PermissionDenied:
+        return False
+
+
+@database_sync_to_async
+def _has_ward_access(user, ward_id):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.user_type == 'admin':
+        return True
+    practitioner = PractitionerProfile.objects.filter(staff__user=user).first()
+    if not practitioner:
+        return False
+    return WardStaffAssignment.objects.filter(
+        ward_id=ward_id,
+        practitioner=practitioner,
+        is_active=True
+    ).exists()
 
 
 class AlertConsumer(AsyncJsonWebsocketConsumer):
@@ -56,6 +97,10 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4001)
             return
 
+        if self.user.user_type not in ['admin', 'doctor', 'nurse']:
+            await self.close(code=4003)
+            return
+
         # Get ward_id from URL if provided
         self.ward_id = self.scope['url_route']['kwargs'].get('ward_id')
 
@@ -64,8 +109,10 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
 
         if self.ward_id:
             # Ward-specific alerts
+            if not await _has_ward_access(self.user, self.ward_id):
+                await self.close(code=4003)
+                return
             self.groups.append(f'alerts_ward_{self.ward_id}')
-            logger.info(f"User {self.user.id} subscribed to ward {self.ward_id} alerts")
         else:
             # Global alerts - subscribe to user-specific and role-based groups
             self.groups.append(f'alerts_user_{self.user.id}')
@@ -74,8 +121,6 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             user_type = getattr(self.user, 'user_type', None)
             if user_type:
                 self.groups.append(f'alerts_role_{user_type}')
-
-            logger.info(f"User {self.user.id} subscribed to global alerts")
 
         # Also subscribe to critical alerts (always delivered regardless of ward)
         self.groups.append('alerts_critical')
@@ -100,8 +145,6 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
         for group in getattr(self, 'groups', []):
             await self.channel_layer.group_discard(group, self.channel_name)
 
-        logger.info(f"User {getattr(self.user, 'id', 'unknown')} disconnected from alerts")
-
     async def receive_json(self, content):
         """
         Handle incoming messages from client.
@@ -122,6 +165,12 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
         elif message_type == 'subscribe_ward':
             ward_id = content.get('ward_id')
             if ward_id:
+                if not await _has_ward_access(self.user, ward_id):
+                    await self.send_json({
+                        'type': 'subscription.denied',
+                        'ward_id': ward_id,
+                    })
+                    return
                 group = f'alerts_ward_{ward_id}'
                 await self.channel_layer.group_add(group, self.channel_name)
                 self.groups.append(group)
@@ -202,6 +251,10 @@ class VitalSignsConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4000)
             return
 
+        if not await _can_access_patient(self.user, self.patient_id):
+            await self.close(code=4003)
+            return
+
         # Join patient-specific vitals group
         self.group_name = f'vitals_patient_{self.patient_id}'
         await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -213,8 +266,6 @@ class VitalSignsConsumer(AsyncJsonWebsocketConsumer):
             'patient_id': self.patient_id,
             'timestamp': datetime.utcnow().isoformat(),
         })
-
-        logger.info(f"User {self.user.id} subscribed to vitals for patient {self.patient_id}")
 
     async def disconnect(self, close_code):
         """Handle WebSocket disconnection."""

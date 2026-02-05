@@ -1,10 +1,15 @@
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { FileText, Pill, FlaskConical, ChevronRight, CheckCircle2, Clock } from "lucide-react"
 import { SlideOver } from "@/components/ui/SlideOver"
 
 export function Inbox({ tasks }) {

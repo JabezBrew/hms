@@ -1,11 +1,19 @@
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
+import Heart from 'lucide-react/dist/esm/icons/heart.js';
+import Wind from 'lucide-react/dist/esm/icons/wind.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Activity, Thermometer, Heart, Wind, Droplets, AlertCircle, Check } from "lucide-react";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useCreateVitalSigns } from "@/hooks/useNursingQueries";
+import { useCreateVitalSigns } from "@/features/nursing/hooks";
 import { toast } from "sonner";
 
 /**

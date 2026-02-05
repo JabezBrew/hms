@@ -1,15 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { dashboardsApi } from '@/lib/api/dashboards';
+import { dashboardsApi } from '@/features/dashboards/api';
+import { useAuth } from '@/lib/auth';
+import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
+const dashboardKeyFactory = createKeyFactory('dashboards');
+
 export const dashboardKeys = {
-  all: ['dashboards'],
-  nurse: (filters) => [...dashboardKeys.all, 'nurse', { filters }],
-  inpatient: () => [...dashboardKeys.all, 'inpatient'],
-  receptionist: () => [...dashboardKeys.all, 'receptionist'],
-  admin: () => [...dashboardKeys.all, 'admin'],
-  myWork: (filters) => [...dashboardKeys.all, 'my-work', { filters }],
-  clinic: (filters) => [...dashboardKeys.all, 'clinic', { filters }],
+  all: dashboardKeyFactory.all,
+  nurse: (filters) => keyWith('dashboards', 'nurse', { filters }),
+  inpatient: () => keyWith('dashboards', 'inpatient'),
+  receptionist: () => keyWith('dashboards', 'receptionist'),
+  admin: () => keyWith('dashboards', 'admin'),
+  myWork: (filters) => keyWith('dashboards', 'my-work', { filters }),
+  clinic: (filters) => keyWith('dashboards', 'clinic', { filters }),
 };
 
 // Default polling interval (30 seconds)
@@ -22,6 +26,7 @@ const DEFAULT_REFETCH_INTERVAL = 30000;
  * @returns {Object} Query result
  */
 export function useNurseDashboard(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.nurse(filters),
     queryFn: () => dashboardsApi.getNurseDashboard(filters),
@@ -29,6 +34,7 @@ export function useNurseDashboard(filters = {}, options = {}) {
     refetchIntervalInBackground: false, // Only poll when tab is active
     staleTime: 10000, // Consider data stale after 10 seconds
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -38,6 +44,7 @@ export function useNurseDashboard(filters = {}, options = {}) {
  * @returns {Object} Query result
  */
 export function useInpatientDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.inpatient(),
     queryFn: () => dashboardsApi.getInpatientDashboard(),
@@ -45,6 +52,7 @@ export function useInpatientDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -54,6 +62,7 @@ export function useInpatientDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useReceptionistDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.receptionist(),
     queryFn: () => dashboardsApi.getReceptionistDashboard(),
@@ -61,6 +70,7 @@ export function useReceptionistDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -70,6 +80,7 @@ export function useReceptionistDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useAdminDashboard(options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.admin(),
     queryFn: () => dashboardsApi.getAdminDashboard(),
@@ -77,6 +88,7 @@ export function useAdminDashboard(options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -87,6 +99,7 @@ export function useAdminDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useMyWorkDashboard(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.myWork(filters),
     queryFn: () => dashboardsApi.getMyWorkDashboard(filters),
@@ -94,6 +107,7 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
 
@@ -104,6 +118,7 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
  * @returns {Object} Query result
  */
 export function useClinicSchedule(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.clinic(filters),
     queryFn: () => dashboardsApi.getClinicSchedule(filters),
@@ -111,5 +126,6 @@ export function useClinicSchedule(filters = {}, options = {}) {
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }

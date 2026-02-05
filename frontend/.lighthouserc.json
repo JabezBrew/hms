@@ -1,0 +1,61 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "npm run preview:ci",
+      "startServerReadyPattern": "http://127.0.0.1:4173/",
+      "startServerReadyTimeout": 30000,
+      "url": [
+        "http://127.0.0.1:4173/login"
+      ],
+      "numberOfRuns": 1,
+      "settings": {
+        "formFactor": "desktop",
+        "emulatedFormFactor": "desktop",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 150,
+          "throughputKbps": 1638.4,
+          "cpuSlowdownMultiplier": 4
+        },
+        "screenEmulation": {
+          "mobile": false,
+          "width": 1366,
+          "height": 768,
+          "deviceScaleFactor": 1,
+          "disabled": false
+        }
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": [
+          "error",
+          {
+            "minScore": 0.8
+          }
+        ],
+        "largest-contentful-paint": [
+          "error",
+          {
+            "maxNumericValue": 4000
+          }
+        ],
+        "total-blocking-time": [
+          "error",
+          {
+            "maxNumericValue": 350
+          }
+        ],
+        "interactive": [
+          "warn",
+          {
+            "maxNumericValue": 6000
+          }
+        ]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

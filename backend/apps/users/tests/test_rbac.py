@@ -24,6 +24,7 @@ from .factories import (
     PatientUserFactory, StaffFactory, PatientProfileFactory,
     create_users_of_all_types
 )
+from apps.core.tests.factories import DefaultFacilityFactory
 
 
 @pytest.fixture
@@ -38,11 +39,16 @@ def api_client():
     return APIClient()
 
 
-def get_authenticated_client(user):
+def get_authenticated_client(user, facility=None):
     """Get an API client authenticated as the given user."""
     client = APIClient()
     refresh = RefreshToken.for_user(user)
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    if facility is None:
+        facility = getattr(user, 'primary_facility', None) or DefaultFacilityFactory()
+    client.credentials(
+        HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}',
+        HTTP_X_FACILITY_CODE=facility.code
+    )
     return client
 
 
