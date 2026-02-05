@@ -131,6 +131,21 @@ jobs:
         cd frontend
         npm run test:coverage
 
+    - name: Build frontend for perf audit
+      run: |
+        cd frontend
+        npm run build
+
+    - name: Enforce bundle budgets
+      run: |
+        cd frontend
+        npm run perf:bundle-budget
+
+    - name: Lighthouse CI (low-end emulation)
+      run: |
+        cd frontend
+        npx -y @lhci/cli@0.13.x autorun --config=.lighthouserc.json
+
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
       with:

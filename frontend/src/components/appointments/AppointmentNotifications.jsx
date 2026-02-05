@@ -13,18 +13,21 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { fetchUpcomingAppointments } from '@/features/appointments/api/upcoming';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
+import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 
 const AppointmentNotifications = () => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { isPageActive } = usePageVisibility();
 
   // Use React Query for caching and deduplication
   const { data: appointments = [], isLoading: loading } = useQuery({
     queryKey: appointmentKeys.upcoming(),
     queryFn: fetchUpcomingAppointments,
     staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
-    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    refetchInterval: open && isPageActive ? 5 * 60 * 1000 : false, // Poll only when panel is open and active
     refetchOnWindowFocus: false, // Don't refetch on window focus
+    enabled: isPageActive,
   });
 
   // Navigate to appointment detail

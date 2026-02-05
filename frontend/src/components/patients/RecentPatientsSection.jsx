@@ -17,6 +17,7 @@ const RecentPatientsSection = ({
   isLoading = false,
   className,
   showHeader = true,
+  onPrefetchPatient,
 }) => {
   const navigate = useNavigate();
 
@@ -67,6 +68,7 @@ const RecentPatientsSection = ({
               key={getPatientId(patient) || index}
               patient={patient}
               onClick={() => handlePatientClick(patient)}
+              onIntent={() => onPrefetchPatient?.(getPatientId(patient))}
             />
           );
         })}
@@ -78,7 +80,7 @@ const RecentPatientsSection = ({
 /**
  * RecentPatientCard - Compact patient card for horizontal scroll
  */
-const RecentPatientCard = ({ patient, onClick }) => {
+const RecentPatientCard = ({ patient, onClick, onIntent }) => {
   const name = getDisplayName(patient);
   const mrn = getPatientMRN(patient);
   const ward = getPatientWard(patient);
@@ -90,6 +92,8 @@ const RecentPatientCard = ({ patient, onClick }) => {
   return (
     <button
       onClick={onClick}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
       className={cn(
         "flex-shrink-0 w-44 snap-start",
         "bg-card hover:bg-accent/50 border border-border rounded-xl p-3",

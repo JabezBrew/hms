@@ -18,13 +18,14 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,23 +36,42 @@ import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
 import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
-import { useChartAssignments } from "@/features/charts/hooks";
+import { chartKeys, useChartAssignments } from "@/features/charts/hooks";
+import { laboratoryApi } from "@/features/laboratory/api";
+import { labKeys } from "@/features/laboratory/hooks";
+import { drugSafetyApi } from "@/shared/api/drugSafety";
+import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
+import { keyWith } from "@/shared/lib/queryKeys";
 
 import { useDebounce } from "@/hooks/use-debounce";
 
-const AddNoteSlideOver = lazy(() => import("@/components/chronicle/AddNoteSlideOver"));
-const AddVitalsSlideOver = lazy(() => import("@/components/chronicle/AddVitalsSlideOver"));
-const AddPrescriptionSlideOver = lazy(() => import("@/components/chronicle/AddPrescriptionSlideOver"));
-const AddFluidBalanceSlideOver = lazy(() => import("@/components/chronicle/AddFluidBalanceSlideOver"));
-const PatientInsuranceSlideOver = lazy(() => import("@/components/chronicle/PatientInsuranceSlideOver"));
-const WardRoundSlideOver = lazy(() => import("@/components/chronicle/WardRoundSlideOver"));
-const ConsultationSlideOver = lazy(() => import("@/components/chronicle/ConsultationSlideOver"));
-const AddChartSlideOver = lazy(() => import("@/components/charts/AddChartSlideOver"));
-const ChartEntryForm = lazy(() => import("@/components/charts/ChartEntryForm"));
-const LabOrderForm = lazy(() => import("@/components/laboratory/LabOrderForm"));
-const ReferralForm = lazy(() => import("@/components/referrals/ReferralForm"));
-const CrossFacilitySharePanel = lazy(() => import("@/components/consent/CrossFacilitySharePanel"));
-const ReceiveRecordPanel = lazy(() => import("@/components/interop/ReceiveRecordPanel"));
+const loadAddNoteSlideOver = () => import("@/components/chronicle/AddNoteSlideOver");
+const loadAddVitalsSlideOver = () => import("@/components/chronicle/AddVitalsSlideOver");
+const loadAddPrescriptionSlideOver = () => import("@/components/chronicle/AddPrescriptionSlideOver");
+const loadAddFluidBalanceSlideOver = () => import("@/components/chronicle/AddFluidBalanceSlideOver");
+const loadPatientInsuranceSlideOver = () => import("@/components/chronicle/PatientInsuranceSlideOver");
+const loadWardRoundSlideOver = () => import("@/components/chronicle/WardRoundSlideOver");
+const loadConsultationSlideOver = () => import("@/components/chronicle/ConsultationSlideOver");
+const loadAddChartSlideOver = () => import("@/components/charts/AddChartSlideOver");
+const loadChartEntryForm = () => import("@/components/charts/ChartEntryForm");
+const loadLabOrderForm = () => import("@/components/laboratory/LabOrderForm");
+const loadReferralForm = () => import("@/components/referrals/ReferralForm");
+const loadCrossFacilitySharePanel = () => import("@/components/consent/CrossFacilitySharePanel");
+const loadReceiveRecordPanel = () => import("@/components/interop/ReceiveRecordPanel");
+
+const AddNoteSlideOver = lazy(loadAddNoteSlideOver);
+const AddVitalsSlideOver = lazy(loadAddVitalsSlideOver);
+const AddPrescriptionSlideOver = lazy(loadAddPrescriptionSlideOver);
+const AddFluidBalanceSlideOver = lazy(loadAddFluidBalanceSlideOver);
+const PatientInsuranceSlideOver = lazy(loadPatientInsuranceSlideOver);
+const WardRoundSlideOver = lazy(loadWardRoundSlideOver);
+const ConsultationSlideOver = lazy(loadConsultationSlideOver);
+const AddChartSlideOver = lazy(loadAddChartSlideOver);
+const ChartEntryForm = lazy(loadChartEntryForm);
+const LabOrderForm = lazy(loadLabOrderForm);
+const ReferralForm = lazy(loadReferralForm);
+const CrossFacilitySharePanel = lazy(loadCrossFacilitySharePanel);
+const ReceiveRecordPanel = lazy(loadReceiveRecordPanel);
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -68,6 +88,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
+  const prefetchedActionsRef = useRef(new Set());
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -118,18 +140,22 @@ const PatientChroniclePage = ({ defaultAction }) => {
   useEffect(() => {
     const action = actionParam || defaultAction;
     if (action === 'add_note') {
+      loadAddNoteSlideOver();
       slideOvers.open('note');
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
+      loadWardRoundSlideOver();
       slideOvers.open('wardRound');
       // Clear the query params after opening
       if (actionParam || wardRoundParam) clearQueryParams();
     } else if (action === 'consultation' || consultationParam === 'true') {
+      loadConsultationSlideOver();
       slideOvers.open('consultation');
       // Clear the query params after opening
       if (actionParam || consultationParam) clearQueryParams();
     } else if (action === 'add_prescription') {
+      loadAddPrescriptionSlideOver();
       slideOvers.open('prescription');
       if (actionParam) clearQueryParams();
     }
@@ -175,6 +201,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // The URL id is the patient UUID which works for all clinical endpoints
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+
+  useEffect(() => {
+    prefetchedActionsRef.current = new Set();
+  }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
   const medications = chronicleContext?.active_medications || [];
@@ -521,16 +551,149 @@ const PatientChroniclePage = ({ defaultAction }) => {
     ]);
   }, [refetch, refetchContext, id, invalidateTimeline]);
 
+  const prefetchActionResources = useCallback((action) => {
+    if (!action) return;
+
+    const actionToken = `${action}:${patientLocalId || 'none'}`;
+    if (prefetchedActionsRef.current.has(actionToken)) {
+      return;
+    }
+    prefetchedActionsRef.current.add(actionToken);
+
+    if (action === 'note') {
+      loadAddNoteSlideOver();
+      return;
+    }
+
+    if (action === 'vitals') {
+      loadAddVitalsSlideOver();
+      return;
+    }
+
+    if (action === 'prescription') {
+      loadAddPrescriptionSlideOver();
+      if (patientLocalId) {
+        void queryClient.prefetchQuery({
+          queryKey: drugSafetyKeys.patientAllergies(patientLocalId),
+          queryFn: () => drugSafetyApi.getPatientAllergies(patientLocalId),
+          staleTime: 60 * 1000,
+        });
+      }
+      return;
+    }
+
+    if (action === 'labs') {
+      loadLabOrderForm();
+      void queryClient.prefetchQuery({
+        queryKey: labKeys.testsList({}),
+        queryFn: () => laboratoryApi.getLabTests({}),
+        staleTime: 60 * 1000,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: labKeys.panelsList({}),
+        queryFn: () => laboratoryApi.getLabPanels({}),
+        staleTime: 60 * 1000,
+      });
+      return;
+    }
+
+    if (action === 'referral') {
+      loadReferralForm();
+      return;
+    }
+
+    if (action === 'crossFacility') {
+      loadCrossFacilitySharePanel();
+      return;
+    }
+
+    if (action === 'receiveRecord') {
+      loadReceiveRecordPanel();
+      return;
+    }
+
+    if (action === 'fluids') {
+      loadAddFluidBalanceSlideOver();
+      return;
+    }
+
+    if (action === 'charts') {
+      loadAddChartSlideOver();
+      void queryClient.prefetchQuery({
+        queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
+        queryFn: () => apiClient.get('/charts/templates/?is_active=true'),
+        staleTime: 60 * 1000,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: chartKeys.categories(),
+        queryFn: () => apiClient.get('/charts/templates/categories/').then((response) => response.categories),
+        staleTime: 60 * 60 * 1000,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: chartKeys.intervals(),
+        queryFn: () => apiClient.get('/charts/templates/intervals/').then((response) => response.intervals),
+        staleTime: 60 * 60 * 1000,
+      });
+      return;
+    }
+
+    if (action === 'chartEntry') {
+      loadChartEntryForm();
+      return;
+    }
+
+    if (action === 'insurance') {
+      loadPatientInsuranceSlideOver();
+      return;
+    }
+
+    if (action === 'wardRound') {
+      loadWardRoundSlideOver();
+      return;
+    }
+
+    if (action === 'consultation') {
+      loadConsultationSlideOver();
+    }
+  }, [patientLocalId, queryClient]);
+
   // Slide-over handlers - using the centralized hook
-  const handleAddNote = useCallback(() => slideOvers.open('note'), [slideOvers]);
-  const handleRecordVitals = useCallback(() => slideOvers.open('vitals'), [slideOvers]);
-  const handlePrescribe = useCallback(() => slideOvers.open('prescription'), [slideOvers]);
-  const handleOrderLabs = useCallback(() => slideOvers.open('labs'), [slideOvers]);
-  const handleRequestConsult = useCallback(() => slideOvers.open('referral'), [slideOvers]);
-  const handleShareRecord = useCallback(() => slideOvers.open('crossFacility'), [slideOvers]);
-  const handleReceiveRecord = useCallback(() => slideOvers.open('receiveRecord'), [slideOvers]);
-  const handleRecordFluids = useCallback(() => slideOvers.open('fluids'), [slideOvers]);
-  const handleStartWardRound = useCallback(() => slideOvers.open('wardRound'), [slideOvers]);
+  const handleAddNote = useCallback(() => {
+    prefetchActionResources('note');
+    slideOvers.open('note');
+  }, [prefetchActionResources, slideOvers]);
+  const handleRecordVitals = useCallback(() => {
+    prefetchActionResources('vitals');
+    slideOvers.open('vitals');
+  }, [prefetchActionResources, slideOvers]);
+  const handlePrescribe = useCallback(() => {
+    prefetchActionResources('prescription');
+    slideOvers.open('prescription');
+  }, [prefetchActionResources, slideOvers]);
+  const handleOrderLabs = useCallback(() => {
+    prefetchActionResources('labs');
+    slideOvers.open('labs');
+  }, [prefetchActionResources, slideOvers]);
+  const handleRequestConsult = useCallback(() => {
+    prefetchActionResources('referral');
+    slideOvers.open('referral');
+  }, [prefetchActionResources, slideOvers]);
+  const handleShareRecord = useCallback(() => {
+    prefetchActionResources('crossFacility');
+    slideOvers.open('crossFacility');
+  }, [prefetchActionResources, slideOvers]);
+  const handleReceiveRecord = useCallback(() => {
+    prefetchActionResources('receiveRecord');
+    slideOvers.open('receiveRecord');
+  }, [prefetchActionResources, slideOvers]);
+  const handleRecordFluids = useCallback(() => {
+    prefetchActionResources('fluids');
+    slideOvers.open('fluids');
+  }, [prefetchActionResources, slideOvers]);
+  const handleStartWardRound = useCallback(() => {
+    prefetchActionResources('wardRound');
+    slideOvers.open('wardRound');
+  }, [prefetchActionResources, slideOvers]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -611,7 +774,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [refreshData, slideOvers]);
 
   // Chart handlers
-  const handleAssignChart = useCallback(() => slideOvers.open('charts'), [slideOvers]);
+  const handleAssignChart = useCallback(() => {
+    prefetchActionResources('charts');
+    slideOvers.open('charts');
+  }, [prefetchActionResources, slideOvers]);
 
   const handleChartAssigned = useCallback(() => {
     refetchCharts();
@@ -619,9 +785,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [refetchCharts, slideOvers]);
 
   const handleRecordChartEntry = useCallback((assignment) => {
+    prefetchActionResources('chartEntry');
     setActiveChartAssignment(assignment);
     slideOvers.open('chartEntry');
-  }, [slideOvers]);
+  }, [prefetchActionResources, slideOvers]);
 
   const handleChartEntryRecorded = useCallback(() => {
     refetchCharts();
@@ -847,6 +1014,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       {/* Patient Identity Hero */}
       <PatientIdentityHero
         patient={patient}
+        onActionIntent={prefetchActionResources}
         onAddNote={handleAddNote}
         onRecordVitals={handleRecordVitals}
         onPrescribe={handlePrescribe}
@@ -859,7 +1027,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
         onStartWardRound={handleStartWardRound}
-        onManageInsurance={() => slideOvers.open('insurance')}
+        onManageInsurance={() => {
+          prefetchActionResources('insurance');
+          slideOvers.open('insurance');
+        }}
         insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />

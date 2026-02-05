@@ -8,7 +8,7 @@ import Filter from 'lucide-react/dist/esm/icons/filter.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -50,6 +50,12 @@ import { useWards } from "@/features/wards/hooks/useWardQueries";
 import { useClinicalUnits } from "@/hooks/useOrganization";
 import { useSearchPractitioners } from "@/hooks/useStaffQueries";
 import { format } from "date-fns";
+import {
+  prefetchMyPatientsRoute,
+  prefetchPatientChronicleData,
+  prefetchPatientDetailRoute,
+  prefetchPatientRegistryRoute,
+} from "@/features/patients/prefetch";
 
 // Clinical provider roles that can access "My Patients" feature
 const CLINICAL_PROVIDER_ROLES = ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'inpatient_doctor', 'practitioner', 'physician', 'lab_technician', 'pharmacist'];
@@ -176,6 +182,11 @@ const PatientChronicleListPage = () => {
   // Check if user is a clinical provider
   const isClinicalProvider = CLINICAL_PROVIDER_ROLES.includes(user?.role);
 
+  const prefetchPatientById = useCallback((patientId) => {
+    if (!patientId) return;
+    prefetchPatientChronicleData(queryClient, patientId);
+  }, [queryClient]);
+
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
@@ -232,6 +243,26 @@ const PatientChronicleListPage = () => {
       });
     }
   }, [isClinicalProvider, queryClient]);
+
+  // Warm key route chunks after initial render.
+  useEffect(() => {
+    prefetchPatientDetailRoute();
+
+    if (typeof window === 'undefined') return;
+
+    const runIdlePrefetch = () => {
+      prefetchMyPatientsRoute();
+      prefetchPatientRegistryRoute();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(runIdlePrefetch, { timeout: 1200 });
+      return () => window.cancelIdleCallback?.(idleId);
+    }
+
+    const timeoutId = window.setTimeout(runIdlePrefetch, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   const isSearching = isSearchEnabled;
   const hasSearchQuery = searchQuery.length > 0;
@@ -290,6 +321,33 @@ const PatientChronicleListPage = () => {
   const recentPatients = useMemo(() => {
     return normalizeApiResults(recentPatientsData);
   }, [recentPatientsData]);
+  const contextPatients = useMemo(() => contextPatientsData?.patients || [], [contextPatientsData]);
+
+  useEffect(() => {
+    if (isSearching) return;
+
+    const candidateIds = [
+      ...recentPatients.slice(0, 2).map((entry) => {
+        const patient = entry?.patient_profile_details || entry;
+        return patient?.id || patient?.patient_profile || patient?.local_data?.id;
+      }),
+      ...contextPatients.slice(0, 2).map((patient) => patient?.id),
+    ].filter(Boolean);
+
+    if (candidateIds.length === 0) return;
+
+    const prefetch = () => {
+      candidateIds.forEach((patientId) => prefetchPatientById(patientId));
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
+      return () => window.cancelIdleCallback?.(idleId);
+    }
+
+    const timeoutId = window.setTimeout(prefetch, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [contextPatients, isSearching, prefetchPatientById, recentPatients]);
 
   // Event handlers
   const handleSearchChange = (e) => {
@@ -440,6 +498,8 @@ const PatientChronicleListPage = () => {
             <NavLink
               to="/patients"
               end
+              onMouseEnter={prefetchPatientRegistryRoute}
+              onFocus={prefetchPatientRegistryRoute}
               className={({ isActive }) => cn(
                 "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
                 isActive
@@ -452,6 +512,8 @@ const PatientChronicleListPage = () => {
             </NavLink>
             <NavLink
               to="/patients/my-patients"
+              onMouseEnter={prefetchMyPatientsRoute}
+              onFocus={prefetchMyPatientsRoute}
               className={({ isActive }) => cn(
                 "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
                 isActive
@@ -824,6 +886,7 @@ const PatientChronicleListPage = () => {
             onStartConsultation={handleStartConsultation}
             onAddToMyPatients={handleAddToMyPatients}
             showMyPatientsActions={isClinicalProvider}
+            onPrefetchPatient={prefetchPatientById}
           />
         ) : (
           // Show recent + context patients
@@ -832,6 +895,7 @@ const PatientChronicleListPage = () => {
               patients={recentPatients}
               isLoading={isRecentLoading}
               showHeader={false}
+              onPrefetchPatient={prefetchPatientById}
             />
 
             <ContextPatientsSection
@@ -841,6 +905,7 @@ const PatientChronicleListPage = () => {
               onStartConsultation={handleStartConsultation}
               onAddToMyPatients={handleAddToMyPatients}
               showMyPatientsActions={isClinicalProvider}
+              onPrefetchPatient={prefetchPatientById}
             />
 
           </>
@@ -877,6 +942,7 @@ const SearchResultsSection = ({
   onStartConsultation,
   onAddToMyPatients,
   showMyPatientsActions,
+  onPrefetchPatient,
 }) => {
   if (isLoading) {
     return (
@@ -944,6 +1010,7 @@ const SearchResultsSection = ({
             onStartConsultation={onStartConsultation}
             onAddToMyPatients={onAddToMyPatients}
             showMyPatientsActions={showMyPatientsActions}
+            onPrefetchPatient={onPrefetchPatient}
           />
         )}
       />
@@ -964,6 +1031,7 @@ const SearchResultsSection = ({
           onStartConsultation={onStartConsultation}
           onAddToMyPatients={onAddToMyPatients}
           showMyPatientsActions={showMyPatientsActions}
+          onPrefetchPatient={onPrefetchPatient}
           className="max-w-none"
         />
       )}

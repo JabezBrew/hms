@@ -8,6 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "perf:bundle-budget": "node ./scripts/check-bundle-budget.mjs",
+    "perf:ci": "npm run build && npm run perf:bundle-budget",
     "analyze": "vite build --mode analyze",
     "test": "vitest",
     "test:ui": "vitest --ui",

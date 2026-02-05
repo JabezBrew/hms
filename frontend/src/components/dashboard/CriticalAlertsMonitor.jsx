@@ -9,6 +9,7 @@ import {
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';
+import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 
 /**
  * CriticalAlertsMonitor - Background component that monitors for critical alerts
@@ -17,12 +18,16 @@ import { useAuth } from '@/lib/auth';
  * This component should be mounted in the app root for nurses, doctors, and admins
  */
 export default function CriticalAlertsMonitor() {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
+  const { isPageActive } = usePageVisibility();
   const previousAlertsRef = useRef(new Set());
 
   // Determine which dashboard to monitor based on role
   const userRole = user?.role;
-  const shouldMonitor = userRole && ['nurse', 'head_nurse', 'nurse_practitioner', 'doctor', 'inpatient_doctor', 'admin'].includes(userRole);
+  const shouldMonitor =
+    isPageActive &&
+    userRole &&
+    ['nurse', 'head_nurse', 'nurse_practitioner', 'doctor', 'inpatient_doctor', 'admin'].includes(userRole);
 
   // Use role-appropriate dashboard hook
   const isNurse = ['nurse', 'head_nurse', 'nurse_practitioner'].includes(userRole);

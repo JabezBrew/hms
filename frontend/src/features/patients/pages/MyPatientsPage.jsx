@@ -7,8 +7,9 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import Pin from 'lucide-react/dist/esm/icons/pin.js';
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useMyPatients,
   useRemoveFromMyPatients,
@@ -25,6 +26,11 @@ import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
+import {
+  prefetchMyPatientsRoute,
+  prefetchPatientChronicleData,
+  prefetchPatientRegistryRoute,
+} from "@/features/patients/prefetch";
 
 /**
  * MyPatientsPage - Dedicated page for user's personal patient list
@@ -38,6 +44,7 @@ import { usePageMeta } from "@/shared/hooks/usePageMeta";
  */
 const MyPatientsPage = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid");
@@ -48,6 +55,16 @@ const MyPatientsPage = () => {
       { label: 'My Patients', path: '/patients/my-patients' },
     ],
   });
+
+  const prefetchPatientById = useCallback((patientId) => {
+    if (!patientId) return;
+    prefetchPatientChronicleData(queryClient, patientId);
+  }, [queryClient]);
+
+  useEffect(() => {
+    prefetchMyPatientsRoute();
+    prefetchPatientRegistryRoute();
+  }, []);
 
   // Fetch My Patients data
   const {
@@ -93,6 +110,21 @@ const MyPatientsPage = () => {
 
     return patientList;
   }, [myPatientsData, searchQuery]);
+
+  useEffect(() => {
+    const topPatientId = patients[0]?.id || patients[0]?.patient_profile || patients[0]?.local_data?.id;
+    if (!topPatientId) return;
+
+    const prefetch = () => prefetchPatientById(topPatientId);
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
+      return () => window.cancelIdleCallback?.(idleId);
+    }
+
+    const timeoutId = window.setTimeout(prefetch, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [patients, prefetchPatientById]);
 
   // Stats
   const stats = useMemo(() => {
@@ -161,6 +193,8 @@ const MyPatientsPage = () => {
           <NavLink
             to="/patients"
             end
+            onMouseEnter={prefetchPatientRegistryRoute}
+            onFocus={prefetchPatientRegistryRoute}
             className={({ isActive }) => cn(
               "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
               isActive
@@ -173,6 +207,8 @@ const MyPatientsPage = () => {
           </NavLink>
           <NavLink
             to="/patients/my-patients"
+            onMouseEnter={prefetchMyPatientsRoute}
+            onFocus={prefetchMyPatientsRoute}
             className={({ isActive }) => cn(
               "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
               isActive
@@ -276,6 +312,7 @@ const MyPatientsPage = () => {
                   isInMyPatients={true}
                   onRemoveFromMyPatients={handleRemoveFromMyPatients}
                   onTogglePin={() => handleTogglePin(patient._listEntryId)}
+                  onPrefetchPatient={prefetchPatientById}
                 />
               </div>
             )}
@@ -305,6 +342,7 @@ const MyPatientsPage = () => {
                   isInMyPatients={true}
                   onRemoveFromMyPatients={handleRemoveFromMyPatients}
                   onTogglePin={() => handleTogglePin(patient._listEntryId)}
+                  onPrefetchPatient={prefetchPatientById}
                   className="max-w-none"
                 />
               </div>

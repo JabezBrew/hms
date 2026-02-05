@@ -28,6 +28,7 @@ const PatientChronicleCard = ({
   onAddToMyPatients,
   onRemoveFromMyPatients,
   onTogglePin,
+  onPrefetchPatient,
   showMyPatientsActions = false,
   isInMyPatients = false,
   className
@@ -226,6 +227,12 @@ const PatientChronicleCard = ({
     }
   };
 
+  const handleIntentPrefetch = () => {
+    if (onPrefetchPatient && patientId) {
+      onPrefetchPatient(patientId);
+    }
+  };
+
   const handleStartRound = (e) => {
     e.stopPropagation();
     if (onStartRound) {
@@ -279,6 +286,8 @@ const PatientChronicleCard = ({
     <article
       onClick={handleViewRecord}
       onKeyDown={handleKeyDown}
+      onPointerEnter={handleIntentPrefetch}
+      onFocus={handleIntentPrefetch}
       tabIndex={0}
       role="button"
       aria-label={`View patient ${displayName}, ${mrn}`}

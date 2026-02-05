@@ -226,11 +226,13 @@ export function usePendingReferrals() {
 /**
  * Get referral notifications for current user
  */
-export function useReferralNotifications(params = {}) {
+export function useReferralNotifications(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: [...referralKeys.notifications(), params],
     queryFn: () => referralsApi.getNotifications(params),
     staleTime: 30 * 1000, // 30 seconds
+    enabled,
   });
 }
 
@@ -239,11 +241,13 @@ export function useReferralNotifications(params = {}) {
  * Note: WebSocket handles real-time updates, so polling is removed.
  * Increase staleTime since WebSocket invalidates cache on new notifications.
  */
-export function useReferralNotificationCount() {
+export function useReferralNotificationCount(options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.notificationCount(),
     queryFn: () => referralsApi.getUnreadNotificationCount(),
     staleTime: 5 * 60 * 1000, // 5 minutes - WebSocket handles real-time updates
+    enabled,
   });
 }
 

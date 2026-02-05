@@ -3,7 +3,6 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PatientChronicleCard } from "@/components/chronicle";
@@ -24,10 +23,9 @@ const ContextPatientsSection = ({
   onStartConsultation,
   showMyPatientsActions = false,
   onAddToMyPatients,
+  onPrefetchPatient,
   className,
 }) => {
-  const navigate = useNavigate();
-
   if (isLoading) {
     return (
       <section className={cn("space-y-4", className)}>
@@ -57,13 +55,6 @@ const ContextPatientsSection = ({
       </section>
     );
   }
-
-  const handlePatientClick = (patient) => {
-    const patientId = patient?.id;
-    if (patientId) {
-      navigate(`/patients/${patientId}`);
-    }
-  };
 
   return (
     <section className={cn("space-y-4", className)}>
@@ -102,6 +93,7 @@ const ContextPatientsSection = ({
             onStartConsultation={onStartConsultation}
             showMyPatientsActions={showMyPatientsActions}
             onAddToMyPatients={onAddToMyPatients}
+            onPrefetchPatient={onPrefetchPatient}
           />
         ))}
       </div>

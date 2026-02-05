@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
+import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 import { fetchUpcomingAppointments } from '@/features/appointments/api/upcoming';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
 import {
@@ -74,6 +75,7 @@ const NotificationCenter = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
+  const { isPageActive } = usePageVisibility();
 
   const isDoctor = user && ['doctor', 'inpatient_doctor'].includes(user.role);
   const hasAppointmentAccess = user && ['admin', 'doctor', 'nurse', 'receptionist', 'inpatient_doctor'].includes(user.role);
@@ -83,19 +85,22 @@ const NotificationCenter = () => {
     queryKey: appointmentKeys.upcoming(),
     queryFn: fetchUpcomingAppointments,
     staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: open && isPageActive ? 5 * 60 * 1000 : false,
     refetchOnWindowFocus: false,
-    enabled: hasAppointmentAccess,
+    enabled: hasAppointmentAccess && isPageActive,
   });
 
   // Referral notifications (only for doctors)
-  const { data: referralNotifications = [], isLoading: referralsLoading } = useReferralNotifications();
-  const { data: unreadReferralCount = 0 } = useReferralNotificationCount();
+  const { data: referralNotifications = [], isLoading: referralsLoading } = useReferralNotifications(
+    {},
+    { enabled: isDoctor && isPageActive }
+  );
+  const { data: unreadReferralCount = 0 } = useReferralNotificationCount({ enabled: isDoctor && isPageActive });
   const markAsRead = useMarkNotificationRead();
 
   // WebSocket for real-time referral updates
   useNotificationWebSocket({
-    enabled: isDoctor,
+    enabled: isDoctor && isPageActive,
     onNotification: (notification) => {
       const config = notificationConfig[`referral_${notification.event}`] || notificationConfig.referral_submitted;
       toast.info(config.label, {
