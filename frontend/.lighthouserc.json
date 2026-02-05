@@ -7,6 +7,7 @@
       ],
       "numberOfRuns": 1,
       "settings": {
+        "formFactor": "desktop",
         "emulatedFormFactor": "desktop",
         "throttlingMethod": "simulate",
         "throttling": {
