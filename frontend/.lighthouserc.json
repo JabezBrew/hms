@@ -1,9 +1,11 @@
 {
   "ci": {
     "collect": {
-      "staticDistDir": "./dist",
+      "startServerCommand": "npm run preview:ci",
+      "startServerReadyPattern": "http://127.0.0.1:4173/",
+      "startServerReadyTimeout": 30000,
       "url": [
-        "http://localhost/login"
+        "http://127.0.0.1:4173/login"
       ],
       "numberOfRuns": 1,
       "settings": {

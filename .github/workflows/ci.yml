@@ -146,7 +146,7 @@ jobs:
     - name: Lighthouse CI (low-end emulation)
       run: |
         cd frontend
-        npx -y @lhci/cli@0.13.x autorun --config=.lighthouserc.json
+        npm run perf:lhci
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
