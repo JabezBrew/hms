@@ -217,7 +217,7 @@ python manage.py makemigrations && python manage.py migrate
 # Frontend (from frontend/)
 npm run test                              # Unit tests
 npm run test -- path/to/test.test.jsx     # Specific file
-npm run test:e2e                          # E2E (requires dev server)
+npm run test:coverage                     # Coverage run
 ```
 
 **Markers:** `@pytest.mark.tier1` (critical), `@pytest.mark.integration`, `@pytest.mark.rbac`

@@ -23,8 +23,7 @@ export default defineConfig({
     // Exclude patterns
     exclude: [
       'node_modules',
-      'dist',
-      'tests/e2e/**/*'  // E2E tests are handled by Playwright
+      'dist'
     ],
 
     // Coverage configuration
