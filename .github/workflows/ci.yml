@@ -73,6 +73,8 @@ jobs:
         DB_HOST: localhost
         DB_PORT: 5432
         REDIS_URL: redis://localhost:6379/0
+        SENDGRID_API_KEY: test-sendgrid-key
+        DEFAULT_FROM_EMAIL: ci@example.com
         GOOGLE_APPLICATION_CREDENTIALS: ""
         GOOGLE_CLOUD_PROJECT: test-project
         GOOGLE_HEALTHCARE_DATASET: test-dataset
