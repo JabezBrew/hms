@@ -9,7 +9,7 @@ This module provides service classes for inventory operations including:
 """
 import uuid
 from decimal import Decimal
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, TYPE_CHECKING
 
 from django.db import transaction
 from django.db.models import F, Sum, Q
@@ -22,6 +22,19 @@ from .models import (
     InventoryItem, StorageLocation, LocationStock,
     StockMovement, ExpiryTracker, Supplier
 )
+
+if TYPE_CHECKING:
+    from .models import (
+        PurchaseRequisition,
+        PurchaseOrder,
+        GoodsReceivedNote,
+        StandingOrder,
+        InternalRequisition,
+        StockTransferRequest,
+        ControlledSubstanceRegister,
+        ControlledSubstanceEntry,
+        ControlledSubstanceDiscrepancy,
+    )
 
 
 class InsufficientStockError(Exception):

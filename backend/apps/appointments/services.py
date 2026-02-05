@@ -1,7 +1,7 @@
 """
 Services for appointment scheduling, availability generation, and conflict prevention.
 """
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from datetime import datetime, timedelta, time, date
 import logging
 from django.utils import timezone
@@ -9,6 +9,9 @@ from django.db.models import Q
 from .models import Appointment, AppointmentType, ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 from .proxies import SlotProxy, ScheduleProxy
 from ..users.models import PractitionerProfile
+
+if TYPE_CHECKING:
+    from apps.users.models import User
 
 logger = logging.getLogger(__name__)
 

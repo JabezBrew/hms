@@ -6,6 +6,7 @@ This replaces the previous FHIR-first approach for better performance.
 """
 import uuid as uuid_module
 from datetime import datetime, time, timedelta
+import logging
 
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.exceptions import PermissionDenied
@@ -34,6 +35,8 @@ from apps.core.security import (
 )
 from apps.users.rbac import IsAdmin, IsDoctor, IsNurse
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def is_valid_uuid(value):

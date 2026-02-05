@@ -10,7 +10,7 @@ This module handles:
 """
 from datetime import timedelta
 from decimal import Decimal
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
 from django.utils import timezone
 from django.db import transaction
@@ -23,6 +23,9 @@ from django.db import models
 from apps.inventory.models import (
     InventoryItem, StorageLocation, ExpiryTracker, LocationStock
 )
+
+if TYPE_CHECKING:
+    from apps.nursing.models import MedicationAdministration
 
 
 class DispensingError(Exception):

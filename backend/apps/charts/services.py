@@ -8,7 +8,10 @@ and chart entry processing.
 import re
 import operator
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from apps.charts.models import ChartEntry
 
 
 # Safe operators for formula evaluation

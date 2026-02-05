@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
 import datetime
+import logging
 
 from django.db import transaction
 from django.utils import timezone
@@ -36,6 +37,8 @@ from apps.core.security import (
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.encounters.models import Encounter
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_patient_profile(patient_id):

@@ -473,7 +473,7 @@ class ConsultationEngine(BaseWorkflowEngine):
         return {
             'success': True,
             'workflow_id': workflow.id,
-            'encounter_id': encounter_id,
+            'encounter_id': str(encounter.id),
             'artifacts': artifacts,
         }
 

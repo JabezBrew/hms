@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.core.cache import cache
 import hashlib
+import logging
 from django.utils import timezone
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from .serializers import (
@@ -36,6 +37,7 @@ from apps.core.cache_utils import facility_cache_key
 from .tasks import fetch_practitioner_fhir_snapshot, search_practitioners_in_fhir
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 # Initialize RBAC system

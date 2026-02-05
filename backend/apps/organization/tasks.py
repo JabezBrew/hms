@@ -33,7 +33,4 @@ def rebuild_org_tree_cache(version=None, facility_id=None, include_inactive=Fals
 
 
 
-    return {
-        'success': True,
-        'swap_id': swap_entry_id,
-    }
+    return {'success': True}
