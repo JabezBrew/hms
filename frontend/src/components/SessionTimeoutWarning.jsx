@@ -90,7 +90,7 @@ export function SessionTimeoutWarning() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const checkTimeout = setInterval(() => {
+    const evaluateTimeout = () => {
       const now = Date.now();
       const timeSinceActivity = now - lastActivity;
       const sessionStartTime = getSessionStartTime();
@@ -130,7 +130,13 @@ export function SessionTimeoutWarning() {
       if (!isSessionValid()) {
         handleTimeout();
       }
-    }, showWarning ? 1000 : 30000);
+    };
+
+    // Run one immediate check so invalid/expired sessions are handled
+    // without waiting for the first polling interval.
+    evaluateTimeout();
+
+    const checkTimeout = setInterval(evaluateTimeout, showWarning ? 1000 : 30000);
 
     return () => clearInterval(checkTimeout);
   }, [isAuthenticated, lastActivity, handleTimeout, showWarning, timeoutType, isSessionValid, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT, WARNING_TIME]);
