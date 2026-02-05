@@ -1,5 +1,5 @@
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { getAuthValue } from '@/lib/auth-storage';
 import {
@@ -31,6 +31,7 @@ export function SessionTimeoutWarning() {
 
   // Activity tracking
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const lastActivityUpdateRef = useRef(Date.now());
 
   // Get session start time from local storage
   const getSessionStartTime = () => {
@@ -40,9 +41,15 @@ export function SessionTimeoutWarning() {
 
   // Track user activity
   const updateActivity = useCallback(() => {
-    setLastActivity(Date.now());
+    const now = Date.now();
+    // Throttle high-frequency events (e.g., scroll) to reduce render churn.
+    if (now - lastActivityUpdateRef.current < 5000 && !showWarning) {
+      return;
+    }
+    lastActivityUpdateRef.current = now;
+    setLastActivity(now);
     setShowWarning(false);
-  }, []);
+  }, [showWarning]);
 
   // Handle user extending session
   const handleExtendSession = useCallback(() => {
@@ -123,7 +130,7 @@ export function SessionTimeoutWarning() {
       if (!isSessionValid()) {
         handleTimeout();
       }
-    }, 1000);
+    }, showWarning ? 1000 : 30000);
 
     return () => clearInterval(checkTimeout);
   }, [isAuthenticated, lastActivity, handleTimeout, showWarning, timeoutType, isSessionValid, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT, WARNING_TIME]);

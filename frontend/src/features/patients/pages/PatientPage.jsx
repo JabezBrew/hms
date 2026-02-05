@@ -1,6 +1,9 @@
+import { lazy, Suspense } from 'react';
 import { useAuth } from '@/lib/auth';
-import PatientChroniclePage from './PatientChroniclePage';
-import PatientDemographicsPage from './PatientDemographicsPage';
+import { PageLoader } from '@/shared/components/page/PageState';
+
+const PatientChroniclePage = lazy(() => import('./PatientChroniclePage'));
+const PatientDemographicsPage = lazy(() => import('./PatientDemographicsPage'));
 
 /**
  * PatientPage - Role-based patient detail router
@@ -31,11 +34,19 @@ const PatientPage = ({ defaultAction }) => {
   const administrativeRoles = ['receptionist', 'billing'];
 
   if (administrativeRoles.includes(user?.role)) {
-    return <PatientDemographicsPage />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <PatientDemographicsPage />
+      </Suspense>
+    );
   }
 
   // Clinical roles and admin see full chronicle
-  return <PatientChroniclePage defaultAction={resolvedAction} />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <PatientChroniclePage defaultAction={resolvedAction} />
+    </Suspense>
+  );
 };
 
 export default PatientPage;

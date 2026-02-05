@@ -19,7 +19,7 @@ import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,9 +30,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import NoteDetailModal from "./NoteDetailModal";
-import PrescriptionActionsDialog from "./PrescriptionActionsDialog";
-import CopyNoteModal from "./CopyNoteModal";
+const NoteDetailModal = lazy(() => import("./NoteDetailModal"));
+const PrescriptionActionsDialog = lazy(() => import("./PrescriptionActionsDialog"));
+const CopyNoteModal = lazy(() => import("./CopyNoteModal"));
 
 /**
  * TimelineEntry - A chronological entry in the patient's clinical chronicle
@@ -450,29 +450,35 @@ const TimelineEntry = ({
       </div>
 
       {/* Note detail modal */}
-      <NoteDetailModal
-        open={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        entry={entry}
-        currentUserId={currentUserId}
-        onEditNote={onEditNote}
-        onNoteUpdated={onNoteUpdated}
-      />
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <NoteDetailModal
+            open={isModalOpen}
+            onOpenChange={setIsModalOpen}
+            entry={entry}
+            currentUserId={currentUserId}
+            onEditNote={onEditNote}
+            onNoteUpdated={onNoteUpdated}
+          />
+        </Suspense>
+      )}
 
       {/* Copy note modal */}
-      {isCopyableNote() && (
-        <CopyNoteModal
-          open={isCopyModalOpen}
-          onOpenChange={setIsCopyModalOpen}
-          noteEntry={{
-            id: entry.id,
-            template: entry.template,  // Full template object from timeline API
-            template_id: entry.template_id,
-            template_title: entry.template_title || entry.title || config.label,
-            data: entry.data,
-          }}
-          onCopyConfirm={onCopyNote}
-        />
+      {isCopyableNote() && isCopyModalOpen && (
+        <Suspense fallback={null}>
+          <CopyNoteModal
+            open={isCopyModalOpen}
+            onOpenChange={setIsCopyModalOpen}
+            noteEntry={{
+              id: entry.id,
+              template: entry.template,  // Full template object from timeline API
+              template_id: entry.template_id,
+              template_title: entry.template_title || entry.title || config.label,
+              data: entry.data,
+            }}
+            onCopyConfirm={onCopyNote}
+          />
+        </Suspense>
       )}
     </article>
   );
@@ -897,15 +903,19 @@ const MedicationContent = ({ medication, entry }) => {
       )}
 
       {/* Actions dialog */}
-      <PrescriptionActionsDialog
-        open={actionDialogOpen}
-        onOpenChange={setActionDialogOpen}
-        prescription={{ ...medication, id: prescriptionId }}
-        action={selectedAction}
-        onSuccess={() => {
-          // Dialog handles toast, just close
-        }}
-      />
+      {actionDialogOpen && (
+        <Suspense fallback={null}>
+          <PrescriptionActionsDialog
+            open={actionDialogOpen}
+            onOpenChange={setActionDialogOpen}
+            prescription={{ ...medication, id: prescriptionId }}
+            action={selectedAction}
+            onSuccess={() => {
+              // Dialog handles toast, just close
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

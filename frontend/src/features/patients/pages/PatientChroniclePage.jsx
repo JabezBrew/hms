@@ -13,7 +13,7 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
@@ -22,40 +22,36 @@ import { useMutation } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
-import { useChronicleContext, useTimelineV2 } from "@/hooks/useChronicleContext";
+import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  PatientIdentityHero,
-  ClinicalSummarySidebar,
-  TimelineEntry,
-  TimelineGroup,
-  AddNoteSlideOver,
-  AddVitalsSlideOver,
-  AddPrescriptionSlideOver,
-  AddFluidBalanceSlideOver,
-  PatientInsuranceSlideOver,
-  BreakGlassDialog,
-  WardRoundSlideOver,
-  ConsultationSlideOver,
-} from "@/components/chronicle";
+import PatientIdentityHero from "@/components/chronicle/PatientIdentityHero";
+import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySidebar";
+import TimelineEntry from "@/components/chronicle/TimelineEntry";
+import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
-import {
-  AddChartSlideOver,
-  ChartEntryForm,
-  ChartAssignmentCard,
-} from "@/components/charts";
-import LabOrderForm from "@/components/laboratory/LabOrderForm";
-import ReferralForm from "@/components/referrals/ReferralForm";
-import CrossFacilitySharePanel from "@/components/consent/CrossFacilitySharePanel";
-import ReceiveRecordPanel from "@/components/interop/ReceiveRecordPanel";
+import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
 import { useChartAssignments } from "@/features/charts/hooks";
 
 import { useDebounce } from "@/hooks/use-debounce";
+
+const AddNoteSlideOver = lazy(() => import("@/components/chronicle/AddNoteSlideOver"));
+const AddVitalsSlideOver = lazy(() => import("@/components/chronicle/AddVitalsSlideOver"));
+const AddPrescriptionSlideOver = lazy(() => import("@/components/chronicle/AddPrescriptionSlideOver"));
+const AddFluidBalanceSlideOver = lazy(() => import("@/components/chronicle/AddFluidBalanceSlideOver"));
+const PatientInsuranceSlideOver = lazy(() => import("@/components/chronicle/PatientInsuranceSlideOver"));
+const WardRoundSlideOver = lazy(() => import("@/components/chronicle/WardRoundSlideOver"));
+const ConsultationSlideOver = lazy(() => import("@/components/chronicle/ConsultationSlideOver"));
+const AddChartSlideOver = lazy(() => import("@/components/charts/AddChartSlideOver"));
+const ChartEntryForm = lazy(() => import("@/components/charts/ChartEntryForm"));
+const LabOrderForm = lazy(() => import("@/components/laboratory/LabOrderForm"));
+const ReferralForm = lazy(() => import("@/components/referrals/ReferralForm"));
+const CrossFacilitySharePanel = lazy(() => import("@/components/consent/CrossFacilitySharePanel"));
+const ReceiveRecordPanel = lazy(() => import("@/components/interop/ReceiveRecordPanel"));
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -1251,140 +1247,192 @@ const PatientChroniclePage = ({ defaultAction }) => {
         </main>
 
         {/* Add Note Slide-Over Panel */}
-        <AddNoteSlideOver
-          open={slideOvers.isOpen('note')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          encounter={activeEncounter}
-          onNoteCreated={handleNoteCreated}
-          initialTemplate={editNoteData?.template || copyForwardData?.template}
-          initialData={editNoteData?.data || copyForwardData?.data}
-          editNoteId={editNoteData?.noteId}
-        />
+        {slideOvers.isOpen('note') && (
+          <Suspense fallback={null}>
+            <AddNoteSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              encounter={activeEncounter}
+              onNoteCreated={handleNoteCreated}
+              initialTemplate={editNoteData?.template || copyForwardData?.template}
+              initialData={editNoteData?.data || copyForwardData?.data}
+              editNoteId={editNoteData?.noteId}
+            />
+          </Suspense>
+        )}
 
         {/* Add Vitals Slide-Over Panel */}
-        <AddVitalsSlideOver
-          open={slideOvers.isOpen('vitals')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          encounter={activeEncounter}
-          onVitalsRecorded={handleVitalsRecorded}
-        />
+        {slideOvers.isOpen('vitals') && (
+          <Suspense fallback={null}>
+            <AddVitalsSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              encounter={activeEncounter}
+              onVitalsRecorded={handleVitalsRecorded}
+            />
+          </Suspense>
+        )}
 
         {/* Add Prescription Slide-Over Panel */}
-        <AddPrescriptionSlideOver
-          open={slideOvers.isOpen('prescription')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          encounter={activeEncounter}
-          onPrescriptionCreated={handlePrescriptionCreated}
-        />
+        {slideOvers.isOpen('prescription') && (
+          <Suspense fallback={null}>
+            <AddPrescriptionSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              encounter={activeEncounter}
+              onPrescriptionCreated={handlePrescriptionCreated}
+            />
+          </Suspense>
+        )}
 
         {/* Lab Order Form Slide-Over */}
-        <LabOrderForm
-          open={slideOvers.isOpen('labs')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          encounter={activeEncounter}
-          onOrderCreated={handleLabOrderCreated}
-        />
+        {slideOvers.isOpen('labs') && (
+          <Suspense fallback={null}>
+            <LabOrderForm
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              encounter={activeEncounter}
+              onOrderCreated={handleLabOrderCreated}
+            />
+          </Suspense>
+        )}
 
         {/* Referral/Consult Form Slide-Over */}
-        <ReferralForm
-          open={slideOvers.isOpen('referral')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          encounter={activeEncounter}
-          onReferralCreated={handleReferralCreated}
-        />
+        {slideOvers.isOpen('referral') && (
+          <Suspense fallback={null}>
+            <ReferralForm
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              encounter={activeEncounter}
+              onReferralCreated={handleReferralCreated}
+            />
+          </Suspense>
+        )}
 
-        <CrossFacilitySharePanel
-          open={slideOvers.isOpen('crossFacility')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          patientIdentityId={patientIdentityId}
-        />
+        {slideOvers.isOpen('crossFacility') && (
+          <Suspense fallback={null}>
+            <CrossFacilitySharePanel
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              patientIdentityId={patientIdentityId}
+            />
+          </Suspense>
+        )}
 
-        <ReceiveRecordPanel
-          open={slideOvers.isOpen('receiveRecord')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-        />
+        {slideOvers.isOpen('receiveRecord') && (
+          <Suspense fallback={null}>
+            <ReceiveRecordPanel
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+            />
+          </Suspense>
+        )}
 
         {/* Fluid Balance Slide-Over */}
-        <AddFluidBalanceSlideOver
-          open={slideOvers.isOpen('fluids')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          admission={
-            // Use actual WardAdmission ID, not encounter ID
-            // The admission prop expects a WardAdmission object with id
-            patient?.local_data?.current_admission_id
-              ? { id: patient.local_data.current_admission_id }
-              : patient?.current_admission_id
-                ? { id: patient.current_admission_id }
-                : null
-          }
-          onFluidRecorded={refreshData}
-        />
+        {slideOvers.isOpen('fluids') && (
+          <Suspense fallback={null}>
+            <AddFluidBalanceSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              admission={
+                // Use actual WardAdmission ID, not encounter ID
+                // The admission prop expects a WardAdmission object with id
+                patient?.local_data?.current_admission_id
+                  ? { id: patient.local_data.current_admission_id }
+                  : patient?.current_admission_id
+                    ? { id: patient.current_admission_id }
+                    : null
+              }
+              onFluidRecorded={refreshData}
+            />
+          </Suspense>
+        )}
 
         {/* Chart Assignment Slide-Over */}
-        <AddChartSlideOver
-          open={slideOvers.isOpen('charts')}
-          onClose={handleChartSlideOverClose}
-          patient={patient}
-          admission={
-            patient?.local_data?.current_admission_id
-              ? { id: patient.local_data.current_admission_id }
-              : patient?.current_admission_id
-                ? { id: patient.current_admission_id }
-                : null
-          }
-          onChartAssigned={handleChartAssigned}
-        />
+        {slideOvers.isOpen('charts') && (
+          <Suspense fallback={null}>
+            <AddChartSlideOver
+              open
+              onClose={handleChartSlideOverClose}
+              patient={patient}
+              admission={
+                patient?.local_data?.current_admission_id
+                  ? { id: patient.local_data.current_admission_id }
+                  : patient?.current_admission_id
+                    ? { id: patient.current_admission_id }
+                    : null
+              }
+              onChartAssigned={handleChartAssigned}
+            />
+          </Suspense>
+        )}
 
         {/* Chart Entry Form Slide-Over */}
-        <ChartEntryForm
-          open={slideOvers.isOpen('chartEntry')}
-          onClose={handleChartSlideOverClose}
-          assignmentId={activeChartAssignment?.id}
-          patient={patient}
-          onEntryRecorded={handleChartEntryRecorded}
-        />
+        {slideOvers.isOpen('chartEntry') && (
+          <Suspense fallback={null}>
+            <ChartEntryForm
+              open
+              onClose={handleChartSlideOverClose}
+              assignmentId={activeChartAssignment?.id}
+              patient={patient}
+              onEntryRecorded={handleChartEntryRecorded}
+            />
+          </Suspense>
+        )}
 
         {/* Patient Insurance Slide-Over */}
-        <PatientInsuranceSlideOver
-          open={slideOvers.isOpen('insurance')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-        />
+        {slideOvers.isOpen('insurance') && (
+          <Suspense fallback={null}>
+            <PatientInsuranceSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+            />
+          </Suspense>
+        )}
 
         {/* Ward Round Slide-Over */}
-        <WardRoundSlideOver
-          open={slideOvers.isOpen('wardRound')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          admission={
-            patient?.local_data?.current_admission_id
-              ? { id: patient.local_data.current_admission_id }
-              : patient?.current_admission_id
-                ? { id: patient.current_admission_id }
-                : null
-          }
-          onComplete={handleWardRoundCompleted}
-        />
+        {slideOvers.isOpen('wardRound') && (
+          <Suspense fallback={null}>
+            <WardRoundSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              admission={
+                patient?.local_data?.current_admission_id
+                  ? { id: patient.local_data.current_admission_id }
+                  : patient?.current_admission_id
+                    ? { id: patient.current_admission_id }
+                    : null
+              }
+              onComplete={handleWardRoundCompleted}
+            />
+          </Suspense>
+        )}
 
         {/* Consultation Slide-Over */}
-        <ConsultationSlideOver
-          open={slideOvers.isOpen('consultation')}
-          onClose={handleSlideOverClose}
-          patient={patient}
-          referralId={referralIdParam}
-          onComplete={() => {
-            refetchTimeline?.();
-            refetchContext?.();
-          }}
-        />
+        {slideOvers.isOpen('consultation') && (
+          <Suspense fallback={null}>
+            <ConsultationSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              referralId={referralIdParam}
+              onComplete={() => {
+                refetchTimeline?.();
+                refetchContext?.();
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

@@ -9,14 +9,14 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 
-import NoteHistoryModal from "./NoteHistoryModal";
+const NoteHistoryModal = lazy(() => import("./NoteHistoryModal"));
 
 /**
  * NoteDetailModal - A generic modal for viewing full note content
@@ -222,13 +222,15 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
       </DialogPrimitive.Portal>
 
       {/* Version History Modal - viewable by anyone who can view the note */}
-      {isEditableNoteType && (
-        <NoteHistoryModal
-          open={historyOpen}
-          onOpenChange={setHistoryOpen}
-          noteId={entry.id}
-          noteTitle={entry.title || config.label}
-        />
+      {isEditableNoteType && historyOpen && (
+        <Suspense fallback={null}>
+          <NoteHistoryModal
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            noteId={entry.id}
+            noteTitle={entry.title || config.label}
+          />
+        </Suspense>
       )}
     </DialogPrimitive.Root>
   );

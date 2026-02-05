@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { fetchUpcomingAppointments } from '@/features/appointments/api';
+import { fetchUpcomingAppointments } from '@/features/appointments/api/upcoming';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
 
 const AppointmentNotifications = () => {

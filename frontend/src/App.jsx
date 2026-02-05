@@ -1,32 +1,19 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { ViewModeProvider } from './contexts/ViewModeContext'
 import { WorkflowProvider } from './contexts/WorkflowContext'
-import { ReadOnlyModeProvider } from './contexts/ReadOnlyModeContext'
 import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { queryClient } from './lib/react-query'
-import { Layout } from './components/layout/layout'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { PageLoader } from './shared/components/page/PageState'
-import { LoginForm } from './components/auth/login-form'
-import { ResetPasswordForm } from './components/auth/reset-password-form'
-import { ResetPasswordConfirmForm } from './components/auth/reset-password-confirm-form'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { OfflineIndicator } from './components/OfflineIndicator'
-import { featureRoutes } from './app/routes/featureRoutes'
-import { renderRoutes } from './app/routes/renderRoutes'
-import { SessionTimeoutWarning } from './components/SessionTimeoutWarning'
-import { CriticalAlertsMonitor } from './components/dashboard'
-import { ReadOnlyBanner } from './components/readonly'
 
-// Lazy load page components for code splitting
-const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'))
-const Toaster = lazy(() => import('./components/ui/sonner').then((module) => ({ default: module.Toaster })))
+const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
+const PublicAuthApp = lazy(() => import('./app/PublicAuthApp'))
 
 // Main app content with routes
 function AppContent() {
@@ -75,52 +62,16 @@ function AppContent() {
 
   if (!isAuthenticated) {
     return (
-      <Routes>
-        <Route path="/login" element={
-          <div className="flex min-h-screen items-center justify-center">
-            <LoginForm />
-          </div>
-        } />
-        <Route path="/reset-password" element={
-          <div className="flex min-h-screen items-center justify-center">
-            <ResetPasswordForm />
-          </div>
-        } />
-        <Route path="/reset-password/confirm" element={
-          <div className="flex min-h-screen items-center justify-center">
-            <ResetPasswordConfirmForm />
-          </div>
-        } />
-        <Route path="*" element={<Navigate to="/login" />} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <PublicAuthApp />
+      </Suspense>
     )
   }
 
   return (
-    <ErrorBoundary>
-      <ReadOnlyModeProvider>
-        <ReadOnlyBanner />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            {/* Unauthorized page */}
-            <Route path="/unauthorized" element={
-              <Layout>
-                <UnauthorizedPage />
-              </Layout>
-            } />
-
-            {renderRoutes(featureRoutes)}
-
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </Suspense>
-        {/* Mount critical alerts monitor only for authenticated users */}
-        <CriticalAlertsMonitor />
-        <Suspense fallback={null}>
-          <Toaster />
-        </Suspense>
-      </ReadOnlyModeProvider>
-    </ErrorBoundary>
+    <Suspense fallback={<PageLoader />}>
+      <AuthenticatedApp />
+    </Suspense>
   )
 }
 
@@ -136,8 +87,6 @@ function App() {
                 <ViewModeProvider>
                   <WorkflowProvider>
                     <AppContent />
-                    <OfflineIndicator />
-                    <SessionTimeoutWarning />
                   </WorkflowProvider>
                 </ViewModeProvider>
               </BreadcrumbProvider>

@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
         : []),
     ],
     build: {
+      modulePreload: false,
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -46,7 +47,7 @@ export default defineConfig(({ mode }) => {
               id.includes("@floating-ui") ||
               id.includes("react-remove-scroll")
             ) return "vendor-radix"
-            return "vendor"
+            return undefined
           }
         },
       },

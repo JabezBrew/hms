@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
-import { fetchUpcomingAppointments } from '@/features/appointments/api';
+import { fetchUpcomingAppointments } from '@/features/appointments/api/upcoming';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useReferralNotifications,
