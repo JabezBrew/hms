@@ -5,7 +5,7 @@ Treat PHI as toxic waste and p99 latency as a safety issue. When in doubt,
 favor correctness, least privilege, and predictable performance.
 
 ## Source of Truth
-- Read `claude.md` before making changes. It consolidates current
+- Read `claude.md` and this `agents.md` before making changes. It consolidates current
   security, systems, and DB reliability findings.
 
 ## Project Structure
