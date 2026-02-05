@@ -62,6 +62,10 @@ docs/
 .codex/
 .opencode/
 
+# Lighthouse CI (local artifacts)
+.lighthouseci/
+frontend/.lighthouseci/
+
 # Logs
 logs/
 *.log
