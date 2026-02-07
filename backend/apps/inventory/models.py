@@ -378,6 +378,14 @@ class InventoryItem(models.Model):
     # Pricing
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
+    billing_service = models.ForeignKey(
+        'billing.Service',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='inventory_items',
+        help_text="Optional link to a billable Service for automatic invoicing/claims."
+    )
 
     # Supplier
     supplier = models.ForeignKey(

@@ -15,6 +15,8 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
     """
     category_display = serializers.CharField(source='get_category_display', read_only=True)
     can_reset = serializers.SerializerMethodField()
+    billing_service_code = serializers.CharField(source='billing_service.code', read_only=True, default=None)
+    billing_service_name = serializers.CharField(source='billing_service.name', read_only=True, default=None)
 
     class Meta:
         model = LabTestCatalog
@@ -23,7 +25,7 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
             'category', 'category_display', 'description',
             'specimen_type', 'container_type', 'volume_required',
             'special_instructions', 'reference_ranges', 'unit',
-            'tat_hours', 'price', 'is_active',
+            'tat_hours', 'price', 'billing_service', 'billing_service_code', 'billing_service_name', 'is_active',
             'is_system_default', 'is_facility_modified', 'system_defaults',
             'can_reset', 'created_at', 'updated_at'
         ]
@@ -35,6 +37,15 @@ class LabTestCatalogSerializer(serializers.ModelSerializer):
     def get_can_reset(self, obj):
         """Check if test can be reset to system defaults."""
         return obj.is_system_default and obj.is_facility_modified
+
+    def validate_billing_service(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if facility and getattr(value, 'facility_id', None) != facility.id:
+            raise serializers.ValidationError("billing_service must belong to the active facility.")
+        return value
 
 
 class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
@@ -48,7 +59,7 @@ class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
             'code', 'loinc_code', 'name', 'short_name', 'category',
             'description', 'specimen_type', 'container_type',
             'volume_required', 'special_instructions',
-            'reference_ranges', 'unit', 'tat_hours', 'price', 'is_active'
+            'reference_ranges', 'unit', 'tat_hours', 'price', 'billing_service', 'is_active'
         ]
 
     def validate_code(self, value):
@@ -73,6 +84,15 @@ class LabTestCatalogCreateSerializer(serializers.ModelSerializer):
         validated_data['is_facility_modified'] = False
         validated_data['system_defaults'] = {}
         return super().create(validated_data)
+
+    def validate_billing_service(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if facility and getattr(value, 'facility_id', None) != facility.id:
+            raise serializers.ValidationError("billing_service must belong to the active facility.")
+        return value
 
 
 class LabTestFacilityCustomizeSerializer(serializers.Serializer):

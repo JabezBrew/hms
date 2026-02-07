@@ -22,6 +22,7 @@ from .models import (
     ControlledSubstanceDiscrepancy,
 )
 from ..users.serializers import UserSerializer
+from ..core.security import get_user_facility
 
 
 # =============================================================================
@@ -210,6 +211,8 @@ class InventoryItemSerializer(serializers.ModelSerializer):
     is_low_stock = serializers.ReadOnlyField()
     total_stock = serializers.ReadOnlyField()
     total_available_stock = serializers.ReadOnlyField()
+    billing_service_code = serializers.CharField(source='billing_service.code', read_only=True, default=None)
+    billing_service_name = serializers.CharField(source='billing_service.name', read_only=True, default=None)
 
     class Meta:
         model = InventoryItem
@@ -219,7 +222,8 @@ class InventoryItemSerializer(serializers.ModelSerializer):
             'is_controlled_substance', 'controlled_schedule',
             'unit_of_measure', 'minimum_stock', 'reorder_level', 'reorder_quantity',
             'current_stock', 'total_stock', 'total_available_stock',
-            'unit_cost', 'selling_price', 'supplier', 'supplier_name',
+            'unit_cost', 'selling_price', 'billing_service', 'billing_service_code', 'billing_service_name',
+            'supplier', 'supplier_name',
             'lead_time_days', 'is_active', 'fhir_medication_id',
             'stock_value', 'is_low_stock',
             'created_at', 'updated_at', 'created_by', 'updated_by'
@@ -228,6 +232,15 @@ class InventoryItemSerializer(serializers.ModelSerializer):
             'id', 'current_stock', 'total_stock', 'total_available_stock',
             'created_at', 'updated_at', 'created_by', 'updated_by'
         ]
+
+    def validate_billing_service(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        facility = get_user_facility(request) if request else None
+        if facility and getattr(value, 'facility_id', None) != facility.id:
+            raise serializers.ValidationError("billing_service must belong to the active facility.")
+        return value
 
 
 # =============================================================================

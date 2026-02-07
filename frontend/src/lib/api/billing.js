@@ -1,5 +1,16 @@
 import { apiClient, handleApiError } from '../api-client';
 
+function generateIdempotencyKey() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 /**
  * Billing API service
  *
@@ -139,7 +150,9 @@ export const billingApi = {
    */
   createInvoice: async (data) => {
     try {
-      return await apiClient.post('/billing/invoices/', data);
+      return await apiClient.post('/billing/invoices/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create invoice'));
     }
@@ -171,7 +184,9 @@ export const billingApi = {
    */
   recordPayment: async (invoiceId, data) => {
     try {
-      return await apiClient.post(`/billing/invoices/${invoiceId}/mark_as_paid/`, data);
+      return await apiClient.post(`/billing/invoices/${invoiceId}/mark_as_paid/`, data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to record payment'));
     }
@@ -187,6 +202,136 @@ export const billingApi = {
       return await apiClient.post(`/billing/invoices/${invoiceId}/generate_claim/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to generate claim'));
+    }
+  },
+
+  // =========================================================================
+  // PSP Payment Intents
+  // =========================================================================
+
+  getPaymentIntents: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/payment-intents/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch payment intents'));
+    }
+  },
+
+  createPaymentIntent: async (data) => {
+    try {
+      return await apiClient.post('/billing/payment-intents/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create payment intent'));
+    }
+  },
+
+  // =========================================================================
+  // PSP Settlements (Optional Reconciliation)
+  // =========================================================================
+
+  getSettlementBatches: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/settlements/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch settlement batches'));
+    }
+  },
+
+  importSettlement: async ({ provider = 'hubtel', statement_date = null, file }) => {
+    try {
+      const form = new FormData();
+      if (provider) form.append('provider', provider);
+      if (statement_date) form.append('statement_date', statement_date);
+      form.append('file', file);
+      return await apiClient.postForm('/billing/settlements/import/', form, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to import settlement'));
+    }
+  },
+
+  getSettlementLines: async (batchId, params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/settlements/${batchId}/lines/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch settlement lines'));
+    }
+  },
+
+  // =========================================================================
+  // Cash Controls
+  // =========================================================================
+
+  getCashSessions: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/cash-sessions/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch cash sessions'));
+    }
+  },
+
+  getCurrentCashSession: async () => {
+    try {
+      return await apiClient.get('/billing/cash-sessions/current/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch current cash session'));
+    }
+  },
+
+  getCashSessionTotals: async (sessionId) => {
+    try {
+      return await apiClient.get(`/billing/cash-sessions/${sessionId}/totals/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch cash session totals'));
+    }
+  },
+
+  openCashSession: async (data) => {
+    try {
+      return await apiClient.post('/billing/cash-sessions/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to open cash session'));
+    }
+  },
+
+  closeCashSession: async (sessionId, data) => {
+    try {
+      return await apiClient.post(`/billing/cash-sessions/${sessionId}/close/`, data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to close cash session'));
+    }
+  },
+
+  reviewCashSession: async (sessionId, data) => {
+    try {
+      return await apiClient.post(`/billing/cash-sessions/${sessionId}/review/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to review cash session'));
+    }
+  },
+
+  createCashMovement: async (data) => {
+    try {
+      return await apiClient.post('/billing/cash-movements/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create cash movement'));
     }
   },
 
@@ -237,6 +382,127 @@ export const billingApi = {
       return await apiClient.post(`/billing/claims/${id}/update_status/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update claim status'));
+    }
+  },
+
+  // =========================================================================
+  // NHIS (Claim-it) + AR
+  // =========================================================================
+
+  getNhisClaimBatches: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/batches/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch NHIS claim batches'));
+    }
+  },
+
+  createNhisClaimBatch: async (data) => {
+    try {
+      return await apiClient.post('/billing/nhis/batches/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create NHIS claim batch'));
+    }
+  },
+
+  lintNhisClaimBatch: async (batchId) => {
+    try {
+      return await apiClient.post(`/billing/nhis/batches/${batchId}/lint/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to lint NHIS claim batch'));
+    }
+  },
+
+  exportNhisClaimBatch: async (batchId, data = {}) => {
+    try {
+      return await apiClient.post(`/billing/nhis/batches/${batchId}/export/`, data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to export NHIS claim batch'));
+    }
+  },
+
+  getNhisExportJobs: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/exports/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch NHIS export jobs'));
+    }
+  },
+
+  downloadNhisExportJob: async (jobId) => {
+    try {
+      return await apiClient.getBlob(`/billing/nhis/exports/${jobId}/download/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to download NHIS export payload'));
+    }
+  },
+
+  getRemittanceImportJobs: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/remittances/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch remittance imports'));
+    }
+  },
+
+  importRemittance: async ({ payerId, file }) => {
+    try {
+      const form = new FormData();
+      form.append('payer', payerId);
+      form.append('file', file);
+      return await apiClient.postForm('/billing/nhis/remittances/import/', form, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to import remittance'));
+    }
+  },
+
+  getRemittanceLines: async (jobId, params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/remittances/${jobId}/lines/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch remittance lines'));
+    }
+  },
+
+  getInsuranceAging: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/ar/insurance_aging/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch insurance aging'));
+    }
+  },
+
+  getInsuranceDSO: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/ar/insurance_dso/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch insurance DSO'));
+    }
+  },
+
+  getRemittanceQueue: async () => {
+    try {
+      return await apiClient.get('/billing/nhis/ar/remittance_queue/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch remittance queue'));
     }
   },
 
@@ -303,6 +569,34 @@ export const billingApi = {
   // Services
   // =========================================================================
 
+  getServiceCategories: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/service-categories/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch service categories'));
+    }
+  },
+
+  createServiceCategory: async (data) => {
+    try {
+      return await apiClient.post('/billing/service-categories/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create service category'));
+    }
+  },
+
+  updateServiceCategory: async (id, data) => {
+    try {
+      return await apiClient.patch(`/billing/service-categories/${id}/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to update service category'));
+    }
+  },
+
   /**
    * Get services with optional filtering
    * @param {Object} params - Query parameters
@@ -318,6 +612,24 @@ export const billingApi = {
     }
   },
 
+  createService: async (data) => {
+    try {
+      return await apiClient.post('/billing/services/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create service'));
+    }
+  },
+
+  updateService: async (id, data) => {
+    try {
+      return await apiClient.patch(`/billing/services/${id}/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to update service'));
+    }
+  },
+
   /**
    * Get services grouped by category
    * @returns {Promise<Array>} Services grouped by category
@@ -327,6 +639,84 @@ export const billingApi = {
       return await apiClient.get('/billing/services/by_category/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch services by category'));
+    }
+  },
+
+  // =========================================================================
+  // Payer Service Code Mappings (NHIS/Other)
+  // =========================================================================
+
+  getPayerServiceCodes: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/payer-service-codes/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch payer service codes'));
+    }
+  },
+
+  createPayerServiceCode: async (data) => {
+    try {
+      return await apiClient.post('/billing/payer-service-codes/', data, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create payer service code'));
+    }
+  },
+
+  updatePayerServiceCode: async (id, data) => {
+    try {
+      return await apiClient.patch(`/billing/payer-service-codes/${id}/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to update payer service code'));
+    }
+  },
+
+  // =========================================================================
+  // NHIS Mapping Bulk Import (Preview + Apply)
+  // =========================================================================
+
+  getNhisMappingImportJobs: async (params = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/billing/nhis/mapping-imports/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch mapping import jobs'));
+    }
+  },
+
+  getNhisMappingImportJob: async (id) => {
+    try {
+      return await apiClient.get(`/billing/nhis/mapping-imports/${id}/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch mapping import job'));
+    }
+  },
+
+  createNhisMappingImportJob: async ({ payer, seed_services = false, file }) => {
+    try {
+      const form = new FormData();
+      form.append('payer', payer);
+      form.append('seed_services', seed_services ? '1' : '0');
+      form.append('file', file);
+      return await apiClient.postForm('/billing/nhis/mapping-imports/import/', form, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create mapping import job'));
+    }
+  },
+
+  applyNhisMappingImportJob: async (id, { force = false } = {}) => {
+    try {
+      return await apiClient.post(`/billing/nhis/mapping-imports/${id}/apply/`, { force }, {
+        headers: { 'Idempotency-Key': generateIdempotencyKey() },
+      });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to apply mapping import job'));
     }
   },
 
@@ -430,7 +820,10 @@ export const billingApi = {
    */
   getFacilityBillingSettings: async (facilityId) => {
     try {
-      return await apiClient.get(`/billing/billing-settings/?facility=${facilityId}`);
+      const endpoint = facilityId
+        ? `/billing/billing-settings/?facility=${facilityId}`
+        : '/billing/billing-settings/';
+      return await apiClient.get(endpoint);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch billing settings'));
     }

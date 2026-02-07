@@ -27,7 +27,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from apps.billing.models import (
-    Invoice, InvoiceItem, Service, PatientInsurance, FacilityBillingSettings
+    Invoice, InvoiceItem, Service, PatientInsurance, FacilityBillingSettings, FacilityInvoiceSequence
 )
 from apps.billing.services.pricing import PricingService
 from apps.billing.services.rules_engine import (
@@ -541,13 +541,22 @@ class InvoiceGenerationService:
         prefix = billing_settings.invoice_prefix if billing_settings else 'INV'
         number_length = billing_settings.invoice_number_length if billing_settings else 8
 
-        # Count existing invoices for this facility
-        from django.db.models import Count
-        count = Invoice.objects.filter(
-            invoice_number__startswith=prefix
-        ).count() + 1
+        # If settings exist, use its generator (backed by FacilityInvoiceSequence).
+        if billing_settings:
+            return billing_settings.generate_invoice_number()
 
-        return f"{prefix}-{str(count).zfill(number_length)}"
+        # Otherwise, use the facility sequence directly.
+        from django.db import transaction
+        with transaction.atomic():
+            seq, _ = FacilityInvoiceSequence.objects.select_for_update().get_or_create(
+                facility=facility,
+                defaults={'next_number': 1}
+            )
+            next_number = int(seq.next_number)
+            seq.next_number = next_number + 1
+            seq.save(update_fields=['next_number', 'updated_at'])
+
+        return f"{prefix}-{str(next_number).zfill(number_length)}"
 
     def _collect_encounter_services(
         self,

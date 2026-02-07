@@ -46,7 +46,7 @@ export default function InvoiceCreatePage() {
     notes: '',
   });
   const [items, setItems] = useState([
-    { service: '', description: '', quantity: 1, unit_price: '' },
+    { service: '', description: '', quantity: 1 },
   ]);
   const [errors, setErrors] = useState({});
 
@@ -114,12 +114,11 @@ export default function InvoiceCreatePage() {
       const newItems = [...prev];
       newItems[index] = { ...newItems[index], [field]: value };
 
-      // Auto-fill price and description when service is selected
+      // Auto-fill description when service is selected
       if (field === 'service' && value) {
         const selectedService = services.find((s) => s.id === value);
         if (selectedService) {
           newItems[index].description = selectedService.name;
-          newItems[index].unit_price = selectedService.base_price || selectedService.price || '';
         }
       }
 
@@ -128,7 +127,7 @@ export default function InvoiceCreatePage() {
   };
 
   const addItem = () => {
-    setItems((prev) => [...prev, { service: '', description: '', quantity: 1, unit_price: '' }]);
+    setItems((prev) => [...prev, { service: '', description: '', quantity: 1 }]);
   };
 
   const removeItem = (index) => {
@@ -140,7 +139,7 @@ export default function InvoiceCreatePage() {
   const calculateTotal = () => {
     return items.reduce((sum, item) => {
       const qty = parseFloat(item.quantity) || 0;
-      const price = parseFloat(item.unit_price) || 0;
+      const price = parseFloat(getEstimatedUnitPrice(item.service, services)) || 0;
       return sum + qty * price;
     }, 0);
   };
@@ -152,9 +151,11 @@ export default function InvoiceCreatePage() {
       newErrors.patient = 'Please select a patient';
     }
 
-    const validItems = items.filter((item) => item.description && item.unit_price);
+    const validItems = items.filter((item) => item.service);
     if (validItems.length === 0) {
-      newErrors.items = 'Please add at least one item with description and price';
+      newErrors.items = 'Please add at least one service item';
+    } else if (validItems.some((item) => !(parseInt(item.quantity, 10) > 0))) {
+      newErrors.items = 'All items must have a quantity greater than zero';
     }
 
     setErrors(newErrors);
@@ -172,12 +173,11 @@ export default function InvoiceCreatePage() {
         due_date: formData.due_date || null,
         notes: formData.notes || null,
         items: items
-          .filter((item) => item.description && item.unit_price)
+          .filter((item) => item.service)
           .map((item) => ({
-            service: item.service || null,
-            description: item.description,
+            service: item.service,
+            description: item.description || null,
             quantity: parseInt(item.quantity) || 1,
-            unit_price: parseFloat(item.unit_price),
           })),
       };
 
@@ -336,7 +336,7 @@ export default function InvoiceCreatePage() {
                     {/* Service Selection */}
                     <div className="space-y-2">
                       <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                        Service (optional)
+                        Service <span className="text-destructive">*</span>
                       </Label>
                       <Select
                         value={item.service}
@@ -348,12 +348,12 @@ export default function InvoiceCreatePage() {
                         <SelectContent>
                           {services.map((service) => (
                             <SelectItem key={service.id} value={service.id} className="font-mono text-sm">
-                              <span className="flex items-center justify-between gap-4">
-                                <span>{service.name}</span>
-                                <span className="text-muted-foreground">
-                                  {formatCurrency(service.base_price || service.price)}
+                                <span className="flex items-center justify-between gap-4">
+                                  <span>{service.name}</span>
+                                  <span className="text-muted-foreground">
+                                  {formatCurrency(service.base_price || service.total_price || service.price)}
+                                  </span>
                                 </span>
-                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -363,7 +363,7 @@ export default function InvoiceCreatePage() {
                     {/* Description */}
                     <div className="space-y-2">
                       <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                        Description <span className="text-destructive">*</span>
+                        Description
                       </Label>
                       <Input
                         placeholder="Service or item description"
@@ -372,7 +372,7 @@ export default function InvoiceCreatePage() {
                       />
                     </div>
 
-                    {/* Quantity and Price */}
+                    {/* Quantity and Price (Estimated) */}
                     <div className="grid grid-cols-3 gap-3">
                       <div className="space-y-2">
                         <Label className="font-mono text-[10px] text-muted-foreground uppercase">
@@ -388,17 +388,13 @@ export default function InvoiceCreatePage() {
                       </div>
                       <div className="space-y-2">
                         <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                          Unit Price <span className="text-destructive">*</span>
+                          Unit Price (Est.)
                         </Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={item.unit_price}
-                          onChange={(e) => handleItemChange(index, 'unit_price', e.target.value)}
-                          className="font-mono"
-                        />
+                        <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
+                          <span className="font-mono text-sm text-foreground">
+                            {formatCurrency(getEstimatedUnitPrice(item.service, services))}
+                          </span>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label className="font-mono text-[10px] text-muted-foreground uppercase">
@@ -407,7 +403,7 @@ export default function InvoiceCreatePage() {
                         <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
                           <span className="font-mono text-sm text-foreground">
                             {formatCurrency(
-                              (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)
+                              (parseFloat(item.quantity) || 0) * (parseFloat(getEstimatedUnitPrice(item.service, services)) || 0)
                             )}
                           </span>
                         </div>
@@ -482,4 +478,11 @@ function formatCurrency(amount) {
     currency: 'GHS',
     minimumFractionDigits: 2,
   }).format(amount || 0);
+}
+
+function getEstimatedUnitPrice(serviceId, services = []) {
+  if (!serviceId) return 0;
+  const service = services.find((s) => s.id === serviceId);
+  if (!service) return 0;
+  return service.base_price || service.total_price || service.price || 0;
 }

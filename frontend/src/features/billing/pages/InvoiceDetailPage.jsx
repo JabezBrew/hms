@@ -486,6 +486,7 @@ export default function InvoiceDetailPage() {
         open={showPaymentSlideOver}
         onClose={() => setShowPaymentSlideOver(false)}
         invoice={invoice}
+        onRefreshInvoice={refetch}
       />
     </PageShell>
   );
@@ -512,7 +513,8 @@ function formatDate(dateString) {
 function formatPaymentMethod(method) {
   const methods = {
     cash: 'Cash',
-    card: 'Credit/Debit Card',
+    credit_card: 'Credit Card',
+    debit_card: 'Debit Card',
     mobile_money: 'Mobile Money',
     bank_transfer: 'Bank Transfer',
     insurance: 'Insurance',

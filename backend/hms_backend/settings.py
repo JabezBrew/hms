@@ -355,6 +355,27 @@ ALLOW_CROSS_FACILITY_ACCESS = env.bool('ALLOW_CROSS_FACILITY_ACCESS', default=Fa
 RECORD_EXPORT_FERNET_KEY = env('RECORD_EXPORT_FERNET_KEY', default='')
 RECORD_EXPORT_TTL_HOURS = env.int('RECORD_EXPORT_TTL_HOURS', default=24)
 
+# Public base URL (used for PSP callbacks). Prefer setting this explicitly in production.
+PUBLIC_BASE_URL = env('PUBLIC_BASE_URL', default='')
+
+# Billing feature flags
+# Never block request threads on external I/O (FHIR). Default OFF.
+BILLING_ENABLE_FHIR_CLAIMS = env.bool('BILLING_ENABLE_FHIR_CLAIMS', default=False)
+
+# Legacy workflow compatibility: claim approval does NOT mean cash received.
+# Keep this OFF by default; insurance payments should be posted from remittances.
+BILLING_POST_INSURANCE_PAYMENTS_ON_CLAIM_APPROVAL = env.bool(
+    'BILLING_POST_INSURANCE_PAYMENTS_ON_CLAIM_APPROVAL',
+    default=False,
+)
+
+# PSP (Hubtel) configuration
+HUBTEL_API_BASE_URL = env('HUBTEL_API_BASE_URL', default='')
+HUBTEL_CLIENT_ID = env('HUBTEL_CLIENT_ID', default='')
+HUBTEL_CLIENT_SECRET = env('HUBTEL_CLIENT_SECRET', default='')
+HUBTEL_WEBHOOK_SECRET = env('HUBTEL_WEBHOOK_SECRET', default='')
+HUBTEL_HTTP_TIMEOUT_SECONDS = env.int('HUBTEL_HTTP_TIMEOUT_SECONDS', default=8)
+
 # Cache configuration
 if DEBUG or IS_BUILD:
     _dev_redis_url = env('REDIS_URL', default=None)

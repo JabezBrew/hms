@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.db.models import Q
 from django.utils import timezone
 from decimal import Decimal
 
@@ -682,6 +683,37 @@ class FacilityBillingSettings(models.Model):
         default=True,
         help_text="Automatically generate invoice on patient discharge"
     )
+
+    # Draft invoice auto-sync (fully automatic billing)
+    default_consultation_service = models.ForeignKey(
+        'billing.Service',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='as_default_consultation_for',
+        help_text="Default consultation Service to bill for outpatient encounters when no appointment-specific mapping exists."
+    )
+    ward_stay_service = models.ForeignKey(
+        'billing.Service',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='as_ward_stay_for',
+        help_text="Service used for inpatient ward/bed stay (quantity = LOS in days). Unit price can be overridden per ward/bed."
+    )
+
+    LAB_CHARGE_TRIGGER_CHOICES = [
+        ('ordered', 'Ordered'),
+        ('collected', 'Collected'),
+        ('completed', 'Completed'),
+    ]
+    lab_charge_trigger = models.CharField(
+        max_length=20,
+        choices=LAB_CHARGE_TRIGGER_CHOICES,
+        default='collected',
+        help_text="When to add lab test charges to draft invoices (NHIS can override to completed)."
+    )
+
     require_deposit_for_admission = models.BooleanField(
         default=False,
         help_text="Require deposit before admission"
@@ -747,6 +779,18 @@ class FacilityBillingSettings(models.Model):
             ('nearest_10', 'Nearest 10'),
         ],
         default='round_half_up'
+    )
+
+    # Cash controls (CFO-grade reconciliation)
+    cash_control_enabled = models.BooleanField(
+        default=False,
+        help_text="Require cash sessions for payment recording and enable close-of-day reconciliation"
+    )
+    cash_variance_threshold_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Flag a cash session when abs(variance) exceeds this amount"
     )
 
     # Audit fields
@@ -871,31 +915,56 @@ class FacilityBillingSettings(models.Model):
 
         Thread-safe using database sequence.
         """
-        from django.db import connection
+        from django.db import transaction
 
-        # Use database-level counter for thread safety
-        with connection.cursor() as cursor:
-            # This is PostgreSQL-specific. For other DBs, use different approach.
-            cursor.execute("""
-                UPDATE billing_facilitybillingsettings
-                SET updated_at = NOW()
-                WHERE id = %s
-                RETURNING (
-                    SELECT COUNT(*) + 1 FROM billing_invoice
-                    WHERE invoice_number LIKE %s
-                )
-            """, [str(self.id), f"{self.invoice_prefix}%"])
-            result = cursor.fetchone()
-            next_number = result[0] if result else 1
+        prefix = self.invoice_prefix or 'INV'
+        number_length = self.invoice_number_length or 8
 
-        # Format: PREFIX-00000001
-        return f"{self.invoice_prefix}-{str(next_number).zfill(self.invoice_number_length)}"
+        with transaction.atomic():
+            seq, _ = FacilityInvoiceSequence.objects.select_for_update().get_or_create(
+                facility=self.facility,
+                defaults={'next_number': 1}
+            )
+            next_number = int(seq.next_number)
+            seq.next_number = next_number + 1
+            seq.save(update_fields=['next_number', 'updated_at'])
+
+        return f"{prefix}-{str(next_number).zfill(number_length)}"
+
+
+class FacilityInvoiceSequence(models.Model):
+    """
+    Per-facility invoice number sequence.
+
+    SECURITY/PERF:
+    - Avoids table scans (no COUNT/MAX on billing_invoice)
+    - Uses row-level locking via select_for_update() when incrementing
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.OneToOneField(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='invoice_sequence',
+    )
+    next_number = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Facility Invoice Sequence"
+        verbose_name_plural = "Facility Invoice Sequences"
 
 
 class InsuranceProvider(models.Model):
     """
     Model for insurance providers.
     """
+    PAYER_TYPE_CHOICES = (
+        ('nhis', 'NHIS'),
+        ('private', 'Private'),
+        ('other', 'Other'),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
         'core.Facility',
@@ -905,6 +974,12 @@ class InsuranceProvider(models.Model):
     )
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20)
+    payer_type = models.CharField(
+        max_length=20,
+        choices=PAYER_TYPE_CHOICES,
+        default='private',
+        help_text="Payer classification (NHIS vs private).",
+    )
     contact_person = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
@@ -926,6 +1001,7 @@ class InsuranceProvider(models.Model):
         ]
         indexes = [
             models.Index(fields=['facility', 'name']),
+            models.Index(fields=['facility', 'payer_type']),
         ]
     
     def __str__(self):
@@ -972,6 +1048,65 @@ class InsurancePlan(models.Model):
     
     def __str__(self):
         return f"{self.provider.name} - {self.name}"
+
+
+class PayerServiceCode(models.Model):
+    """
+    Map internal billable Services to payer-specific external codes (NHIS/other).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='payer_service_codes',
+    )
+    payer = models.ForeignKey(
+        InsuranceProvider,
+        on_delete=models.PROTECT,
+        related_name='service_codes',
+        help_text="Payer/provider this code applies to (e.g. NHIS).",
+    )
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='payer_codes',
+    )
+    external_code = models.CharField(max_length=50)
+    effective_from = models.DateField()
+    effective_until = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_payer_service_codes',
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_payer_service_codes',
+    )
+
+    class Meta:
+        ordering = ['payer__name', 'service__name', '-effective_from']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'payer', 'service', 'external_code', 'effective_from'],
+                name='payer_service_code_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'payer', 'is_active']),
+            models.Index(fields=['service', 'payer']),
+            models.Index(fields=['effective_from', 'effective_until']),
+        ]
+
+    def __str__(self):
+        return f"{self.payer.code}:{self.service.code}:{self.external_code}"
 
 
 class PatientInsurance(models.Model):
@@ -1104,6 +1239,14 @@ class Invoice(models.Model):
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
 
+    # Auto-billing draft sync:
+    # When enabled, the system may upsert/remove auto-generated invoice items based on clinical events.
+    # Payments should not be posted against an auto-updating invoice (finalize first).
+    auto_update_enabled = models.BooleanField(
+        default=False,
+        help_text="If true, this invoice is a draft that may be auto-updated from clinical events."
+    )
+
     # Billing rules applied
     applied_rules = models.JSONField(
         default=list,
@@ -1142,7 +1285,8 @@ class Invoice(models.Model):
         ]
     
     def __str__(self):
-        return f"Invoice #{self.invoice_number} - {self.patient.user.get_full_name()}"
+        # Avoid embedding patient identifiers in string representations
+        return f"Invoice #{self.invoice_number}"
     
     def save(self, *args, **kwargs):
         """
@@ -1158,11 +1302,16 @@ class Invoice(models.Model):
         """
         Calculate invoice totals.
         """
-        # Calculate subtotal from line items
-        self.subtotal = sum(item.total_price for item in self.items.all()) if self.pk else Decimal('0.00')
-
-        # Calculate tax amount
-        self.tax_amount = sum(item.tax_amount for item in self.items.all()) if self.pk else Decimal('0.00')
+        # Calculate subtotal from line items (pre-tax, pre-invoice-discount)
+        if self.pk:
+            self.subtotal = sum(
+                (Decimal(str(item.quantity)) * Decimal(str(item.unit_price)))
+                for item in self.items.all()
+            )
+            self.tax_amount = sum(Decimal(str(item.tax_amount)) for item in self.items.all())
+        else:
+            self.subtotal = Decimal('0.00')
+            self.tax_amount = Decimal('0.00')
 
         # Ensure discount_amount is Decimal (model default may be float)
         discount = Decimal(str(self.discount_amount)) if self.discount_amount else Decimal('0.00')
@@ -1182,23 +1331,89 @@ class Invoice(models.Model):
     @property
     def amount_paid(self):
         """
-        Calculate the total amount paid.
+        Back-compat: Amount paid by the patient (posted, non-voided).
         """
-        return sum(payment.amount for payment in self.payments.all())
+        return self.patient_paid
+
+    def _iter_payments_cached(self):
+        """
+        Iterate payments using prefetch cache when available to avoid N+1 queries.
+        """
+        try:
+            prefetched = getattr(self, '_prefetched_objects_cache', {})
+            cached = prefetched.get('payments')
+        except Exception:
+            cached = None
+
+        if cached is not None:
+            for p in cached:
+                yield p
+            return
+
+        for p in self.payments.all():
+            yield p
+
+    @property
+    def patient_paid(self):
+        total = Decimal('0.00')
+        for payment in self._iter_payments_cached():
+            if getattr(payment, 'status', 'posted') != 'posted':
+                continue
+            if getattr(payment, 'payer', 'patient') != 'patient':
+                continue
+            total += Decimal(str(payment.amount))
+        return total
+
+    @property
+    def insurance_paid(self):
+        total = Decimal('0.00')
+        for payment in self._iter_payments_cached():
+            if getattr(payment, 'status', 'posted') != 'posted':
+                continue
+            if getattr(payment, 'payer', 'patient') != 'insurance':
+                continue
+            total += Decimal(str(payment.amount))
+        return total
+
+    @property
+    def total_paid(self):
+        total = Decimal('0.00')
+        for payment in self._iter_payments_cached():
+            if getattr(payment, 'status', 'posted') != 'posted':
+                continue
+            total += Decimal(str(payment.amount))
+        return total
     
     @property
     def balance_due(self):
         """
-        Calculate the remaining balance due.
+        Back-compat: Remaining patient balance due (patient responsibility minus patient paid).
         """
-        return self.patient_responsibility - self.amount_paid
+        return self.patient_balance_due
+
+    @property
+    def patient_balance_due(self):
+        return Decimal(str(self.patient_responsibility)) - self.patient_paid
+
+    @property
+    def insurance_balance_due(self):
+        return Decimal(str(self.insurance_amount)) - self.insurance_paid
+
+    @property
+    def total_balance_due(self):
+        return Decimal(str(self.total_amount)) - self.total_paid
     
     @property
     def is_fully_paid(self):
         """
-        Check if the invoice is fully paid.
+        Fully settled only when both patient and insurance balances are paid (i.e. total balance due <= 0).
         """
-        return self.balance_due <= 0
+        return self.total_balance_due <= 0
+
+    @property
+    def is_patient_paid(self):
+        """Patient portion settled (useful for cashier UX)."""
+        return self.patient_balance_due <= 0
 
 
 class InvoiceItem(models.Model):
@@ -1223,6 +1438,22 @@ class InvoiceItem(models.Model):
     
     # Description
     description = models.TextField(blank=True, null=True)
+
+    # Auto-generated line tracking (for draft invoice sync/upsert)
+    is_auto_generated = models.BooleanField(
+        default=False,
+        help_text="True if this line was generated by the auto-billing engine."
+    )
+    source_type = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="Auto-billing source type (e.g. consult, lab_test, ward_stay, supply_dispense)."
+    )
+    source_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="Auto-billing source UUID (e.g. Encounter.id, LabOrderTest.id, SupplyRequest.id)."
+    )
     
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1232,6 +1463,16 @@ class InvoiceItem(models.Model):
     
     class Meta:
         ordering = ['service__name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['invoice', 'source_type', 'source_id'],
+                condition=Q(is_auto_generated=True, source_type__gt='', source_id__isnull=False),
+                name='invoice_item_auto_source_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['invoice', 'is_auto_generated'], name='inv_item_auto_idx'),
+        ]
     
     def __str__(self):
         return f"{self.service.name} x {self.quantity}"
@@ -1240,10 +1481,12 @@ class InvoiceItem(models.Model):
         """
         Override save method to set default values from service.
         """
-        # Set default values from service if this is a new item
+        # Do not overwrite authoritative pricing if unit_price/tax_rate were provided.
         if not self.pk and self.service:
-            self.unit_price = self.service.base_price
-            self.tax_rate = self.service.tax_rate
+            if self.unit_price is None:
+                self.unit_price = self.service.base_price
+            if self.tax_rate is None:
+                self.tax_rate = self.service.tax_rate
         
         super().save(*args, **kwargs)
         
@@ -1295,6 +1538,27 @@ class Payment(models.Model):
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))]
     )
+
+    PAYER_CHOICES = (
+        ('patient', 'Patient'),
+        ('insurance', 'Insurance'),
+    )
+    payer = models.CharField(
+        max_length=20,
+        choices=PAYER_CHOICES,
+        default='patient',
+        help_text="Who is paying this amount (patient vs insurance remittance)"
+    )
+
+    STATUS_CHOICES = (
+        ('posted', 'Posted'),
+        ('voided', 'Voided'),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='posted'
+    )
     
     # Payment method
     PAYMENT_METHOD_CHOICES = (
@@ -1304,6 +1568,7 @@ class Payment(models.Model):
         ('bank_transfer', 'Bank Transfer'),
         ('mobile_money', 'Mobile Money'),
         ('insurance', 'Insurance'),
+        ('cheque', 'Cheque'),
         ('other', 'Other'),
     )
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES)
@@ -1311,6 +1576,27 @@ class Payment(models.Model):
     # Reference information
     reference_number = models.CharField(max_length=50, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
+
+    # Cash controls (optional)
+    cash_session = models.ForeignKey(
+        'billing.CashSession',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='payments',
+        help_text="Cash session during which this payment was recorded"
+    )
+
+    # Void metadata (non-destructive correction)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='voided_payments'
+    )
+    void_reason = models.TextField(blank=True, null=True)
     
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1329,25 +1615,548 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment of {self.amount} for Invoice #{self.invoice.invoice_number}"
-    
-    def save(self, *args, **kwargs):
-        """
-        Override save method to update invoice status.
-        """
-        super().save(*args, **kwargs)
-        
-        # Update invoice status based on payments
-        invoice = self.invoice
-        total_paid = sum(payment.amount for payment in invoice.payments.all())
-        
-        if total_paid >= invoice.patient_responsibility:
-            invoice.status = 'paid'
-        elif total_paid > 0:
-            invoice.status = 'partially_paid'
-        else:
-            invoice.status = 'pending'
-        
-        invoice.save()
+
+    @property
+    def is_voided(self):
+        return self.status == 'voided'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.payer == 'insurance' and self.payment_method != 'insurance':
+            raise ValidationError({'payment_method': 'Insurance payer must use insurance payment_method.'})
+        if self.payer == 'patient' and self.payment_method == 'insurance':
+            raise ValidationError({'payment_method': 'Patient payments cannot use insurance payment_method.'})
+
+        if self.status == 'voided':
+            if not self.void_reason:
+                raise ValidationError({'void_reason': 'Void reason is required.'})
+            if not self.voided_at:
+                raise ValidationError({'voided_at': 'voided_at is required when voiding.'})
+            if not self.voided_by_id:
+                raise ValidationError({'voided_by': 'voided_by is required when voiding.'})
+
+
+class PaymentIntent(models.Model):
+    """
+    Provider-agnostic payment intent for PSP collections.
+
+    Notes:
+    - Never include PHI in descriptions or external references.
+    - Designed for idempotent posting via webhooks (exactly-once semantics
+      enforced via intent row lock + payment FK).
+    """
+    PROVIDER_CHOICES = (
+        ('hubtel', 'Hubtel'),
+    )
+    STATUS_CHOICES = (
+        ('created', 'Created'),
+        ('pending', 'Pending'),
+        ('succeeded', 'Succeeded'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+        ('expired', 'Expired'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='payment_intents',
+    )
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name='payment_intents',
+    )
+
+    payer = models.CharField(
+        max_length=20,
+        choices=Payment.PAYER_CHOICES,
+        default='patient',
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    currency = models.CharField(max_length=3, default='GHS')
+    payment_method = models.CharField(
+        max_length=20,
+        choices=Payment.PAYMENT_METHOD_CHOICES,
+        help_text="Intended payment method for this intent (e.g. mobile_money, credit_card)",
+    )
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='created')
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+
+    # Provider correlation identifiers
+    client_reference = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Client-side unique reference used to correlate webhooks (no PHI).",
+    )
+    provider_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Provider reference (e.g. paylinkId).",
+    )
+    checkout_url = models.URLField(max_length=500, blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+
+    # Cashier attribution (optional)
+    initiated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='initiated_payment_intents',
+    )
+    cash_session = models.ForeignKey(
+        'billing.CashSession',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='payment_intents',
+    )
+
+    # Fulfillment
+    payment = models.OneToOneField(
+        Payment,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='payment_intent',
+    )
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    fee_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'provider_reference'],
+                condition=Q(provider_reference__isnull=False),
+                name='psp_intent_provider_reference_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at'], name='psp_intent_fac_stat_idx'),
+            models.Index(fields=['invoice', 'status', '-created_at'], name='psp_intent_inv_stat_idx'),
+            models.Index(fields=['provider', 'provider_reference'], name='psp_intent_provider_ref_idx'),
+        ]
+
+    def __str__(self):
+        return f"PaymentIntent {self.id} ({self.provider})"
+
+
+class PSPWebhookEvent(models.Model):
+    """
+    Encrypted-at-rest webhook payload capture for PSP callbacks.
+
+    SECURITY:
+    - Payload is encrypted (may contain personal identifiers such as phone number).
+    - Do not store or log PHI. Store only minimal headers.
+    """
+    PROVIDER_CHOICES = PaymentIntent.PROVIDER_CHOICES
+    PROCESSING_STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('processed', 'Processed'),
+        ('ignored', 'Ignored'),
+        ('failed', 'Failed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    provider_reference = models.CharField(max_length=100, blank=True, null=True)
+    client_reference = models.CharField(max_length=100, blank=True, null=True)
+    received_at = models.DateTimeField(default=timezone.now)
+
+    # Minimal safe header subset (e.g. signature headers). Avoid storing tokens/cookies.
+    headers = models.JSONField(default=dict, blank=True)
+    payload_hash = models.CharField(max_length=64, db_index=True)
+    payload_encrypted = models.TextField(blank=True)
+
+    processing_status = models.CharField(
+        max_length=20,
+        choices=PROCESSING_STATUS_CHOICES,
+        default='pending',
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-received_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'payload_hash'],
+                name='psp_webhook_provider_payload_hash_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['provider', 'provider_reference', '-received_at'], name='psp_webhook_provider_ref_idx'),
+            models.Index(fields=['provider', 'processing_status', '-received_at'], name='psp_webhook_provider_stat_idx'),
+        ]
+
+    def __str__(self):
+        return f"PSPWebhookEvent {self.provider}:{self.payload_hash[:8]}"
+
+
+class SettlementBatch(models.Model):
+    """
+    Imported PSP settlement statement (CSV payload stored encrypted).
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('ready', 'Ready'),
+        ('failed', 'Failed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='settlement_batches',
+    )
+    provider = models.CharField(max_length=20, choices=PaymentIntent.PROVIDER_CHOICES)
+    statement_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    file_name = models.CharField(max_length=255, blank=True)
+    payload_encrypted = models.TextField(blank=True)
+    payload_checksum = models.CharField(max_length=64, blank=True)
+    error_message = models.TextField(blank=True)
+
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uploaded_settlement_batches',
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['facility', 'provider', 'status', '-created_at'], name='settle_batch_fac_prov_stat_idx'),
+            models.Index(fields=['facility', 'statement_date'], name='settle_batch_fac_date_idx'),
+        ]
+
+    def __str__(self):
+        return f"SettlementBatch {self.id} ({self.provider})"
+
+
+class SettlementLine(models.Model):
+    """
+    Individual settlement line from a provider statement.
+    """
+    MATCH_STATUS_CHOICES = (
+        ('matched', 'Matched'),
+        ('unmatched', 'Unmatched'),
+        ('mismatch', 'Mismatch'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(
+        SettlementBatch,
+        on_delete=models.CASCADE,
+        related_name='lines',
+    )
+    provider_reference = models.CharField(max_length=100, blank=True, null=True)
+    client_reference = models.CharField(max_length=100, blank=True, null=True)
+    status = models.CharField(max_length=50, blank=True)
+
+    amount_gross = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    fee_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    amount_net = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    match_status = models.CharField(max_length=20, choices=MATCH_STATUS_CHOICES, default='unmatched')
+    matched_intent = models.ForeignKey(
+        PaymentIntent,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='settlement_lines',
+    )
+    matched_payment = models.ForeignKey(
+        Payment,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='settlement_lines',
+    )
+    mismatch_reason = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['batch', 'match_status'], name='settle_line_batch_match_idx'),
+            models.Index(fields=['provider_reference'], name='settle_line_provider_ref_idx'),
+            models.Index(fields=['client_reference'], name='settle_line_client_ref_idx'),
+        ]
+
+    def __str__(self):
+        return f"SettlementLine {self.id} ({self.match_status})"
+
+
+class CashDrawer(models.Model):
+    """
+    A physical or logical cash drawer/register at a facility.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='cash_drawers'
+    )
+    code = models.CharField(max_length=30)
+    name = models.CharField(max_length=100)
+    location = models.CharField(max_length=100, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_cash_drawers'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_cash_drawers'
+    )
+
+    class Meta:
+        ordering = ['code']
+        constraints = [
+            models.UniqueConstraint(fields=['facility', 'code'], name='cash_drawer_facility_code_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.code} ({self.facility.code})"
+
+
+class CashSession(models.Model):
+    """
+    Cashier shift/session used for close-of-day reconciliation.
+    """
+    STATUS_CHOICES = (
+        ('open', 'Open'),
+        ('closed', 'Closed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='cash_sessions'
+    )
+    drawer = models.ForeignKey(
+        CashDrawer,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='sessions'
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='open')
+
+    opened_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='opened_cash_sessions'
+    )
+    opened_at = models.DateTimeField(default=timezone.now)
+    opening_float_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))]
+    )
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='closed_cash_sessions'
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stored at close time
+    expected_totals = models.JSONField(default=dict, blank=True)
+    expected_cash_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    counted_cash_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    variance_cash_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    is_flagged = models.BooleanField(default=False)
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_cash_sessions'
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True, null=True)
+
+    notes = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-opened_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'opened_by'],
+                condition=Q(status='open'),
+                name='uniq_open_cash_session_per_user_per_facility'
+            ),
+            models.UniqueConstraint(
+                fields=['facility', 'drawer'],
+                condition=Q(status='open') & Q(drawer__isnull=False),
+                name='uniq_open_cash_session_per_drawer_per_facility'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'status', 'opened_at']),
+            models.Index(fields=['facility', 'opened_by', 'status']),
+            models.Index(fields=['facility', 'is_flagged', 'opened_at']),
+        ]
+
+    def __str__(self):
+        return f"CashSession {self.id} ({self.facility.code})"
+
+
+class CashMovement(models.Model):
+    """
+    Non-payment cash movement during a cash session (float in/out, drops, adjustments).
+    """
+    DIRECTION_CHOICES = (
+        ('in', 'In'),
+        ('out', 'Out'),
+    )
+    MOVEMENT_TYPE_CHOICES = (
+        ('float_in', 'Float In'),
+        ('float_out', 'Float Out'),
+        ('cash_drop', 'Cash Drop'),
+        ('expense', 'Expense'),
+        ('adjustment', 'Adjustment'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        CashSession,
+        on_delete=models.CASCADE,
+        related_name='movements'
+    )
+    direction = models.CharField(max_length=5, choices=DIRECTION_CHOICES)
+    movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPE_CHOICES)
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    reference = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_cash_movements'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['session', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"CashMovement {self.movement_type} {self.amount} ({self.session_id})"
+
+    @property
+    def net_amount(self):
+        amt = Decimal(str(self.amount))
+        return amt if self.direction == 'in' else -amt
+
+
+class NHISClaimBatch(models.Model):
+    """
+    Batch of NHIS claims for export/submission.
+    """
+    STATUS_CHOICES = (
+        ('draft', 'Draft'),
+        ('exported', 'Exported'),
+        ('submitted', 'Submitted'),
+        ('closed', 'Closed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nhis_claim_batches',
+    )
+    period_start = models.DateField()
+    period_end = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    notes = models.TextField(blank=True, null=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_nhis_claim_batches',
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_nhis_claim_batches',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-period_end', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'period_start', 'period_end'],
+                name='nhis_batch_fac_period_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at'], name='nhis_batch_fac_stat_idx'),
+            models.Index(fields=['facility', 'period_start', 'period_end'], name='nhis_batch_fac_period_idx'),
+        ]
+
+    def __str__(self):
+        return f"NHISClaimBatch {self.facility.code} {self.period_start}..{self.period_end}"
 
 
 class Claim(models.Model):
@@ -1355,8 +2164,28 @@ class Claim(models.Model):
     Model for insurance claims.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    claim_number = models.CharField(max_length=20, unique=True)
+    claim_number = models.CharField(max_length=32, unique=True)
     invoice = models.OneToOneField(Invoice, on_delete=models.CASCADE, related_name='claim')
+
+    # NHIS batching / submission metadata
+    batch = models.ForeignKey(
+        NHISClaimBatch,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='claims',
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    submitted_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='submitted_claims',
+    )
+    submission_reference = models.CharField(max_length=100, blank=True)
+    paid_amount_total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    last_paid_at = models.DateTimeField(null=True, blank=True)
     
     # Claim details
     submission_date = models.DateField(default=timezone.now)
@@ -1425,6 +2254,298 @@ class Claim(models.Model):
         Check if the claim is partially approved.
         """
         return self.status == 'partially_approved' or (self.status == 'approved' and self.approved_amount < self.claimed_amount)
+
+
+class ClaimValidationIssue(models.Model):
+    """
+    Lint issues for claim exports. Avoid storing any free-text PHI.
+    """
+    SEVERITY_CHOICES = (
+        ('error', 'Error'),
+        ('warning', 'Warning'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    claim = models.ForeignKey(
+        Claim,
+        on_delete=models.CASCADE,
+        related_name='validation_issues',
+    )
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default='error')
+    code = models.CharField(max_length=50)
+    message = models.CharField(max_length=255)
+    field = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['severity', 'code', '-created_at']
+        indexes = [
+            models.Index(fields=['claim', 'severity'], name='claim_issue_claim_sev_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.claim_id}:{self.severity}:{self.code}"
+
+
+class NHISClaimExportJob(models.Model):
+    """
+    Facility-scoped export job for NHIS Claim-it submissions.
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('ready', 'Ready'),
+        ('failed', 'Failed'),
+        ('delivered', 'Delivered'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='nhis_export_jobs',
+    )
+    batch = models.ForeignKey(
+        NHISClaimBatch,
+        on_delete=models.CASCADE,
+        related_name='export_jobs',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    payload_encrypted = models.TextField(blank=True)
+    payload_checksum = models.CharField(max_length=64, blank=True)
+    error_message = models.TextField(blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_nhis_export_jobs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at'], name='nhis_exp_fac_stat_idx'),
+            models.Index(fields=['expires_at'], name='nhis_exp_expires_idx'),
+        ]
+
+    def __str__(self):
+        return f"NHISExportJob {self.id} ({self.status})"
+
+
+class RemittanceImportJob(models.Model):
+    """
+    Facility-scoped remittance import job (CSV/XLSX payload stored encrypted).
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('ready', 'Ready'),
+        ('failed', 'Failed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='remittance_import_jobs',
+    )
+    payer = models.ForeignKey(
+        InsuranceProvider,
+        on_delete=models.PROTECT,
+        related_name='remittance_import_jobs',
+        help_text="Payer/provider whose remittance format is being imported (e.g. NHIS).",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    file_name = models.CharField(max_length=255, blank=True)
+    payload_encrypted = models.TextField(blank=True)
+    payload_checksum = models.CharField(max_length=64, blank=True)
+    error_message = models.TextField(blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_remittance_import_jobs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at'], name='remit_job_fac_stat_idx'),
+        ]
+
+    def __str__(self):
+        return f"RemittanceImportJob {self.id} ({self.status})"
+
+
+class RemittanceLine(models.Model):
+    """
+    Parsed remittance line (minimal fields only; do not store patient names).
+    """
+    MATCH_STATUS_CHOICES = (
+        ('matched', 'Matched'),
+        ('unmatched', 'Unmatched'),
+        ('underpaid', 'Underpaid'),
+        ('denied', 'Denied'),
+        ('error', 'Error'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(
+        RemittanceImportJob,
+        on_delete=models.CASCADE,
+        related_name='lines',
+    )
+    claim_number = models.CharField(max_length=50, blank=True)
+    invoice_number = models.CharField(max_length=50, blank=True)
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    paid_date = models.DateField(null=True, blank=True)
+    match_status = models.CharField(max_length=20, choices=MATCH_STATUS_CHOICES, default='unmatched')
+
+    matched_claim = models.ForeignKey(
+        Claim,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='remittance_lines',
+    )
+    matched_invoice = models.ForeignKey(
+        Invoice,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='remittance_lines',
+    )
+
+    error_message = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['job', 'match_status'], name='remit_line_job_match_idx'),
+            models.Index(fields=['claim_number'], name='remit_line_claim_num_idx'),
+            models.Index(fields=['invoice_number'], name='remit_line_inv_num_idx'),
+        ]
+
+    def __str__(self):
+        return f"RemittanceLine {self.id} ({self.match_status})"
+
+
+class InsurancePosting(models.Model):
+    """
+    Link a remittance line to an insurance payment posted into the ledger.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    remittance_line = models.OneToOneField(
+        RemittanceLine,
+        on_delete=models.CASCADE,
+        related_name='posting',
+    )
+    payment = models.OneToOneField(
+        Payment,
+        on_delete=models.PROTECT,
+        related_name='insurance_posting',
+    )
+    posted_at = models.DateTimeField(default=timezone.now)
+    posted_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='insurance_postings',
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['posted_at'], name='ins_post_posted_at_idx'),
+        ]
+
+    def __str__(self):
+        return f"InsurancePosting {self.id}"
+
+
+class PayerServiceCodeImportJob(models.Model):
+    """
+    Bulk import job for payer service code mappings (NHIS/other).
+
+    Workflow:
+    - Upload file -> preview parse/validate (async) -> apply (async).
+
+    SECURITY:
+    - Payloads are stored encrypted at rest (no PHI expected, but keep consistent).
+    - Facility-scoped; payer/service must belong to active facility.
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('preview_ready', 'Preview Ready'),
+        ('applying', 'Applying'),
+        ('applied', 'Applied'),
+        ('failed', 'Failed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='payer_service_code_import_jobs',
+    )
+    payer = models.ForeignKey(
+        InsuranceProvider,
+        on_delete=models.PROTECT,
+        related_name='payer_service_code_import_jobs',
+        help_text="Payer/provider whose codes are being imported (e.g. NHIS).",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    seed_services = models.BooleanField(
+        default=False,
+        help_text="If true, create missing ServiceCategory/Service records (services created inactive by default).",
+    )
+
+    file_name = models.CharField(max_length=255, blank=True)
+    payload_encrypted = models.TextField(blank=True)
+    payload_checksum = models.CharField(max_length=64, blank=True)
+
+    # Parsed, normalized rows (JSON) stored encrypted for apply step.
+    parsed_payload_encrypted = models.TextField(blank=True)
+
+    # Preview summary + first N row issues (avoid unbounded growth).
+    summary = models.JSONField(default=dict, blank=True)
+    issues = models.JSONField(default=list, blank=True)
+    error_message = models.TextField(blank=True)
+
+    processed_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_payer_service_code_import_jobs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['facility', 'status', '-created_at'], name='psc_imp_fac_stat_idx'),
+            models.Index(fields=['facility', 'payer', '-created_at'], name='psc_imp_fac_payer_idx'),
+        ]
+
+    def __str__(self):
+        return f"PayerServiceCodeImportJob {self.id} ({self.status})"
 
 
 class Receipt(models.Model):

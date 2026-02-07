@@ -156,11 +156,17 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   // Get auth token from memory
   const token = getAccessToken();
 
+  const { parseAs, ...fetchOptions } = options;
+
   // Set default headers
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
+  const headers = { ...(fetchOptions.headers || {}) };
+
+  // Only set JSON content-type when we are not sending multipart/form-data.
+  // When using FormData, the browser will set the appropriate boundary.
+  const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
+  if (!headers['Content-Type'] && !isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   // Add auth token if available
   if (token) {
@@ -182,7 +188,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
 
   try {
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       headers,
       credentials: 'include', // Include cookies for refresh token
     });
@@ -190,7 +196,13 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
     // Parse response data
     let data;
     const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
+    if (response.ok && parseAs === 'blob') {
+      data = await response.blob();
+    } else if (response.ok && parseAs === 'arrayBuffer') {
+      data = await response.arrayBuffer();
+    } else if (parseAs === 'text') {
+      data = await response.text();
+    } else if (contentType && contentType.includes('application/json')) {
       data = await response.json();
     } else {
       data = await response.text();
@@ -392,6 +404,13 @@ export const apiClient = {
       body: JSON.stringify(data),
     }),
 
+  postForm: (endpoint, formData, options = {}) =>
+    fetchWithAuth(endpoint, {
+      ...options,
+      method: 'POST',
+      body: formData,
+    }),
+
   put: (endpoint, data, options = {}) => 
     fetchWithAuth(endpoint, { 
       ...options, 
@@ -417,6 +436,12 @@ export const apiClient = {
     const { params, ...rest } = options;
     const url = appendQueryParams(endpoint, params);
     return fetchWithAuth(url, { ...rest, method: 'GET' });
+  },
+
+  getBlob: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchWithAuth(url, { ...rest, method: 'GET', parseAs: 'blob' });
   },
 };
 

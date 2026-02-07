@@ -24,10 +24,29 @@ export const billingKeys = {
   // Payments
   payments: () => [...billingKeys.all, 'payments'],
   paymentList: (filters) => [...billingKeys.payments(), 'list', { filters }],
+  // PSP
+  psp: () => [...billingKeys.all, 'psp'],
+  paymentIntents: () => [...billingKeys.psp(), 'paymentIntents'],
+  paymentIntentList: (filters) => [...billingKeys.paymentIntents(), 'list', { filters }],
+  settlementBatches: () => [...billingKeys.psp(), 'settlements'],
+  settlementBatchList: (filters) => [...billingKeys.settlementBatches(), 'list', { filters }],
+  settlementLines: (batchId, filters) => [...billingKeys.settlementBatches(), batchId, 'lines', { filters }],
+  // Cash Controls
+  cash: () => [...billingKeys.all, 'cash'],
+  cashSessions: () => [...billingKeys.cash(), 'sessions'],
+  cashSessionList: (filters) => [...billingKeys.cashSessions(), 'list', { filters }],
+  currentCashSession: () => [...billingKeys.cashSessions(), 'current'],
+  cashSessionTotals: (sessionId) => [...billingKeys.cashSessions(), 'totals', sessionId],
+  cashMovements: () => [...billingKeys.cash(), 'movements'],
+  cashMovementList: (filters) => [...billingKeys.cashMovements(), 'list', { filters }],
   // Services
   services: () => [...billingKeys.all, 'services'],
   serviceList: (params) => [...billingKeys.services(), 'list', params],
   servicesByCategory: () => [...billingKeys.services(), 'byCategory'],
+  serviceCategories: () => [...billingKeys.services(), 'categories'],
+  serviceCategoryList: (params) => [...billingKeys.serviceCategories(), 'list', params],
+  payerServiceCodes: () => [...billingKeys.services(), 'payerServiceCodes'],
+  payerServiceCodeList: (params) => [...billingKeys.payerServiceCodes(), 'list', params],
   // Billing Rules
   billingRules: () => [...billingKeys.all, 'billingRules'],
   billingRuleList: (filters) => [...billingKeys.billingRules(), 'list', { filters }],
@@ -35,6 +54,7 @@ export const billingKeys = {
   // Facility Settings
   facilitySettings: () => [...billingKeys.all, 'facilitySettings'],
   facilityBillingSettings: (facilityId) => [...billingKeys.facilitySettings(), facilityId],
+  activeFacilityBillingSettings: () => [...billingKeys.facilitySettings(), 'active'],
   // Insurance
   insurance: () => [...billingKeys.all, 'insurance'],
   patientInsurances: () => [...billingKeys.insurance(), 'patientInsurances'],
@@ -43,6 +63,22 @@ export const billingKeys = {
   patientInsurance: (patientId, params) => [...billingKeys.insurance(), 'patient', patientId, params],
   insuranceProviders: (params) => [...billingKeys.insurance(), 'providers', params],
   insurancePlans: (params) => [...billingKeys.insurance(), 'plans', params],
+  // NHIS / AR
+  nhis: () => [...billingKeys.all, 'nhis'],
+  nhisBatches: () => [...billingKeys.nhis(), 'batches'],
+  nhisBatchList: (filters) => [...billingKeys.nhisBatches(), 'list', { filters }],
+  nhisExports: () => [...billingKeys.nhis(), 'exports'],
+  nhisExportJobList: (filters) => [...billingKeys.nhisExports(), 'list', { filters }],
+  nhisRemittances: () => [...billingKeys.nhis(), 'remittances'],
+  nhisRemittanceJobList: (filters) => [...billingKeys.nhisRemittances(), 'list', { filters }],
+  nhisRemittanceLines: (jobId, filters) => [...billingKeys.nhisRemittances(), jobId, 'lines', { filters }],
+  nhisMappingImports: () => [...billingKeys.nhis(), 'mappingImports'],
+  nhisMappingImportJobList: (filters) => [...billingKeys.nhisMappingImports(), 'list', { filters }],
+  nhisMappingImportJobDetail: (id) => [...billingKeys.nhisMappingImports(), 'detail', id],
+  nhisAr: () => [...billingKeys.nhis(), 'ar'],
+  nhisInsuranceAging: (params) => [...billingKeys.nhisAr(), 'insuranceAging', params],
+  nhisInsuranceDso: (params) => [...billingKeys.nhisAr(), 'insuranceDso', params],
+  nhisRemittanceQueue: () => [...billingKeys.nhisAr(), 'remittanceQueue'],
 };
 
 // =========================================================================
@@ -321,6 +357,141 @@ export function useGenerateReceipt() {
 }
 
 // =========================================================================
+// PSP Payment Intents
+// =========================================================================
+
+export function usePaymentIntents(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.paymentIntentList(filters),
+    queryFn: () => billingApi.getPaymentIntents(filters),
+  });
+}
+
+export function useCreatePaymentIntent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => billingApi.createPaymentIntent(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.paymentIntents() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.invoices() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.payments() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+  });
+}
+
+export function useSettlementBatches(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.settlementBatchList(filters),
+    queryFn: () => billingApi.getSettlementBatches(filters),
+  });
+}
+
+export function useImportSettlement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ provider, statement_date, file }) => billingApi.importSettlement({ provider, statement_date, file }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.settlementBatches() });
+    },
+  });
+}
+
+export function useSettlementLines(batchId, filters = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.settlementLines(batchId, filters),
+    queryFn: () => billingApi.getSettlementLines(batchId, filters),
+    enabled: !!batchId && enabled,
+  });
+}
+
+// =========================================================================
+// Cash Controls Queries & Mutations
+// =========================================================================
+
+export function useCashSessions(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.cashSessionList(filters),
+    queryFn: () => billingApi.getCashSessions(filters),
+  });
+}
+
+export function useCurrentCashSession(options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.currentCashSession(),
+    queryFn: () => billingApi.getCurrentCashSession(),
+    enabled,
+    staleTime: 5 * 1000,
+  });
+}
+
+export function useCashSessionTotals(sessionId, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.cashSessionTotals(sessionId),
+    queryFn: () => billingApi.getCashSessionTotals(sessionId),
+    enabled: !!sessionId && enabled,
+    staleTime: 5 * 1000,
+  });
+}
+
+export function useOpenCashSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => billingApi.openCashSession(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.cashSessions() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.currentCashSession() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+  });
+}
+
+export function useCloseCashSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sessionId, data }) => billingApi.closeCashSession(sessionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.cashSessions() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.currentCashSession() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+  });
+}
+
+export function useReviewCashSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sessionId, data }) => billingApi.reviewCashSession(sessionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.cashSessions() });
+    },
+  });
+}
+
+export function useCreateCashMovement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => billingApi.createCashMovement(data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.cashMovements() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.cashSessions() });
+      if (variables?.session) {
+        queryClient.invalidateQueries({ queryKey: billingKeys.cashSessionTotals(variables.session) });
+      }
+    },
+  });
+}
+
+// =========================================================================
 // Services Queries
 // =========================================================================
 
@@ -337,6 +508,54 @@ export function useServices(params = {}) {
   });
 }
 
+export function useServiceCategories(params = {}) {
+  return useQuery({
+    queryKey: billingKeys.serviceCategoryList(params),
+    queryFn: () => billingApi.getServiceCategories(params),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateServiceCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => billingApi.createServiceCategory(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.serviceCategories() });
+    },
+  });
+}
+
+export function useUpdateServiceCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => billingApi.updateServiceCategory(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.serviceCategories() });
+    },
+  });
+}
+
+export function useCreateService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => billingApi.createService(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.services() });
+    },
+  });
+}
+
+export function useUpdateService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => billingApi.updateService(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.services() });
+    },
+  });
+}
+
 /**
  * Get services grouped by category
  * @returns {Object} Query result
@@ -346,6 +565,35 @@ export function useServicesByCategory() {
     queryKey: billingKeys.servicesByCategory(),
     queryFn: () => billingApi.getServicesByCategory(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePayerServiceCodes(params = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.payerServiceCodeList(params),
+    queryFn: () => billingApi.getPayerServiceCodes(params),
+    enabled,
+  });
+}
+
+export function useCreatePayerServiceCode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => billingApi.createPayerServiceCode(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.payerServiceCodes() });
+    },
+  });
+}
+
+export function useUpdatePayerServiceCode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => billingApi.updatePayerServiceCode(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.payerServiceCodes() });
+    },
   });
 }
 
@@ -492,6 +740,18 @@ export function useFacilityBillingSettings(facilityId) {
     queryFn: () => billingApi.getFacilityBillingSettings(facilityId),
     enabled: !!facilityId,
     staleTime: 5 * 60 * 1000, // 5 minutes - settings don't change often
+  });
+}
+
+/**
+ * Get active facility billing settings (facility inferred from X-Facility-Code).
+ * @returns {Object} Query result (array of settings rows; typically length 1)
+ */
+export function useActiveFacilityBillingSettings() {
+  return useQuery({
+    queryKey: billingKeys.activeFacilityBillingSettings(),
+    queryFn: () => billingApi.getFacilityBillingSettings(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -654,5 +914,165 @@ export function useInsurancePlans(params = {}, options = {}) {
     queryFn: () => billingApi.getInsurancePlans(params),
     enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+}
+
+// =========================================================================
+// NHIS (Claim-it) + AR
+// =========================================================================
+
+export function useNhisClaimBatches(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.nhisBatchList(filters),
+    queryFn: () => billingApi.getNhisClaimBatches(filters),
+  });
+}
+
+export function useCreateNhisClaimBatch() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => billingApi.createNhisClaimBatch(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.claims() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+  });
+}
+
+export function useLintNhisClaimBatch() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (batchId) => billingApi.lintNhisClaimBatch(batchId),
+    onSuccess: () => {
+      // Lint may unlock export paths; refresh batch lists.
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+    },
+  });
+}
+
+export function useExportNhisClaimBatch() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ batchId, data }) => billingApi.exportNhisClaimBatch(batchId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisExports() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+    },
+  });
+}
+
+export function useNhisExportJobs(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.nhisExportJobList(filters),
+    queryFn: () => billingApi.getNhisExportJobs(filters),
+  });
+}
+
+export function useRemittanceImportJobs(filters = {}) {
+  return useQuery({
+    queryKey: billingKeys.nhisRemittanceJobList(filters),
+    queryFn: () => billingApi.getRemittanceImportJobs(filters),
+  });
+}
+
+export function useImportRemittance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ payerId, file }) => billingApi.importRemittance({ payerId, file }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisRemittances() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisAr() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+  });
+}
+
+export function useRemittanceLines(jobId, filters = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisRemittanceLines(jobId, filters),
+    queryFn: () => billingApi.getRemittanceLines(jobId, filters),
+    enabled: !!jobId && enabled,
+  });
+}
+
+// =========================================================================
+// NHIS Mapping Bulk Import (Preview + Apply)
+// =========================================================================
+
+export function useNhisMappingImportJobs(filters = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisMappingImportJobList(filters),
+    queryFn: () => billingApi.getNhisMappingImportJobs(filters),
+    enabled,
+  });
+}
+
+export function useNhisMappingImportJob(id, options = {}) {
+  const { enabled = true, refetchInterval = false } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisMappingImportJobDetail(id),
+    queryFn: () => billingApi.getNhisMappingImportJob(id),
+    enabled: !!id && enabled,
+    refetchInterval,
+  });
+}
+
+export function useCreateNhisMappingImportJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => billingApi.createNhisMappingImportJob(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisMappingImports() });
+    },
+  });
+}
+
+export function useApplyNhisMappingImportJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => billingApi.applyNhisMappingImportJob(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.nhisMappingImports() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.payerServiceCodes() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.services() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.serviceCategories() });
+    },
+  });
+}
+
+export function useInsuranceAging(params = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisInsuranceAging(params),
+    queryFn: () => billingApi.getInsuranceAging(params),
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useInsuranceDSO(params = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisInsuranceDso(params),
+    queryFn: () => billingApi.getInsuranceDSO(params),
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useRemittanceQueue(options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: billingKeys.nhisRemittanceQueue(),
+    queryFn: () => billingApi.getRemittanceQueue(),
+    enabled,
+    staleTime: 60 * 1000,
   });
 }

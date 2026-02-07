@@ -115,6 +115,14 @@ class LabTestCatalog(models.Model):
         decimal_places=2,
         help_text="Test price"
     )
+    billing_service = models.ForeignKey(
+        'billing.Service',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='lab_test_catalog_entries',
+        help_text="Optional link to a billable Service for automatic invoicing/claims."
+    )
     is_active = models.BooleanField(
         default=True,
         help_text="Whether test is currently available for ordering"

@@ -1,65 +1,43 @@
 """
-Billing signals for auto-invoice generation.
+Billing signals for the financial layer.
 
-Handles automatic invoice generation when:
-- Encounter status changes to 'finished'
-- Patient is discharged from admission
+Draft invoice auto-sync:
+- Encounter status transitions drive draft sync (in-progress) and finalization (finished).
+- Admission status transitions drive draft sync (admitted) and finalization (discharged).
+- LabOrderTest updates trigger draft invoice resync for the linked encounter.
 
-Signal receivers respect facility billing settings:
+Signals respect facility billing settings:
 - auto_generate_invoice_on_encounter_complete
 - auto_generate_invoice_on_discharge
 
-Security notes:
-- All auto-generated invoices are audited
-- System user or encounter creator is used for created_by
-
-Performance notes:
-- Signals use select_related for efficient queries
-- Invoice generation is transactional
+SECURITY:
+- Never log PHI.
+PERF:
+- Enqueue async tasks and use transaction.on_commit to avoid blocking request paths.
 """
 import logging
 
+from django.db import transaction
 from django.db.models.signals import post_save
-from django.dispatch import receiver
 
 logger = logging.getLogger(__name__)
 
 
 def handle_encounter_completion(sender, instance, **kwargs):
     """
-    Auto-generate invoice when encounter is completed.
+    Maintain a draft invoice during the encounter, then finalize on completion.
 
-    Called via signal when Encounter.status changes to 'finished'.
-    Respects facility billing settings.
+    - status == 'in-progress': ensure draft invoice exists and is synced (async)
+    - status == 'finished': finalize the draft invoice (async)
     """
     from apps.billing.models import FacilityBillingSettings
-    from apps.billing.services import InvoiceGenerationService
 
-    # Only trigger on status change to 'finished'
-    if getattr(instance, 'status', None) != 'finished':
+    status = getattr(instance, 'status', None)
+    if status not in ('in-progress', 'finished'):
         return
 
-    # Check if this is a status change (not new creation with finished status)
-    if not kwargs.get('created', True):
-        # Get previous status from instance tracker if available
-        # For simplicity, we'll always try to generate on finished status
-        pass
-
     try:
-        # Get facility from encounter
-        # Priority: admission.bed.ward.facility > default facility
-        facility = None
-
-        # Try to get from admission (inpatient encounters)
-        if hasattr(instance, 'admission') and instance.admission:
-            admission = instance.admission
-            if admission.bed and admission.bed.ward:
-                facility = getattr(admission.bed.ward, 'facility', None)
-
-        # Fallback to default facility (for single-facility setups)
-        if not facility:
-            from apps.core.models import Facility
-            facility = Facility.objects.filter(is_active=True).first()
+        facility = getattr(instance, 'facility', None)
 
         if not facility:
             logger.warning(
@@ -81,41 +59,22 @@ def handle_encounter_completion(sender, instance, **kwargs):
             # No settings = use default behavior (generate invoice)
             pass
 
-        # Check if invoice already exists for this encounter
-        if instance.invoices.exists():
-            logger.debug(
-                f"Invoice already exists for encounter {instance.id}, skipping"
-            )
-            return
-
-        # Get user for audit
-        created_by = (
-            getattr(instance, 'updated_by', None) or
-            getattr(instance, 'created_by', None)
-        )
-        if not created_by:
-            logger.warning(
-                f"No user found for encounter {instance.id}, skipping invoice"
-            )
-            return
-
-        # Generate invoice
-        service = InvoiceGenerationService()
-        result = service.generate_from_encounter(
-            encounter=instance,
-            created_by=created_by
+        from apps.billing.tasks import (
+            sync_draft_invoice_for_encounter,
+            finalize_draft_invoice_for_encounter,
         )
 
-        if result.success:
-            logger.info(
-                f"Auto-generated invoice {result.invoice.invoice_number} "
-                f"for encounter {instance.id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to auto-generate invoice for encounter {instance.id}: "
-                f"{result.error_message}"
-            )
+        def _enqueue():
+            if status == 'in-progress':
+                sync_draft_invoice_for_encounter.delay(str(instance.id))
+            elif status == 'finished':
+                finalize_draft_invoice_for_encounter.delay(str(instance.id))
+
+        # Avoid enqueuing work before the transaction commits.
+        try:
+            transaction.on_commit(_enqueue)
+        except Exception:
+            _enqueue()
 
     except Exception as e:
         logger.exception(
@@ -125,27 +84,21 @@ def handle_encounter_completion(sender, instance, **kwargs):
 
 def handle_discharge(sender, instance, **kwargs):
     """
-    Auto-generate discharge bill when patient is discharged.
-
-    Called via signal when Admission.status changes to 'discharged'.
-    Respects facility billing settings.
+    Maintain a draft invoice during admission, then finalize on discharge.
     """
     from apps.billing.models import FacilityBillingSettings
-    from apps.billing.services import InvoiceGenerationService
+    from apps.billing.tasks import (
+        sync_draft_invoice_for_admission,
+        finalize_draft_invoice_for_admission,
+    )
 
-    # Only trigger on discharge
-    if getattr(instance, 'status', None) != 'discharged':
-        return
-
-    # Check if already billed
-    if getattr(instance, 'is_billed', False):
+    status = getattr(instance, 'status', None)
+    if status not in ('admitted', 'discharged'):
         return
 
     try:
         # Get facility from admission
-        facility = None
-        if instance.bed and instance.bed.ward:
-            facility = instance.bed.ward.facility
+        facility = getattr(instance, 'facility', None)
 
         if not facility:
             logger.warning(
@@ -167,51 +120,41 @@ def handle_discharge(sender, instance, **kwargs):
             # No settings = use default behavior (generate invoice)
             pass
 
-        # Check if invoice already exists for this admission
-        if instance.invoices.exists():
-            logger.debug(
-                f"Invoice already exists for admission {instance.id}, skipping"
-            )
-            return
+        def _enqueue():
+            if status == 'admitted':
+                sync_draft_invoice_for_admission.delay(str(instance.id))
+            elif status == 'discharged':
+                finalize_draft_invoice_for_admission.delay(str(instance.id))
 
-        # Get user for audit
-        created_by = (
-            getattr(instance, 'updated_by', None) or
-            getattr(instance, 'created_by', None)
-        )
-        if not created_by:
-            logger.warning(
-                f"No user found for admission {instance.id}, skipping invoice"
-            )
-            return
-
-        # Generate discharge bill
-        service = InvoiceGenerationService()
-        result = service.generate_from_admission(
-            admission=instance,
-            created_by=created_by
-        )
-
-        if result.success:
-            # Mark admission as billed
-            if hasattr(instance, 'is_billed'):
-                instance.is_billed = True
-                instance.save(update_fields=['is_billed'])
-
-            logger.info(
-                f"Auto-generated discharge bill {result.invoice.invoice_number} "
-                f"for admission {instance.id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to auto-generate discharge bill for admission {instance.id}: "
-                f"{result.error_message}"
-            )
+        try:
+            transaction.on_commit(_enqueue)
+        except Exception:
+            _enqueue()
 
     except Exception as e:
         logger.exception(
             f"Error in discharge handler for {instance.id}: {e}"
         )
+
+
+def handle_lab_order_test_update(sender, instance, **kwargs):
+    """
+    Sync the encounter draft invoice when a lab test status changes.
+    """
+    order = getattr(instance, 'order', None)
+    encounter = getattr(order, 'encounter', None) if order else None
+    if not encounter:
+        return
+
+    from apps.billing.tasks import sync_draft_invoice_for_encounter
+
+    def _enqueue():
+        sync_draft_invoice_for_encounter.delay(str(encounter.id))
+
+    try:
+        transaction.on_commit(_enqueue)
+    except Exception:
+        _enqueue()
 
 
 def connect_billing_signals():
@@ -223,6 +166,7 @@ def connect_billing_signals():
     try:
         from apps.encounters.models import Encounter
         from apps.wards.models import Admission
+        from apps.laboratory.models import LabOrderTest
 
         # Connect encounter completion handler
         post_save.connect(
@@ -236,6 +180,12 @@ def connect_billing_signals():
             handle_discharge,
             sender=Admission,
             dispatch_uid='billing_discharge'
+        )
+
+        post_save.connect(
+            handle_lab_order_test_update,
+            sender=LabOrderTest,
+            dispatch_uid='billing_lab_order_test_update'
         )
 
         logger.info("Billing signals connected successfully")

@@ -3,6 +3,8 @@ import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
+import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -18,15 +20,23 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { useRecordPayment } from '@/features/billing/hooks';
+import {
+  useActiveFacilityBillingSettings,
+  useCurrentCashSession,
+  useOpenCashSession,
+  useRecordPayment,
+  useCreatePaymentIntent,
+} from '@/features/billing/hooks';
 import { toast } from 'sonner';
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Credit/Debit Card' },
   { value: 'mobile_money', label: 'Mobile Money' },
   { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'insurance', label: 'Insurance' },
+  { value: 'credit_card', label: 'Credit Card' },
+  { value: 'debit_card', label: 'Debit Card' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'other', label: 'Other' },
 ];
 
 /**
@@ -43,8 +53,16 @@ export default function RecordPaymentSlideOver({
   open,
   onClose,
   invoice,
+  onRefreshInvoice,
 }) {
   const recordPaymentMutation = useRecordPayment();
+  const openCashSessionMutation = useOpenCashSession();
+  const createPaymentIntentMutation = useCreatePaymentIntent();
+  const { data: settingsRows } = useActiveFacilityBillingSettings();
+  const { data: currentSessionData } = useCurrentCashSession({ enabled: open });
+  const billingSettings = Array.isArray(settingsRows) ? settingsRows[0] : null;
+  const cashControlEnabled = !!billingSettings?.cash_control_enabled;
+  const currentSession = currentSessionData?.session || null;
 
   // Form state
   const [formData, setFormData] = useState({
@@ -53,8 +71,12 @@ export default function RecordPaymentSlideOver({
     reference_number: '',
     notes: '',
   });
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [intent, setIntent] = useState(null);
   const [generateReceipt, setGenerateReceipt] = useState(true);
+  const [openingFloat, setOpeningFloat] = useState('0.00');
   const [errors, setErrors] = useState({});
+  const hasPendingIntent = !!intent && intent.status === 'pending';
 
   // Reset form when panel opens/closes
   useEffect(() => {
@@ -65,6 +87,8 @@ export default function RecordPaymentSlideOver({
         reference_number: '',
         notes: '',
       });
+      setMobileNumber(invoice.patient_phone || '');
+      setIntent(null);
       setGenerateReceipt(true);
       setErrors({});
     }
@@ -98,6 +122,10 @@ export default function RecordPaymentSlideOver({
     e.preventDefault();
 
     if (!validate()) return;
+    if (cashControlEnabled && !currentSession) {
+      toast.error('Open a cash session to record payments');
+      return;
+    }
 
     try {
       await recordPaymentMutation.mutateAsync({
@@ -115,6 +143,32 @@ export default function RecordPaymentSlideOver({
       onClose();
     } catch (err) {
       toast.error(err.message || 'Failed to record payment');
+    }
+  };
+
+  const handleCreateIntent = async () => {
+    if (!validate()) return;
+    if (!mobileNumber) {
+      toast.error('Enter a mobile number for Mobile Money collection');
+      return;
+    }
+    if (cashControlEnabled && !currentSession) {
+      toast.error('Open a cash session before initiating collection');
+      return;
+    }
+
+    try {
+      const created = await createPaymentIntentMutation.mutateAsync({
+        invoice_id: invoice.id,
+        amount: parseFloat(formData.amount),
+        payment_method: formData.payment_method,
+        mobile_number: mobileNumber,
+      });
+
+      setIntent(created);
+      toast.success('MoMo prompt initiated. Await confirmation.');
+    } catch (err) {
+      toast.error(err.message || 'Failed to initiate Mobile Money collection');
     }
   };
 
@@ -160,6 +214,151 @@ export default function RecordPaymentSlideOver({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
+        {cashControlEnabled && !currentSession && (
+          <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
+            <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
+              Cash Controls Enabled
+            </p>
+            <p className="text-sm text-foreground mb-4">
+              You need an open cash session to record patient payments.
+            </p>
+            <div className="flex items-end gap-2">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="opening_float" className="font-mono text-xs uppercase tracking-wider">
+                  Opening Float (GHS)
+                </Label>
+                <Input
+                  id="opening_float"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={openingFloat}
+                  onChange={(e) => setOpeningFloat(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <Button
+                type="button"
+                className="font-mono text-xs"
+                disabled={openCashSessionMutation.isPending}
+                onClick={async () => {
+                  try {
+                    await openCashSessionMutation.mutateAsync({
+                      opening_float_amount: parseFloat(openingFloat || 0),
+                    });
+                    toast.success('Cash session opened');
+                  } catch (err) {
+                    toast.error(err.message || 'Failed to open cash session');
+                  }
+                }}
+              >
+                Open Session
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {formData.payment_method === 'mobile_money' && (
+          <div className="mb-6 rounded-xl border border-border bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
+                  <Smartphone className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+                </div>
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                    Hubtel Collection
+                  </p>
+                  <p className="text-sm text-foreground">
+                    Send a MoMo prompt and auto-post payment on confirmation.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs"
+                disabled={createPaymentIntentMutation.isPending || (intent && intent.status === 'pending')}
+                onClick={handleCreateIntent}
+              >
+                {createPaymentIntentMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Send Prompt'
+                )}
+              </Button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="momo_number" className="font-mono text-xs uppercase tracking-wider">
+                  Mobile Number
+                </Label>
+                <Input
+                  id="momo_number"
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value)}
+                  placeholder="e.g., 0240000000"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use the payer’s MoMo number (MTN/Telecel/AT).
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/20 border border-border/50 p-3">
+                <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                  Status
+                </p>
+                {intent ? (
+                  <>
+                    <p className="font-mono text-xs text-foreground">
+                      {intent.status}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground mt-2">
+                      Ref: {intent.provider_reference || '—'}
+                    </p>
+                    {intent.checkout_url && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="font-mono text-xs"
+                          onClick={() => window.open(intent.checkout_url, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open Checkout
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="font-mono text-xs"
+                          onClick={() => onRefreshInvoice?.()}
+                        >
+                          Refresh Invoice
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Not started
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-muted-foreground">
+              If you have no connectivity, skip Hubtel and record Mobile Money manually with the transaction reference.
+            </p>
+          </div>
+        )}
+
         {/* Invoice Summary */}
         <div className="bg-muted/30 rounded-xl p-4 mb-6">
           <div className="flex items-center gap-2 mb-3">
@@ -322,14 +521,14 @@ export default function RecordPaymentSlideOver({
         <Button
           variant="outline"
           onClick={onClose}
-          disabled={recordPaymentMutation.isPending}
+          disabled={recordPaymentMutation.isPending || createPaymentIntentMutation.isPending}
           className="font-mono text-xs"
         >
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={recordPaymentMutation.isPending}
+          disabled={recordPaymentMutation.isPending || createPaymentIntentMutation.isPending || hasPendingIntent}
           className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
         >
           {recordPaymentMutation.isPending ? (
@@ -337,10 +536,15 @@ export default function RecordPaymentSlideOver({
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               Recording...
             </>
+          ) : hasPendingIntent ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Awaiting Confirmation
+            </>
           ) : (
             <>
               <CreditCard className="h-4 w-4 mr-2" />
-              Record Payment
+              Record Payment (Manual)
             </>
           )}
         </Button>
