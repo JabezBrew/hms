@@ -32,7 +32,7 @@ from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_reference, create_period, generate_fhir_id
 )
-from ..users.permissions import IsAdminOrOwner
+from ..users.permissions import IsAdminOrOwner, IsAdminOrReadOnly
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
@@ -698,7 +698,7 @@ class AppointmentTypeViewSet(viewsets.ModelViewSet):
     """
     queryset = AppointmentType.objects.all()
     serializer_class = AppointmentTypeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
@@ -718,7 +718,7 @@ class AppointmentFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = AppointmentFHIRMapping.objects.all()
     serializer_class = AppointmentFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
@@ -1203,7 +1203,7 @@ class ScheduleFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = ScheduleFHIRMapping.objects.all()
     serializer_class = ScheduleFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
@@ -1285,7 +1285,7 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
     """
     queryset = RecurringAppointmentRule.objects.all()
     serializer_class = RecurringAppointmentRuleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):

@@ -7,6 +7,16 @@ Defines permission classes for template management, assignment, and entry operat
 from rest_framework import permissions
 
 
+def _is_admin_actor(user) -> bool:
+    if not user:
+        return False
+    return bool(
+        getattr(user, 'is_superuser', False)
+        or getattr(user, 'is_staff', False)
+        or getattr(user, 'user_type', None) == 'admin'
+    )
+
+
 class ChartTemplatePermission(permissions.BasePermission):
     """
     Permission class for chart templates.
@@ -78,10 +88,7 @@ class ChartTemplatePermission(permissions.BasePermission):
 
     def _can_modify_template(self, user, template):
         """Check if user can modify template."""
-        if user.is_superuser:
-            return True
-
-        if user.is_staff:
+        if _is_admin_actor(user):
             return True
 
         return template.created_by == user
@@ -149,7 +156,7 @@ class ChartEntryPermission(permissions.BasePermission):
             return True
 
         # Admins can always modify
-        if request.user.is_superuser or request.user.is_staff:
+        if _is_admin_actor(request.user):
             return True
 
         # Check if user created the entry

@@ -1,6 +1,21 @@
 from rest_framework import permissions
 
 
+def _is_admin_actor(user) -> bool:
+    """
+    Treat user_type='admin' as the primary admin signal.
+
+    We also accept Django admin flags for compatibility with superusers/staff.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    return bool(
+        getattr(user, "user_type", None) == "admin"
+        or getattr(user, "is_staff", False)
+        or getattr(user, "is_superuser", False)
+    )
+
+
 class IsAdminOrSelf(permissions.BasePermission):
     """
     Custom permission to only allow users to edit their own profile.
@@ -13,7 +28,7 @@ class IsAdminOrSelf(permissions.BasePermission):
             return True
 
         # Write permissions are only allowed to the user themselves or admin
-        return obj == request.user or request.user.is_staff
+        return obj == request.user or _is_admin_actor(getattr(request, "user", None))
 
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -29,12 +44,25 @@ class IsAdminOrOwner(permissions.BasePermission):
 
         # Write permissions are only allowed to the owner or admin
         if hasattr(obj, 'user'):
-            return obj.user == request.user or request.user.is_staff
+            return obj.user == request.user or _is_admin_actor(getattr(request, "user", None))
         elif hasattr(obj, 'staff'):
-            return obj.staff.user == request.user or request.user.is_staff
+            return obj.staff.user == request.user or _is_admin_actor(getattr(request, "user", None))
 
         # If we can't determine ownership, restrict to admin only
-        return request.user.is_staff
+        return _is_admin_actor(getattr(request, "user", None))
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    """
+    Allow read-only access to any authenticated user; write access requires admin.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return _is_admin_actor(request.user)
 
 
 class IsAdminOrDoctor(permissions.BasePermission):

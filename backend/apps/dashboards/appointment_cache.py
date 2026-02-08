@@ -2,10 +2,10 @@
 Helpers for caching and projecting FHIR appointment data.
 Minimize cached PHI and avoid request-thread FHIR calls.
 """
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 
-def extract_patient_fhir_id(appointment: Dict[str, Any]) -> str | None:
+def extract_patient_fhir_id(appointment: Dict[str, Any]) -> Optional[str]:
     participant_data = appointment.get("participant", []) or []
     for participant in participant_data:
         actor = (participant or {}).get("actor", {}) or {}

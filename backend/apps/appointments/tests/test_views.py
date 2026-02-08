@@ -123,12 +123,67 @@ class TestAppointmentTypeViewSet:
         apt_type.refresh_from_db()
         assert apt_type.name == 'New Name'
 
+    def test_put_update_appointment_type(self, admin_client, db):
+        """PUT should allow full update for admins (matches frontend)."""
+        apt_type = AppointmentTypeFactory(
+            name='Old Name',
+            description='Old desc',
+            duration_minutes=30,
+            category='in_person',
+            color='#000000',
+            is_active=True,
+        )
+        payload = {
+            'name': 'Updated Name',
+            'description': 'Updated desc',
+            'duration_minutes': 45,
+            'category': 'telemedicine',
+            'color': '#123456',
+            'is_active': True,
+        }
+        response = admin_client.put(
+            f'{BASE_URL}/types/{apt_type.id}/',
+            payload,
+            format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+        apt_type.refresh_from_db()
+        assert apt_type.name == 'Updated Name'
+
     def test_delete_appointment_type(self, admin_client, db):
         """Test deleting an appointment type."""
         apt_type = AppointmentTypeFactory()
         response = admin_client.delete(f'{BASE_URL}/types/{apt_type.id}/')
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert not AppointmentType.objects.filter(id=apt_type.id).exists()
+
+    def test_non_admin_can_list_but_cannot_modify(self, doctor_client, db):
+        """Non-admins can read appointment types but cannot create/update/delete."""
+        AppointmentTypeFactory.create_batch(2)
+        response = doctor_client.get(f'{BASE_URL}/types/')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 2
+
+        create_resp = doctor_client.post(
+            f'{BASE_URL}/types/',
+            {
+                'name': 'Should Fail',
+                'description': 'No',
+                'duration_minutes': 30,
+                'category': 'in_person',
+                'color': '#FF5733',
+            },
+            format='json',
+        )
+        assert create_resp.status_code == status.HTTP_403_FORBIDDEN
+
+        apt_type = AppointmentTypeFactory(name='Immutable')
+        update_resp = doctor_client.patch(
+            f'{BASE_URL}/types/{apt_type.id}/',
+            {'name': 'Nope'},
+            format='json',
+        )
+        assert update_resp.status_code == status.HTTP_403_FORBIDDEN
 
     def test_requires_authentication(self, api_client, db):
         """Test that endpoint requires authentication."""

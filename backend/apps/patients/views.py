@@ -289,7 +289,7 @@ class PatientNoteViewSet(viewsets.ModelViewSet):
             return PatientNote.objects.none()
 
         base_qs = PatientNote.objects.filter(facility=facility)
-        if self.request.user.is_staff:
+        if getattr(self.request.user, 'user_type', None) == 'admin' or getattr(self.request.user, 'is_staff', False):
             return base_qs
 
         # Regular users can only see their own notes and non-private notes
