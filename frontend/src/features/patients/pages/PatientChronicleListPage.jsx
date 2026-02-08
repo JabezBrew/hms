@@ -8,6 +8,11 @@ import Filter from 'lucide-react/dist/esm/icons/filter.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
+import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
+import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
+import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,7 +46,14 @@ import { PatientChronicleCard } from "@/components/chronicle";
 import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
 import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
 import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -82,6 +94,19 @@ const ENCOUNTER_TYPE_OPTIONS = [
   { value: 'inpatient', label: 'Inpatient' },
   { value: 'outpatient', label: 'Outpatient' },
   { value: 'emergency', label: 'Emergency' },
+];
+
+const DEFAULT_SEARCH_ORDERING = '-admission_date';
+const SEARCH_TABLE_PAGE_SIZE = 25;
+
+const TABLE_COLUMNS = [
+  { key: 'medical_record_number', label: 'MRN' },
+  { key: 'name', label: 'Name' },
+  { key: 'date_of_birth', label: 'DOB / Age' },
+  { key: 'gender', label: 'Sex' },
+  { key: 'current_ward', label: 'Ward' },
+  { key: 'admission_status', label: 'Status' },
+  { key: 'admission_date', label: 'Admission' },
 ];
 
 const createEmptyFilters = () => ({
@@ -155,6 +180,48 @@ const buildSearchParams = (query, filters) => {
   return params;
 };
 
+const getPatientId = (patient) => {
+  return patient?.id || patient?.patient_profile || patient?.local_data?.id || null;
+};
+
+const getPatientAge = (dateOfBirth) => {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const monthDiff = now.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+};
+
+const formatGender = (gender) => {
+  if (!gender) return '—';
+  const code = String(gender).toLowerCase();
+  if (code === 'm' || code === 'male') return 'Male';
+  if (code === 'f' || code === 'female') return 'Female';
+  if (code === 'o' || code === 'other') return 'Other';
+  return String(gender);
+};
+
+const formatDateLabel = (value, template = 'MMM d, yyyy') => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return format(date, template);
+};
+
+const formatAdmissionStatus = (status) => {
+  if (!status) return '—';
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
 /**
  * PatientChronicleListPage - Search-first patient registry
  *
@@ -171,6 +238,8 @@ const PatientChronicleListPage = () => {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid");
+  const [searchOrdering, setSearchOrdering] = useState(DEFAULT_SEARCH_ORDERING);
+  const [searchPage, setSearchPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
@@ -191,9 +260,18 @@ const PatientChronicleListPage = () => {
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
   const isSearchEnabled = debouncedSearchQuery.length >= 2 || hasActiveFilters;
-  const searchParams = useMemo(
+  const baseSearchParams = useMemo(
     () => buildSearchParams(debouncedSearchQuery, appliedFilters),
     [debouncedSearchQuery, appliedFilters]
+  );
+  const searchParams = useMemo(
+    () => ({
+      ...baseSearchParams,
+      ordering: searchOrdering,
+      page: searchPage,
+      page_size: SEARCH_TABLE_PAGE_SIZE,
+    }),
+    [baseSearchParams, searchOrdering, searchPage]
   );
 
   const {
@@ -201,6 +279,10 @@ const PatientChronicleListPage = () => {
     isLoading: isSearchLoading,
     refetch: refetchSearch,
   } = usePatientSearch(searchParams, { enabled: isSearchEnabled });
+
+  useEffect(() => {
+    setSearchPage(1);
+  }, [debouncedSearchQuery, appliedFilters]);
 
   // Recent patients (limited to 10)
   const {
@@ -272,7 +354,14 @@ const PatientChronicleListPage = () => {
     return normalizeApiResults(searchResults);
   }, [searchResults, isSearching]);
 
-  const searchTotal = searchResults?.total ?? searchPatients.length;
+  const searchTotal = searchResults?.total ?? searchResults?.count ?? searchPatients.length;
+  const searchCurrentPage = searchResults?.page ?? searchPage;
+  const searchPageSize = searchResults?.page_size ?? SEARCH_TABLE_PAGE_SIZE;
+  const searchTotalPages = searchPageSize > 0
+    ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
+    : 1;
+  const searchHasNext = Boolean(searchResults?.next) || searchCurrentPage < searchTotalPages;
+  const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
 
   const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
   const searchSummary = isSearching
@@ -353,10 +442,12 @@ const PatientChronicleListPage = () => {
   const handleSearchChange = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
+    setSearchPage(1);
   };
 
   const handleClearSearch = () => {
     setSearchQuery("");
+    setSearchPage(1);
   };
 
   const handleRefresh = () => {
@@ -370,18 +461,21 @@ const PatientChronicleListPage = () => {
 
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters);
+    setSearchPage(1);
     setFiltersOpen(false);
   };
 
   const handleClearFilters = () => {
     setDraftFilters(createEmptyFilters());
     setAppliedFilters(createEmptyFilters());
+    setSearchPage(1);
   };
 
   const handleClearAll = () => {
     setSearchQuery("");
     setDraftFilters(createEmptyFilters());
     setAppliedFilters(createEmptyFilters());
+    setSearchPage(1);
   };
 
   const handleRemoveFilter = (key) => {
@@ -399,6 +493,7 @@ const PatientChronicleListPage = () => {
     };
     setAppliedFilters(cleared);
     setDraftFilters(cleared);
+    setSearchPage(1);
   };
 
   const handleAddPatient = () => {
@@ -406,25 +501,46 @@ const PatientChronicleListPage = () => {
   };
 
   const handleStartRound = (patient) => {
-    const patientId = patient?.id || patient?.patient_profile;
+    const patientId = getPatientId(patient);
     if (patientId) {
       navigate(`/patients/${patientId}?wardRound=true`);
     }
   };
 
   const handleStartConsultation = (patient) => {
-    const patientId = patient?.id || patient?.patient_profile;
+    const patientId = getPatientId(patient);
     if (patientId) {
       navigate(`/patients/${patientId}?consultation=true`);
     }
   };
 
+  const handleOpenPatient = (patient) => {
+    const patientId = getPatientId(patient);
+    if (patientId) {
+      navigate(`/patients/${patientId}`);
+    }
+  };
+
+  const handleSearchOrderingChange = (field) => {
+    setSearchOrdering((current) => {
+      const currentField = current.startsWith('-') ? current.slice(1) : current;
+      if (currentField !== field) {
+        return field;
+      }
+      return current.startsWith('-') ? field : `-${field}`;
+    });
+    setSearchPage(1);
+  };
+
+  const handleSearchPageChange = (nextPage) => {
+    if (!Number.isFinite(nextPage)) return;
+    const boundedPage = Math.min(Math.max(nextPage, 1), searchTotalPages);
+    setSearchPage(boundedPage);
+  };
+
   const handleAddToMyPatients = (patientId) => {
     addToMyPatients.mutate({ patientId });
   };
-
-  // Loading state
-  const isLoading = isSearching ? isSearchLoading : (isRecentLoading || isContextLoading);
 
   const listControls = (
     <div className="flex items-center justify-end gap-2">
@@ -444,12 +560,12 @@ const PatientChronicleListPage = () => {
           <LayoutGrid className="h-4 w-4" aria-hidden="true" />
         </button>
         <button
-          onClick={() => setViewMode('list')}
-          aria-label="List view"
-          aria-pressed={viewMode === 'list'}
+          onClick={() => setViewMode('table')}
+          aria-label="Table view"
+          aria-pressed={viewMode === 'table'}
           className={cn(
             "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            viewMode === 'list'
+            viewMode === 'table'
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           )}
@@ -882,6 +998,15 @@ const PatientChronicleListPage = () => {
             searchQuery={effectiveSearchQuery}
             hasActiveFilters={hasActiveFilters}
             viewMode={viewMode}
+            ordering={searchOrdering}
+            onOrderingChange={handleSearchOrderingChange}
+            currentPage={searchCurrentPage}
+            totalPages={searchTotalPages}
+            totalResults={searchTotal}
+            hasNextPage={searchHasNext}
+            hasPreviousPage={searchHasPrevious}
+            onPageChange={handleSearchPageChange}
+            onOpenPatient={handleOpenPatient}
             onStartRound={handleStartRound}
             onStartConsultation={handleStartConsultation}
             onAddToMyPatients={handleAddToMyPatients}
@@ -938,6 +1063,15 @@ const SearchResultsSection = ({
   searchQuery,
   hasActiveFilters,
   viewMode,
+  ordering,
+  onOrderingChange,
+  currentPage,
+  totalPages,
+  totalResults,
+  hasNextPage,
+  hasPreviousPage,
+  onPageChange,
+  onOpenPatient,
   onStartRound,
   onStartConsultation,
   onAddToMyPatients,
@@ -1002,7 +1136,7 @@ const SearchResultsSection = ({
         rowHeight={320}
         gap={24}
         getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
-        renderItem={({ patient, originalIndex }, index) => (
+        renderItem={({ patient }, index) => (
           <PatientChronicleCard
             patient={patient}
             index={index}
@@ -1018,24 +1152,160 @@ const SearchResultsSection = ({
   }
 
   return (
-    <VirtualizedList
-      items={uniquePatients}
-      estimateSize={180}
-      gap={16}
-      getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
-      renderItem={({ patient }, index) => (
-        <PatientChronicleCard
-          patient={patient}
-          index={index}
-          onStartRound={onStartRound}
-          onStartConsultation={onStartConsultation}
-          onAddToMyPatients={onAddToMyPatients}
-          showMyPatientsActions={showMyPatientsActions}
-          onPrefetchPatient={onPrefetchPatient}
-          className="max-w-none"
-        />
-      )}
+    <SearchResultsTable
+      patients={uniquePatients}
+      ordering={ordering}
+      onOrderingChange={onOrderingChange}
+      currentPage={currentPage}
+      totalPages={totalPages}
+      totalResults={totalResults}
+      hasNextPage={hasNextPage}
+      hasPreviousPage={hasPreviousPage}
+      onPageChange={onPageChange}
+      onOpenPatient={onOpenPatient}
+      onPrefetchPatient={onPrefetchPatient}
     />
+  );
+};
+
+const SortableTableHead = ({ column, ordering, onOrderingChange }) => {
+  const isDescending = ordering === `-${column.key}`;
+  const isAscending = ordering === column.key;
+  const isActive = isDescending || isAscending;
+
+  return (
+    <TableHead className="h-11">
+      <button
+        type="button"
+        onClick={() => onOrderingChange(column.key)}
+        className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+        aria-label={`Sort by ${column.label}`}
+      >
+        <span>{column.label}</span>
+        {isActive ? (
+          isDescending ? (
+            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
+        )}
+      </button>
+    </TableHead>
+  );
+};
+
+const SearchResultsTable = ({
+  patients,
+  ordering,
+  onOrderingChange,
+  currentPage,
+  totalPages,
+  totalResults,
+  hasNextPage,
+  hasPreviousPage,
+  onPageChange,
+  onOpenPatient,
+  onPrefetchPatient,
+}) => {
+  return (
+    <div className="rounded-xl border border-border/70 bg-card">
+      <Table className="min-w-[920px]">
+        <TableHeader className="bg-muted/30">
+          <TableRow>
+            {TABLE_COLUMNS.map((column) => (
+              <SortableTableHead
+                key={column.key}
+                column={column}
+                ordering={ordering}
+                onOrderingChange={onOrderingChange}
+              />
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {patients.map(({ patient, originalIndex }, index) => {
+            const patientId = getPatientId(patient);
+            const rowKey = patientId ? `table-${patientId}` : `table-${originalIndex}-${index}`;
+            const age = getPatientAge(patient?.date_of_birth);
+            const dobLabel = formatDateLabel(patient?.date_of_birth);
+            const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
+            return (
+              <TableRow
+                key={rowKey}
+                className="cursor-pointer"
+                onMouseEnter={() => onPrefetchPatient(patientId)}
+                onFocus={() => onPrefetchPatient(patientId)}
+                onClick={() => onOpenPatient(patient)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenPatient(patient);
+                  }
+                }}
+                tabIndex={0}
+                aria-label={`Open ${patient?.name || 'patient'} chart`}
+              >
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {patient?.medical_record_number || '—'}
+                </TableCell>
+                <TableCell className="font-medium text-sm">
+                  {patient?.name || 'Unknown Patient'}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {dobWithAge}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {formatGender(patient?.gender)}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {patient?.current_ward || '—'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {formatAdmissionStatus(patient?.admission_status)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {formatDateLabel(patient?.admission_date)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
+        <p className="text-xs font-mono text-muted-foreground">
+          {totalResults} result{totalResults === 1 ? '' : 's'} · Page {currentPage} of {totalPages}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={!hasPreviousPage}
+            className="font-mono text-xs"
+          >
+            <ChevronLeft className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Previous
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={!hasNextPage}
+            className="font-mono text-xs"
+          >
+            Next
+            <ChevronRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 };
 

@@ -116,6 +116,21 @@ export const patientsApi = {
   },
 
   /**
+   * Search patients and preserve pagination metadata.
+   * @param {Object|string} params - Search parameters
+   * @returns {Promise<Object>} Search response with results + paging metadata
+   */
+  searchPatientsWithMeta: async (params) => {
+    try {
+      const queryParams = typeof params === 'string' ? { query: params } : params;
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.getWithPagination(`/patients/search/?${queryString}`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to search patients'));
+    }
+  },
+
+  /**
    * Get recent patients
    * @param {Object} params - Query parameters
    * @param {number} params.limit - Maximum number of results (default: 10, max: 20)

@@ -557,6 +557,93 @@ class TestPatientViewSet:
         assert 'results' in response.data
         assert 'total' in response.data
 
+    def test_search_supports_ordering_by_name(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        patient_a = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Zulu', primary_facility=facility),
+            medical_record_number='MRN-SORT-003',
+        )
+        patient_b = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Alpha', primary_facility=facility),
+            medical_record_number='MRN-SORT-001',
+        )
+        patient_c = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Lima', primary_facility=facility),
+            medical_record_number='MRN-SORT-002',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'Sort',
+            'ordering': 'name',
+            'page_size': 10,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert ids == [str(patient_b.id), str(patient_c.id), str(patient_a.id)]
+
+    def test_search_supports_pagination_metadata(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        for idx in range(3):
+            PatientProfileFactory(
+                facility=facility,
+                user=PatientUserFactory(
+                    first_name='Paged',
+                    last_name=f'Patient{idx}',
+                    primary_facility=facility,
+                ),
+                medical_record_number=f'MRN-PAGE-00{idx}',
+            )
+
+        client = get_authenticated_client(admin, facility=facility)
+        first_page = client.get('/api/patients/search/', {
+            'query': 'Paged',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 1,
+        })
+
+        assert first_page.status_code == status.HTTP_200_OK
+        assert first_page.data.get('total') == 3
+        assert first_page.data.get('page') == 1
+        assert first_page.data.get('page_size') == 2
+        assert len(first_page.data.get('results', [])) == 2
+        assert first_page.data.get('next') is not None
+        assert 'admission_status' in first_page.data['results'][0]
+
+        second_page = client.get('/api/patients/search/', {
+            'query': 'Paged',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 2,
+        })
+
+        assert second_page.status_code == status.HTTP_200_OK
+        assert second_page.data.get('page') == 2
+        assert len(second_page.data.get('results', [])) == 1
+        assert second_page.data.get('previous') is not None
+
+    def test_search_rejects_invalid_ordering(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        client = get_authenticated_client(admin, facility=facility)
+
+        response = client.get('/api/patients/search/', {
+            'query': 'John',
+            'ordering': 'unsupported_field',
+        })
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data.get('error') == 'Invalid ordering field.'
+
     def test_search_filters_admission_date_range(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility

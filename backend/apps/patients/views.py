@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Prefetch, Exists, OuterRef
+from django.db.models import Prefetch, Exists, OuterRef, Subquery
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from django.conf import settings
@@ -315,6 +315,7 @@ class PatientViewSet(viewsets.ViewSet):
     API endpoint for patient management.
     """
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = StandardResultsSetPagination
 
     @action(detail=False, methods=['post'])
     def register(self, request):
@@ -391,8 +392,28 @@ class PatientViewSet(viewsets.ViewSet):
         attending_id = request.query_params.get('attending_id', '').strip()
         age_min = request.query_params.get('age_min', '').strip()
         age_max = request.query_params.get('age_max', '').strip()
+        ordering = request.query_params.get('ordering', '-admission_date').strip() or '-admission_date'
+        requested_page = request.query_params.get('page', '').strip() or '1'
+        requested_page_size = request.query_params.get('page_size', '').strip()
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+
+        ordering_field_map = {
+            'name': ('user__last_name', 'user__first_name'),
+            'medical_record_number': ('medical_record_number',),
+            'date_of_birth': ('user__date_of_birth', 'user__last_name', 'user__first_name'),
+            'gender': ('user__gender', 'user__last_name', 'user__first_name'),
+            'current_ward': ('sort_current_ward', 'user__last_name', 'user__first_name'),
+            'admission_status': ('sort_admission_status', 'user__last_name', 'user__first_name'),
+            'admission_date': ('sort_admission_date', 'user__last_name', 'user__first_name'),
+        }
+        ordering_desc = ordering.startswith('-')
+        ordering_key = ordering[1:] if ordering_desc else ordering
+        if not ordering_key or ordering_key.startswith('-') or ordering_key not in ordering_field_map:
+            return Response(
+                {"error": "Invalid ordering field."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Backward compatibility: treat legacy admission_date as a single-day range.
         if admission_date:
@@ -489,6 +510,9 @@ class PatientViewSet(viewsets.ViewSet):
             "attending_id": attending_id,
             "age_min": age_min_value,
             "age_max": age_max_value,
+            "ordering": ordering,
+            "page": requested_page,
+            "page_size": requested_page_size,
             "my_patients": my_patients,
             "user_id": str(request.user.id),
         }
@@ -524,6 +548,10 @@ class PatientViewSet(viewsets.ViewSet):
                     search_parts.append(f"Age Max: {age_max_value}")
                 if my_patients:
                     search_parts.append("My Patients: true")
+                search_parts.append(f"Ordering: {ordering}")
+                search_parts.append(f"Page: {requested_page}")
+                if requested_page_size:
+                    search_parts.append(f"Page Size: {requested_page_size}")
                 search_desc = ", ".join(search_parts)
                 facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
                 log_patient_search.delay(
@@ -557,6 +585,10 @@ class PatientViewSet(viewsets.ViewSet):
             search_parts.append(f"Age Max: {age_max_value}")
         if my_patients:
             search_parts.append("My Patients: true")
+        search_parts.append(f"Ordering: {ordering}")
+        search_parts.append(f"Page: {requested_page}")
+        if requested_page_size:
+            search_parts.append(f"Page Size: {requested_page_size}")
         search_desc = ", ".join(search_parts)
         facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
         log_patient_search.delay(
@@ -745,18 +777,57 @@ class PatientViewSet(viewsets.ViewSet):
                     earliest_dob = years_ago(age_max_value)
                     local_patients_qs = local_patients_qs.filter(user__date_of_birth__gte=earliest_dob)
 
-            # Limit to 20 results and serialize with lightweight serializer
-            patients_list = list(local_patients_qs[:20])
+            # Annotate active-admission fields once for ordering without N+1 lookups.
+            active_admission_sort_qs = Admission.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                status__in=ACTIVE_ADMISSION_STATUSES,
+            ).order_by('-admission_date')
+            local_patients_qs = local_patients_qs.annotate(
+                sort_admission_date=Subquery(active_admission_sort_qs.values('admission_date')[:1]),
+                sort_admission_status=Subquery(active_admission_sort_qs.values('status')[:1]),
+                sort_current_ward=Subquery(active_admission_sort_qs.values('bed__ward__name')[:1]),
+            )
+
+            order_fields = [
+                f"-{field}" if ordering_desc else field
+                for field in ordering_field_map[ordering_key]
+            ]
+            order_fields.append('-id' if ordering_desc else 'id')
+            local_patients_qs = local_patients_qs.order_by(*order_fields)
+
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(local_patients_qs, request, view=self)
+            patients_list = page if page is not None else list(local_patients_qs)
             results = PatientSearchListSerializer(patients_list, many=True).data
+            total_results = paginator.page.paginator.count if page is not None else len(results)
+            page_number = paginator.page.number if page is not None else 1
+            page_size_value = paginator.get_page_size(request) or len(results)
+            next_link = paginator.get_next_link() if page is not None else None
+            previous_link = paginator.get_previous_link() if page is not None else None
 
             # Log timing
             local_proc_time = time.time()
-            logger.info(f"Search completed in {local_proc_time - start_time:.4f}s. Count: {len(results)}")
+            logger.info(
+                "Search completed in %.4fs. Returned=%s total=%s ordering=%s page=%s page_size=%s",
+                local_proc_time - start_time,
+                len(results),
+                total_results,
+                ordering,
+                page_number,
+                page_size_value,
+            )
 
             response_data = {
                 "query": query,
-                "total": len(results),
-                "results": results
+                "ordering": ordering,
+                "total": total_results,
+                "count": total_results,
+                "page": page_number,
+                "page_size": page_size_value,
+                "next": next_link,
+                "previous": previous_link,
+                "results": results,
             }
 
             # Cache results for 30 seconds (skip caching for FHIR results)
