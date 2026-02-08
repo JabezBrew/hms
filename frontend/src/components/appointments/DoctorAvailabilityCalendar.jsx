@@ -39,6 +39,7 @@ import {
  * - Two-column layout (calendar | slots)
  */
 const DoctorAvailabilityCalendar = ({
+  clinicId,
   practitionerId,
   onSlotSelect,
 }) => {
@@ -50,32 +51,53 @@ const DoctorAvailabilityCalendar = ({
   const calendarStart = startOfWeek(startOfMonth(currentMonth));
   const calendarEnd = endOfWeek(endOfMonth(currentMonth));
 
-  const dateRangeParams = {
-    practitioner_id: practitionerId,
-    start_date: format(calendarStart, 'yyyy-MM-dd'),
-    end_date: format(calendarEnd, 'yyyy-MM-dd'),
-  };
+  const hasPractitioner = Boolean(practitionerId);
+  const hasClinic = Boolean(clinicId);
 
-  // Fetch data with server-side filtering by practitioner
-  // Note: practitionerId must be the UUID (local_data.id), not FHIR resource ID
-  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams);
+  const dateRangeParams = useMemo(() => {
+    const params = {
+      start_date: format(calendarStart, 'yyyy-MM-dd'),
+      end_date: format(calendarEnd, 'yyyy-MM-dd'),
+    };
+
+    if (hasPractitioner) {
+      params.practitioner_id = practitionerId;
+    } else if (hasClinic) {
+      params.clinic_id = clinicId;
+    }
+
+    return params;
+  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId]);
+
+  // Fetch slots with server-side filtering by practitioner or clinic
+  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams, {
+    enabled: hasPractitioner || hasClinic,
+  });
 
   const { data: recurringSchedulesData, isLoading: recurringLoading } = useRecurringSchedules(
-    practitionerId ? { practitioner: practitionerId } : {}
+    practitionerId ? { practitioner: practitionerId } : {},
+    { enabled: hasPractitioner }
   );
 
   const { data: blockedTimesData, isLoading: blockedLoading } = useBlockedTimes(
-    practitionerId ? { practitioner: practitionerId } : {}
+    practitionerId ? { practitioner: practitionerId } : {},
+    { enabled: hasPractitioner }
   );
 
   // Normalize data to arrays
-  const recurringSchedules = Array.isArray(recurringSchedulesData)
-    ? recurringSchedulesData
-    : recurringSchedulesData?.results || [];
+  const recurringSchedules = useMemo(
+    () => (Array.isArray(recurringSchedulesData)
+      ? recurringSchedulesData
+      : recurringSchedulesData?.results || []),
+    [recurringSchedulesData]
+  );
 
-  const blockedTimes = Array.isArray(blockedTimesData)
-    ? blockedTimesData
-    : blockedTimesData?.results || [];
+  const blockedTimes = useMemo(
+    () => (Array.isArray(blockedTimesData)
+      ? blockedTimesData
+      : blockedTimesData?.results || []),
+    [blockedTimesData]
+  );
 
   const isLoading = slotsLoading || recurringLoading || blockedLoading;
 

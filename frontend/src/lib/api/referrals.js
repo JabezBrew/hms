@@ -146,6 +146,78 @@ export const referralsApi = {
     }
   },
 
+  getReferralSlaState: async (id) => {
+    try {
+      return await apiClient.get(`/referrals/${id}/sla-state/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral SLA state'));
+    }
+  },
+
+  evaluateReferralSla: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/${id}/evaluate-sla/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to evaluate referral SLA'));
+    }
+  },
+
+  getReferralSlaDashboard: async () => {
+    try {
+      return await apiClient.get('/referrals/sla-dashboard/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral SLA dashboard'));
+    }
+  },
+
+  getClinicWaitlist: async (params = {}) => {
+    try {
+      return await apiClient.get('/referrals/clinic-waitlist/', { params });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch clinic waitlist'));
+    }
+  },
+
+  createClinicWaitlistEntry: async (data) => {
+    try {
+      return await apiClient.post('/referrals/clinic-waitlist/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create waitlist entry'));
+    }
+  },
+
+  offerNextClinicWaitlistEntry: async (data) => {
+    try {
+      return await apiClient.post('/referrals/clinic-waitlist/offer-next/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to offer next waitlist entry'));
+    }
+  },
+
+  promoteClinicWaitlistEntry: async (id, data) => {
+    try {
+      return await apiClient.post(`/referrals/clinic-waitlist/${id}/promote/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to promote waitlist entry'));
+    }
+  },
+
+  cancelClinicWaitlistEntry: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/clinic-waitlist/${id}/cancel/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to cancel waitlist entry'));
+    }
+  },
+
+  getClinicWaitlistSummary: async () => {
+    try {
+      return await apiClient.get('/referrals/clinic-waitlist/summary/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch waitlist summary'));
+    }
+  },
+
   // Notification endpoints
   getNotifications: async (params = {}) => {
     try {

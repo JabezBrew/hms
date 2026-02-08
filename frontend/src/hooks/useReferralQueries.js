@@ -15,6 +15,10 @@ export const referralKeys = {
   inboxCount: () => keyWith('referrals', 'inbox-count'),
   sent: () => keyWith('referrals', 'sent'),
   pending: () => keyWith('referrals', 'pending'),
+  slaDashboard: () => keyWith('referrals', 'sla-dashboard'),
+  slaState: (id) => keyWith('referrals', 'sla-state', id),
+  clinicWaitlist: (filters) => keyWith('referrals', 'clinic-waitlist', filters),
+  clinicWaitlistSummary: () => keyWith('referrals', 'clinic-waitlist-summary'),
   notifications: () => keyWith('referralNotifications'),
   notificationCount: () => keyWith('referralNotificationCount'),
 };
@@ -220,6 +224,57 @@ export function usePendingReferrals() {
   return useQuery({
     queryKey: referralKeys.pending(),
     queryFn: () => referralsApi.getPendingReferrals(),
+  });
+}
+
+/**
+ * Get aggregate referral SLA dashboard for open referrals.
+ */
+export function useReferralSlaDashboard(options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: referralKeys.slaDashboard(),
+    queryFn: () => referralsApi.getReferralSlaDashboard(),
+    enabled,
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Get SLA state for one referral.
+ */
+export function useReferralSlaState(id, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: referralKeys.slaState(id),
+    queryFn: () => referralsApi.getReferralSlaState(id),
+    enabled: enabled && !!id,
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Get clinic waitlist entries.
+ */
+export function useClinicWaitlist(filters = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: referralKeys.clinicWaitlist(filters),
+    queryFn: () => referralsApi.getClinicWaitlist(filters),
+    enabled,
+  });
+}
+
+/**
+ * Get aggregate waitlist summary rows.
+ */
+export function useClinicWaitlistSummary(options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: referralKeys.clinicWaitlistSummary(),
+    queryFn: () => referralsApi.getClinicWaitlistSummary(),
+    enabled,
+    staleTime: 30 * 1000,
   });
 }
 

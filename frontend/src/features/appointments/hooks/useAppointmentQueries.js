@@ -207,11 +207,12 @@ export function useUpdateAppointmentStatus() {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useAvailableSlots(params = {}) {
+export function useAvailableSlots(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.availableSlots(params),
     queryFn: () => appointmentsApi.getAvailableSlots(params),
-    enabled: Object.keys(params).length > 0, // Only run if we have parameters
+    enabled: enabled && Object.keys(params).length > 0, // Only run if we have parameters
     staleTime: 0, // Always fetch fresh data for just-in-time slots
   });
 }
@@ -221,10 +222,12 @@ export function useAvailableSlots(params = {}) {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useBlockedTimes(params = {}) {
+export function useBlockedTimes(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.blockedTimes(params),
     queryFn: () => appointmentsApi.getBlockedTimes(params),
+    enabled,
   });
 }
 
@@ -371,10 +374,12 @@ export function useScheduleSlots(scheduleId, params = {}) {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useRecurringSchedules(params = {}) {
+export function useRecurringSchedules(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: [...appointmentKeys.recurringSchedules(), params],
     queryFn: () => appointmentsApi.getRecurringSchedules(params),
+    enabled,
   });
 }
 
