@@ -42,7 +42,6 @@ const PatientCreatePage = () => {
       // Single URL - PatientPage component handles role-based view
       navigate(`/patients/${patientId}`);
     } else {
-      console.error('No patient ID found in the response:', newPatient);
       navigate('/patients');
     }
   };
@@ -77,7 +76,7 @@ const PatientCreatePage = () => {
             </div>
             <PageHeader
               title="Register New Patient"
-              description="Enter patient demographics, medical information, and contact details"
+              description="Capture patient identity, contact details, insurance, and encounter routing"
               size="md"
               wrap={false}
               className="border-none bg-transparent p-0"

@@ -7,7 +7,6 @@ import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import Mail from 'lucide-react/dist/esm/icons/mail.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CalendarPlus from 'lucide-react/dist/esm/icons/calendar-plus.js';
@@ -200,7 +199,6 @@ const PatientDemographicsPage = () => {
   const email = patient?.user_details?.email || patient?.user?.email;
   const phone = patient?.user_details?.phone_number || patient?.user?.phone_number;
   const dob = patient?.user_details?.date_of_birth || patient?.user?.date_of_birth;
-  const bloodGroup = patient?.blood_group;
   const nhisId = patient?.nhis_id;
 
   // Loading state
@@ -310,12 +308,6 @@ const PatientDemographicsPage = () => {
                 <span className="font-mono text-xs text-muted-foreground">
                   {mrn}
                 </span>
-                {bloodGroup && (
-                  <Badge variant="outline" className="text-xs">
-                    <Heart className="h-3 w-3 mr-1" />
-                    {bloodGroup}
-                  </Badge>
-                )}
               </div>
               {dob && (
                 <p className="text-sm text-muted-foreground">
