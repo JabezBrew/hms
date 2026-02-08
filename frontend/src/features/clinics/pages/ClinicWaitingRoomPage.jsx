@@ -121,7 +121,7 @@ export default function ClinicWaitingRoomPage() {
   }
 
   const handlePatientClick = (visit) => {
-    navigate(`/patients/${visit.encounter_id}`);
+    navigate(`/patients/${visit.patient_id || visit.encounter_id}`);
   };
 
   return (

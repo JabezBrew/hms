@@ -587,6 +587,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
         data = [
             {
                 "encounter_id": str(visit.encounter_id),
+                "patient_id": str(visit.encounter.patient_id),
                 "queue_number": visit.queue_number,
                 "visit_status": visit.visit_status,
                 "patient_name": visit.encounter.patient_name,

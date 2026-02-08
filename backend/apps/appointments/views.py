@@ -400,7 +400,9 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             )
 
             from apps.encounters.services import VisitService
-            VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            visit = VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            # Front desk check-in should place the patient into the waiting room queue by default.
+            VisitService.add_to_waiting(visit)
 
             appointment.status = 'arrived'
             appointment.updated_by = request.user

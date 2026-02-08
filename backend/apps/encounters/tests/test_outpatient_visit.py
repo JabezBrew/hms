@@ -102,8 +102,7 @@ class TestOutpatientVisitFlow:
         response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
         encounter_id = response.data['encounter_id']
         visit = OutpatientVisit.objects.get(encounter_id=encounter_id)
-        visit.visit_status = OutpatientVisit.VisitStatus.WAITING
-        visit.save(update_fields=['visit_status', 'updated_at'])
+        assert visit.visit_status == OutpatientVisit.VisitStatus.WAITING
 
         response = admin_client.get(f'{BASE_URL}/visits/waiting_room/?clinic={clinic.id}')
         assert response.status_code == status.HTTP_200_OK

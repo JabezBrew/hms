@@ -33,11 +33,12 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
   }, [queue]);
 
   const handlePatientClick = (visit) => {
+    const patientId = visit?.patient_id || visit?.patientId;
     if (onPatientClick) {
       onPatientClick(visit);
     } else {
       // Default: navigate to patient chronicle
-      navigate(`/patients/${visit.encounter_id}`);
+      navigate(`/patients/${patientId || visit.encounter_id}`);
     }
   };
 

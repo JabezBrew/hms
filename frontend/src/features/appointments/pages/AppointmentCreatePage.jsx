@@ -64,7 +64,24 @@ const formSchema = z.object({
 const AppointmentCreatePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const initialData = useMemo(() => location.state || {}, [location.state]);
+  const queryInitialData = useMemo(() => {
+    const params = new URLSearchParams(location.search || '');
+    return {
+      // Support deep-linking from pages that use query params instead of navigation state.
+      patientId: params.get('patient') || params.get('patientId') || '',
+      clinicId: params.get('clinic') || params.get('clinicId') || '',
+      practitionerId: params.get('practitioner') || params.get('practitionerId') || '',
+      appointmentTypeId: params.get('appointment_type') || params.get('appointmentTypeId') || '',
+      slotId: params.get('slot') || params.get('slotId') || '',
+      description: params.get('description') || '',
+      comment: params.get('comment') || '',
+    };
+  }, [location.search]);
+
+  const initialData = useMemo(
+    () => ({ ...queryInitialData, ...(location.state || {}) }),
+    [queryInitialData, location.state]
+  );
 
   const [appointmentTypes, setAppointmentTypes] = useState([]);
   const [clinics, setClinics] = useState([]);
