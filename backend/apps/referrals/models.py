@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models import Q
 
 User = get_user_model()
 
@@ -298,3 +299,229 @@ class ReferralNotification(models.Model):
 
     def __str__(self):
         return f"Referral {self.referral.referral_number} - {self.get_event_display()}"
+
+
+class ReferralSLAPolicy(models.Model):
+    """SLA target configuration per facility/department/urgency."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='referral_sla_policies'
+    )
+    referred_to_department = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Optional department-specific override. Blank means facility-wide default.'
+    )
+    urgency = models.CharField(max_length=20, choices=ReferralUrgency.choices)
+    target_hours = models.PositiveIntegerField(help_text='Target time to first consult in hours.')
+    warning_thresholds = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Percentage thresholds for alerts, e.g. [50, 75, 90].'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_referral_sla_policies'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_referral_sla_policies'
+    )
+
+    class Meta:
+        ordering = ['facility_id', 'referred_to_department', 'urgency']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'referred_to_department', 'urgency'],
+                name='unique_referral_sla_policy_scope'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'is_active']),
+            models.Index(fields=['facility', 'urgency', 'is_active']),
+            models.Index(fields=['facility', 'referred_to_department', 'is_active']),
+        ]
+
+    def __str__(self):
+        scope = self.referred_to_department or 'Facility Default'
+        return f"{self.facility.code} {scope} {self.urgency} {self.target_hours}h"
+
+
+class ReferralSLAEventType(models.TextChoices):
+    THRESHOLD_50 = 'threshold_50', '50% Threshold'
+    THRESHOLD_75 = 'threshold_75', '75% Threshold'
+    THRESHOLD_90 = 'threshold_90', '90% Threshold'
+    BREACH = 'breach', 'SLA Breach'
+
+
+class ReferralSLAEvent(models.Model):
+    """Auditable SLA threshold/breach events for referrals."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    referral = models.ForeignKey(
+        Referral,
+        on_delete=models.CASCADE,
+        related_name='sla_events'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='referral_sla_events'
+    )
+    event_type = models.CharField(max_length=20, choices=ReferralSLAEventType.choices)
+    consumed_percent = models.PositiveSmallIntegerField(default=0)
+    target_hours = models.PositiveIntegerField(default=0)
+    remaining_hours = models.IntegerField(null=True, blank=True)
+    deadline_at = models.DateTimeField(null=True, blank=True)
+    triggered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-triggered_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['referral', 'event_type'],
+                name='unique_referral_sla_event_once'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'event_type', '-triggered_at']),
+            models.Index(fields=['referral', '-triggered_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.referral.referral_number} {self.event_type}"
+
+
+class ClinicWaitlistEntryStatus(models.TextChoices):
+    WAITING = 'waiting', 'Waiting'
+    OFFERED = 'offered', 'Offer Sent'
+    PROMOTED = 'promoted', 'Promoted to Booking'
+    EXPIRED = 'expired', 'Offer Expired'
+    CANCELLED = 'cancelled', 'Cancelled'
+
+
+class ClinicWaitlistRisk(models.TextChoices):
+    RED = 'red', 'Red'
+    AMBER = 'amber', 'Amber'
+    GREEN = 'green', 'Green'
+    NONE = 'none', 'None'
+
+
+class ClinicWaitlistEntry(models.Model):
+    """Clinic session waitlist entry with deterministic triage/ranking attributes."""
+
+    class Source(models.TextChoices):
+        BOOKING = 'booking', 'Booking Full'
+        REFERRAL = 'referral', 'Referral'
+        MANUAL = 'manual', 'Manual Entry'
+        WALK_IN = 'walk_in', 'Walk-In'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='clinic_waitlist_entries'
+    )
+    clinic = models.ForeignKey(
+        'organization.Clinic',
+        on_delete=models.PROTECT,
+        related_name='waitlist_entries'
+    )
+    patient = models.ForeignKey(
+        'users.PatientProfile',
+        on_delete=models.CASCADE,
+        related_name='clinic_waitlist_entries'
+    )
+    referral = models.ForeignKey(
+        Referral,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='waitlist_entries'
+    )
+    preferred_practitioner = models.ForeignKey(
+        'users.PractitionerProfile',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='preferred_waitlist_entries'
+    )
+    requested_start_time = models.DateTimeField()
+    requested_end_time = models.DateTimeField()
+    urgency = models.CharField(max_length=20, choices=ReferralUrgency.choices, default=ReferralUrgency.ROUTINE)
+    deadline_risk = models.CharField(
+        max_length=12,
+        choices=ClinicWaitlistRisk.choices,
+        default=ClinicWaitlistRisk.NONE
+    )
+    vulnerability_flag = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=20,
+        choices=ClinicWaitlistEntryStatus.choices,
+        default=ClinicWaitlistEntryStatus.WAITING
+    )
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL)
+    notes = models.TextField(blank=True)
+    wait_started_at = models.DateTimeField(auto_now_add=True)
+    offer_sent_at = models.DateTimeField(null=True, blank=True)
+    offer_expires_at = models.DateTimeField(null=True, blank=True)
+    promoted_appointment = models.ForeignKey(
+        'appointments.Appointment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='promoted_waitlist_entries'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_clinic_waitlist_entries'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_clinic_waitlist_entries'
+    )
+
+    class Meta:
+        ordering = ['wait_started_at']
+        constraints = [
+            models.CheckConstraint(
+                check=Q(requested_start_time__lt=models.F('requested_end_time')),
+                name='clinic_waitlist_start_before_end'
+            ),
+            models.UniqueConstraint(
+                fields=['clinic', 'patient'],
+                condition=Q(status__in=[ClinicWaitlistEntryStatus.WAITING, ClinicWaitlistEntryStatus.OFFERED]),
+                name='unique_active_waitlist_per_clinic_patient'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['facility', 'status', 'wait_started_at']),
+            models.Index(fields=['clinic', 'status', 'wait_started_at']),
+            models.Index(fields=['patient', 'status']),
+            models.Index(fields=['referral', 'status']),
+            models.Index(fields=['urgency', 'deadline_risk', 'vulnerability_flag']),
+        ]
+
+    def __str__(self):
+        return f"{self.patient_id} {self.clinic_id} {self.status}"

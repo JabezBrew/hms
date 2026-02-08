@@ -3,6 +3,8 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 from .models import Referral, ReferralStatus
+from apps.core.models import Facility
+from .services import ReferralSLAService, ClinicWaitlistService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -289,3 +291,27 @@ def send_referral_reminder(self, referral_id):
         logger.error(f"Error sending referral reminder: {str(e)}")
         # Retry the task with exponential backoff
         raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+
+
+@shared_task
+def evaluate_referral_sla_events(facility_code=None, limit=None):
+    """Evaluate SLA thresholds/breaches for open referrals."""
+    facility = None
+    if facility_code:
+        facility = Facility.objects.filter(code=facility_code).first()
+    result = ReferralSLAService.evaluate_open_referrals(facility=facility, limit=limit)
+    logger.info(
+        "Referral SLA evaluation completed processed=%s events=%s facility=%s",
+        result.get('processed'),
+        result.get('events_created'),
+        facility_code or 'ALL',
+    )
+    return result
+
+
+@shared_task
+def expire_waitlist_offers(facility_code=None):
+    """Expire stale waitlist offers after response window."""
+    expired = ClinicWaitlistService.expire_offers()
+    logger.info("Expired waitlist offers count=%s facility=%s", expired, facility_code or 'ALL')
+    return {'expired': expired}

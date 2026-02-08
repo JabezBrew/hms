@@ -30,6 +30,7 @@ from apps.organization.models import (
     DepartmentDutyType,
     RosterEntry,
 )
+from apps.referrals.models import ClinicWaitlistEntry
 
 
 # Base URL prefix for appointments app
@@ -577,6 +578,79 @@ class TestAppointmentViewSet:
         appointment.refresh_from_db()
         assert appointment.practitioner_id == practitioner.id
         assert appointment.assignment_source == Appointment.AssignmentSource.CHECK_IN
+
+    def test_pool_clinic_full_slot_with_auto_waitlist_creates_waitlist_entry(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        booked_patient = PatientProfileFactory(facility=facility)
+        waitlist_patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        slot_start = time(12, 0)
+        slot_end = time(12, 30)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Waitlist Duty',
+            code='WAITLIST-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        Appointment.objects.create(
+            facility=facility,
+            patient=booked_patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            source='scheduled',
+            start_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)),
+            end_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)),
+        )
+
+        payload = {
+            'patient': str(waitlist_patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)).isoformat(),
+            'end_time': timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)).isoformat(),
+            'auto_waitlist': True,
+        }
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.data.get('waitlisted') is True
+        assert ClinicWaitlistEntry.objects.filter(
+            clinic=clinic,
+            patient=waitlist_patient,
+            status='waiting',
+        ).exists()
 
     def test_available_slots_supports_pool_clinic_query(self, admin_client, db):
         facility = DefaultFacilityFactory()

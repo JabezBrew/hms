@@ -7,10 +7,15 @@ Tests cover:
 import pytest
 from rest_framework import status
 from django.utils import timezone
+from datetime import timedelta
+from rest_framework_simplejwt.tokens import AccessToken
 
-from apps.referrals.models import Referral
+from apps.referrals.models import Referral, ClinicWaitlistEntry
 from .factories import ReferralFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.core.tests.factories import DefaultFacilityFactory
+from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
+from apps.appointments.models import AppointmentType
 
 
 # Base URL prefix for referrals app (router registered at root)
@@ -22,6 +27,49 @@ def get_url(path=''):
     if path:
         return f'{BASE_URL}/{path}'
     return f'{BASE_URL}/'
+
+
+def create_clinic(
+    facility,
+    booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+    assignment_timing=Clinic.AssignmentTiming.BOOKING,
+):
+    suffix = str(facility.id).replace('-', '')[:8]
+    facility_type = UnitTypeConfig.objects.create(
+        code=f"facref-{suffix}",
+        name='Facility',
+        can_be_root=True,
+        depth_level=0,
+    )
+    department_type = UnitTypeConfig.objects.create(
+        code=f"depref-{suffix}",
+        name='Department',
+        depth_level=1,
+    )
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=f"{facility.code}-REF",
+        name=f'{facility.name} Unit',
+        is_active=True,
+    )
+    department = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='REF-OPD',
+        name='Referral OPD',
+        is_active=True,
+    )
+    return Clinic.objects.create(
+        facility=facility,
+        department=department,
+        code='REF-CLINIC',
+        name='Referral Clinic',
+        booking_mode=booking_mode,
+        assignment_timing=assignment_timing,
+        waitlist_enabled=True,
+        is_active=True,
+    )
 
 
 @pytest.mark.tier1
@@ -312,3 +360,79 @@ class TestReferralAuthentication:
         """Test that endpoints require authentication."""
         response = api_client.get(f'{BASE_URL}/')
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.tier1
+class TestReferralSLAAndWaitlist:
+    def _authenticate_as_practitioner(self, api_client):
+        practitioner = PractitionerProfileFactory()
+        user = practitioner.staff.user
+        facility = user.primary_facility
+        token = AccessToken.for_user(user)
+        token['facility_code'] = facility.code
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
+        return practitioner, facility
+
+    def test_referral_sla_state_endpoint(self, api_client, db):
+        practitioner, facility = self._authenticate_as_practitioner(api_client)
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            patient=patient,
+            facility=facility,
+            referring_provider=practitioner,
+            status='accepted',
+            submitted_at=timezone.now() - timedelta(hours=4),
+            accepted_at=timezone.now() - timedelta(hours=3),
+            urgency='urgent',
+        )
+
+        response = api_client.get(get_url(f'{referral.id}/sla-state/'))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['referral_id'] == str(referral.id)
+        assert response.data['sla_state']['target_hours'] > 0
+        assert response.data['sla_state']['risk_band'] in ['green', 'amber', 'red', 'none']
+
+    def test_waitlist_create_and_promote_to_appointment(self, api_client, db):
+        practitioner, facility = self._authenticate_as_practitioner(api_client)
+        patient = PatientProfileFactory(facility=facility)
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+            assignment_timing=Clinic.AssignmentTiming.BOOKING,
+        )
+        appointment_type = AppointmentType.objects.create(
+            name='Referral Follow-up',
+            duration_minutes=30,
+            category='in_person',
+        )
+
+        start = timezone.now() + timedelta(days=1, hours=1)
+        end = start + timedelta(minutes=30)
+        create_payload = {
+            'clinic': str(clinic.id),
+            'patient': str(patient.id),
+            'requested_start_time': start.isoformat(),
+            'requested_end_time': end.isoformat(),
+            'urgency': 'routine',
+            'source': 'manual',
+        }
+        create_response = api_client.post(get_url('clinic-waitlist/'), create_payload, format='json')
+        assert create_response.status_code == status.HTTP_201_CREATED
+        entry_id = create_response.data['id']
+
+        promote_response = api_client.post(
+            get_url(f'clinic-waitlist/{entry_id}/promote/'),
+            {
+                'appointment_type_id': str(appointment_type.id),
+                'practitioner_id': str(practitioner.id),
+            },
+            format='json',
+        )
+        assert promote_response.status_code == status.HTTP_200_OK
+        assert promote_response.data.get('appointment_id')
+
+        entry = ClinicWaitlistEntry.objects.get(id=entry_id)
+        assert entry.status == 'promoted'

@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Referral
+from .models import (
+    Referral,
+    ReferralSLAPolicy,
+    ReferralSLAEvent,
+    ClinicWaitlistEntry,
+)
 
 
 @admin.register(Referral)
@@ -70,3 +75,25 @@ class ReferralAdmin(admin.ModelAdmin):
             return f"{days} days"
         return "Not submitted"
     days_since_submission.short_description = 'Days Since Submission'
+
+
+@admin.register(ReferralSLAPolicy)
+class ReferralSLAPolicyAdmin(admin.ModelAdmin):
+    list_display = ['facility', 'referred_to_department', 'urgency', 'target_hours', 'is_active']
+    list_filter = ['facility', 'urgency', 'is_active']
+    search_fields = ['facility__code', 'referred_to_department']
+
+
+@admin.register(ReferralSLAEvent)
+class ReferralSLAEventAdmin(admin.ModelAdmin):
+    list_display = ['referral', 'event_type', 'consumed_percent', 'deadline_at', 'triggered_at']
+    list_filter = ['event_type', 'facility']
+    search_fields = ['referral__referral_number']
+    readonly_fields = ['triggered_at']
+
+
+@admin.register(ClinicWaitlistEntry)
+class ClinicWaitlistEntryAdmin(admin.ModelAdmin):
+    list_display = ['clinic', 'patient', 'urgency', 'deadline_risk', 'status', 'wait_started_at']
+    list_filter = ['facility', 'clinic', 'status', 'urgency', 'deadline_risk', 'vulnerability_flag']
+    search_fields = ['patient__user__first_name', 'patient__user__last_name', 'clinic__name']

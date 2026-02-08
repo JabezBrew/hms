@@ -1,6 +1,15 @@
 from rest_framework import serializers
 from django.utils import timezone
-from .models import Referral, ReferralStatus, ReferralUrgency, ReferralNotification
+from .models import (
+    Referral,
+    ReferralStatus,
+    ReferralUrgency,
+    ReferralNotification,
+    ReferralSLAPolicy,
+    ReferralSLAEvent,
+    ClinicWaitlistEntry,
+)
+from .services import ReferralSLAService
 
 
 class ReferralSerializer(serializers.ModelSerializer):
@@ -23,6 +32,7 @@ class ReferralSerializer(serializers.ModelSerializer):
     # New fields for consultation workflow integration
     consultation_workflow_id = serializers.UUIDField(source='consultation_workflow.id', read_only=True, allow_null=True)
     consultation_encounter_id = serializers.UUIDField(source='consultation_encounter.id', read_only=True, allow_null=True)
+    sla_state = serializers.SerializerMethodField()
 
     class Meta:
         model = Referral
@@ -37,6 +47,7 @@ class ReferralSerializer(serializers.ModelSerializer):
             'specialist_notes', 'recommendations',
             'scheduled_appointment_id',
             'referral_type', 'consultation_workflow_id', 'consultation_encounter_id',
+            'sla_state',
             'submitted_at', 'accepted_at', 'completed_at',
             'declined_at', 'decline_reason',
             'is_urgent', 'days_since_submission', 'requires_action',
@@ -61,6 +72,11 @@ class ReferralSerializer(serializers.ModelSerializer):
         if obj.referred_to_provider:
             return obj.referred_to_provider.staff.user.get_full_name()
         return None
+
+    def get_sla_state(self, obj):
+        if obj.status not in [ReferralStatus.PENDING, ReferralStatus.ACCEPTED, ReferralStatus.SCHEDULED]:
+            return None
+        return ReferralSLAService.compute_state(obj)
 
 
 class ReferralCreateSerializer(serializers.ModelSerializer):
@@ -269,3 +285,110 @@ class ReferralNotificationSerializer(serializers.ModelSerializer):
             'is_read', 'created_at'
         ]
         read_only_fields = ['__all__']
+
+
+class ReferralSLAPolicyListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReferralSLAPolicy
+        fields = [
+            'id', 'referred_to_department', 'urgency',
+            'target_hours', 'warning_thresholds', 'is_active',
+        ]
+
+
+class ReferralSLAPolicySerializer(serializers.ModelSerializer):
+    facility_name = serializers.CharField(source='facility.name', read_only=True)
+
+    class Meta:
+        model = ReferralSLAPolicy
+        fields = '__all__'
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def validate_warning_thresholds(self, value):
+        if value in (None, []):
+            return [50, 75, 90]
+        if not isinstance(value, list):
+            raise serializers.ValidationError('warning_thresholds must be a list of integers.')
+        normalized = []
+        for threshold in value:
+            if not isinstance(threshold, int):
+                raise serializers.ValidationError('warning_thresholds must contain integers only.')
+            if threshold < 1 or threshold > 100:
+                raise serializers.ValidationError('Each warning threshold must be between 1 and 100.')
+            normalized.append(threshold)
+        return sorted(set(normalized))
+
+    def validate_target_hours(self, value):
+        if value < 1:
+            raise serializers.ValidationError('target_hours must be at least 1.')
+        if value > 24 * 365:
+            raise serializers.ValidationError('target_hours cannot exceed one year.')
+        return value
+
+
+class ReferralSLAEventListSerializer(serializers.ModelSerializer):
+    referral_number = serializers.CharField(source='referral.referral_number', read_only=True)
+
+    class Meta:
+        model = ReferralSLAEvent
+        fields = [
+            'id', 'referral', 'referral_number', 'event_type',
+            'consumed_percent', 'deadline_at', 'triggered_at',
+        ]
+
+
+class ClinicWaitlistEntryListSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+    referral_number = serializers.CharField(source='referral.referral_number', read_only=True)
+
+    class Meta:
+        model = ClinicWaitlistEntry
+        fields = [
+            'id',
+            'clinic', 'clinic_name',
+            'patient', 'patient_name',
+            'urgency', 'deadline_risk',
+            'status',
+        ]
+
+
+class ClinicWaitlistEntrySerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
+    clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+    referral_number = serializers.CharField(source='referral.referral_number', read_only=True)
+
+    class Meta:
+        model = ClinicWaitlistEntry
+        fields = '__all__'
+        read_only_fields = [
+            'id', 'facility', 'status', 'deadline_risk',
+            'wait_started_at', 'offer_sent_at', 'offer_expires_at',
+            'promoted_appointment', 'created_at', 'updated_at',
+            'created_by', 'updated_by',
+            'patient_name', 'clinic_name', 'referral_number',
+        ]
+
+    def validate(self, data):
+        start = data.get('requested_start_time', getattr(self.instance, 'requested_start_time', None))
+        end = data.get('requested_end_time', getattr(self.instance, 'requested_end_time', None))
+        clinic = data.get('clinic', getattr(self.instance, 'clinic', None))
+        patient = data.get('patient', getattr(self.instance, 'patient', None))
+        referral = data.get('referral', getattr(self.instance, 'referral', None))
+
+        if start and end and start >= end:
+            raise serializers.ValidationError({'requested_end_time': 'requested_end_time must be after requested_start_time.'})
+
+        request = self.context.get('request')
+        if request:
+            from apps.core.security import get_user_facility
+            facility = get_user_facility(request)
+            if facility:
+                if clinic and clinic.facility_id != facility.id:
+                    raise serializers.ValidationError({'clinic': 'Clinic does not belong to active facility.'})
+                if patient and patient.facility_id != facility.id:
+                    raise serializers.ValidationError({'patient': 'Patient does not belong to active facility.'})
+                if referral and referral.facility_id != facility.id:
+                    raise serializers.ValidationError({'referral': 'Referral does not belong to active facility.'})
+
+        return data

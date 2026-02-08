@@ -8,6 +8,7 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .models import (
     Appointment,
@@ -45,6 +46,20 @@ from apps.encounters.models import Encounter
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 
 logger = logging.getLogger(__name__)
+
+
+def _flatten_error_messages(detail):
+    messages = []
+    if isinstance(detail, dict):
+        for value in detail.values():
+            messages.extend(_flatten_error_messages(value))
+        return messages
+    if isinstance(detail, (list, tuple)):
+        for item in detail:
+            messages.extend(_flatten_error_messages(item))
+        return messages
+    messages.append(str(detail))
+    return messages
 
 
 def _resolve_patient_profile(patient_id):
@@ -176,6 +191,92 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             return AppointmentListSerializer
         return AppointmentSerializer
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        is_valid = serializer.is_valid()
+        if not is_valid:
+            auto_waitlist = str(request.data.get('auto_waitlist', '')).lower() in ('true', '1', 'yes')
+            if auto_waitlist:
+                waitlist_payload = self._maybe_create_waitlist_on_booking_failure(request, serializer.errors)
+                if waitlist_payload:
+                    return Response(waitlist_payload, status=status.HTTP_202_ACCEPTED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def _maybe_create_waitlist_on_booking_failure(self, request, errors):
+        messages = [message.lower() for message in _flatten_error_messages(errors)]
+        capacity_error = any(
+            marker in message
+            for message in messages
+            for marker in (
+                'capacity reached',
+                'published roster clinic session',
+                'no active practitioner capacity',
+                'not available for this time',
+            )
+        )
+        if not capacity_error:
+            return None
+
+        facility = get_user_facility(request)
+        if not facility:
+            return None
+
+        clinic_id = request.data.get('clinic')
+        patient_id = request.data.get('patient')
+        start_time = parse_datetime(request.data.get('start_time') or '')
+        end_time = parse_datetime(request.data.get('end_time') or '')
+        if not all([clinic_id, patient_id, start_time, end_time]):
+            return None
+
+        clinic = Clinic.objects.filter(id=clinic_id, facility=facility, is_active=True).first()
+        if not clinic or clinic.booking_mode != Clinic.BookingMode.CLINIC_POOL or not clinic.waitlist_enabled:
+            return None
+
+        patient = PatientProfile.objects.filter(id=patient_id, facility=facility).first()
+        if not patient:
+            return None
+        check_demographics_access(request.user, patient)
+
+        referral = None
+        referral_id = request.data.get('referral_id')
+        if referral_id:
+            from apps.referrals.models import Referral
+            referral = Referral.objects.filter(id=referral_id, facility=facility).first()
+
+        preferred_practitioner = None
+        practitioner_id = request.data.get('practitioner')
+        if practitioner_id:
+            preferred_practitioner = PractitionerProfile.objects.filter(id=practitioner_id).first()
+
+        from apps.referrals.services import ClinicWaitlistService
+
+        entry = ClinicWaitlistService.create_or_update_entry(
+            facility=facility,
+            clinic=clinic,
+            patient=patient,
+            requested_start_time=start_time,
+            requested_end_time=end_time,
+            urgency=request.data.get('urgency') or 'routine',
+            referral=referral,
+            preferred_practitioner=preferred_practitioner,
+            vulnerability_flag=str(request.data.get('vulnerability_flag', '')).lower() in ('true', '1', 'yes'),
+            source='booking',
+            notes='Auto-created after booking capacity rejection.',
+            actor=request.user,
+        )
+
+        return {
+            'waitlisted': True,
+            'waitlist_entry_id': str(entry.id),
+            'clinic_id': str(clinic.id),
+            'status': entry.status,
+            'detail': 'Clinic session is full; patient has been placed on waitlist.',
+        }
+
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
         if not facility:
@@ -218,7 +319,32 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility or appointment.facility_id != facility.id:
             raise PermissionDenied("Facility context is required.")
-        serializer.save(updated_by=self.request.user)
+        previous_status = appointment.status
+        updated = serializer.save(updated_by=self.request.user)
+
+        if (
+            previous_status != 'cancelled'
+            and updated.status == 'cancelled'
+            and updated.clinic_id
+            and updated.clinic.waitlist_enabled
+        ):
+            from apps.referrals.services import ClinicWaitlistService
+            try:
+                ClinicWaitlistService.promote_next_waiting(
+                    clinic=updated.clinic,
+                    appointment_type=updated.appointment_type,
+                    start_time=updated.start_time,
+                    end_time=updated.end_time,
+                    actor=self.request.user,
+                    practitioner=(updated.practitioner if updated.clinic.booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT else None),
+                )
+            except ValueError:
+                logger.info(
+                    "No promotable waitlist entry for clinic=%s slot=%s-%s",
+                    updated.clinic_id,
+                    updated.start_time,
+                    updated.end_time,
+                )
 
     @action(detail=True, methods=['post'])
     def start_visit(self, request, pk=None):
