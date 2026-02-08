@@ -126,7 +126,8 @@ const PatientForm = ({ patient, onSuccess }) => {
 
   // Extract active clinics from roster entries with category='clinic'
   const activeClinics = useMemo(() => {
-    const results = onDutyData?.results || [];
+    // apiClient.get unwraps `{ results: [...] }` into an array for these roster endpoints.
+    const results = Array.isArray(onDutyData) ? onDutyData : (onDutyData?.results || []);
     // Filter to only clinic-category duty types
     const clinicEntries = results.filter(
       (entry) => entry.duty_type_category === 'clinic'

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -36,7 +36,6 @@ from ..users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
-    check_clinical_access,
     check_demographics_access,
     get_user_facility,
 )
@@ -60,6 +59,20 @@ def _flatten_error_messages(detail):
         return messages
     messages.append(str(detail))
     return messages
+
+
+class WalkInCheckInSerializer(serializers.Serializer):
+    """
+    Front-desk walk-in check-in to an active roster-backed clinic session.
+
+    NOTE: This is intentionally appointment-backed because OutpatientVisit
+    requires a local Appointment record.
+    """
+
+    patient = serializers.UUIDField()
+    clinic = serializers.UUIDField()
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    appointment_type = serializers.UUIDField(required=False)
 
 
 def _resolve_patient_profile(patient_id):
@@ -358,7 +371,9 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         if encounter:
             return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_200_OK)
 
-        check_clinical_access(request.user, appointment.patient)
+        # SECURITY: check-in is a front-desk operation; enforce demographics access,
+        # not clinical access (receptionists must be allowed to check in).
+        check_demographics_access(request.user, appointment.patient)
 
         with transaction.atomic():
             if (
@@ -409,6 +424,199 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
 
         return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='walk-in-check-in')
+    def walk_in_check_in(self, request):
+        """
+        Front-desk "Arrived now" flow for existing patients.
+
+        Creates a local walk-in Appointment aligned to the next available roster slot
+        for a clinic-pool clinic, then checks the patient in (Encounter + OutpatientVisit)
+        and places them into the waiting room queue.
+        """
+        serializer = WalkInCheckInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient = PatientProfile.objects.filter(
+            id=serializer.validated_data['patient'],
+            facility=facility,
+        ).select_related('user').first()
+        if not patient:
+            return Response({"error": "Patient not found in active facility."}, status=status.HTTP_404_NOT_FOUND)
+        check_demographics_access(request.user, patient)
+
+        clinic = Clinic.objects.filter(
+            id=serializer.validated_data['clinic'],
+            facility=facility,
+            is_active=True,
+        ).select_related('department').first()
+        if not clinic:
+            return Response({"error": "Clinic not found in active facility."}, status=status.HTTP_404_NOT_FOUND)
+        if not clinic.accepts_walk_ins:
+            return Response({"error": "This clinic does not accept walk-ins."}, status=status.HTTP_400_BAD_REQUEST)
+        if clinic.booking_mode != Clinic.BookingMode.CLINIC_POOL:
+            return Response(
+                {"error": "Arrived-now check-in is supported only for clinic-pool clinics."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment_type_id = serializer.validated_data.get('appointment_type')
+        if appointment_type_id:
+            appointment_type = AppointmentType.objects.filter(id=appointment_type_id, is_active=True).first()
+        else:
+            appointment_type = AppointmentType.objects.filter(is_active=True, category='walk_in').first()
+            if not appointment_type:
+                appointment_type = AppointmentType.objects.filter(is_active=True).order_by('name').first()
+        if not appointment_type:
+            return Response(
+                {"error": "No active appointment types configured."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tz = timezone.get_current_timezone()
+        now = timezone.now()
+        local_now = timezone.localtime(now, tz)
+        date_str = local_now.date().isoformat()
+        slot_payload = ClinicBookingService.get_clinic_roster_slots(
+            clinic=clinic,
+            start_date=date_str,
+            end_date=date_str,
+            facility=facility,
+        )
+        all_slots = slot_payload.get('all_slots') or []
+        if not all_slots:
+            return Response(
+                {"error": "No published roster clinic session found for this clinic today."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Pick the earliest roster slot that is in-progress or upcoming and has remaining capacity.
+        local_now_naive = local_now.replace(tzinfo=None)
+        grouped = {}
+        for slot in all_slots:
+            start_str = slot.get('start')
+            end_str = slot.get('end')
+            if not start_str or not end_str:
+                continue
+            grouped.setdefault((start_str, end_str), []).append(slot)
+
+        candidate_windows = []
+        for (start_str, end_str), slots in grouped.items():
+            try:
+                window_start = datetime.datetime.fromisoformat(start_str)
+                window_end = datetime.datetime.fromisoformat(end_str)
+            except ValueError:
+                continue
+            if window_end <= local_now_naive:
+                continue
+
+            remaining = 0
+            for slot in slots:
+                if slot.get('status') != 'free':
+                    continue
+                cap = slot.get('capacity') or {}
+                cap_remaining = cap.get('remaining')
+                if cap_remaining is None:
+                    cap_remaining = max(0, int(cap.get('max', 1)) - int(cap.get('booked', 0)))
+                if cap_remaining > 0:
+                    remaining += cap_remaining
+
+            if remaining > 0:
+                candidate_windows.append((window_start, window_end))
+
+        if not candidate_windows:
+            return Response(
+                {"error": "No available roster slot remaining for this clinic today."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        candidate_windows.sort(key=lambda pair: pair[0])
+        chosen_start_naive, chosen_end_naive = candidate_windows[0]
+        start_time = timezone.make_aware(chosen_start_naive, tz)
+        end_time = timezone.make_aware(chosen_end_naive, tz)
+
+        # Prevent double-booking for the same patient.
+        if not ConflictPreventionService.check_patient_availability(
+            patient_id=str(patient.id),
+            start_time=start_time,
+            end_time=end_time,
+        ):
+            return Response(
+                {"error": "Patient already has an appointment during this time."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = (serializer.validated_data.get('reason') or '').strip() or 'Walk-in visit'
+
+        with transaction.atomic():
+            appointment = Appointment.objects.create(
+                facility=facility,
+                patient=patient,
+                practitioner=None,
+                clinic=clinic,
+                appointment_type=appointment_type,
+                status='booked',
+                source='walk_in',
+                start_time=start_time,
+                end_time=end_time,
+                reason=reason,
+                assignment_status=Appointment.AssignmentStatus.PENDING,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+
+            try:
+                ClinicBookingService.assign_pool_practitioner_at_check_in(
+                    appointment=appointment,
+                    assigned_by=request.user,
+                )
+            except ValueError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            encounter = Encounter.objects.create(
+                patient=appointment.patient,
+                facility=appointment.facility,
+                practitioner=appointment.practitioner,
+                clinic=appointment.clinic,
+                department=appointment.clinic.department if appointment.clinic else None,
+                appointment=appointment,
+                encounter_type='outpatient',
+                status='in-progress',
+                start_time=timezone.now(),
+                reason=appointment.reason,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+
+            from apps.organization.services import TeamAssignmentService
+            TeamAssignmentService.assign_initial_team(
+                encounter=encounter,
+                use_roster=True,
+                context='outpatient'
+            )
+
+            from apps.encounters.services import VisitService
+            visit = VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            VisitService.add_to_waiting(visit)
+
+            appointment.status = 'arrived'
+            appointment.updated_by = request.user
+            appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
+
+        return Response(
+            {
+                "appointment_id": str(appointment.id),
+                "encounter_id": str(encounter.id),
+                "clinic_id": str(clinic.id),
+                "queue_number": visit.queue_number,
+                "visit_status": visit.visit_status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=['get'])
     def available_slots(self, request):

@@ -31,6 +31,7 @@ from apps.organization.models import (
     RosterEntry,
 )
 from apps.referrals.models import ClinicWaitlistEntry
+from apps.encounters.models import OutpatientVisit
 
 
 # Base URL prefix for appointments app
@@ -700,6 +701,85 @@ class TestAppointmentViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
         assert response.data.get('total', 0) > 0
+
+
+@pytest.mark.tier1
+class TestWalkInArrivals:
+    def test_start_visit_allows_receptionist(self, receptionist_client, default_facility, db):
+        clinic = create_clinic(default_facility)
+        patient = PatientProfileFactory(facility=default_facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + timedelta(hours=1)
+        end_time = start_time + timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=default_facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = receptionist_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_walk_in_check_in_creates_waiting_visit(self, receptionist_client, default_facility, db):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=default_facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30, category='walk_in')
+
+        today = timezone.localtime(timezone.now()).date()
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Walk-In Duty',
+            code='WALK-IN-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[today.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=today,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        fixed_now = timezone.make_aware(datetime.datetime.combine(today, time(10, 15)))
+        with patch('apps.appointments.views.timezone.now', return_value=fixed_now):
+            response = receptionist_client.post(
+                f'{BASE_URL}/appointments/walk-in-check-in/',
+                {'patient': str(patient.id), 'clinic': str(clinic.id), 'reason': 'Walk-in'},
+                format='json',
+            )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        appointment = Appointment.objects.get(id=response.data['appointment_id'])
+        assert appointment.source == 'walk_in'
+        assert appointment.status == 'arrived'
+        assert appointment.appointment_type_id == apt_type.id
+
+        visit = OutpatientVisit.objects.get(encounter_id=response.data['encounter_id'])
+        assert visit.visit_status == OutpatientVisit.VisitStatus.WAITING
 
 
 @pytest.mark.tier2

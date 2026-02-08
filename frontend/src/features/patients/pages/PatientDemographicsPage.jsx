@@ -11,6 +11,7 @@ import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CalendarPlus from 'lucide-react/dist/esm/icons/calendar-plus.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -43,6 +44,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
+import WalkInCheckInDialog from '@/features/clinics/components/WalkInCheckInDialog';
+import { useAuth } from '@/lib/auth';
 
 // Edit form validation schema
 const demographicsSchema = z.object({
@@ -81,6 +84,9 @@ const PatientDemographicsPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const { user } = useAuth();
+  const canWalkInCheckIn = user?.role === 'receptionist' || user?.role === 'admin';
 
   // Fetch patient demographics
   const {
@@ -675,6 +681,16 @@ const PatientDemographicsPage = () => {
               <CalendarPlus className="h-4 w-4 mr-2" />
               Schedule Appointment
             </Button>
+            {canWalkInCheckIn && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setWalkInOpen(true)}
+              >
+                <Stethoscope className="h-4 w-4 mr-2" />
+                Arrived Now
+              </Button>
+            )}
             {!isEditing && (
               <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
                 <Edit className="h-4 w-4 mr-2" />
@@ -684,6 +700,17 @@ const PatientDemographicsPage = () => {
           </div>
         </section>
       </main>
+
+      <WalkInCheckInDialog
+        open={walkInOpen}
+        onOpenChange={setWalkInOpen}
+        patientId={id}
+        onSuccess={(_result, context) => {
+          if (context?.clinicId) {
+            navigate(`/clinics/${context.clinicId}/waiting-room`);
+          }
+        }}
+      />
     </div>
   );
 };
