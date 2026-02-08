@@ -588,6 +588,33 @@ class TestPatientViewSet:
         ids = [item['id'] for item in response.data.get('results', [])]
         assert ids == [str(patient_b.id), str(patient_c.id), str(patient_a.id)]
 
+    def test_search_without_query_returns_most_recently_registered_first(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        older = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Older', last_name='Patient', primary_facility=facility),
+        )
+        newer = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Newer', last_name='Patient', primary_facility=facility),
+        )
+
+        older.created_at = timezone.now() - timedelta(days=1)
+        older.save(update_fields=['created_at'])
+
+        newer.created_at = timezone.now()
+        newer.save(update_fields=['created_at'])
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'page_size': 10})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('ordering') == '-created_at'
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert ids.index(str(newer.id)) < ids.index(str(older.id))
+
     def test_search_supports_pagination_metadata(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility

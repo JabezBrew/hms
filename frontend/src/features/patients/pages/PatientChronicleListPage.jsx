@@ -1,11 +1,8 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/filter.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
@@ -18,14 +15,7 @@ import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   usePatientSearch,
-  useRecentPatients,
-  useContextPatients,
 } from "@/features/patients/hooks/usePatientQueries";
-import {
-  useAddToMyPatients,
-} from "@/features/patients/hooks/useMyPatientsQueries";
-import { myPatientsKeys } from "@/features/patients/hooks/useMyPatientsQueries";
-import { patientsApi } from "@/features/patients/api";
 import { useAuth } from "@/lib/auth";
 import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,10 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PatientChronicleCard } from "@/components/chronicle";
-import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
-import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import {
   Table,
   TableBody,
@@ -96,17 +82,17 @@ const ENCOUNTER_TYPE_OPTIONS = [
   { value: 'emergency', label: 'Emergency' },
 ];
 
-const DEFAULT_SEARCH_ORDERING = '-admission_date';
+const DEFAULT_SEARCH_ORDERING = '-created_at';
 const SEARCH_TABLE_PAGE_SIZE = 25;
 
 const TABLE_COLUMNS = [
+  { key: 'created_at', label: 'Registered' },
   { key: 'medical_record_number', label: 'MRN' },
   { key: 'name', label: 'Name' },
   { key: 'date_of_birth', label: 'DOB / Age' },
   { key: 'gender', label: 'Sex' },
   { key: 'current_ward', label: 'Ward' },
   { key: 'admission_status', label: 'Status' },
-  { key: 'admission_date', label: 'Admission' },
 ];
 
 const createEmptyFilters = () => ({
@@ -223,21 +209,19 @@ const formatAdmissionStatus = (status) => {
 };
 
 /**
- * PatientChronicleListPage - Search-first patient registry
+ * PatientChronicleListPage - Table-first patient registry
  *
  * Features:
- * - Search-first approach (no "load all patients")
- * - Recent patients section (horizontal scroll)
- * - Context-specific patients (role-based)
+ * - Always-on sortable table with newest registrations first
+ * - Search and filters for narrowing results
  * - Route-based tab navigation to My Patients
- * - Background prefetch of My Patients data
+ * - Background route/data prefetching for fast navigation
  */
 const PatientChronicleListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState("grid");
   const [searchOrdering, setSearchOrdering] = useState(DEFAULT_SEARCH_ORDERING);
   const [searchPage, setSearchPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -259,7 +243,7 @@ const PatientChronicleListPage = () => {
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
-  const isSearchEnabled = debouncedSearchQuery.length >= 2 || hasActiveFilters;
+  const hasSearchSignal = debouncedSearchQuery.length >= 2 || hasActiveFilters;
   const baseSearchParams = useMemo(
     () => buildSearchParams(debouncedSearchQuery, appliedFilters),
     [debouncedSearchQuery, appliedFilters]
@@ -278,25 +262,11 @@ const PatientChronicleListPage = () => {
     data: searchResults,
     isLoading: isSearchLoading,
     refetch: refetchSearch,
-  } = usePatientSearch(searchParams, { enabled: isSearchEnabled });
+  } = usePatientSearch(searchParams, { enabled: true });
 
   useEffect(() => {
     setSearchPage(1);
   }, [debouncedSearchQuery, appliedFilters]);
-
-  // Recent patients (limited to 10)
-  const {
-    data: recentPatientsData,
-    isLoading: isRecentLoading,
-    refetch: refetchRecent,
-  } = useRecentPatients(10);
-
-  // Context patients (role-specific)
-  const {
-    data: contextPatientsData,
-    isLoading: isContextLoading,
-    refetch: refetchContext,
-  } = useContextPatients();
 
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
     unit_type_code: 'department',
@@ -311,20 +281,6 @@ const PatientChronicleListPage = () => {
     isLoading: isPractitionersLoading,
     setSearchTerm: setPractitionerSearch,
   } = useSearchPractitioners(false, { minLength: 2 });
-
-  // My Patients mutations
-  const addToMyPatients = useAddToMyPatients();
-
-  // Prefetch My Patients data in background when page loads
-  useEffect(() => {
-    if (isClinicalProvider) {
-      queryClient.prefetchQuery({
-        queryKey: myPatientsKeys.list(),
-        queryFn: () => patientsApi.getMyPatients?.() || Promise.resolve([]),
-        staleTime: 60 * 1000,
-      });
-    }
-  }, [isClinicalProvider, queryClient]);
 
   // Warm key route chunks after initial render.
   useEffect(() => {
@@ -346,13 +302,9 @@ const PatientChronicleListPage = () => {
     return () => window.clearTimeout(timeoutId);
   }, []);
 
-  const isSearching = isSearchEnabled;
   const hasSearchQuery = searchQuery.length > 0;
 
-  const searchPatients = useMemo(() => {
-    if (!isSearching) return [];
-    return normalizeApiResults(searchResults);
-  }, [searchResults, isSearching]);
+  const searchPatients = useMemo(() => normalizeApiResults(searchResults), [searchResults]);
 
   const searchTotal = searchResults?.total ?? searchResults?.count ?? searchPatients.length;
   const searchCurrentPage = searchResults?.page ?? searchPage;
@@ -364,7 +316,7 @@ const PatientChronicleListPage = () => {
   const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
 
   const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
-  const searchSummary = isSearching
+  const searchSummary = hasSearchSignal
     ? (effectiveSearchQuery
       ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
       : `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`)
@@ -407,37 +359,6 @@ const PatientChronicleListPage = () => {
     [practitionerResults]
   );
 
-  const recentPatients = useMemo(() => {
-    return normalizeApiResults(recentPatientsData);
-  }, [recentPatientsData]);
-  const contextPatients = useMemo(() => contextPatientsData?.patients || [], [contextPatientsData]);
-
-  useEffect(() => {
-    if (isSearching) return;
-
-    const candidateIds = [
-      ...recentPatients.slice(0, 2).map((entry) => {
-        const patient = entry?.patient_profile_details || entry;
-        return patient?.id || patient?.patient_profile || patient?.local_data?.id;
-      }),
-      ...contextPatients.slice(0, 2).map((patient) => patient?.id),
-    ].filter(Boolean);
-
-    if (candidateIds.length === 0) return;
-
-    const prefetch = () => {
-      candidateIds.forEach((patientId) => prefetchPatientById(patientId));
-    };
-
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
-      return () => window.cancelIdleCallback?.(idleId);
-    }
-
-    const timeoutId = window.setTimeout(prefetch, 300);
-    return () => window.clearTimeout(timeoutId);
-  }, [contextPatients, isSearching, prefetchPatientById, recentPatients]);
-
   // Event handlers
   const handleSearchChange = (e) => {
     const query = e.target.value;
@@ -451,12 +372,7 @@ const PatientChronicleListPage = () => {
   };
 
   const handleRefresh = () => {
-    if (isSearching) {
-      refetchSearch();
-      return;
-    }
-    refetchRecent();
-    refetchContext();
+    refetchSearch();
   };
 
   const handleApplyFilters = () => {
@@ -500,20 +416,6 @@ const PatientChronicleListPage = () => {
     navigate('/patients/create');
   };
 
-  const handleStartRound = (patient) => {
-    const patientId = getPatientId(patient);
-    if (patientId) {
-      navigate(`/patients/${patientId}?wardRound=true`);
-    }
-  };
-
-  const handleStartConsultation = (patient) => {
-    const patientId = getPatientId(patient);
-    if (patientId) {
-      navigate(`/patients/${patientId}?consultation=true`);
-    }
-  };
-
   const handleOpenPatient = (patient) => {
     const patientId = getPatientId(patient);
     if (patientId) {
@@ -538,42 +440,8 @@ const PatientChronicleListPage = () => {
     setSearchPage(boundedPage);
   };
 
-  const handleAddToMyPatients = (patientId) => {
-    addToMyPatients.mutate({ patientId });
-  };
-
   const listControls = (
     <div className="flex items-center justify-end gap-2">
-      {/* View Mode Toggle */}
-      <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
-        <button
-          onClick={() => setViewMode('grid')}
-          aria-label="Grid view"
-          aria-pressed={viewMode === 'grid'}
-          className={cn(
-            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            viewMode === 'grid'
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button
-          onClick={() => setViewMode('table')}
-          aria-label="Table view"
-          aria-pressed={viewMode === 'table'}
-          className={cn(
-            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            viewMode === 'table'
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <List className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-
       {/* Refresh */}
       <Button
         variant="ghost"
@@ -594,16 +462,16 @@ const PatientChronicleListPage = () => {
     </Button>
   ) : null;
 
-  const listHeaderLabel = isSearching
+  const listHeaderLabel = hasSearchSignal
     ? (effectiveSearchQuery ? 'Search results' : 'Filtered results')
-    : 'Recent';
+    : 'All patients';
 
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title="Patient Registry"
-        description="Search for patients or browse your recent and assigned patients"
+        description="Search and browse all patients in a sortable registry table"
         size="md"
         actions={headerActions}
         contentClassName="sm:items-start"
@@ -651,7 +519,7 @@ const PatientChronicleListPage = () => {
               <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
               <Input
                 id="patient-search"
-                placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
+                placeholder="Search by name, MRN, or NHIS ID..."
                 value={searchQuery}
                 onChange={handleSearchChange}
                 className="pl-10 pr-10 font-mono text-sm bg-background"
@@ -961,7 +829,7 @@ const PatientChronicleListPage = () => {
             </div>
           )}
 
-          {isSearching && (
+          {hasSearchSignal && (
             <div className="text-xs text-muted-foreground">
               <span>{searchSummary}</span>
             </div>
@@ -973,68 +841,30 @@ const PatientChronicleListPage = () => {
       <main className="p-4 sm:p-6 space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-muted-foreground">
-            {isSearching ? (
-              <Search className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Clock className="h-4 w-4" aria-hidden="true" />
-            )}
+            <Search className="h-4 w-4" aria-hidden="true" />
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
-            {isSearching ? (
-              <span className="text-xs">({searchTotal})</span>
-            ) : (
-              !isRecentLoading && <span className="text-xs">({recentPatients.length})</span>
-            )}
+            <span className="text-xs">({searchTotal})</span>
           </div>
           {listControls}
         </div>
-
-        {isSearching ? (
-          // Show search results
-          <SearchResultsSection
-            patients={searchPatients}
-            isLoading={isSearchLoading}
-            searchQuery={effectiveSearchQuery}
-            hasActiveFilters={hasActiveFilters}
-            viewMode={viewMode}
-            ordering={searchOrdering}
-            onOrderingChange={handleSearchOrderingChange}
-            currentPage={searchCurrentPage}
-            totalPages={searchTotalPages}
-            totalResults={searchTotal}
-            hasNextPage={searchHasNext}
-            hasPreviousPage={searchHasPrevious}
-            onPageChange={handleSearchPageChange}
-            onOpenPatient={handleOpenPatient}
-            onStartRound={handleStartRound}
-            onStartConsultation={handleStartConsultation}
-            onAddToMyPatients={handleAddToMyPatients}
-            showMyPatientsActions={isClinicalProvider}
-            onPrefetchPatient={prefetchPatientById}
-          />
-        ) : (
-          // Show recent + context patients
-          <>
-            <RecentPatientsSection
-              patients={recentPatients}
-              isLoading={isRecentLoading}
-              showHeader={false}
-              onPrefetchPatient={prefetchPatientById}
-            />
-
-            <ContextPatientsSection
-              data={contextPatientsData}
-              isLoading={isContextLoading}
-              onStartRound={handleStartRound}
-              onStartConsultation={handleStartConsultation}
-              onAddToMyPatients={handleAddToMyPatients}
-              showMyPatientsActions={isClinicalProvider}
-              onPrefetchPatient={prefetchPatientById}
-            />
-
-          </>
-        )}
+        <SearchResultsSection
+          patients={searchPatients}
+          isLoading={isSearchLoading}
+          searchQuery={effectiveSearchQuery}
+          hasActiveFilters={hasActiveFilters}
+          ordering={searchOrdering}
+          onOrderingChange={handleSearchOrderingChange}
+          currentPage={searchCurrentPage}
+          totalPages={searchTotalPages}
+          totalResults={searchTotal}
+          hasNextPage={searchHasNext}
+          hasPreviousPage={searchHasPrevious}
+          onPageChange={handleSearchPageChange}
+          onOpenPatient={handleOpenPatient}
+          onPrefetchPatient={prefetchPatientById}
+        />
       </main>
     </PageShell>
   );
@@ -1062,7 +892,6 @@ const SearchResultsSection = ({
   isLoading,
   searchQuery,
   hasActiveFilters,
-  viewMode,
   ordering,
   onOrderingChange,
   currentPage,
@@ -1072,48 +901,8 @@ const SearchResultsSection = ({
   hasPreviousPage,
   onPageChange,
   onOpenPatient,
-  onStartRound,
-  onStartConsultation,
-  onAddToMyPatients,
-  showMyPatientsActions,
   onPrefetchPatient,
 }) => {
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bg-card/50 border border-border rounded-2xl p-6 animate-pulse">
-            <div className="h-6 bg-muted rounded w-2/3 mb-3" />
-            <div className="h-4 bg-muted rounded w-1/2 mb-4" />
-            <div className="h-20 bg-muted rounded" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (patients.length === 0) {
-    const emptyDescription = searchQuery
-      ? `No patients match "${searchQuery}". Try a different search term.`
-      : hasActiveFilters
-        ? 'No patients match these filters. Try adjusting your criteria.'
-        : 'No patients found.';
-
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Search className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="font-display text-xl text-foreground mb-2">
-          No patients found
-        </h3>
-        <p className="text-muted-foreground text-sm max-w-md">
-          {emptyDescription}
-        </p>
-      </div>
-    );
-  }
-
   // Deduplicate patients by ID
   const uniquePatients = patients.reduce((acc, patientData, index) => {
     const patient = patientData?.local_data || patientData;
@@ -1128,29 +917,6 @@ const SearchResultsSection = ({
     return acc;
   }, { seen: new Set(), list: [] }).list;
 
-  if (viewMode === 'grid') {
-    return (
-      <VirtualizedGrid
-        items={uniquePatients}
-        minItemWidth={320}
-        rowHeight={320}
-        gap={24}
-        getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
-        renderItem={({ patient }, index) => (
-          <PatientChronicleCard
-            patient={patient}
-            index={index}
-            onStartRound={onStartRound}
-            onStartConsultation={onStartConsultation}
-            onAddToMyPatients={onAddToMyPatients}
-            showMyPatientsActions={showMyPatientsActions}
-            onPrefetchPatient={onPrefetchPatient}
-          />
-        )}
-      />
-    );
-  }
-
   return (
     <SearchResultsTable
       patients={uniquePatients}
@@ -1164,6 +930,9 @@ const SearchResultsSection = ({
       onPageChange={onPageChange}
       onOpenPatient={onOpenPatient}
       onPrefetchPatient={onPrefetchPatient}
+      isLoading={isLoading}
+      searchQuery={searchQuery}
+      hasActiveFilters={hasActiveFilters}
     />
   );
 };
@@ -1208,9 +977,18 @@ const SearchResultsTable = ({
   onPageChange,
   onOpenPatient,
   onPrefetchPatient,
+  isLoading,
+  searchQuery,
+  hasActiveFilters,
 }) => {
+  const emptyDescription = searchQuery
+    ? `No patients match "${searchQuery}". Try a different search term.`
+    : hasActiveFilters
+      ? 'No patients match these filters. Try adjusting your criteria.'
+      : 'No patients found.';
+
   return (
-    <div className="rounded-xl border border-border/70 bg-card">
+    <div className="rounded-xl border border-border/70 bg-card overflow-x-auto">
       <Table className="min-w-[920px]">
         <TableHeader className="bg-muted/30">
           <TableRow>
@@ -1225,12 +1003,31 @@ const SearchResultsTable = ({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {patients.map(({ patient, originalIndex }, index) => {
-            const patientId = getPatientId(patient);
-            const rowKey = patientId ? `table-${patientId}` : `table-${originalIndex}-${index}`;
-            const age = getPatientAge(patient?.date_of_birth);
-            const dobLabel = formatDateLabel(patient?.date_of_birth);
-            const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, index) => (
+              <TableRow key={`loading-row-${index}`}>
+                {TABLE_COLUMNS.map((column) => (
+                  <TableCell key={`loading-cell-${column.key}-${index}`}>
+                    <div className="h-3.5 w-full max-w-[120px] rounded bg-muted/70 animate-pulse" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : patients.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={TABLE_COLUMNS.length} className="py-12 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Search className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground">{emptyDescription}</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : patients.map(({ patient, originalIndex }, index) => {
+              const patientId = getPatientId(patient);
+              const rowKey = patientId ? `table-${patientId}` : `table-${originalIndex}-${index}`;
+              const age = getPatientAge(patient?.date_of_birth);
+              const dobLabel = formatDateLabel(patient?.date_of_birth);
+              const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
             return (
               <TableRow
                 key={rowKey}
@@ -1247,6 +1044,9 @@ const SearchResultsTable = ({
                 tabIndex={0}
                 aria-label={`Open ${patient?.name || 'patient'} chart`}
               >
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {formatDateLabel(patient?.created_at)}
+                </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {patient?.medical_record_number || '—'}
                 </TableCell>
@@ -1267,12 +1067,10 @@ const SearchResultsTable = ({
                     {formatAdmissionStatus(patient?.admission_status)}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {formatDateLabel(patient?.admission_date)}
-                </TableCell>
               </TableRow>
             );
-          })}
+            })
+          }
         </TableBody>
       </Table>
 

@@ -372,7 +372,7 @@ class PatientViewSet(viewsets.ViewSet):
     def search(self, request):
         """
         Search for patients with advanced filters.
-        Requires minimum 2 characters for text search when no other filters are provided.
+        Supports empty-query browsing with deterministic ordering.
 
         Performance optimizations:
         - Uses lightweight serializer (PatientSearchListSerializer)
@@ -392,13 +392,14 @@ class PatientViewSet(viewsets.ViewSet):
         attending_id = request.query_params.get('attending_id', '').strip()
         age_min = request.query_params.get('age_min', '').strip()
         age_max = request.query_params.get('age_max', '').strip()
-        ordering = request.query_params.get('ordering', '-admission_date').strip() or '-admission_date'
+        ordering = request.query_params.get('ordering', '-created_at').strip() or '-created_at'
         requested_page = request.query_params.get('page', '').strip() or '1'
         requested_page_size = request.query_params.get('page_size', '').strip()
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
 
         ordering_field_map = {
+            'created_at': ('created_at',),
             'name': ('user__last_name', 'user__first_name'),
             'medical_record_number': ('medical_record_number',),
             'date_of_birth': ('user__date_of_birth', 'user__last_name', 'user__first_name'),
@@ -481,18 +482,6 @@ class PatientViewSet(viewsets.ViewSet):
             return Response(
                 {"error": "My Patients filter is restricted to clinical staff."},
                 status=status.HTTP_403_FORBIDDEN
-            )
-
-        # Require minimum 2 characters for search query when no other filters
-        if not has_other_filters and len(query) < 2:
-            return Response(
-                {
-                    "error": "Search query must be at least 2 characters.",
-                    "query": query,
-                    "total": 0,
-                    "results": []
-                },
-                status=status.HTTP_400_BAD_REQUEST
             )
 
         logger = logging.getLogger(__name__)

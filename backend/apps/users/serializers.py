@@ -251,6 +251,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
     gender = serializers.CharField(source='user.gender', read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
     current_ward = serializers.SerializerMethodField()
     admission_status = serializers.SerializerMethodField()
     admission_date = serializers.SerializerMethodField()
@@ -263,6 +264,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             'name',
             'date_of_birth',
             'gender',
+            'created_at',
             'current_ward',
             'admission_status',
             'admission_date',
