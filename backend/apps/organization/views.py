@@ -1498,7 +1498,8 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
 
         entries_data = serializer.validated_data['entries']
         duty_type_ids = {entry['duty_type'] for entry in entries_data}
-        team_ids = {entry['team'] for entry in entries_data}
+        team_ids = {entry.get('team') for entry in entries_data if entry.get('team')}
+        practitioner_ids = {entry.get('practitioner') for entry in entries_data if entry.get('practitioner')}
 
         duty_types = {
             str(duty_type.id): duty_type
@@ -1514,11 +1515,20 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 root_unit__code=facility.code
             )
         }
+        practitioners = {}
+        if practitioner_ids:
+            from apps.users.models import PractitionerProfile
+            practitioner_qs = PractitionerProfile.objects.filter(
+                id__in=practitioner_ids
+            ).select_related('staff', 'staff__primary_facility', 'staff__user')
+            practitioners = {str(prac.id): prac for prac in practitioner_qs}
 
         if len(duty_types) != len(duty_type_ids):
             raise ValidationError('One or more duty types are invalid for this department.')
         if len(teams) != len(team_ids):
             raise ValidationError('One or more teams are invalid for this facility.')
+        if practitioner_ids and len(practitioners) != len(practitioner_ids):
+            raise ValidationError('One or more practitioners are invalid.')
 
         dates = [entry['date'] for entry in entries_data]
         existing = RosterEntry.objects.filter(
@@ -1544,14 +1554,26 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         to_create = []
         for entry in entries_data:
             duty_type = duty_types[str(entry['duty_type'])]
-            team = teams[str(entry['team'])]
-            if not team.is_descendant_of(department):
-                raise ValidationError('Team must belong to the selected department.')
+            team = None
+            practitioner = None
+            if entry.get('team'):
+                team = teams[str(entry['team'])]
+                if not team.is_descendant_of(department):
+                    raise ValidationError('Team must belong to the selected department.')
+            if entry.get('practitioner'):
+                practitioner = practitioners[str(entry['practitioner'])]
+                # Facility safety check: prevent cross-facility roster assignments.
+                if (
+                    not practitioner.staff
+                    or not practitioner.staff.primary_facility_id
+                    or practitioner.staff.primary_facility_id != facility.id
+                ):
+                    raise ValidationError('Practitioner does not belong to the active facility.')
             if (entry['date'], duty_type.id) in existing_keys:
                 raise ValidationError('Roster entry already exists for provided date and duty type.')
 
             back_to_back_error = None
-            if duty_type.is_24_hour:
+            if duty_type.is_24_hour and team:
                 back_to_back_error = (
                     (team.id, duty_type.id, entry['date'] - timedelta(days=1)) in entries_by_team_date or
                     (team.id, duty_type.id, entry['date'] + timedelta(days=1)) in entries_by_team_date
@@ -1564,6 +1586,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 duty_type=duty_type,
                 date=entry['date'],
                 team=team,
+                practitioner=practitioner,
                 start_time=entry.get('start_time'),
                 end_time=entry.get('end_time'),
                 source=entry.get('source') or 'manual',

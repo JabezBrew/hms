@@ -8,6 +8,7 @@ import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,6 +41,7 @@ import {
   useUpdateClinic,
   useDeleteClinic,
 } from '@/features/admin/hooks';
+import ClinicRosterWizardDialog from './ClinicRosterWizardDialog';
 
 /**
  * ClinicsPanel - Displays and manages clinics for a unit (department)
@@ -48,6 +50,8 @@ export function ClinicsPanel({ unitId, unitType }) {
   const [showForm, setShowForm] = useState(false);
   const [editingClinic, setEditingClinic] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardClinic, setWizardClinic] = useState(null);
 
   // Only departments can have clinics
   const canHaveClinics = unitType === 'department' || unitType === 'division';
@@ -100,6 +104,11 @@ export function ClinicsPanel({ unitId, unitType }) {
       });
     }
     setShowForm(true);
+  };
+
+  const openWizard = (clinic = null) => {
+    setWizardClinic(clinic);
+    setWizardOpen(true);
   };
 
   const handleSubmit = async () => {
@@ -184,6 +193,10 @@ export function ClinicsPanel({ unitId, unitType }) {
           <Plus className="h-4 w-4 mr-1" />
           Add Clinic
         </Button>
+        <Button onClick={() => openWizard()} size="sm" variant="outline" className="font-mono text-xs">
+          <CalendarClock className="h-4 w-4 mr-1" />
+          Add + Roster
+        </Button>
       </div>
 
       {clinics.length === 0 ? (
@@ -243,6 +256,15 @@ export function ClinicsPanel({ unitId, unitType }) {
                 >
                   {clinic.is_active ? 'Active' : 'Inactive'}
                 </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => openWizard(clinic)}
+                  title="Roster clinic"
+                >
+                  <CalendarClock className="h-4 w-4" />
+                </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openForm(clinic)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -397,6 +419,14 @@ export function ClinicsPanel({ unitId, unitType }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ClinicRosterWizardDialog
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        unitId={unitId}
+        unitType={unitType}
+        existingClinic={wizardClinic}
+      />
     </div>
   );
 }

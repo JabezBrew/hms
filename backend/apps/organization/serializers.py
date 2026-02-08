@@ -873,11 +873,22 @@ class RosterGenerateSerializer(serializers.Serializer):
 class RosterBulkEntrySerializer(serializers.Serializer):
     date = serializers.DateField()
     duty_type = serializers.UUIDField()
-    team = serializers.UUIDField()
+    # Exactly one of team or practitioner must be provided.
+    team = serializers.UUIDField(required=False, allow_null=True)
+    practitioner = serializers.UUIDField(required=False, allow_null=True)
     start_time = serializers.TimeField(required=False, allow_null=True)
     end_time = serializers.TimeField(required=False, allow_null=True)
     source = serializers.ChoiceField(choices=['manual', 'imported', 'generated', 'override'], default='manual')
     status = serializers.ChoiceField(choices=['draft', 'published'], default='draft')
+
+    def validate(self, data):
+        team = data.get('team')
+        practitioner = data.get('practitioner')
+        if bool(team) == bool(practitioner):
+            raise serializers.ValidationError(
+                'Each bulk roster entry must include exactly one of team or practitioner.'
+            )
+        return data
 
 
 class RosterBulkSerializer(serializers.Serializer):

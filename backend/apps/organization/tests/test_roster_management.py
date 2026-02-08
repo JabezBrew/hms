@@ -9,6 +9,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.organization.models import ClinicalUnit, DepartmentDutyType, RotationRule, RosterEntry
+from apps.users.tests.factories import PractitionerProfileFactory
 
 
 @pytest.fixture
@@ -211,6 +212,38 @@ def test_clear_roster_drafts(admin_api_client, department, duty_type, team):
     assert not RosterEntry.objects.filter(id=draft_entry.id).exists()
     # Published entry should still exist
     assert RosterEntry.objects.filter(id=published_entry.id).exists()
+
+
+@pytest.mark.django_db
+def test_bulk_roster_supports_practitioner_entries(admin_api_client, department, duty_type, default_facility):
+    """Bulk roster endpoint must accept practitioner assignments (not only teams)."""
+    practitioner = PractitionerProfileFactory(
+        staff__primary_facility=default_facility,
+        staff__user__primary_facility=default_facility,
+    )
+
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/bulk/',
+        {
+            'entries': [
+                {
+                    'date': '2026-03-05',
+                    'duty_type': str(duty_type.id),
+                    'practitioner': str(practitioner.id),
+                    'source': 'manual',
+                    'status': 'draft',
+                }
+            ]
+        },
+        format='json'
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['created'] == 1
+
+    entry = RosterEntry.objects.filter(department=department, duty_type=duty_type, date=date(2026, 3, 5)).first()
+    assert entry is not None
+    assert entry.practitioner_id == practitioner.id
+    assert entry.team_id is None
 
 
 @pytest.mark.django_db
