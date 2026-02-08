@@ -246,7 +246,10 @@ class ClinicListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'code', 'name', 'department', 'department_name',
             'operating_hours_start', 'operating_hours_end',
-            'operates_24_hours', 'accepts_walk_ins', 'is_active'
+            'operates_24_hours', 'accepts_walk_ins',
+            'booking_mode', 'assignment_timing',
+            'waitlist_enabled', 'overbook_percent', 'overbook_hard_cap',
+            'is_active'
         ]
 
 
@@ -259,6 +262,40 @@ class ClinicSerializer(serializers.ModelSerializer):
         model = Clinic
         fields = '__all__'
         read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def validate(self, data):
+        booking_mode = data.get('booking_mode', getattr(self.instance, 'booking_mode', Clinic.BookingMode.PRACTITIONER_DIRECT))
+        assignment_timing = data.get(
+            'assignment_timing',
+            getattr(self.instance, 'assignment_timing', Clinic.AssignmentTiming.BOOKING)
+        )
+        overbook_percent = data.get('overbook_percent', getattr(self.instance, 'overbook_percent', 0))
+        soft_preassignment = data.get(
+            'soft_preassignment_minutes',
+            getattr(self.instance, 'soft_preassignment_minutes', 60)
+        )
+
+        if booking_mode == Clinic.BookingMode.CLINIC_POOL and assignment_timing != Clinic.AssignmentTiming.CHECK_IN:
+            raise serializers.ValidationError({
+                'assignment_timing': 'Clinic pool mode requires check-in assignment timing.'
+            })
+
+        if booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT and assignment_timing != Clinic.AssignmentTiming.BOOKING:
+            raise serializers.ValidationError({
+                'assignment_timing': 'Practitioner-direct mode requires booking-time assignment.'
+            })
+
+        if overbook_percent is not None and overbook_percent > 100:
+            raise serializers.ValidationError({
+                'overbook_percent': 'Overbook percent cannot exceed 100.'
+            })
+
+        if soft_preassignment and soft_preassignment > 720:
+            raise serializers.ValidationError({
+                'soft_preassignment_minutes': 'Soft preassignment cannot exceed 12 hours.'
+            })
+
+        return data
 
 
 class ClinicScheduleListSerializer(serializers.ModelSerializer):

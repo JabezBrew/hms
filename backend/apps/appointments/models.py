@@ -42,6 +42,17 @@ class AppointmentType(models.Model):
 
 class Appointment(models.Model):
     """Local appointment record (source of truth)."""
+    class AssignmentStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending Assignment'
+        PREASSIGNED = 'preassigned', 'Preassigned'
+        ASSIGNED = 'assigned', 'Assigned'
+
+    class AssignmentSource(models.TextChoices):
+        BOOKING = 'booking', 'Booking'
+        PREASSIGNMENT = 'preassignment', 'Preassignment'
+        CHECK_IN = 'check_in', 'Check-In'
+        MANUAL = 'manual', 'Manual'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
         'core.Facility',
@@ -95,6 +106,19 @@ class Appointment(models.Model):
     reason = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     slot_reference = models.CharField(max_length=100, blank=True, null=True)
+    assignment_status = models.CharField(
+        max_length=20,
+        choices=AssignmentStatus.choices,
+        default=AssignmentStatus.PENDING
+    )
+    assignment_source = models.CharField(
+        max_length=20,
+        choices=AssignmentSource.choices,
+        null=True,
+        blank=True
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    queue_token = models.CharField(max_length=32, null=True, blank=True)
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)

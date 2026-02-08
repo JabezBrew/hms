@@ -21,7 +21,12 @@ from .serializers import (
     RecurringScheduleSerializer, BlockedTimeSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
-from .services import AvailabilityService, ConflictPreventionService, AppointmentTypeService
+from .services import (
+    AvailabilityService,
+    ConflictPreventionService,
+    AppointmentTypeService,
+    ClinicBookingService,
+)
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_reference, create_period, generate_fhir_id
@@ -35,6 +40,7 @@ from apps.core.security import (
     get_user_facility,
 )
 from apps.users.models import PatientProfile, PractitionerProfile
+from apps.organization.models import Clinic
 from apps.encounters.models import Encounter
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 
@@ -192,10 +198,19 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             if practitioner_profile and practitioner != practitioner_profile:
                 raise PermissionDenied("Clinicians can only create appointments for themselves.")
 
+        assignment_kwargs = {}
+        if practitioner:
+            assignment_kwargs.update({
+                'assignment_status': Appointment.AssignmentStatus.ASSIGNED,
+                'assignment_source': Appointment.AssignmentSource.BOOKING,
+                'assigned_at': timezone.now(),
+            })
+
         serializer.save(
             facility=facility,
             created_by=self.request.user,
-            updated_by=self.request.user
+            updated_by=self.request.user,
+            **assignment_kwargs,
         )
 
     def perform_update(self, serializer):
@@ -220,6 +235,22 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         check_clinical_access(request.user, appointment.patient)
 
         with transaction.atomic():
+            if (
+                appointment.clinic
+                and appointment.clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL
+                and not appointment.practitioner_id
+            ):
+                try:
+                    ClinicBookingService.assign_pool_practitioner_at_check_in(
+                        appointment=appointment,
+                        assigned_by=request.user,
+                    )
+                except ValueError as exc:
+                    return Response(
+                        {"error": str(exc)},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
             encounter = Encounter.objects.create(
                 patient=appointment.patient,
                 facility=appointment.facility,
@@ -258,34 +289,65 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         This computes slots on-demand from recurring schedules without pre-generation.
         """
         practitioner_id = request.query_params.get('practitioner_id')
+        clinic_id = request.query_params.get('clinic_id')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         appointment_type_id = request.query_params.get('appointment_type_id')
 
-        if not all([practitioner_id, start_date, end_date]):
+        if not all([start_date, end_date]) or (not practitioner_id and not clinic_id):
             return Response(
-                {"error": "Missing required parameters: practitioner_id, start_date, end_date"},
+                {"error": "Missing required parameters: start_date, end_date, and practitioner_id or clinic_id"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
             facility = get_user_facility(request)
-            slots = AvailabilityService.compute_available_slots(
-                practitioner_id=practitioner_id,
-                start_date=start_date,
-                end_date=end_date,
-                appointment_type_id=appointment_type_id,
-                facility=facility,
-            )
+            practitioners = []
+            mode = None
+
+            if clinic_id and not practitioner_id:
+                clinic = Clinic.objects.filter(id=clinic_id, facility=facility, is_active=True).first()
+                if not clinic:
+                    return Response(
+                        {"error": "Clinic not found in active facility."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                mode = clinic.booking_mode
+                if clinic.booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT:
+                    return Response(
+                        {"error": "practitioner_id is required for practitioner-direct clinics."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                slot_payload = ClinicBookingService.get_clinic_roster_slots(
+                    clinic=clinic,
+                    start_date=start_date,
+                    end_date=end_date,
+                    facility=facility,
+                )
+                slots = slot_payload.get('all_slots', [])
+                practitioners = slot_payload.get('practitioners', [])
+            else:
+                slots = AvailabilityService.compute_available_slots(
+                    practitioner_id=practitioner_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    appointment_type_id=appointment_type_id,
+                    facility=facility,
+                )
 
             status_filter = request.query_params.get('status', 'free')
             if status_filter:
                 slots = [slot for slot in slots if slot['status'] == status_filter]
 
-            return Response({
+            response_payload = {
                 "total": len(slots),
-                "slots": slots
-            })
+                "slots": slots,
+            }
+            if practitioners:
+                response_payload["practitioners"] = practitioners
+            if mode:
+                response_payload["clinic_mode"] = mode
+            return Response(response_payload)
 
         except Exception as e:
             return Response(

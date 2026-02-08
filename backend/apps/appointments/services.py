@@ -1,11 +1,12 @@
 """
 Services for appointment scheduling, availability generation, and conflict prevention.
 """
+from collections import defaultdict
 from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from datetime import datetime, timedelta, time, date
 import logging
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Count
 from .models import Appointment, AppointmentType, ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 from .proxies import SlotProxy, ScheduleProxy
 from ..users.models import PractitionerProfile
@@ -744,6 +745,275 @@ class AvailabilityService:
 
         return available_slots
         return available_slots
+
+
+class ClinicBookingService:
+    """Clinic-level booking and assignment rules for pool clinics."""
+
+    ACTIVE_BOOKING_STATUSES = ['booked', 'arrived', 'fulfilled']
+
+    @staticmethod
+    def _time_matches(start_time, end_time, check_time, is_24_hour=False) -> bool:
+        if is_24_hour:
+            return True
+        if start_time is None or end_time is None:
+            return True
+        if start_time <= end_time:
+            return start_time <= check_time < end_time
+        return check_time >= start_time or check_time < end_time
+
+    @staticmethod
+    def _matching_slots(slots: List[Dict[str, Any]], start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        tz = timezone.get_current_timezone()
+        if timezone.is_aware(start_time):
+            start_local = timezone.localtime(start_time, tz).replace(tzinfo=None)
+        else:
+            start_local = start_time
+        if timezone.is_aware(end_time):
+            end_local = timezone.localtime(end_time, tz).replace(tzinfo=None)
+        else:
+            end_local = end_time
+
+        matches = []
+        for slot in slots:
+            slot_start = datetime.fromisoformat(slot['start'])
+            slot_end = datetime.fromisoformat(slot['end'])
+            if slot_start == start_local and slot_end == end_local:
+                matches.append(slot)
+        return matches
+
+    @classmethod
+    def get_clinic_roster_slots(cls, clinic, start_date: str, end_date: str, facility=None) -> Dict[str, Any]:
+        """
+        Aggregate roster-derived slots for a clinic across all active clinic duty types.
+        """
+        from apps.organization.models import DepartmentDutyType
+        from apps.organization.services import RosterAvailabilityService
+
+        duty_type_ids = list(
+            DepartmentDutyType.objects.filter(
+                clinic=clinic,
+                category='clinic',
+                is_active=True,
+            ).values_list('id', flat=True)
+        )
+
+        if not duty_type_ids:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        practitioners = {}
+        slots_by_practitioner: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        all_slots: List[Dict[str, Any]] = []
+
+        for duty_type_id in duty_type_ids:
+            result = RosterAvailabilityService.compute_clinic_available_slots(
+                duty_type_id=duty_type_id,
+                start_date=start_date,
+                end_date=end_date,
+                facility=facility,
+            )
+
+            for practitioner in result.get('practitioners', []):
+                practitioners[practitioner['id']] = practitioner
+
+            for practitioner_id, slots in result.get('slots_by_practitioner', {}).items():
+                slots_by_practitioner[practitioner_id].extend(slots)
+
+            all_slots.extend(result.get('all_slots', []))
+
+        all_slots.sort(key=lambda slot: slot['start'])
+        return {
+            'practitioners': list(practitioners.values()),
+            'slots_by_practitioner': dict(slots_by_practitioner),
+            'all_slots': all_slots,
+        }
+
+    @classmethod
+    def validate_pool_booking(
+        cls,
+        clinic,
+        start_time: datetime,
+        end_time: datetime,
+        facility=None,
+        exclude_appointment_id: Optional[str] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate a pool-clinic booking against published roster capacity and overbook policy.
+        """
+        if clinic.booking_mode != clinic.BookingMode.CLINIC_POOL:
+            return True, None
+
+        date_str = timezone.localtime(start_time).date().isoformat() if timezone.is_aware(start_time) else start_time.date().isoformat()
+        slot_payload = cls.get_clinic_roster_slots(
+            clinic=clinic,
+            start_date=date_str,
+            end_date=date_str,
+            facility=facility,
+        )
+
+        matching_slots = cls._matching_slots(slot_payload['all_slots'], start_time, end_time)
+        if not matching_slots:
+            return False, 'No published roster clinic session exists for this time.'
+
+        available_slots = [slot for slot in matching_slots if slot.get('status') == 'free']
+        if available_slots:
+            return True, None
+
+        active_bookings = Appointment.objects.filter(
+            clinic=clinic,
+            status__in=cls.ACTIVE_BOOKING_STATUSES,
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if facility is not None:
+            active_bookings = active_bookings.filter(facility=facility)
+        if exclude_appointment_id:
+            active_bookings = active_bookings.exclude(id=exclude_appointment_id)
+        active_booking_count = active_bookings.count()
+
+        base_capacity = sum(
+            0 if slot.get('status') == 'busy-unavailable' else slot.get('capacity', {}).get('max', 1)
+            for slot in matching_slots
+        )
+        if base_capacity <= 0:
+            return False, 'Clinic roster exists but no active practitioner capacity is available for this slot.'
+
+        percent_allowance = (base_capacity * (clinic.overbook_percent or 0)) // 100
+        hard_cap = clinic.overbook_hard_cap or 0
+        if percent_allowance and hard_cap:
+            overbook_allowance = min(percent_allowance, hard_cap)
+        else:
+            overbook_allowance = max(percent_allowance, hard_cap)
+
+        effective_capacity = base_capacity + overbook_allowance
+        if active_booking_count < effective_capacity:
+            return True, None
+
+        return False, 'Clinic slot capacity reached for this session.'
+
+    @classmethod
+    def assign_pool_practitioner_at_check_in(cls, appointment, assigned_by=None):
+        """
+        Assign the least-loaded on-duty practitioner at check-in for pool clinics.
+        """
+        clinic = appointment.clinic
+        if not clinic:
+            raise ValueError('Clinic is required for pool assignment.')
+        if clinic.booking_mode != clinic.BookingMode.CLINIC_POOL:
+            raise ValueError('Pool assignment is only supported for clinic-pool mode.')
+        if appointment.practitioner_id:
+            return appointment.practitioner
+
+        date_str = timezone.localtime(appointment.start_time).date().isoformat() if timezone.is_aware(appointment.start_time) else appointment.start_time.date().isoformat()
+        slot_payload = cls.get_clinic_roster_slots(
+            clinic=clinic,
+            start_date=date_str,
+            end_date=date_str,
+            facility=appointment.facility,
+        )
+
+        matching_slots = cls._matching_slots(
+            slot_payload['all_slots'],
+            appointment.start_time,
+            appointment.end_time,
+        )
+        candidate_ids = [
+            slot['practitioner_id']
+            for slot in matching_slots
+            if slot.get('status') == 'free' and slot.get('practitioner_id')
+        ]
+        if not candidate_ids:
+            raise ValueError('No available on-duty practitioner for this clinic slot.')
+
+        tz = timezone.get_current_timezone()
+        if timezone.is_aware(appointment.start_time):
+            local_start = timezone.localtime(appointment.start_time, tz)
+        else:
+            local_start = timezone.make_aware(appointment.start_time, tz)
+        day_start = timezone.make_aware(datetime.combine(local_start.date(), time.min), tz)
+        day_end = day_start + timedelta(days=1)
+
+        load_rows = (
+            Appointment.objects.filter(
+                clinic=clinic,
+                practitioner_id__in=candidate_ids,
+                status__in=cls.ACTIVE_BOOKING_STATUSES,
+                start_time__gte=day_start,
+                start_time__lt=day_end,
+            )
+            .values('practitioner_id')
+            .annotate(total=Count('id'))
+        )
+        load_map = {str(row['practitioner_id']): row['total'] for row in load_rows}
+        sorted_candidates = sorted(
+            candidate_ids,
+            key=lambda practitioner_id: (load_map.get(str(practitioner_id), 0), str(practitioner_id))
+        )
+
+        selected_id = None
+        for practitioner_id in sorted_candidates:
+            if ConflictPreventionService.check_practitioner_availability(
+                practitioner_id=str(practitioner_id),
+                start_time=appointment.start_time,
+                end_time=appointment.end_time,
+                exclude_appointment_id=str(appointment.id),
+            ):
+                selected_id = practitioner_id
+                break
+
+        if selected_id is None:
+            raise ValueError('No conflict-free practitioner available for this clinic slot.')
+
+        now = timezone.now()
+        appointment.practitioner_id = selected_id
+        appointment.assignment_status = Appointment.AssignmentStatus.ASSIGNED
+        appointment.assignment_source = Appointment.AssignmentSource.CHECK_IN
+        appointment.assigned_at = now
+        if assigned_by:
+            appointment.updated_by = assigned_by
+
+        update_fields = [
+            'practitioner', 'assignment_status', 'assignment_source',
+            'assigned_at', 'updated_at',
+        ]
+        if assigned_by:
+            update_fields.append('updated_by')
+        appointment.save(update_fields=update_fields)
+        return appointment.practitioner
+
+    @classmethod
+    def get_active_pool_clinic_ids(cls, facility, department=None, at_datetime=None) -> set:
+        """
+        Return clinic IDs with active published pool roster sessions at a specific time.
+        """
+        from apps.organization.models import RosterEntry
+
+        at_datetime = at_datetime or timezone.now()
+        check_date = at_datetime.date()
+        check_time = at_datetime.time()
+
+        entries = RosterEntry.objects.filter(
+            date=check_date,
+            status='published',
+            duty_type__category='clinic',
+            duty_type__is_active=True,
+            duty_type__clinic__is_active=True,
+            duty_type__clinic__facility=facility,
+            duty_type__clinic__booking_mode='clinic_pool',
+        ).select_related('duty_type', 'duty_type__clinic')
+
+        if department is not None:
+            entries = entries.filter(department=department)
+
+        clinic_ids = set()
+        for entry in entries:
+            duty_type = entry.duty_type
+            start_time = entry.start_time or duty_type.start_time
+            end_time = entry.end_time or duty_type.end_time
+            if cls._time_matches(start_time, end_time, check_time, duty_type.is_24_hour):
+                if duty_type.clinic_id:
+                    clinic_ids.add(str(duty_type.clinic_id))
+        return clinic_ids
 
 
 class ConflictPreventionService:

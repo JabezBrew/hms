@@ -1177,6 +1177,16 @@ class RosterAvailabilityService:
     @staticmethod
     def _has_appointment(check_date, slot_start, slot_end, appointments):
         """Check if there's an appointment during this slot."""
+        return RosterAvailabilityService._appointment_overlap_count(
+            check_date=check_date,
+            slot_start=slot_start,
+            slot_end=slot_end,
+            appointments=appointments,
+        ) > 0
+
+    @staticmethod
+    def _appointment_overlap_count(check_date, slot_start, slot_end, appointments):
+        """Count overlapping appointments during this slot."""
         slot_start_dt = datetime.combine(check_date, slot_start)
         slot_end_dt = datetime.combine(check_date, slot_end)
 
@@ -1188,6 +1198,7 @@ class RosterAvailabilityService:
             slot_start_dt = timezone.make_aware(slot_start_dt)
             slot_end_dt = timezone.make_aware(slot_end_dt)
 
+        overlap_count = 0
         for appointment in appointments:
             appt_start = appointment.start_time
             appt_end = appointment.end_time
@@ -1200,8 +1211,8 @@ class RosterAvailabilityService:
 
             # Check for overlap
             if appt_start and appt_end and slot_start_dt < appt_end and slot_end_dt > appt_start:
-                return True
-        return False
+                overlap_count += 1
+        return overlap_count
 
     @classmethod
     def _resolve_practitioners_from_entry(cls, entry, facility):
@@ -1396,14 +1407,17 @@ class RosterAvailabilityService:
                 # Check if slot is valid
                 is_in_break = cls._is_in_break(current_time, slot_end, breaks)
                 is_blocked = cls._is_blocked(entry.date, current_time, slot_end, blocked_times)
-                has_appointment = cls._has_appointment(entry.date, current_time, slot_end, appointments)
+                booked_count = cls._appointment_overlap_count(
+                    entry.date, current_time, slot_end, appointments
+                )
+                max_patients_per_slot = duty_type.max_patients_per_slot or 1
 
                 # Only add slot if not in a break
                 if not is_in_break:
                     # Determine slot status
                     if is_blocked:
                         status = "busy-unavailable"
-                    elif has_appointment:
+                    elif booked_count >= max_patients_per_slot:
                         status = "busy"
                     else:
                         status = "free"
@@ -1424,6 +1438,11 @@ class RosterAvailabilityService:
                         "roster_entry_id": str(entry.id),
                         "duty_type_id": str(duty_type.id),
                         "duty_type_name": duty_type.name,
+                        "capacity": {
+                            "max": max_patients_per_slot,
+                            "booked": booked_count,
+                            "remaining": max(0, max_patients_per_slot - booked_count),
+                        },
                         "computed": True,
                         "source": "roster"
                     }
@@ -1734,12 +1753,15 @@ class RosterAvailabilityService:
 
             is_in_break = cls._is_in_break(current_time, slot_end, breaks)
             is_blocked = cls._is_blocked(entry.date, current_time, slot_end, blocked_times)
-            has_appointment = cls._has_appointment(entry.date, current_time, slot_end, appointments)
+            booked_count = cls._appointment_overlap_count(
+                entry.date, current_time, slot_end, appointments
+            )
+            max_patients_per_slot = duty_type.max_patients_per_slot or 1
 
             if not is_in_break:
                 if is_blocked:
                     status = "busy-unavailable"
-                elif has_appointment:
+                elif booked_count >= max_patients_per_slot:
                     status = "busy"
                 else:
                     status = "free"
@@ -1759,6 +1781,11 @@ class RosterAvailabilityService:
                     "roster_entry_id": str(entry.id),
                     "duty_type_id": str(duty_type.id),
                     "duty_type_name": duty_type.name,
+                    "capacity": {
+                        "max": max_patients_per_slot,
+                        "booked": booked_count,
+                        "remaining": max(0, max_patients_per_slot - booked_count),
+                    },
                     "computed": True,
                     "source": "roster"
                 }

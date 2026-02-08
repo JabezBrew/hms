@@ -542,6 +542,15 @@ class TriageService:
             start_time=start_time,
             end_time=end_time,
             reason=entry.chief_complaint or 'Walk-in visit',
+            assignment_status=(
+                Appointment.AssignmentStatus.ASSIGNED
+                if practitioner else Appointment.AssignmentStatus.PENDING
+            ),
+            assignment_source=(
+                Appointment.AssignmentSource.BOOKING
+                if practitioner else None
+            ),
+            assigned_at=(timezone.now() if practitioner else None),
             created_by=assigned_by,
             updated_by=assigned_by,
         )

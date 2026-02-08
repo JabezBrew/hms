@@ -245,12 +245,18 @@ class PatientRegistrationSerializer(serializers.Serializer):
 
     def _resolve_outpatient_clinic(self, facility, department, clinic_id=None):
         from apps.organization.models import Clinic, ClinicSchedule
+        from apps.appointments.services import ClinicBookingService
 
         now = timezone.now()
         tz = self._get_department_timezone(department, facility)
         local_now = timezone.localtime(now, tz)
         day_of_week = local_now.weekday()
         current_time = local_now.time()
+        active_pool_clinic_ids = ClinicBookingService.get_active_pool_clinic_ids(
+            facility=facility,
+            department=department,
+            at_datetime=local_now,
+        )
 
         schedules = ClinicSchedule.objects.filter(
             facility=facility,
@@ -258,10 +264,11 @@ class PatientRegistrationSerializer(serializers.Serializer):
             day_of_week=day_of_week,
             is_active=True,
             clinic__is_active=True,
+            clinic__booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
             start_time__lte=current_time,
             end_time__gt=current_time,
         )
-        clinic_ids = list(schedules.values_list('clinic_id', flat=True).distinct())
+        clinic_ids = set(schedules.values_list('clinic_id', flat=True).distinct())
 
         if clinic_id:
             clinic = Clinic.objects.filter(id=clinic_id, is_active=True).first()
@@ -271,14 +278,22 @@ class PatientRegistrationSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"admission_details": "Clinic does not belong to the active facility."})
             if clinic.department_id != department.id:
                 raise serializers.ValidationError({"admission_details": "Clinic does not belong to the selected department."})
-            if clinic.id not in clinic_ids:
+            if clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL:
+                if str(clinic.id) not in active_pool_clinic_ids:
+                    raise serializers.ValidationError({
+                        "admission_details": "Clinic is not on a published roster session at this time."
+                    })
+            elif clinic.id not in clinic_ids:
                 raise serializers.ValidationError({"admission_details": "Clinic is not scheduled at this time."})
             return clinic
 
-        if len(clinic_ids) == 1:
-            return Clinic.objects.get(id=clinic_ids[0])
+        candidate_ids = set(clinic_ids)
+        candidate_ids.update(active_pool_clinic_ids)
 
-        if len(clinic_ids) == 0:
+        if len(candidate_ids) == 1:
+            return Clinic.objects.get(id=next(iter(candidate_ids)))
+
+        if len(candidate_ids) == 0:
             raise serializers.ValidationError({
                 "admission_details": "No active clinic schedule found for this department."
             })

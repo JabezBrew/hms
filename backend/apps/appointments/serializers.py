@@ -8,6 +8,7 @@ from .models import (
 )
 from ..users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
 from apps.core.security import get_user_facility
+from apps.organization.models import Clinic
 
 
 class AppointmentTypeSerializer(serializers.ModelSerializer):
@@ -54,9 +55,19 @@ class AppointmentSerializer(serializers.ModelSerializer):
         end_time = data.get('end_time', getattr(instance, 'end_time', None))
         practitioner = data.get('practitioner', getattr(instance, 'practitioner', None))
         patient = data.get('patient', getattr(instance, 'patient', None))
+        clinic = data.get('clinic', getattr(instance, 'clinic', None))
+        is_create = instance is None
 
         if start_time and end_time and start_time >= end_time:
             raise serializers.ValidationError({'end_time': 'End time must be after start time.'})
+
+        if is_create and not clinic:
+            raise serializers.ValidationError({'clinic': 'Clinic is required when booking an appointment.'})
+
+        if clinic and clinic.booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT and not practitioner:
+            raise serializers.ValidationError({
+                'practitioner': 'Practitioner is required for practitioner-direct clinics.'
+            })
 
         if practitioner and start_time and end_time:
             from .services import ConflictPreventionService, AvailabilityService
@@ -69,6 +80,29 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 practitioner.id, start_time, end_time, exclude_appointment_id=exclude_id
             ):
                 raise serializers.ValidationError({'practitioner': 'Practitioner already has an appointment during this time.'})
+
+        if clinic and clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL and start_time and end_time:
+            from .services import ClinicBookingService
+            request = self.context.get('request')
+            facility = get_user_facility(request) if request else None
+            exclude_id = str(instance.id) if instance else None
+            should_validate_capacity = (
+                is_create or
+                any(
+                    field in data
+                    for field in ('start_time', 'end_time', 'clinic', 'practitioner')
+                )
+            )
+            if should_validate_capacity:
+                is_valid, error_message = ClinicBookingService.validate_pool_booking(
+                    clinic=clinic,
+                    start_time=start_time,
+                    end_time=end_time,
+                    facility=facility,
+                    exclude_appointment_id=exclude_id,
+                )
+                if not is_valid:
+                    raise serializers.ValidationError({'start_time': error_message})
 
         if patient and start_time and end_time:
             from .services import ConflictPreventionService

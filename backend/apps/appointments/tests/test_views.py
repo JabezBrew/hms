@@ -23,14 +23,24 @@ from .factories import (
 )
 from apps.users.tests.factories import PractitionerProfileFactory, PatientProfileFactory
 from apps.core.tests.factories import DefaultFacilityFactory
-from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
+from apps.organization.models import (
+    Clinic,
+    ClinicalUnit,
+    UnitTypeConfig,
+    DepartmentDutyType,
+    RosterEntry,
+)
 
 
 # Base URL prefix for appointments app
 BASE_URL = '/api/appointments'
 
 
-def create_clinic(facility):
+def create_clinic(
+    facility,
+    booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+    assignment_timing=Clinic.AssignmentTiming.BOOKING,
+):
     facility_type = UnitTypeConfig.objects.create(
         code=f"facility-{facility.id}",
         name='Facility',
@@ -61,6 +71,8 @@ def create_clinic(facility):
         department=department,
         code='OPD-GEN',
         name='General OPD',
+        booking_mode=booking_mode,
+        assignment_timing=assignment_timing,
         is_active=True,
     )
 
@@ -420,6 +432,200 @@ class TestAppointmentViewSet:
             format='json'
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_direct_clinic_requires_practitioner(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+            assignment_timing=Clinic.AssignmentTiming.BOOKING,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        apt_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + timedelta(days=1)
+        end_time = start_time + timedelta(minutes=30)
+
+        payload = {
+            'patient': str(patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
+        }
+
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'practitioner' in response.data
+
+    def test_pool_clinic_allows_booking_without_practitioner_when_roster_slot_exists(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        slot_start = time(10, 0)
+        slot_end = time(10, 30)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Clinic Duty',
+            code='CLINIC-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        start_time = timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start))
+        end_time = timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end))
+        payload = {
+            'patient': str(patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
+        }
+
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        appointment = Appointment.objects.get(id=response.data['id'])
+        assert appointment.practitioner_id is None
+        assert appointment.assignment_status == Appointment.AssignmentStatus.PENDING
+
+    def test_start_visit_assigns_pool_clinic_practitioner_at_check_in(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        slot_start = time(11, 0)
+        slot_end = time(11, 30)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Check-In Duty',
+            code='POOL-CHECK-IN',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=None,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            source='scheduled',
+            start_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)),
+            end_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)),
+        )
+
+        response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_201_CREATED
+        appointment.refresh_from_db()
+        assert appointment.practitioner_id == practitioner.id
+        assert appointment.assignment_source == Appointment.AssignmentSource.CHECK_IN
+
+    def test_available_slots_supports_pool_clinic_query(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        practitioner = PractitionerProfileFactory()
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Slots Duty',
+            code='POOL-SLOTS',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            source='manual',
+            status='published',
+        )
+
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'clinic_id': str(clinic.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': 'free',
+            }
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
+        assert response.data.get('total', 0) > 0
 
 
 @pytest.mark.tier2
