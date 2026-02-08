@@ -33,6 +33,7 @@ import { flattenUnitTree, toList } from '../duty-roster/utils';
 import {
   useClinicalUnitsTree,
   useCreateClinic,
+  useUpdateClinic,
   useCreateDepartmentDutyType,
   useDepartmentDutyTypes,
   useCreateRotationRule,
@@ -121,9 +122,9 @@ function StepPill({ active, children }) {
 export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, unitType, existingClinic = null }) {
   const canHaveClinics = unitType === 'department' || unitType === 'division';
   const isEditClinic = Boolean(existingClinic?.id);
-  const supportedExistingClinic = !isEditClinic || String(existingClinic?.booking_mode || 'clinic_pool') === 'clinic_pool';
 
   const createClinic = useCreateClinic();
+  const updateClinic = useUpdateClinic();
   const createDutyType = useCreateDepartmentDutyType();
   const createRotationRule = useCreateRotationRule();
   const bulkRoster = useBulkRosterEntries();
@@ -152,6 +153,14 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState('team'); // 'team' | 'practitioner'
+
+  const requiredBookingMode = mode === 'team' ? 'clinic_pool' : 'practitioner_direct';
+  const requiredAssignmentTiming = requiredBookingMode === 'clinic_pool' ? 'check_in' : 'booking';
+  const [existingClinicBookingMode, setExistingClinicBookingMode] = useState(null);
+  const effectiveExistingBookingMode = isEditClinic
+    ? String(existingClinicBookingMode || existingClinic?.booking_mode || requiredBookingMode)
+    : requiredBookingMode;
+  const supportedExistingClinic = !isEditClinic || effectiveExistingBookingMode === requiredBookingMode;
 
   const [clinic, setClinic] = useState({
     code: '',
@@ -257,6 +266,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
   const isBusy = (
     createClinic.isPending
+    || updateClinic.isPending
     || createDutyType.isPending
     || createRotationRule.isPending
     || bulkRoster.isPending
@@ -266,7 +276,12 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setMode('team');
+    const initialMode = (
+      isEditClinic && String(existingClinic?.booking_mode || '') === 'practitioner_direct'
+        ? 'practitioner'
+        : 'team'
+    );
+    setMode(initialMode);
     setTeamSequence([]);
     setTeamToAdd('');
     setStaffQuery('');
@@ -285,6 +300,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
       breaks: [],
     });
     if (isEditClinic) {
+      setExistingClinicBookingMode(String(existingClinic?.booking_mode || ''));
       setClinic((prev) => ({
         ...prev,
         code: existingClinic.code || '',
@@ -292,18 +308,19 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
         description: existingClinic.description || '',
         accepts_walk_ins: existingClinic.accepts_walk_ins ?? true,
         waitlist_enabled: existingClinic.waitlist_enabled ?? true,
-        assignment_timing: existingClinic.assignment_timing || 'check_in',
+        assignment_timing: existingClinic.assignment_timing || (initialMode === 'team' ? 'check_in' : 'booking'),
         overbook_percent: existingClinic.overbook_percent || 0,
         overbook_hard_cap: existingClinic.overbook_hard_cap || 0,
       }));
     } else {
+      setExistingClinicBookingMode(null);
       setClinic({
         code: '',
         name: '',
         description: '',
         accepts_walk_ins: true,
         waitlist_enabled: true,
-        assignment_timing: 'check_in',
+        assignment_timing: initialMode === 'team' ? 'check_in' : 'booking',
         overbook_percent: 0,
         overbook_hard_cap: 0,
       });
@@ -346,9 +363,15 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
     dutyTypeChoiceId,
   ]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (isEditClinic) return;
+    setClinic((p) => ({ ...p, assignment_timing: requiredAssignmentTiming }));
+  }, [open, isEditClinic, requiredAssignmentTiming]);
+
   const canNext = useMemo(() => {
     if (!canHaveClinics || !unitId) return false;
-    if (!supportedExistingClinic) return false;
+    if (isEditClinic && step > 0 && !supportedExistingClinic) return false;
     if (step === 0) {
       if (!mode) return false;
       return true;
@@ -403,6 +426,24 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
     setStaffQuery('');
   };
 
+  const handleConvertExistingClinic = async () => {
+    if (!isEditClinic || !existingClinic?.id) return;
+    try {
+      await updateClinic.mutateAsync({
+        id: existingClinic.id,
+        data: {
+          booking_mode: requiredBookingMode,
+          assignment_timing: requiredAssignmentTiming,
+        },
+      });
+      setExistingClinicBookingMode(requiredBookingMode);
+      toast.success(`Updated clinic booking mode to ${requiredBookingMode}.`);
+    } catch (error) {
+      const message = error.response?.data?.detail || error.message || 'Failed to update clinic booking mode.';
+      toast.error(message);
+    }
+  };
+
   const handleCreate = async () => {
     if (!canNext) return;
     if (!unitId) return;
@@ -414,8 +455,8 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
         code: clinic.code.trim().toUpperCase(),
         name: clinic.name.trim(),
         description: (clinic.description || '').trim(),
-        booking_mode: 'clinic_pool',
-        assignment_timing: clinic.assignment_timing,
+        booking_mode: requiredBookingMode,
+        assignment_timing: requiredAssignmentTiming,
         accepts_walk_ins: Boolean(clinic.accepts_walk_ins),
         waitlist_enabled: Boolean(clinic.waitlist_enabled),
         overbook_percent: Number(clinic.overbook_percent) || 0,
@@ -559,19 +600,19 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                 </p>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setMode('practitioner')}
+	              <button
+	                type="button"
+	                onClick={() => setMode('practitioner')}
                 className={cn(
                   'rounded-xl border p-4 text-left transition-colors',
                   mode === 'practitioner' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border hover:bg-muted/30'
                 )}
               >
-                <div className="flex items-center gap-2">
-                  <UserRound className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-heading font-medium">Practitioner Clinic</span>
-                  <Badge variant="outline" className="ml-auto text-[10px] font-mono">Rostered</Badge>
-                </div>
+	                <div className="flex items-center gap-2">
+	                  <UserRound className="h-4 w-4 text-muted-foreground" />
+	                  <span className="font-heading font-medium">Practitioner Clinic</span>
+	                  <Badge variant="outline" className="ml-auto text-[10px] font-mono">Direct</Badge>
+	                </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Individual clinician(s) run the session. Rotate practitioners across dates.
                 </p>
@@ -589,8 +630,23 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
               )}
               {isEditClinic && !supportedExistingClinic && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                  This wizard supports roster-backed pool clinics only. Update this clinic to booking mode{' '}
-                  <span className="font-mono">clinic_pool</span> first.
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      This clinic is currently in booking mode{' '}
+                      <span className="font-mono">{effectiveExistingBookingMode}</span>. This wizard step requires{' '}
+                      <span className="font-mono">{requiredBookingMode}</span>.
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs"
+                      onClick={handleConvertExistingClinic}
+                      disabled={isBusy}
+                    >
+                      Convert
+                    </Button>
+                  </div>
                 </div>
               )}
 
