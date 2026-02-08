@@ -1748,6 +1748,12 @@ class RosterAvailabilityService:
         while current_time < end_time:
             slot_end = cls._add_minutes_to_time(current_time, slot_duration)
 
+            # SAFETY: Adding minutes to a `time` can wrap past midnight (e.g., 23:30 + 30m = 00:00).
+            # This slot generator currently assumes same-day windows for clinic duties.
+            # Without this guard, wrapped times will cause an infinite loop.
+            if slot_end <= current_time:
+                break
+
             if slot_end > end_time:
                 break
 
