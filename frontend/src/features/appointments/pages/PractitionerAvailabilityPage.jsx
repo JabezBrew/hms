@@ -78,10 +78,6 @@ const PractitionerAvailabilityPage = () => {
   const practitionerFromQuery = useMemo(() => {
     return queryParams.get('practitioner');
   }, [queryParams]);
-  const practitionerNameFromQuery = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get('practitioner_name');
-  }, [location.search]);
   const pageMeta = usePageMeta({
     title: isDoctor
       ? 'My Availability | Hospital Management System'
@@ -207,12 +203,12 @@ const PractitionerAvailabilityPage = () => {
 
     return [
       {
-        label: practitionerNameFromQuery || `Practitioner ${String(selectedPractitioner).slice(0, 8)}`,
+        label: `Practitioner ${String(selectedPractitioner).slice(0, 8)}`,
         value: String(selectedPractitioner),
       },
       ...options,
     ];
-  }, [practitioners, selectedPractitioner, practitionerNameFromQuery]);
+  }, [practitioners, selectedPractitioner]);
 
   // Mutations
   const deleteRecurringMutation = useDeleteRecurringSchedule();
