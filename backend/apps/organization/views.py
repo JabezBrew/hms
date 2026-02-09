@@ -1205,7 +1205,7 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             return DepartmentDutyType.objects.none()
-        queryset = super().get_queryset().select_related('department', 'department__unit_type')
+        queryset = super().get_queryset().select_related('department', 'department__unit_type', 'clinic')
         queryset = queryset.filter(department__root_unit__code=facility.code)
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)

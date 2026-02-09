@@ -306,6 +306,10 @@ function DutyTypesPanel({ departmentId }) {
 
     // Validate clinic-specific fields
     if (formState.category === 'clinic') {
+      if (!formState.clinic) {
+        toast.error('Select a clinic to link this clinic duty type.');
+        return;
+      }
       if (!formState.slot_duration_minutes || formState.slot_duration_minutes < 5) {
         toast.error('Slot duration must be at least 5 minutes for clinic duties.');
         return;
@@ -322,7 +326,7 @@ function DutyTypesPanel({ departmentId }) {
       start_time: formState.is_24_hour ? null : formState.start_time,
       end_time: formState.is_24_hour ? null : formState.end_time,
       // Include clinic-specific fields when category is 'clinic'
-      clinic: formState.category === 'clinic' && formState.clinic ? formState.clinic : null,
+      clinic: formState.category === 'clinic' ? formState.clinic : null,
       slot_duration_minutes: formState.category === 'clinic' ? Number(formState.slot_duration_minutes) : null,
       max_patients_per_slot: formState.category === 'clinic' ? Number(formState.max_patients_per_slot) || 1 : null,
       breaks: formState.category === 'clinic' ? formState.breaks : [],
@@ -641,17 +645,16 @@ function DutyTypesPanel({ departmentId }) {
                 {/* Clinic Selector */}
                 <div className="space-y-2">
                   <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Link to Clinic (Optional)
+                    Link to Clinic
                   </label>
                   <Select
-                    value={formState.clinic || '_none_'}
-                    onValueChange={(v) => setFormState((p) => ({ ...p, clinic: v === '_none_' ? '' : v }))}
+                    value={formState.clinic || ''}
+                    onValueChange={(v) => setFormState((p) => ({ ...p, clinic: v }))}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select a clinic" />
                     </SelectTrigger>
                     <SelectContent className="z-[200]">
-                      <SelectItem value="_none_">No clinic linked</SelectItem>
                       {clinics.map((clinic) => (
                         <SelectItem key={clinic.id} value={clinic.id}>
                           {clinic.name} ({clinic.code})
@@ -662,7 +665,7 @@ function DutyTypesPanel({ departmentId }) {
                   <p className="text-[10px] text-muted-foreground">
                     {clinics.length === 0
                       ? 'No clinics available. Create clinics in Organization → unit → Clinics tab.'
-                      : 'Link this duty type to a clinic for appointment scheduling.'}
+                      : 'Required. This is what connects the roster to outpatient clinic availability.'}
                   </p>
                 </div>
 
