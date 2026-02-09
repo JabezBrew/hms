@@ -1480,6 +1480,28 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        created_schedules = getattr(serializer, 'created_schedules', None)
+        created_count = getattr(serializer, 'created_count', 1)
+        if created_schedules and created_count > 1:
+            output_serializer = self.get_serializer(created_schedules, many=True)
+            return Response(
+                {
+                    "created_count": created_count,
+                    "template_key": getattr(serializer, 'created_template_key', None),
+                    "template_name": created_schedules[0].template_name,
+                    "created_schedules": output_serializer.data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     @action(detail=False, methods=['post'])
     def preview_slots(self, request):
         """

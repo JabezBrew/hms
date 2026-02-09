@@ -1,4 +1,7 @@
+import uuid
+
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 
 from .models import (
@@ -7,6 +10,7 @@ from .models import (
     ScheduleFHIRMapping, RecurringSchedule, BlockedTime
 )
 from ..users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
+from ..users.models import PractitionerProfile
 from apps.core.security import get_user_facility
 from apps.organization.models import Clinic
 
@@ -206,20 +210,124 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
     Serializer for the RecurringSchedule model.
     """
     practitioner_name = serializers.SerializerMethodField()
+    practitioners = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False,
+        allow_empty=False,
+        help_text="Optional list of practitioners to clone this schedule to"
+    )
 
     class Meta:
         model = RecurringSchedule
         fields = [
             'id', 'name', 'practitioner', 'practitioner_name', 'days_of_week',
             'start_time', 'end_time', 'slot_duration', 'active_from', 'active_to',
-            'breaks', 'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by'
+            'breaks', 'is_active', 'template_key', 'template_name', 'practitioners',
+            'created_at', 'updated_at', 'created_by', 'updated_by'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['template_key', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
     def get_practitioner_name(self, obj):
         if obj.practitioner and hasattr(obj.practitioner, 'staff') and hasattr(obj.practitioner.staff, 'user'):
             return f"{obj.practitioner.staff.user.first_name} {obj.practitioner.staff.user.last_name}"
         return "Unknown"
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        is_create = self.instance is None
+
+        start_time = attrs.get('start_time', getattr(self.instance, 'start_time', None))
+        end_time = attrs.get('end_time', getattr(self.instance, 'end_time', None))
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError("end_time must be after start_time.")
+
+        active_from = attrs.get('active_from', getattr(self.instance, 'active_from', None))
+        active_to = attrs.get('active_to', getattr(self.instance, 'active_to', None))
+        if active_to and active_from and active_to < active_from:
+            raise serializers.ValidationError("active_to cannot be before active_from.")
+
+        if not is_create:
+            if 'practitioners' in attrs:
+                raise serializers.ValidationError({
+                    'practitioners': 'Bulk practitioner assignment is only supported on create.'
+                })
+            return attrs
+
+        requested_ids = []
+        if attrs.get('practitioner'):
+            requested_ids.append(str(attrs['practitioner'].id))
+        if attrs.get('practitioners'):
+            requested_ids.extend([str(practitioner_id) for practitioner_id in attrs['practitioners']])
+
+        unique_ids = list(dict.fromkeys(requested_ids))
+        if not unique_ids:
+            raise serializers.ValidationError({
+                'practitioner': 'Provide practitioner or practitioners.'
+            })
+
+        facility = get_user_facility(request) if request else None
+        practitioner_qs = PractitionerProfile.objects.filter(id__in=unique_ids)
+        if facility:
+            practitioner_qs = practitioner_qs.filter(
+                Q(staff__primary_facility=facility) |
+                Q(staff__primary_facility__isnull=True, staff__user__primary_facility=facility)
+            )
+        practitioner_map = {str(prac.id): prac for prac in practitioner_qs.select_related('staff__user')}
+
+        missing_ids = [practitioner_id for practitioner_id in unique_ids if practitioner_id not in practitioner_map]
+        if missing_ids:
+            raise serializers.ValidationError({
+                'practitioners': 'One or more practitioners are invalid for the active facility.'
+            })
+
+        if request and request.user.user_type in ['doctor', 'nurse']:
+            practitioner_profile = getattr(getattr(request.user, 'staff_profile', None), 'practitioner_profile', None)
+            own_practitioner_id = str(practitioner_profile.id) if practitioner_profile else None
+            if not own_practitioner_id:
+                raise serializers.ValidationError({
+                    'practitioner': 'Your account is not linked to a practitioner profile.'
+                })
+            if any(practitioner_id != own_practitioner_id for practitioner_id in unique_ids):
+                raise serializers.ValidationError({
+                    'practitioners': 'You can only create recurring schedules for yourself.'
+                })
+
+        self._resolved_practitioners = [practitioner_map[practitioner_id] for practitioner_id in unique_ids]
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        validated_data.pop('practitioners', None)
+        validated_data.pop('practitioner', None)
+
+        resolved_practitioners = getattr(self, '_resolved_practitioners', None)
+        if not resolved_practitioners:
+            raise serializers.ValidationError({
+                'practitioner': 'Unable to resolve practitioners for schedule creation.'
+            })
+
+        shared_template_name = validated_data.pop('template_name', None)
+        apply_as_shared_template = len(resolved_practitioners) > 1
+        if apply_as_shared_template and not shared_template_name:
+            shared_template_name = validated_data.get('name')
+
+        template_key = uuid.uuid4() if apply_as_shared_template else None
+        created_schedules = []
+
+        for practitioner in resolved_practitioners:
+            schedule = RecurringSchedule.objects.create(
+                practitioner=practitioner,
+                template_key=template_key,
+                template_name=shared_template_name,
+                **validated_data,
+            )
+            created_schedules.append(schedule)
+
+        self.created_schedules = created_schedules
+        self.created_count = len(created_schedules)
+        self.created_template_key = str(template_key) if template_key else None
+        return created_schedules[0]
 
 
 class BlockedTimeSerializer(serializers.ModelSerializer):

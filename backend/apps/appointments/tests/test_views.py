@@ -32,6 +32,7 @@ from apps.organization.models import (
 )
 from apps.referrals.models import ClinicWaitlistEntry
 from apps.encounters.models import OutpatientVisit
+from apps.users.models import Staff
 
 
 # Base URL prefix for appointments app
@@ -202,9 +203,9 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 3
 
-    def test_create_recurring_schedule(self, admin_client, db):
+    def test_create_recurring_schedule(self, admin_client, default_facility, db):
         """Test creating a new recurring schedule."""
-        practitioner = PractitionerProfileFactory()
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
         data = {
             'name': 'Morning Clinic',
             'practitioner': str(practitioner.id),
@@ -222,6 +223,81 @@ class TestRecurringScheduleViewSet:
         )
         assert response.status_code == status.HTTP_201_CREATED
         assert RecurringSchedule.objects.filter(name='Morning Clinic').exists()
+
+    def test_create_shared_recurring_schedule_for_multiple_practitioners(self, admin_client, default_facility, db):
+        """Creating with practitioners should clone one schedule per practitioner."""
+        practitioner_a = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        practitioner_b = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        data = {
+            'name': 'IM Morning Clinic',
+            'practitioner': str(practitioner_a.id),
+            'practitioners': [str(practitioner_b.id)],
+            'template_name': 'Internal Medicine Shared AM',
+            'days_of_week': [0, 1, 2, 3, 4],
+            'start_time': '09:00:00',
+            'end_time': '12:00:00',
+            'slot_duration': 30,
+            'active_from': str(date.today()),
+            'breaks': [],
+        }
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            data,
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['created_count'] == 2
+        assert response.data['template_name'] == 'Internal Medicine Shared AM'
+        assert response.data['template_key']
+        assert len(response.data['created_schedules']) == 2
+
+        template_key = response.data['template_key']
+        created = RecurringSchedule.objects.filter(
+            template_key=template_key
+        ).order_by('practitioner_id')
+        assert created.count() == 2
+        assert set(created.values_list('practitioner_id', flat=True)) == {
+            practitioner_a.id, practitioner_b.id
+        }
+
+    def test_doctor_cannot_create_recurring_schedule_for_other_practitioners(
+        self, doctor_client, doctor_user, default_facility, db
+    ):
+        """Doctors can only create recurring schedules for themselves."""
+        staff = Staff.objects.create(
+            user=doctor_user,
+            employee_id='DOC-SHARE-001',
+            department='Internal Medicine',
+            position='Consultant',
+            hire_date=date.today() - timedelta(days=365),
+            primary_facility=default_facility,
+        )
+        own_practitioner = PractitionerProfileFactory(
+            staff=staff,
+            license_number='DOC-SHARE-LIC-001',
+        )
+        other_practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
+
+        data = {
+            'name': 'Doctor Shared Attempt',
+            'practitioner': str(own_practitioner.id),
+            'practitioners': [str(other_practitioner.id)],
+            'days_of_week': [0, 2, 4],
+            'start_time': '10:00:00',
+            'end_time': '14:00:00',
+            'slot_duration': 30,
+            'active_from': str(date.today()),
+            'breaks': [],
+        }
+
+        response = doctor_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            data,
+            format='json'
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'practitioners' in response.data
 
     def test_retrieve_recurring_schedule(self, admin_client, db):
         """Test retrieving a single recurring schedule."""

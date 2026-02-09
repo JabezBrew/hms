@@ -259,6 +259,18 @@ class RecurringSchedule(models.Model):
     active_to = models.DateField(blank=True, null=True)
     breaks = models.JSONField(default=list, blank=True, help_text="List of break times, e.g. [{'start': '12:00', 'end': '13:00'}]")
     is_active = models.BooleanField(default=True)
+    template_key = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Shared template key when this schedule was cloned to multiple practitioners"
+    )
+    template_name = models.CharField(
+        max_length=120,
+        null=True,
+        blank=True,
+        help_text="Optional display name for the shared recurring schedule template"
+    )
 
     # Migration tracking fields (for deprecation)
     migrated_to_roster = models.BooleanField(
@@ -290,6 +302,7 @@ class RecurringSchedule(models.Model):
         indexes = [
             models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
+            models.Index(fields=['facility', 'template_key']),
             models.Index(fields=['days_of_week']),
             models.Index(fields=['migrated_to_roster']),
         ]
