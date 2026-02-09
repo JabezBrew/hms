@@ -923,7 +923,13 @@ class ClinicBookingService:
             )
 
         # Aggregate roster-derived windows to base capacity.
-        base_capacity_by_window: Dict[tuple, int] = {}
+        #
+        # IMPORTANT: For pool clinics, roster entries represent "the clinic is running",
+        # not a pre-known practitioner headcount. Capacity is therefore modeled as a
+        # per-window bucket cap derived from configuration (duty_type.max_patients_per_slot),
+        # and is counted once per duty_type per (start,end) window, regardless of how many
+        # roster entries exist for that duty_type.
+        base_capacity_by_window_duty: Dict[tuple, int] = {}
         for entry in entries:
             duty_type = duty_type_by_id.get(entry.duty_type_id)
             if not duty_type:
@@ -956,10 +962,15 @@ class ClinicBookingService:
                 if not cls._is_in_break(current_time, slot_end, breaks):
                     slot_start_dt = datetime.combine(entry.date, current_time)
                     slot_end_dt = datetime.combine(entry.date, slot_end)
-                    key = (slot_start_dt.isoformat(), slot_end_dt.isoformat())
-                    base_capacity_by_window[key] = base_capacity_by_window.get(key, 0) + cap_per_window
+                    key = (slot_start_dt.isoformat(), slot_end_dt.isoformat(), str(duty_type.id))
+                    base_capacity_by_window_duty[key] = cap_per_window
 
                 current_time = slot_end
+
+        base_capacity_by_window: Dict[tuple, int] = {}
+        for (start_iso, end_iso, _duty_type_id), cap in base_capacity_by_window_duty.items():
+            key = (start_iso, end_iso)
+            base_capacity_by_window[key] = base_capacity_by_window.get(key, 0) + int(cap or 0)
 
         # Build final slot payload with effective capacity and booked/remaining counts.
         slots: List[Dict[str, Any]] = []

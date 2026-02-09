@@ -786,7 +786,7 @@ class TestAppointmentViewSet:
             start_time=start_t,
             end_time=end_t,
             slot_duration_minutes=30,
-            max_patients_per_slot=1,
+            max_patients_per_slot=2,
             clinic=clinic,
             is_active=True,
         )
@@ -848,13 +848,30 @@ class TestAppointmentViewSet:
         assert slots, "Expected pool windows to be returned"
         first = slots[0]
         assert first['capacity']['booked'] == 1
-        assert first['capacity']['remaining'] == 0
+        assert first['capacity']['remaining'] == 1
 
-        # Second booking should be rejected by capacity validation.
+        # Second booking should still succeed (capacity=2 for this window).
         response = admin_client.post(
             f'{BASE_URL}/appointments/',
             {
                 'patient': str(patient2.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Third booking must be rejected by capacity validation.
+        patient3 = PatientProfileFactory(facility=facility)
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient3.id),
                 'clinic': str(clinic.id),
                 'appointment_type': str(apt_type.id),
                 'status': 'booked',
