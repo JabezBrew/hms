@@ -102,6 +102,27 @@ def update_fluid_balance_settings(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def deployment_capabilities(request):
+    """
+    Return deployment profile and capability flags for conditional UX logic.
+    """
+    scheduling_mode = getattr(settings, 'PRACTITIONER_SCHEDULING_MODE', 'roster')
+    requires_outpatient_active_clinic = bool(
+        getattr(settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC', True)
+    )
+
+    return Response({
+        'deployment_profile': getattr(settings, 'DEPLOYMENT_PROFILE', 'hospital'),
+        'capabilities': {
+            'practitioner_scheduling_mode': scheduling_mode,
+            'supports_department_rosters': scheduling_mode == 'roster',
+            'outpatient_requires_active_clinic_schedule': requires_outpatient_active_clinic,
+        },
+    })
+
+
 # =============================================================================
 # Omni Search (Command Palette)
 # =============================================================================

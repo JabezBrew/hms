@@ -16,6 +16,7 @@ from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
 from hms_backend.tenancy import get_current_facility_code
 from apps.core.security import get_user_facility, resolve_object_facility
 from apps.core.models import Facility
+from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
@@ -230,6 +231,13 @@ class PatientRegistrationSerializer(serializers.Serializer):
     # Admission/encounter fields (required to attach registration to care context)
     admission_details = serializers.DictField(write_only=True)
 
+    def _requires_active_outpatient_clinic(self):
+        return bool(getattr(settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC', True))
+
+    def _uses_roster_for_initial_assignment(self):
+        scheduling_mode = getattr(settings, 'PRACTITIONER_SCHEDULING_MODE', 'roster')
+        return scheduling_mode == 'roster'
+
     def _get_department_timezone(self, department, facility):
         tz_name = None
         if department:
@@ -247,6 +255,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
         from apps.organization.models import Clinic, ClinicSchedule
         from apps.appointments.services import ClinicBookingService
 
+        require_active_schedule = self._requires_active_outpatient_clinic()
         now = timezone.now()
         tz = self._get_department_timezone(department, facility)
         local_now = timezone.localtime(now, tz)
@@ -279,11 +288,11 @@ class PatientRegistrationSerializer(serializers.Serializer):
             if clinic.department_id != department.id:
                 raise serializers.ValidationError({"admission_details": "Clinic does not belong to the selected department."})
             if clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL:
-                if str(clinic.id) not in active_pool_clinic_ids:
+                if require_active_schedule and str(clinic.id) not in active_pool_clinic_ids:
                     raise serializers.ValidationError({
                         "admission_details": "Clinic is not on a published roster session at this time."
                     })
-            elif clinic.id not in clinic_ids:
+            elif require_active_schedule and clinic.id not in clinic_ids:
                 raise serializers.ValidationError({"admission_details": "Clinic is not scheduled at this time."})
             return clinic
 
@@ -294,9 +303,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
             return Clinic.objects.get(id=next(iter(candidate_ids)))
 
         if len(candidate_ids) == 0:
+            if not require_active_schedule:
+                return None
             raise serializers.ValidationError({
                 "admission_details": "No active clinic schedule found for this department."
             })
+
+        if not require_active_schedule:
+            return None
 
         raise serializers.ValidationError({
             "admission_details": "Multiple clinics are scheduled now; clinic_id is required."
@@ -564,6 +578,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     if not clinic and admission_details.get('clinic_id'):
                         from apps.organization.models import Clinic
                         clinic = Clinic.objects.get(id=admission_details.get('clinic_id'))
+                    service_location_name = clinic.name if clinic else (department.name if department else 'Outpatient')
                     encounter = Encounter.objects.create(
                         patient=patient_profile,
                         facility=patient_profile.facility,
@@ -573,8 +588,8 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         status='in-progress',
                         start_time=timezone.now(),
                         reason=admission_notes,
-                        service_type=clinic.name,
-                        location=clinic.name,
+                        service_type=service_location_name,
+                        location=service_location_name,
                         created_by=self.context['request'].user,
                         updated_by=self.context['request'].user
                     )
@@ -582,7 +597,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='outpatient',
                         at_datetime=encounter.start_time,
                     )
@@ -612,7 +627,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='emergency',
                         at_datetime=encounter.start_time,
                     )
@@ -689,7 +704,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='inpatient',
                         at_datetime=encounter.start_time,
                     )

@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 
 // Form validation schema
 const patientFormSchema = z.object({
@@ -144,6 +145,9 @@ const PatientForm = ({ patient, onSuccess }) => {
   const { data: validationRules = [] } = usePatientValidationRules();
   const updatePatientMutation = useUpdatePatientWithFHIR();
   const registerPatientMutation = useRegisterPatient();
+  const { data: deploymentCapabilities } = useSystemCapabilities();
+  const outpatientRequiresActiveClinicSchedule =
+    deploymentCapabilities?.capabilities?.outpatient_requires_active_clinic_schedule ?? true;
 
   // Initialize form with default values
   const form = useForm({
@@ -256,13 +260,23 @@ const PatientForm = ({ patient, onSuccess }) => {
       setSelectedClinic(activeClinics[0].id);
       setClinicSelectionRequired(false);
     } else if (activeClinics.length > 1) {
-      setClinicSelectionRequired(true);
-      setSelectedClinic("");
+      const requiresSelection = outpatientRequiresActiveClinicSchedule;
+      setClinicSelectionRequired(requiresSelection);
+      if (requiresSelection && !activeClinics.some((clinic) => clinic.id === selectedClinic)) {
+        setSelectedClinic("");
+      }
     } else {
       setClinicSelectionRequired(false);
       setSelectedClinic("");
     }
-  }, [activeClinics, selectedDepartment, admissionType, isEditMode]);
+  }, [
+    activeClinics,
+    selectedDepartment,
+    admissionType,
+    isEditMode,
+    outpatientRequiresActiveClinicSchedule,
+    selectedClinic,
+  ]);
 
   // Inpatient wards/beds (registration only): fetch wards from the selected department to avoid cross-department mismatches.
   const wardsQueryEnabled =
@@ -373,7 +387,12 @@ const PatientForm = ({ patient, onSuccess }) => {
     return errors;
   }, [rulesByField]);
 
-  const encounterBlocksOutpatient = !isEditMode && admissionType === 'outpatient' && !!selectedDepartment && activeClinicOptions.length === 0;
+  const encounterBlocksOutpatient =
+    !isEditMode &&
+    admissionType === 'outpatient' &&
+    !!selectedDepartment &&
+    outpatientRequiresActiveClinicSchedule &&
+    activeClinicOptions.length === 0;
 
   const validateEncounterStep = useCallback(() => {
     if (isEditMode) return true;
@@ -912,14 +931,25 @@ const PatientForm = ({ patient, onSuccess }) => {
                       </label>
 
                       {activeClinicOptions.length === 0 ? (
-                        <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                            <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
-                              No clinics are scheduled right now for this department. Choose another department or publish a roster session.
-                            </p>
+                        outpatientRequiresActiveClinicSchedule ? (
+                          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                              <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
+                                No clinics are scheduled right now for this department. Choose another department or publish a roster session.
+                              </p>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                              <p className="text-sm text-sky-700 dark:text-sky-300 font-mono">
+                                No active clinic schedule found. Registration will continue under the selected department.
+                              </p>
+                            </div>
+                          </div>
+                        )
                       ) : activeClinicOptions.length === 1 ? (
                         <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                           <div className="flex items-center gap-2">

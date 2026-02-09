@@ -351,6 +351,29 @@ FACILITY_CONTEXT_REQUIRED = env.bool('FACILITY_CONTEXT_REQUIRED', default=True)
 MULTI_FACILITY_MODE = env.bool('MULTI_FACILITY_MODE', default=False)
 ALLOW_CROSS_FACILITY_ACCESS = env.bool('ALLOW_CROSS_FACILITY_ACCESS', default=False)
 
+# Deployment profile/capabilities.
+# Per-customer isolated deployments can set these independently without
+# introducing runtime feature toggles in the UI.
+DEPLOYMENT_PROFILE = env('DEPLOYMENT_PROFILE', default='hospital').strip().lower()
+if DEPLOYMENT_PROFILE not in {'hospital', 'small_clinic'}:
+    DEPLOYMENT_PROFILE = 'hospital'
+
+default_practitioner_scheduling_mode = (
+    'simple' if DEPLOYMENT_PROFILE == 'small_clinic' else 'roster'
+)
+PRACTITIONER_SCHEDULING_MODE = env(
+    'PRACTITIONER_SCHEDULING_MODE',
+    default=default_practitioner_scheduling_mode,
+).strip().lower()
+if PRACTITIONER_SCHEDULING_MODE not in {'simple', 'roster'}:
+    PRACTITIONER_SCHEDULING_MODE = default_practitioner_scheduling_mode
+
+default_require_outpatient_active_clinic = DEPLOYMENT_PROFILE != 'small_clinic'
+REQUIRE_OUTPATIENT_ACTIVE_CLINIC = env.bool(
+    'REQUIRE_OUTPATIENT_ACTIVE_CLINIC',
+    default=default_require_outpatient_active_clinic,
+)
+
 # Record export security
 RECORD_EXPORT_FERNET_KEY = env('RECORD_EXPORT_FERNET_KEY', default='')
 RECORD_EXPORT_TTL_HOURS = env.int('RECORD_EXPORT_TTL_HOURS', default=24)

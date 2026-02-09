@@ -13,6 +13,11 @@ router.register(r'facilities', views.FacilityViewSet, basename='facility')
 
 urlpatterns = [
     path(
+        'settings/deployment-capabilities/',
+        views.deployment_capabilities,
+        name='deployment-capabilities',
+    ),
+    path(
         'search/omni/',
         views.omni_search,
         name='omni-search',

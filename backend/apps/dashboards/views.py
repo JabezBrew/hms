@@ -23,6 +23,13 @@ from .realtime import admin_dashboard_projection_cache_key
 logger = logging.getLogger(__name__)
 
 
+def _resolve_dashboard_role(user):
+    """
+    Normalize user role resolution across legacy/new user payloads.
+    """
+    return getattr(user, 'user_type', None) or getattr(user, 'role', None)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_work_dashboard(request):
@@ -35,7 +42,7 @@ def my_work_dashboard(request):
     user = request.user
 
     # Get user role
-    role = getattr(user, 'role', None)
+    role = _resolve_dashboard_role(user)
 
     # Route to appropriate dashboard
     if role in ['doctor', 'physician', 'practitioner']:

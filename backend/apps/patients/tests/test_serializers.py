@@ -14,6 +14,7 @@ from datetime import date, time
 from unittest.mock import patch, MagicMock
 
 from django.utils import timezone
+from django.test import override_settings
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
@@ -314,6 +315,103 @@ class TestPatientRegistrationSerializer:
         )
 
         assert serializer.is_valid(), serializer.errors
+
+    def test_outpatient_registration_requires_active_clinic_by_default(self, db, request_context):
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'noschedule-strict@test.com',
+            'first_name': 'No',
+            'last_name': 'Schedule',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert not serializer.is_valid()
+        assert 'admission_details' in serializer.errors
+        assert 'No active clinic schedule found' in str(serializer.errors['admission_details'][0])
+
+    @override_settings(REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False)
+    def test_outpatient_registration_allows_department_only_when_policy_relaxed(self, db, request_context):
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'noschedule-relaxed@test.com',
+            'first_name': 'Small',
+            'last_name': 'Clinic',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert serializer.is_valid(), serializer.errors
+
+    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.patients.tasks.create_patient_in_fhir.delay')
+    @override_settings(REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False)
+    def test_outpatient_registration_without_clinic_creates_department_scoped_encounter(
+        self,
+        mock_create_task,
+        mock_sync_encounter_task,
+        db,
+        request_context,
+        django_capture_on_commit_callbacks,
+    ):
+        mock_create_task.return_value = MagicMock(id='task-123')
+        mock_sync_encounter_task.return_value = MagicMock(id='task-456')
+
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'department-only@test.com',
+            'first_name': 'Department',
+            'last_name': 'Only',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'notes': 'walk-in',
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert serializer.is_valid(), serializer.errors
+
+        with django_capture_on_commit_callbacks(execute=True):
+            patient_profile = serializer.save()
+
+        from apps.encounters.models import Encounter
+        encounter = Encounter.objects.filter(patient=patient_profile).order_by('-created_at').first()
+        assert encounter is not None
+        assert encounter.clinic_id is None
+        assert encounter.department_id == clinic.department_id
+        assert encounter.service_type == clinic.department.name
+        assert encounter.location == clinic.department.name
 
     def test_duplicate_email_rejected(self, db, request_context):
         """Test that duplicate email is rejected."""
