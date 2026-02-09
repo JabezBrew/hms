@@ -11,10 +11,12 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from apps.core.security import normalize_facility_code
+from apps.users.models import PractitionerProfile
 from apps.wards.models import Admission
 
 from .realtime import (
     invalidate_admin_dashboard,
+    invalidate_doctor_dashboard,
     invalidate_inpatient_dashboard,
     invalidate_nurse_dashboard,
     invalidate_reception_dashboard,
@@ -75,6 +77,26 @@ def _invalidate_nurse_for_facility_code(facility_code: Optional[str], reason: st
     invalidate_nurse_dashboard(code, reason=reason, ward_scope=ward_scope)
 
 
+def _invalidate_doctor_for_facility_code(
+    facility_code: Optional[str],
+    practitioner_id: Optional[str],
+    reason: str,
+    *,
+    include_appointments: bool = False,
+    target_date=None,
+) -> None:
+    code = normalize_facility_code(facility_code)
+    if not code or not practitioner_id:
+        return
+    invalidate_doctor_dashboard(
+        code,
+        practitioner_id,
+        reason=reason,
+        include_appointments=include_appointments,
+        target_date=target_date,
+    )
+
+
 def _invalidate_inpatient_for_facility_code(
     facility_code: Optional[str],
     practitioner_id: Optional[str],
@@ -100,6 +122,43 @@ def _invalidate_reception_for_facility_code(
         code,
         reason=reason,
         include_appointments=include_appointments,
+        target_date=target_date,
+    )
+
+
+def _resolve_practitioner_fhir_id_from_appointment(instance) -> Optional[str]:
+    practitioner = getattr(instance, "practitioner", None)
+    fhir_id = getattr(practitioner, "fhir_practitioner_id", None) if practitioner else None
+    if fhir_id:
+        return str(fhir_id)
+
+    practitioner_id = getattr(instance, "practitioner_id", None)
+    if not practitioner_id:
+        return None
+
+    resolved = PractitionerProfile.objects.filter(id=practitioner_id).values_list(
+        "fhir_practitioner_id",
+        flat=True,
+    ).first()
+    return str(resolved) if resolved else None
+
+
+def _invalidate_admin_and_reception_for_appointment_date(
+    facility_code: Optional[str],
+    target_date,
+    *,
+    reason: str = "appointment_changed",
+) -> None:
+    invalidate_admin_dashboard(
+        facility_code,
+        reason=reason,
+        include_appointments=True,
+        target_date=target_date,
+    )
+    _invalidate_reception_for_facility_code(
+        facility_code,
+        reason,
+        include_appointments=True,
         target_date=target_date,
     )
 
@@ -209,22 +268,67 @@ def invalidate_admin_dashboard_on_appointment_change(sender, instance, **kwargs)
         return
 
     appointment_date = timezone.localtime(start_time).date()
+    practitioner_fhir_id = _resolve_practitioner_fhir_id_from_appointment(instance)
+    if practitioner_fhir_id:
+        _invalidate_doctor_for_facility_code(
+            code,
+            practitioner_fhir_id,
+            "appointment_changed",
+            include_appointments=True,
+            target_date=appointment_date,
+        )
+
+    previous_practitioner_fhir_id = getattr(instance, "_previous_practitioner_fhir_id", None)
+    previous_appointment_date = getattr(instance, "_previous_appointment_date", None)
+    if (
+        previous_practitioner_fhir_id
+        and previous_appointment_date
+        and (
+            previous_practitioner_fhir_id != practitioner_fhir_id
+            or previous_appointment_date != appointment_date
+        )
+    ):
+        _invalidate_doctor_for_facility_code(
+            code,
+            previous_practitioner_fhir_id,
+            "appointment_changed",
+            include_appointments=True,
+            target_date=previous_appointment_date,
+        )
+
     today = timezone.localdate()
-    if appointment_date != today:
+    if appointment_date == today:
+        _invalidate_admin_and_reception_for_appointment_date(
+            code,
+            appointment_date,
+            reason="appointment_changed",
+        )
+
+    if previous_appointment_date and previous_appointment_date != appointment_date and previous_appointment_date == today:
+        _invalidate_admin_and_reception_for_appointment_date(
+            code,
+            previous_appointment_date,
+            reason="appointment_changed",
+        )
+
+
+@receiver(pre_save, sender="appointments.Appointment")
+def capture_previous_appointment_dashboard_scope(sender, instance, **kwargs):
+    if not instance.pk:
         return
 
-    invalidate_admin_dashboard(
-        code,
-        reason="appointment_changed",
-        include_appointments=True,
-        target_date=appointment_date,
-    )
-    _invalidate_reception_for_facility_code(
-        code,
-        "appointment_changed",
-        include_appointments=True,
-        target_date=appointment_date,
-    )
+    previous = sender.objects.filter(pk=instance.pk).select_related("practitioner").first()
+    if not previous:
+        return
+
+    previous_practitioner_fhir_id = None
+    if previous.practitioner and previous.practitioner.fhir_practitioner_id:
+        previous_practitioner_fhir_id = str(previous.practitioner.fhir_practitioner_id)
+    if previous_practitioner_fhir_id:
+        instance._previous_practitioner_fhir_id = previous_practitioner_fhir_id
+
+    if previous.start_time:
+        instance._previous_appointment_date = timezone.localtime(previous.start_time).date()
 
 
 @receiver(pre_save, sender="wards.Admission")

@@ -20,15 +20,20 @@ logger = logging.getLogger(__name__)
 
 ADMIN_DASHBOARD_PROJECTION_VERSION = 1
 ADMIN_DASHBOARD_PROJECTION_KEY = f"admin_dashboard_projection_v{ADMIN_DASHBOARD_PROJECTION_VERSION}"
+DOCTOR_MY_WORK_PROJECTION_VERSION = 1
+DOCTOR_CLINIC_PROJECTION_VERSION = 1
 NURSE_DASHBOARD_PROJECTION_VERSION = 1
 INPATIENT_DASHBOARD_PROJECTION_VERSION = 1
 RECEPTION_DASHBOARD_PROJECTION_VERSION = 1
 
+DOCTOR_MY_WORK_PROJECTION_KEY = f"doctor_my_work_projection_v{DOCTOR_MY_WORK_PROJECTION_VERSION}"
+DOCTOR_CLINIC_PROJECTION_KEY = f"doctor_clinic_projection_v{DOCTOR_CLINIC_PROJECTION_VERSION}"
 NURSE_DASHBOARD_PROJECTION_KEY = f"nurse_dashboard_projection_v{NURSE_DASHBOARD_PROJECTION_VERSION}"
 INPATIENT_DASHBOARD_PROJECTION_KEY = f"inpatient_dashboard_projection_v{INPATIENT_DASHBOARD_PROJECTION_VERSION}"
 RECEPTION_DASHBOARD_PROJECTION_KEY = f"reception_dashboard_projection_v{RECEPTION_DASHBOARD_PROJECTION_VERSION}"
 
 ADMIN_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS = 2
+DOCTOR_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS = 2
 NURSE_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS = 2
 INPATIENT_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS = 2
 RECEPTION_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS = 2
@@ -66,6 +71,71 @@ def _admin_dashboard_appointments_cache_key(facility_code: str, target_date: dat
 def _admin_dashboard_appointments_stale_cache_key(facility_code: str, target_date: date) -> str:
     code = normalize_facility_code(facility_code)
     return facility_cache_key_for_code(code, f"admin_dashboard_appointments_{target_date.isoformat()}_stale")
+
+
+def doctor_dashboard_group_name(facility_code: str, practitioner_id: str) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    if not code:
+        return f"dashboards_doctor_facility_unknown_practitioner_{practitioner_token}"
+    return f"dashboards_doctor_facility_{code}_practitioner_{practitioner_token}"
+
+
+def doctor_my_work_projection_cache_key(facility_code: str, practitioner_id: str, target_date: date) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    return facility_cache_key_for_code(
+        code,
+        f"{DOCTOR_MY_WORK_PROJECTION_KEY}_{practitioner_token}_{target_date.isoformat()}",
+    )
+
+
+def doctor_clinic_projection_cache_key(facility_code: str, practitioner_id: str, target_date: date) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    return facility_cache_key_for_code(
+        code,
+        f"{DOCTOR_CLINIC_PROJECTION_KEY}_{practitioner_token}_{target_date.isoformat()}",
+    )
+
+
+def _doctor_dashboard_invalidation_lock_key(
+    facility_code: str,
+    practitioner_id: str,
+    target_date: date,
+) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    return facility_cache_key_for_code(
+        code,
+        f"doctor_dashboard_invalidate_lock_{practitioner_token}_{target_date.isoformat()}",
+    )
+
+
+def _doctor_dashboard_appointments_cache_key(
+    facility_code: str,
+    practitioner_id: str,
+    target_date: date,
+) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    return facility_cache_key_for_code(
+        code,
+        f"doctor_dashboard_appointments_{practitioner_token}_{target_date.isoformat()}",
+    )
+
+
+def _doctor_dashboard_appointments_stale_cache_key(
+    facility_code: str,
+    practitioner_id: str,
+    target_date: date,
+) -> str:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    return facility_cache_key_for_code(
+        code,
+        f"doctor_dashboard_appointments_{practitioner_token}_{target_date.isoformat()}_stale",
+    )
 
 
 def nurse_dashboard_group_name(facility_code: str, ward_scope: Optional[str] = None) -> str:
@@ -240,6 +310,41 @@ def invalidate_nurse_dashboard(
         )
 
     return any(broadcasts)
+
+
+def invalidate_doctor_dashboard(
+    facility_code: Optional[str],
+    practitioner_id: Optional[str],
+    *,
+    reason: str = "data_changed",
+    include_appointments: bool = False,
+    target_date: Optional[date] = None,
+) -> bool:
+    code = normalize_facility_code(facility_code)
+    practitioner_token = _safe_group_token(practitioner_id)
+    if not code or practitioner_token == "unknown":
+        return False
+
+    scoped_date = target_date or date.today()
+    cache.delete(doctor_my_work_projection_cache_key(code, practitioner_token, scoped_date))
+    cache.delete(doctor_clinic_projection_cache_key(code, practitioner_token, scoped_date))
+    if include_appointments:
+        cache.delete(_doctor_dashboard_appointments_cache_key(code, practitioner_token, scoped_date))
+        cache.delete(_doctor_dashboard_appointments_stale_cache_key(code, practitioner_token, scoped_date))
+
+    return _broadcast_dashboard_invalidation(
+        group_name=doctor_dashboard_group_name(code, practitioner_token),
+        lock_key=_doctor_dashboard_invalidation_lock_key(code, practitioner_token, scoped_date),
+        debounce_seconds=DOCTOR_DASHBOARD_INVALIDATION_DEBOUNCE_SECONDS,
+        payload={
+            "type": "dashboard.invalidate",
+            "dashboard": "doctor",
+            "facility_code": code,
+            "reason": reason,
+            "practitioner_id": practitioner_token,
+            "target_date": scoped_date.isoformat(),
+        },
+    )
 
 
 def invalidate_inpatient_dashboard(

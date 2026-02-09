@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { dashboardsApi } from '@/features/dashboards/api';
 import { useAuth } from '@/lib/auth';
+import { useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks/useDoctorDashboardLiveUpdates';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -100,10 +101,18 @@ export function useAdminDashboard(options = {}) {
  */
 export function useMyWorkDashboard(filters = {}, options = {}) {
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useDoctorDashboardLiveUpdates({
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+    stream: 'my-work',
+    practitionerId: filters?.practitioner_id || null,
+    targetDate: filters?.date || null,
+  });
+  const hasCustomRefetchInterval = Object.prototype.hasOwnProperty.call(options, 'refetchInterval');
+  const fallbackRefetchInterval = isLiveConnected ? false : DEFAULT_REFETCH_INTERVAL;
   return useQuery({
     queryKey: dashboardKeys.myWork(filters),
     queryFn: () => dashboardsApi.getMyWorkDashboard(filters),
-    refetchInterval: DEFAULT_REFETCH_INTERVAL,
+    refetchInterval: hasCustomRefetchInterval ? options.refetchInterval : fallbackRefetchInterval,
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
@@ -119,10 +128,18 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
  */
 export function useClinicSchedule(filters = {}, options = {}) {
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useDoctorDashboardLiveUpdates({
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+    stream: 'clinic',
+    practitionerId: filters?.practitioner_id || null,
+    targetDate: filters?.date || null,
+  });
+  const hasCustomRefetchInterval = Object.prototype.hasOwnProperty.call(options, 'refetchInterval');
+  const fallbackRefetchInterval = isLiveConnected ? false : DEFAULT_REFETCH_INTERVAL;
   return useQuery({
     queryKey: dashboardKeys.clinic(filters),
     queryFn: () => dashboardsApi.getClinicSchedule(filters),
-    refetchInterval: DEFAULT_REFETCH_INTERVAL,
+    refetchInterval: hasCustomRefetchInterval ? options.refetchInterval : fallbackRefetchInterval,
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,

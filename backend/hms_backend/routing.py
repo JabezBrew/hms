@@ -13,6 +13,7 @@ from django.urls import re_path
 from apps.nursing.consumers import AlertConsumer, VitalSignsConsumer
 from apps.dashboards.consumers import (
     AdminDashboardConsumer,
+    DoctorDashboardConsumer,
     InpatientDashboardConsumer,
     NurseDashboardConsumer,
     ReceptionDashboardConsumer,
@@ -31,6 +32,10 @@ websocket_urlpatterns = [
 
     # Admin dashboard live invalidation stream
     re_path(r'^ws/dashboards/admin/$', AdminDashboardConsumer.as_asgi()),
+
+    # Doctor dashboards live invalidation stream (my-work + clinic)
+    re_path(r'^ws/dashboards/my-work/$', DoctorDashboardConsumer.as_asgi()),
+    re_path(r'^ws/dashboards/clinic/$', DoctorDashboardConsumer.as_asgi()),
 
     # Nurse dashboard live invalidation stream (optional ward filter via query param)
     re_path(r'^ws/dashboards/nurse/$', NurseDashboardConsumer.as_asgi()),

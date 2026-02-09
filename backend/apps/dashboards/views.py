@@ -20,6 +20,8 @@ from apps.dashboards.tasks import (
 from .appointment_cache import extract_patient_fhir_id
 from .realtime import (
     admin_dashboard_projection_cache_key,
+    doctor_clinic_projection_cache_key,
+    doctor_my_work_projection_cache_key,
     inpatient_dashboard_projection_cache_key,
     nurse_dashboard_projection_cache_key,
     reception_dashboard_projection_cache_key,
@@ -124,6 +126,19 @@ def get_doctor_dashboard_data(user, request):
             'completed': [],
         }
 
+    projection_cache_key = doctor_my_work_projection_cache_key(
+        facility.code,
+        practitioner_id,
+        today,
+    )
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return {
+            'role': 'doctor',
+            'user_name': user.get_full_name(),
+            **cached_projection,
+        }
+
     # Fetch today's appointments (cached; refreshed asynchronously)
     try:
         cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{today.isoformat()}"
@@ -176,14 +191,19 @@ def get_doctor_dashboard_data(user, request):
             except:
                 pass
 
-        return {
-            'role': 'doctor',
-            'user_name': user.get_full_name(),
+        projection = {
             'date': today.isoformat(),
             'current_patient': current_patient,
             'upcoming': upcoming[:10],  # Next 10 appointments
             'completed': completed_today[-5:],  # Last 5 completed
             'appointments_stale': bool(is_stale),
+        }
+        # Keep stale projection short-lived so async refresh can replace it quickly.
+        cache.set(projection_cache_key, projection, timeout=300 if not is_stale else 15)
+        return {
+            'role': 'doctor',
+            'user_name': user.get_full_name(),
+            **projection,
         }
 
     except Exception as e:
@@ -559,6 +579,18 @@ def clinic_schedule(request):
         else:
             return Response({'error': 'Practitioner profile not found'}, status=400)
 
+    if not practitioner_id:
+        return Response({'error': 'Practitioner profile not found'}, status=400)
+
+    projection_cache_key = doctor_clinic_projection_cache_key(
+        facility.code,
+        practitioner_id,
+        target_date,
+    )
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return Response(cached_projection)
+
     try:
         cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{target_date.isoformat()}"
         appointments, is_stale = _get_cached_appointments(
@@ -574,13 +606,15 @@ def clinic_schedule(request):
         formatted_appointments = [format_appointment_for_dashboard(appt) for appt in appointments]
         formatted_appointments.sort(key=lambda x: x.get('start_time', ''))
 
-        return Response({
+        projection = {
             'date': target_date.isoformat(),
             'practitioner_id': practitioner_id,
             'appointments': formatted_appointments,
             'total_count': len(formatted_appointments),
             'appointments_stale': bool(is_stale),
-        })
+        }
+        cache.set(projection_cache_key, projection, timeout=300 if not is_stale else 15)
+        return Response(projection)
 
     except Exception as e:
         logger.error(f"Error fetching clinic schedule: {str(e)}")

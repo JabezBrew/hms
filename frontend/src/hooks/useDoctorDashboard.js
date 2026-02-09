@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
+import { useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks/useDoctorDashboardLiveUpdates';
 import { keyWith } from '@/shared/lib/queryKeys';
 
 const doctorDashboardKeys = {
@@ -12,13 +13,15 @@ const doctorDashboardKeys = {
  * Hook for fetching doctor dashboard data
  * Returns today's clinic schedule with current/upcoming/completed appointments
  */
-export function useDoctorDashboard() {
+export function useDoctorDashboard(options = {}) {
   const { facilityCode } = useAuth();
-  const { data, isLoading, error, refetch } = useQuery({
+  const { refetchInterval = 30000, ...queryOptions } = options;
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: doctorDashboardKeys.dashboard(),
     queryFn: () => apiClient.get('/dashboards/my-work/'),
-    refetchInterval: 30000, // Refresh every 30 seconds
-    enabled: Boolean(facilityCode),
+    refetchInterval,
+    enabled: Boolean(facilityCode) && (queryOptions.enabled ?? true),
+    ...queryOptions,
   });
 
   return {
@@ -30,14 +33,23 @@ export function useDoctorDashboard() {
     loading: isLoading,
     error,
     refetch,
+    isFetching,
   };
 }
 
 /**
  * Hook for fetching detailed clinic schedule
  */
-export function useClinicSchedule(date, practitionerId) {
+export function useClinicSchedule(date, practitionerId, options = {}) {
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useDoctorDashboardLiveUpdates({
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+    stream: 'clinic',
+    practitionerId: practitionerId || null,
+    targetDate: date || null,
+  });
+  const hasCustomRefetchInterval = Object.prototype.hasOwnProperty.call(options, 'refetchInterval');
+  const { refetchInterval = 30000, ...queryOptions } = options;
   return useQuery({
     queryKey: doctorDashboardKeys.clinicSchedule(date, practitionerId),
     queryFn: () => {
@@ -46,6 +58,8 @@ export function useClinicSchedule(date, practitionerId) {
       if (practitionerId) params.append('practitioner_id', practitionerId);
       return apiClient.get(`/dashboards/clinic/?${params.toString()}`);
     },
-    enabled: Boolean(facilityCode) && (!!date || !!practitionerId),
+    refetchInterval: hasCustomRefetchInterval ? refetchInterval : (isLiveConnected ? false : refetchInterval),
+    enabled: Boolean(facilityCode) && (!!date || !!practitionerId) && (queryOptions.enabled ?? true),
+    ...queryOptions,
   });
 }

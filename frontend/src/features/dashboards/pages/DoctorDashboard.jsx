@@ -14,7 +14,7 @@ import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoctorDashboard } from '@/features/dashboards/hooks';
+import { useDoctorDashboard, useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +26,13 @@ import { PageState } from '@/shared/components/page/PageState';
 
 export default function DoctorDashboard() {
   const { facilityCode } = useAuth();
-  const { data, loading, error, refetch } = useDoctorDashboard();
+  const { isConnected: isLiveConnected } = useDoctorDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+    stream: 'my-work',
+  });
+  const { data, loading, error, refetch, isFetching } = useDoctorDashboard({
+    refetchInterval: isLiveConnected ? false : 30000,
+  });
   const navigate = useNavigate();
   const { callPatient, startConsultation } = useVisitActions();
 
@@ -141,8 +147,9 @@ export default function DoctorDashboard() {
               size="sm"
               onClick={() => refetch()}
               className="font-mono text-xs"
+              disabled={isFetching}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} />
               Refresh
             </Button>
           </div>

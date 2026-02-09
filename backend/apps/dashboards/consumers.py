@@ -22,6 +22,7 @@ from apps.users.models import PractitionerProfile
 from apps.wards.models import WardStaffAssignment
 from .realtime import (
     admin_dashboard_group_name,
+    doctor_dashboard_group_name,
     inpatient_dashboard_group_name,
     nurse_dashboard_group_name,
     reception_dashboard_group_name,
@@ -48,6 +49,12 @@ def _is_nurse_actor(user) -> bool:
     if not user or not getattr(user, "is_authenticated", False):
         return False
     return _user_role(user) in {"nurse", "head_nurse", "nurse_practitioner", "admin"}
+
+
+def _is_doctor_actor(user) -> bool:
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    return _user_role(user) in {"doctor", "physician", "practitioner"}
 
 
 def _is_reception_actor(user) -> bool:
@@ -261,6 +268,87 @@ class NurseDashboardConsumer(AsyncJsonWebsocketConsumer):
                 "facility_code": event.get("facility_code"),
                 "reason": event.get("reason"),
                 "ward_scope": event.get("ward_scope"),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
+
+class DoctorDashboardConsumer(AsyncJsonWebsocketConsumer):
+    """
+    WebSocket consumer for doctor dashboard invalidations.
+    Scope:
+    - facility
+    - practitioner profile derived from authenticated user
+    """
+
+    async def connect(self):
+        self.user = self.scope.get("user", AnonymousUser())
+        if not getattr(self.user, "is_authenticated", False):
+            await self.close(code=4001)
+            return
+
+        if not _is_doctor_actor(self.user):
+            await self.close(code=4003)
+            return
+
+        facility_code = normalize_facility_code(self.scope.get("facility_code"))
+        if not facility_code:
+            await self.close(code=4000)
+            return
+
+        if not await _can_access_facility(self.user, facility_code):
+            await self.close(code=4003)
+            return
+
+        practitioner_id = await _resolve_practitioner_id(self.user)
+        if not practitioner_id:
+            await self.close(code=4003)
+            return
+
+        self.facility_code = facility_code
+        self.practitioner_id = practitioner_id
+        self.group_name = doctor_dashboard_group_name(facility_code, practitioner_id)
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+        subprotocol = _preferred_subprotocol(self.scope)
+        if subprotocol:
+            await self.accept(subprotocol=subprotocol)
+        else:
+            await self.accept()
+
+        await self.send_json(
+            {
+                "type": "connection.established",
+                "dashboard": "doctor",
+                "facility_code": facility_code,
+                "practitioner_id": practitioner_id,
+                "group": self.group_name,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
+    async def disconnect(self, close_code):
+        if hasattr(self, "group_name"):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content):
+        if content.get("type") == "ping":
+            await self.send_json(
+                {
+                    "type": "pong",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+
+    async def dashboard_invalidate(self, event):
+        await self.send_json(
+            {
+                "type": "dashboard.invalidate",
+                "dashboard": event.get("dashboard"),
+                "facility_code": event.get("facility_code"),
+                "reason": event.get("reason"),
+                "practitioner_id": event.get("practitioner_id"),
+                "target_date": event.get("target_date"),
                 "timestamp": datetime.utcnow().isoformat(),
             }
         )

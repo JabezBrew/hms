@@ -372,6 +372,24 @@ export class AdminDashboardWebSocket extends BaseWebSocket {
 }
 
 /**
+ * WebSocket client for doctor dashboard invalidations (my-work).
+ */
+export class DoctorDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/my-work/', token, options);
+  }
+}
+
+/**
+ * WebSocket client for clinic dashboard invalidations.
+ */
+export class ClinicDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/clinic/', token, options);
+  }
+}
+
+/**
  * WebSocket client for nurse dashboard invalidations.
  */
 export class NurseDashboardWebSocket extends BaseWebSocket {
@@ -406,6 +424,8 @@ export default {
   VitalsWebSocket,
   NotificationWebSocket,
   AdminDashboardWebSocket,
+  DoctorDashboardWebSocket,
+  ClinicDashboardWebSocket,
   NurseDashboardWebSocket,
   InpatientDashboardWebSocket,
   ReceptionDashboardWebSocket,
