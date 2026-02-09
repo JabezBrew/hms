@@ -8,7 +8,16 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 
-from apps.organization.models import ClinicalUnit, DepartmentDutyType, RotationRule, RosterEntry
+from apps.appointments.models import RecurringSchedule
+from apps.organization.models import (
+    ClinicalUnit,
+    Clinic,
+    DepartmentDutyType,
+    RotationRule,
+    RosterEntry,
+    StaffAssignmentTypeConfig,
+    StaffUnitAssignment,
+)
 from apps.users.tests.factories import PractitionerProfileFactory
 
 
@@ -328,6 +337,230 @@ def test_bulk_roster_supports_practitioner_entries(admin_api_client, department,
     assert entry is not None
     assert entry.practitioner_id == practitioner.id
     assert entry.team_id is None
+
+
+@pytest.mark.django_db
+def test_roster_create_rejects_conflict_with_recurring_schedule(
+    admin_api_client, department, default_facility
+):
+    """A clinic roster entry cannot overlap an active recurring schedule for the same practitioner."""
+    practitioner = PractitionerProfileFactory(
+        staff__primary_facility=default_facility,
+        staff__user__primary_facility=default_facility,
+    )
+    clinic = Clinic.objects.create(
+        facility=default_facility,
+        department=department,
+        code='DOC-CLASH',
+        name='Doctor Clash Clinic',
+        booking_mode=Clinic.BookingMode.CLINIC_POOL,
+        assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        is_active=True,
+    )
+
+    target_date = date(2026, 3, 7)
+    RecurringSchedule.objects.create(
+        facility=default_facility,
+        name='Direct Clinic Schedule',
+        practitioner=practitioner,
+        days_of_week=[target_date.weekday()],
+        start_time=time(10, 0),
+        end_time=time(12, 0),
+        slot_duration=30,
+        active_from=target_date,
+        active_to=target_date,
+        breaks=[],
+        is_active=True,
+    )
+
+    clinic_duty = DepartmentDutyType.objects.create(
+        department=department,
+        name='Pool Duty',
+        code='POOL-DUTY-CLASH',
+        category='clinic',
+        rotation_type='none',
+        applicable_days=[target_date.weekday()],
+        is_24_hour=False,
+        start_time=time(9, 0),
+        end_time=time(13, 0),
+        slot_duration_minutes=30,
+        max_patients_per_slot=1,
+        clinic=clinic,
+        is_active=True,
+    )
+
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/',
+        {
+            'department': str(department.id),
+            'duty_type': str(clinic_duty.id),
+            'date': target_date.isoformat(),
+            'practitioner': str(practitioner.id),
+            'start_time': '10:30:00',
+            'end_time': '11:30:00',
+            'source': 'manual',
+            'status': 'draft',
+        },
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert 'conflicts with recurring schedule' in str(response.data).lower()
+
+
+@pytest.mark.django_db
+def test_roster_bulk_rejects_team_conflict_with_recurring_schedule(
+    admin_api_client, department, team, default_facility
+):
+    """Bulk roster creation should block team entries that overlap assigned doctors' recurring schedules."""
+    practitioner = PractitionerProfileFactory(
+        staff__primary_facility=default_facility,
+        staff__user__primary_facility=default_facility,
+    )
+    assignment_type = StaffAssignmentTypeConfig.objects.filter(is_active=True).first()
+    assert assignment_type is not None
+    StaffUnitAssignment.objects.create(
+        unit=team,
+        practitioner=practitioner,
+        assignment_type=assignment_type,
+        is_active=True,
+        effective_from=date(2026, 3, 1),
+        effective_until=date(2026, 3, 31),
+    )
+
+    target_date = date(2026, 3, 8)
+    RecurringSchedule.objects.create(
+        facility=default_facility,
+        name='Recurring Team Member Slot',
+        practitioner=practitioner,
+        days_of_week=[target_date.weekday()],
+        start_time=time(14, 0),
+        end_time=time(16, 0),
+        slot_duration=30,
+        active_from=target_date,
+        active_to=target_date,
+        breaks=[],
+        is_active=True,
+    )
+
+    clinic = Clinic.objects.create(
+        facility=default_facility,
+        department=department,
+        code='TEAM-CLASH',
+        name='Team Clash Clinic',
+        booking_mode=Clinic.BookingMode.CLINIC_POOL,
+        assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        is_active=True,
+    )
+    duty_type = DepartmentDutyType.objects.create(
+        department=department,
+        name='Team Pool Duty',
+        code='TEAM-POOL-CLASH',
+        category='clinic',
+        rotation_type='none',
+        applicable_days=[target_date.weekday()],
+        is_24_hour=False,
+        start_time=time(13, 0),
+        end_time=time(17, 0),
+        slot_duration_minutes=30,
+        max_patients_per_slot=1,
+        clinic=clinic,
+        is_active=True,
+    )
+
+    response = admin_api_client.post(
+        f'/api/organization/departments/{department.id}/roster/bulk/',
+        {
+            'entries': [
+                {
+                    'date': target_date.isoformat(),
+                    'duty_type': str(duty_type.id),
+                    'team': str(team.id),
+                    'start_time': '14:30:00',
+                    'end_time': '15:30:00',
+                    'source': 'manual',
+                    'status': 'draft',
+                }
+            ]
+        },
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert 'conflicts with recurring schedule' in str(response.data).lower()
+
+
+@pytest.mark.django_db
+def test_roster_update_rejects_conflict_with_recurring_schedule(
+    admin_api_client, department, default_facility
+):
+    """Updating an existing clinic roster entry must also enforce recurring schedule conflicts."""
+    practitioner = PractitionerProfileFactory(
+        staff__primary_facility=default_facility,
+        staff__user__primary_facility=default_facility,
+    )
+    clinic = Clinic.objects.create(
+        facility=default_facility,
+        department=department,
+        code='UPDATE-CLASH',
+        name='Update Clash Clinic',
+        booking_mode=Clinic.BookingMode.CLINIC_POOL,
+        assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        is_active=True,
+    )
+    target_date = date(2026, 3, 9)
+    RecurringSchedule.objects.create(
+        facility=default_facility,
+        name='Update Conflict Schedule',
+        practitioner=practitioner,
+        days_of_week=[target_date.weekday()],
+        start_time=time(10, 0),
+        end_time=time(12, 0),
+        slot_duration=30,
+        active_from=target_date,
+        active_to=target_date,
+        breaks=[],
+        is_active=True,
+    )
+
+    clinic_duty = DepartmentDutyType.objects.create(
+        department=department,
+        name='Update Pool Duty',
+        code='UPDATE-POOL',
+        category='clinic',
+        rotation_type='none',
+        applicable_days=[target_date.weekday()],
+        is_24_hour=False,
+        start_time=time(8, 0),
+        end_time=time(13, 0),
+        slot_duration_minutes=30,
+        max_patients_per_slot=1,
+        clinic=clinic,
+        is_active=True,
+    )
+
+    entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=clinic_duty,
+        date=target_date,
+        practitioner=practitioner,
+        start_time=time(8, 0),
+        end_time=time(9, 0),
+        source='manual',
+        status='draft',
+    )
+
+    response = admin_api_client.patch(
+        f'/api/organization/roster/{entry.id}/',
+        {
+            'start_time': '10:30:00',
+            'end_time': '11:30:00',
+        },
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert 'conflicts with recurring schedule' in str(response.data).lower()
 
 
 @pytest.mark.django_db

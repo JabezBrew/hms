@@ -299,6 +299,64 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert 'practitioners' in response.data
 
+    def test_create_recurring_schedule_rejects_clash_with_published_roster_clinic(
+        self, admin_client, default_facility, db
+    ):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        target_date = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Clinic Session',
+            code='POOL-CLASH',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[target_date.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=target_date,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            source='manual',
+            status='published',
+        )
+
+        payload = {
+            'name': 'Direct Clinic Overlap',
+            'practitioner': str(practitioner.id),
+            'days_of_week': [target_date.weekday()],
+            'start_time': '10:00:00',
+            'end_time': '11:30:00',
+            'slot_duration': 30,
+            'active_from': target_date.isoformat(),
+            'active_to': target_date.isoformat(),
+            'breaks': [],
+        }
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            payload,
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'start_time' in response.data
+        assert 'clashes' in str(response.data['start_time'][0]).lower()
+
     def test_retrieve_recurring_schedule(self, admin_client, db):
         """Test retrieving a single recurring schedule."""
         schedule = RecurringScheduleFactory(name='Test Schedule')

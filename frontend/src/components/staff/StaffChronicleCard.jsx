@@ -210,7 +210,7 @@ const StaffChronicleCard = ({
   const handleManageSchedule = (e) => {
     e.stopPropagation();
     if (staffId) {
-      navigate(`/staff/${staffId}/schedule`);
+      navigate(`/staff/${staffId}`);
     }
   };
 

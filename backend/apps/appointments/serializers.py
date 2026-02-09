@@ -233,6 +233,114 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             return f"{obj.practitioner.staff.user.first_name} {obj.practitioner.staff.user.last_name}"
         return "Unknown"
 
+    @staticmethod
+    def _times_overlap(start1, end1, start2, end2):
+        return start1 < end2 and end1 > start2
+
+    @staticmethod
+    def _date_range_overlap_filter(start_date, end_date):
+        overlap_filter = Q(active_to__isnull=True) | Q(active_to__gte=start_date)
+        if end_date:
+            overlap_filter &= Q(active_from__lte=end_date)
+        return overlap_filter
+
+    def _validate_overlapping_recurring_schedules(
+        self,
+        practitioner,
+        days_of_week,
+        start_time,
+        end_time,
+        active_from,
+        active_to,
+    ):
+        conflicting = RecurringSchedule.objects.filter(
+            practitioner=practitioner,
+            is_active=True,
+            days_of_week__overlap=days_of_week,
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        ).filter(self._date_range_overlap_filter(active_from, active_to))
+
+        if self.instance:
+            conflicting = conflicting.exclude(id=self.instance.id)
+
+        if conflicting.exists():
+            raise serializers.ValidationError({
+                'start_time': (
+                    'This schedule overlaps with another active recurring schedule '
+                    f'for {practitioner.staff.user.get_full_name()}.'
+                )
+            })
+
+    def _validate_overlapping_roster_entries(
+        self,
+        practitioner,
+        days_of_week,
+        start_time,
+        end_time,
+        active_from,
+        active_to,
+        facility,
+    ):
+        from apps.organization.models import RosterEntry, StaffUnitAssignment
+
+        assignment_qs = StaffUnitAssignment.objects.filter(
+            practitioner=practitioner,
+            is_active=True,
+        ).filter(
+            Q(effective_until__isnull=True) | Q(effective_until__gte=active_from)
+        )
+        if active_to:
+            assignment_qs = assignment_qs.filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=active_to)
+            )
+        team_ids = list(assignment_qs.values_list('unit_id', flat=True))
+
+        roster_qs = RosterEntry.objects.filter(
+            status='published',
+            duty_type__category='clinic',
+            date__gte=active_from,
+        ).filter(
+            Q(practitioner=practitioner) | Q(team_id__in=team_ids)
+        ).select_related('duty_type', 'duty_type__clinic')
+
+        if active_to:
+            roster_qs = roster_qs.filter(date__lte=active_to)
+        if facility:
+            roster_qs = roster_qs.filter(
+                Q(duty_type__clinic__facility=facility) | Q(duty_type__clinic__isnull=True)
+            )
+
+        for entry in roster_qs:
+            if entry.date.weekday() not in days_of_week:
+                continue
+
+            duty_type = entry.duty_type
+            if duty_type.is_24_hour:
+                raise serializers.ValidationError({
+                    'start_time': (
+                        'This schedule clashes with a published 24-hour clinic roster '
+                        f'entry on {entry.date.isoformat()}.'
+                    )
+                })
+
+            entry_start = entry.start_time or duty_type.start_time
+            entry_end = entry.end_time or duty_type.end_time
+            if not entry_start or not entry_end:
+                continue
+
+            if not self._times_overlap(start_time, end_time, entry_start, entry_end):
+                continue
+
+            clinic_name = duty_type.clinic.name if duty_type.clinic else duty_type.name
+            raise serializers.ValidationError({
+                'start_time': (
+                    'This schedule clashes with a published clinic roster entry on '
+                    f'{entry.date.isoformat()} ({clinic_name} {entry_start.strftime("%H:%M")}-'
+                    f'{entry_end.strftime("%H:%M")}).'
+                )
+            })
+
     def validate(self, attrs):
         request = self.context.get('request')
         is_create = self.instance is None
@@ -247,53 +355,89 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         if active_to and active_from and active_to < active_from:
             raise serializers.ValidationError("active_to cannot be before active_from.")
 
-        if not is_create:
-            if 'practitioners' in attrs:
-                raise serializers.ValidationError({
-                    'practitioners': 'Bulk practitioner assignment is only supported on create.'
-                })
-            return attrs
-
-        requested_ids = []
-        if attrs.get('practitioner'):
-            requested_ids.append(str(attrs['practitioner'].id))
-        if attrs.get('practitioners'):
-            requested_ids.extend([str(practitioner_id) for practitioner_id in attrs['practitioners']])
-
-        unique_ids = list(dict.fromkeys(requested_ids))
-        if not unique_ids:
-            raise serializers.ValidationError({
-                'practitioner': 'Provide practitioner or practitioners.'
-            })
-
         facility = get_user_facility(request) if request else None
-        practitioner_qs = PractitionerProfile.objects.filter(id__in=unique_ids)
-        if facility:
-            practitioner_qs = practitioner_qs.filter(
-                Q(staff__primary_facility=facility) |
-                Q(staff__primary_facility__isnull=True, staff__user__primary_facility=facility)
-            )
-        practitioner_map = {str(prac.id): prac for prac in practitioner_qs.select_related('staff__user')}
 
-        missing_ids = [practitioner_id for practitioner_id in unique_ids if practitioner_id not in practitioner_map]
-        if missing_ids:
+        if not is_create and 'practitioners' in attrs:
             raise serializers.ValidationError({
-                'practitioners': 'One or more practitioners are invalid for the active facility.'
+                'practitioners': 'Bulk practitioner assignment is only supported on create.'
             })
 
-        if request and request.user.user_type in ['doctor', 'nurse']:
-            practitioner_profile = getattr(getattr(request.user, 'staff_profile', None), 'practitioner_profile', None)
-            own_practitioner_id = str(practitioner_profile.id) if practitioner_profile else None
-            if not own_practitioner_id:
+        if is_create:
+            requested_ids = []
+            if attrs.get('practitioner'):
+                requested_ids.append(str(attrs['practitioner'].id))
+            if attrs.get('practitioners'):
+                requested_ids.extend([str(practitioner_id) for practitioner_id in attrs['practitioners']])
+
+            unique_ids = list(dict.fromkeys(requested_ids))
+            if not unique_ids:
                 raise serializers.ValidationError({
-                    'practitioner': 'Your account is not linked to a practitioner profile.'
-                })
-            if any(practitioner_id != own_practitioner_id for practitioner_id in unique_ids):
-                raise serializers.ValidationError({
-                    'practitioners': 'You can only create recurring schedules for yourself.'
+                    'practitioner': 'Provide practitioner or practitioners.'
                 })
 
-        self._resolved_practitioners = [practitioner_map[practitioner_id] for practitioner_id in unique_ids]
+            practitioner_qs = PractitionerProfile.objects.filter(id__in=unique_ids)
+            if facility:
+                practitioner_qs = practitioner_qs.filter(
+                    Q(staff__primary_facility=facility) |
+                    Q(staff__primary_facility__isnull=True, staff__user__primary_facility=facility)
+                )
+            practitioner_map = {str(prac.id): prac for prac in practitioner_qs.select_related('staff__user')}
+
+            missing_ids = [practitioner_id for practitioner_id in unique_ids if practitioner_id not in practitioner_map]
+            if missing_ids:
+                raise serializers.ValidationError({
+                    'practitioners': 'One or more practitioners are invalid for the active facility.'
+                })
+
+            if request and request.user.user_type in ['doctor', 'nurse']:
+                practitioner_profile = getattr(getattr(request.user, 'staff_profile', None), 'practitioner_profile', None)
+                own_practitioner_id = str(practitioner_profile.id) if practitioner_profile else None
+                if not own_practitioner_id:
+                    raise serializers.ValidationError({
+                        'practitioner': 'Your account is not linked to a practitioner profile.'
+                    })
+                if any(practitioner_id != own_practitioner_id for practitioner_id in unique_ids):
+                    raise serializers.ValidationError({
+                        'practitioners': 'You can only create recurring schedules for yourself.'
+                    })
+
+            practitioners_to_validate = [practitioner_map[practitioner_id] for practitioner_id in unique_ids]
+            self._resolved_practitioners = practitioners_to_validate
+        else:
+            practitioner = attrs.get('practitioner', getattr(self.instance, 'practitioner', None))
+            if not practitioner:
+                raise serializers.ValidationError({
+                    'practitioner': 'Practitioner is required.'
+                })
+            practitioners_to_validate = [practitioner]
+
+        is_active = attrs.get('is_active', getattr(self.instance, 'is_active', True))
+        if is_active:
+            days_of_week = attrs.get('days_of_week', getattr(self.instance, 'days_of_week', [])) or []
+            active_from = attrs.get('active_from', getattr(self.instance, 'active_from', None))
+            active_to = attrs.get('active_to', getattr(self.instance, 'active_to', None))
+            start_time = attrs.get('start_time', getattr(self.instance, 'start_time', None))
+            end_time = attrs.get('end_time', getattr(self.instance, 'end_time', None))
+
+            for practitioner in practitioners_to_validate:
+                self._validate_overlapping_recurring_schedules(
+                    practitioner=practitioner,
+                    days_of_week=days_of_week,
+                    start_time=start_time,
+                    end_time=end_time,
+                    active_from=active_from,
+                    active_to=active_to,
+                )
+                self._validate_overlapping_roster_entries(
+                    practitioner=practitioner,
+                    days_of_week=days_of_week,
+                    start_time=start_time,
+                    end_time=end_time,
+                    active_from=active_from,
+                    active_to=active_to,
+                    facility=facility,
+                )
+
         return attrs
 
     @transaction.atomic

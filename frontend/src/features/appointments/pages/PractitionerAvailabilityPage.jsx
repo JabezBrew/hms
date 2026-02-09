@@ -10,7 +10,7 @@ import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import CalendarX from 'lucide-react/dist/esm/icons/calendar-x.js';
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
@@ -71,9 +71,14 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
  */
 const PractitionerAvailabilityPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const userRole = user?.role;
   const isDoctor = userRole === 'doctor';
+  const practitionerFromQuery = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('practitioner');
+  }, [location.search]);
   const pageMeta = usePageMeta({
     title: isDoctor
       ? 'My Availability | Hospital Management System'
@@ -87,6 +92,9 @@ const PractitionerAvailabilityPage = () => {
   const [selectedPractitioner, setSelectedPractitioner] = useState(() => {
     if (isDoctor && user?.practitionerId) {
       return user.practitionerId;
+    }
+    if (practitionerFromQuery) {
+      return practitionerFromQuery;
     }
     return null;
   });
