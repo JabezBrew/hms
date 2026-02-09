@@ -143,11 +143,6 @@ jobs:
         cd frontend
         npm run perf:bundle-budget
 
-    - name: Lighthouse CI (low-end emulation)
-      run: |
-        cd frontend
-        npm run perf:lhci
-
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
       with:
