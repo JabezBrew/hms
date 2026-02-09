@@ -4,7 +4,7 @@ Services for the organization app.
 Contains business logic for unit access, permissions, and other operations.
 """
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from io import StringIO
 
 from django.core.cache import cache
@@ -343,21 +343,64 @@ class DepartmentRosterService:
         return value
 
     @staticmethod
-    def _time_matches(start_time, end_time, check_time, is_24_hour=False):
+    def _duty_window_contains(at_datetime, entry_date, start_time, end_time, is_24_hour=False):
+        """
+        Determine whether `at_datetime` is inside a roster entry's duty window.
+
+        Important: for overnight shifts (end <= start), the window spans into the next day.
+        For 24-hour duties we treat the duty window as a 24 hour span anchored at a
+        configured start time (default 08:00 to match existing UI).
+        """
+        if at_datetime is None:
+            return False
+        if entry_date is None:
+            return False
+
+        local_at = at_datetime
+        if timezone.is_aware(local_at):
+            local_at = timezone.localtime(local_at)
+        else:
+            # Fail-safe: interpret naive datetimes in the project's current timezone.
+            local_at = timezone.make_aware(local_at, timezone.get_current_timezone())
+
         if is_24_hour:
-            return True
+            # 24-hour duties intentionally do not store start/end; anchor at 08:00 by convention.
+            start_time = start_time or time(8, 0)
+            start_dt = timezone.make_aware(
+                datetime.combine(entry_date, start_time),
+                timezone.get_current_timezone(),
+            )
+            end_dt = start_dt + timedelta(days=1)
+            return start_dt <= local_at < end_dt
+
+        # Non-24 hour duties must have start/end times to avoid incorrect "on duty" assignment.
         if start_time is None or end_time is None:
-            return True
-        if start_time <= end_time:
-            return start_time <= check_time < end_time
-        return check_time >= start_time or check_time < end_time
+            return False
+
+        start_dt = timezone.make_aware(
+            datetime.combine(entry_date, start_time),
+            timezone.get_current_timezone(),
+        )
+        end_dt = timezone.make_aware(
+            datetime.combine(entry_date, end_time),
+            timezone.get_current_timezone(),
+        )
+        if end_time <= start_time:
+            end_dt += timedelta(days=1)
+        return start_dt <= local_at < end_dt
 
     @classmethod
     def get_on_duty(cls, department, at_datetime=None):
         if at_datetime is None:
             at_datetime = timezone.now()
-        check_date = at_datetime.date()
-        check_time = at_datetime.time()
+        local_at = at_datetime
+        if timezone.is_aware(local_at):
+            local_at = timezone.localtime(local_at)
+        else:
+            local_at = timezone.make_aware(local_at, timezone.get_current_timezone())
+
+        check_date = local_at.date()
+        check_time = local_at.time()
 
         cache_key = facility_cache_key(
             f'department_roster:on_duty:{department.id}:{check_date}:{check_time.strftime("%H%M")}'
@@ -368,9 +411,12 @@ class DepartmentRosterService:
 
         from .models import RosterEntry
 
+        # A shift can span midnight, so coverage at a given datetime may come from either
+        # the current day entry or the previous day's entry.
+        date_candidates = [check_date, check_date - timedelta(days=1)]
         entries = RosterEntry.objects.filter(
             department=department,
-            date=check_date,
+            date__in=date_candidates,
             status='published'
         ).select_related('duty_type', 'duty_type__clinic', 'team')
 
@@ -379,7 +425,7 @@ class DepartmentRosterService:
             duty_type = entry.duty_type
             start_time = entry.start_time or duty_type.start_time
             end_time = entry.end_time or duty_type.end_time
-            if not cls._time_matches(start_time, end_time, check_time, duty_type.is_24_hour):
+            if not cls._duty_window_contains(local_at, entry.date, start_time, end_time, duty_type.is_24_hour):
                 continue
             # For 24-hour duties, show 08:00 - 08:00
             if duty_type.is_24_hour:

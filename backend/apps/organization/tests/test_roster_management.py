@@ -175,6 +175,90 @@ def test_on_duty_endpoint(admin_api_client, department, duty_type, team):
 
 
 @pytest.mark.django_db
+def test_on_duty_endpoint_factors_time_of_day(admin_api_client, department, team):
+    """
+    On-duty must be determined by datetime (not just day/date).
+    """
+    day_shift = DepartmentDutyType.objects.create(
+        department=department,
+        name='Day Shift',
+        code='DAY',
+        rotation_type='fixed_weekly',
+        applicable_days=[0, 1, 2, 3, 4, 5, 6],
+        is_24_hour=False,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
+        display_order=1,
+        is_active=True,
+    )
+    entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=day_shift,
+        date=date(2026, 2, 9),
+        team=team,
+        start_time=time(8, 0),
+        end_time=time(17, 0),
+        source='manual',
+        status='published',
+    )
+
+    before_start = datetime(2026, 2, 9, 0, 54, tzinfo=timezone.get_current_timezone())
+    response = admin_api_client.get(
+        f'/api/organization/departments/{department.id}/on-duty/',
+        {'at_datetime': before_start.isoformat()}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['count'] == 0
+
+    during_shift = datetime(2026, 2, 9, 9, 0, tzinfo=timezone.get_current_timezone())
+    response = admin_api_client.get(
+        f'/api/organization/departments/{department.id}/on-duty/',
+        {'at_datetime': during_shift.isoformat()}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['count'] == 1
+    assert response.data['results'][0]['id'] == str(entry.id)
+
+
+@pytest.mark.django_db
+def test_on_duty_endpoint_supports_overnight_shift(admin_api_client, department, team):
+    """
+    Overnight shifts (end <= start) must be considered active into the next day.
+    """
+    night_shift = DepartmentDutyType.objects.create(
+        department=department,
+        name='Night Shift',
+        code='NIGHT',
+        rotation_type='fixed_weekly',
+        applicable_days=[0, 1, 2, 3, 4, 5, 6],
+        is_24_hour=False,
+        start_time=time(20, 0),
+        end_time=time(8, 0),
+        display_order=1,
+        is_active=True,
+    )
+    entry = RosterEntry.objects.create(
+        department=department,
+        duty_type=night_shift,
+        date=date(2026, 2, 8),
+        team=team,
+        start_time=time(20, 0),
+        end_time=time(8, 0),
+        source='manual',
+        status='published',
+    )
+
+    after_midnight = datetime(2026, 2, 9, 0, 54, tzinfo=timezone.get_current_timezone())
+    response = admin_api_client.get(
+        f'/api/organization/departments/{department.id}/on-duty/',
+        {'at_datetime': after_midnight.isoformat()}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['count'] == 1
+    assert response.data['results'][0]['id'] == str(entry.id)
+
+
+@pytest.mark.django_db
 def test_clear_roster_drafts(admin_api_client, department, duty_type, team):
     """Clear endpoint should delete draft entries only."""
     # Create a draft entry
