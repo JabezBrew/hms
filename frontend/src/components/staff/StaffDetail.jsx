@@ -512,7 +512,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                 )}
 
                 {/* Schedule Management Link */}
-                {!isEditing && (userType === 'doctor' || userType === 'nurse') && (
+                {!isEditing && userType === 'doctor' && (
                   <div className="pt-4 border-t border-border">
                     <Button variant="outline" className="w-full sm:w-auto" onClick={handleManageSchedule}>
                       <Calendar className="h-4 w-4 mr-2" />
@@ -561,7 +561,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                 <Edit className="h-4 w-4 mr-2" />
                 Edit Profile
               </Button>
-              {isPractitioner && (
+              {userType === 'doctor' && (
                 <Button variant="outline" size="sm" onClick={handleManageSchedule}>
                   <Calendar className="h-4 w-4 mr-2" />
                   Schedule

@@ -338,7 +338,7 @@ const StaffChronicleCard = ({
           >
             View Profile
           </Button>
-          {(userType === 'doctor' || userType === 'nurse') && (
+          {userType === 'doctor' && (
             <Button
               size="sm"
               className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
