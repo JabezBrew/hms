@@ -36,6 +36,51 @@ let lastRefreshTime = 0;
 // Grace period (ms) - if refresh completed within this time, reuse token instead of refreshing again
 const REFRESH_GRACE_PERIOD = 5000;
 
+// Refresh access tokens slightly before they expire to avoid avoidable 401s during polling.
+const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 60;
+
+function base64UrlDecodeToString(value) {
+  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  const base64 = normalized + padding;
+
+  const atobFn = globalThis?.atob;
+  if (typeof atobFn === 'function') {
+    return atobFn(base64);
+  }
+  // Vitest/Node fallback (should not be used in browsers).
+  const buf = globalThis?.Buffer;
+  if (buf && typeof buf.from === 'function') {
+    return buf.from(base64, 'base64').toString('utf8');
+  }
+  throw new Error('No base64 decoder available');
+}
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') {
+    return null;
+  }
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+  try {
+    return JSON.parse(base64UrlDecodeToString(parts[1]));
+  } catch {
+    return null;
+  }
+}
+
+function isJwtExpiringSoon(token, skewSeconds = ACCESS_TOKEN_REFRESH_SKEW_SECONDS) {
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp !== 'number') {
+    return false;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return exp <= now + skewSeconds;
+}
+
 // Function to set the token provider from the auth context
 export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHandler) {
   getAccessToken = tokenGetter;
@@ -161,6 +206,15 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   let token = getAccessToken();
 
   const { parseAs, ...fetchOptions } = options;
+
+  // Proactively refresh near-expiry tokens to avoid a guaranteed 401, especially on polled endpoints.
+  // If refresh fails (network, etc), fall back to the current token and let normal 401 handling apply.
+  if (token && !isAuthEndpoint && endpoint !== '/auth/token/refresh/' && isJwtExpiringSoon(token)) {
+    const refreshed = await performTokenRefresh();
+    if (refreshed) {
+      token = refreshed;
+    }
+  }
 
   // Set default headers
   const headers = { ...(fetchOptions.headers || {}) };
