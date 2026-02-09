@@ -17,7 +17,7 @@ import {
   DashboardGrid,
   OccupancyTrendChart,
 } from '@/components/dashboard';
-import { useAdminDashboard } from '@/features/dashboards/hooks';
+import { useAdminDashboard, useAdminDashboardLiveUpdates } from '@/features/dashboards/hooks';
 import { useFacilities } from '@/hooks/useFacilityQueries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,6 +33,9 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useAdminDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+  });
 
   // Fetch dashboard data with polling
   const {
@@ -41,7 +44,7 @@ export default function AdminDashboard() {
     error,
     refetch,
     isFetching,
-  } = useAdminDashboard({ refetchInterval: 30000 });
+  } = useAdminDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
 
   const {
     data: facilities = [],

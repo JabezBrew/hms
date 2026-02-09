@@ -5,3 +5,7 @@ class DashboardsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.dashboards'
     verbose_name = 'Dashboards'
+
+    def ready(self):
+        # Register signal handlers for cache invalidation and realtime updates.
+        from . import signals  # noqa: F401

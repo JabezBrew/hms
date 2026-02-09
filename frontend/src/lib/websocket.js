@@ -38,11 +38,33 @@ class BaseWebSocket {
   }
 
   /**
-   * Build the WebSocket URL with authentication token.
+   * Build the WebSocket URL.
    */
   getUrl() {
-    const params = new URLSearchParams({ token: this.token });
-    return `${WS_BASE_URL}${this.path}?${params.toString()}`;
+    const url = `${WS_BASE_URL}${this.path}`;
+
+    // Optional legacy fallback for backends that still require query param token auth.
+    if (this.options.useQueryTokenFallback && this.token) {
+      const params = new URLSearchParams({ token: this.token });
+      return `${url}?${params.toString()}`;
+    }
+
+    return url;
+  }
+
+  /**
+   * Build requested subprotocols.
+   * Default auth transport is subprotocols: ['hms.jwt', '<access_token>'].
+   */
+  getProtocols() {
+    const protocols = [];
+    if (this.options.baseProtocol) {
+      protocols.push(this.options.baseProtocol);
+    }
+    if (this.token) {
+      protocols.push('hms.jwt', this.token);
+    }
+    return protocols.length > 0 ? protocols : undefined;
   }
 
   /**
@@ -56,7 +78,8 @@ class BaseWebSocket {
     this.isIntentionalClose = false;
 
     try {
-      this.ws = new WebSocket(this.getUrl());
+      const protocols = this.getProtocols();
+      this.ws = protocols ? new WebSocket(this.getUrl(), protocols) : new WebSocket(this.getUrl());
       this.setupEventHandlers();
     } catch (error) {
       console.error('[WebSocket] Connection error:', error);
@@ -303,8 +326,25 @@ export class NotificationWebSocket extends BaseWebSocket {
   }
 }
 
+/**
+ * WebSocket client for admin dashboard invalidations.
+ *
+ * Events:
+ * - dashboard.invalidate
+ * - connection.open
+ * - connection.close
+ * - connection.error
+ * - connection.failed
+ */
+export class AdminDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/admin/', token, options);
+  }
+}
+
 export default {
   AlertWebSocket,
   VitalsWebSocket,
   NotificationWebSocket,
+  AdminDashboardWebSocket,
 };

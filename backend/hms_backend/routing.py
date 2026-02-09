@@ -11,6 +11,7 @@ Routes:
 from django.urls import re_path
 
 from apps.nursing.consumers import AlertConsumer, VitalSignsConsumer
+from apps.dashboards.consumers import AdminDashboardConsumer
 from apps.referrals.consumers import ReferralNotificationConsumer
 
 websocket_urlpatterns = [
@@ -22,6 +23,9 @@ websocket_urlpatterns = [
 
     # Referral notifications for signed-in user
     re_path(r'^ws/notifications/$', ReferralNotificationConsumer.as_asgi()),
+
+    # Admin dashboard live invalidation stream
+    re_path(r'^ws/dashboards/admin/$', AdminDashboardConsumer.as_asgi()),
 
     # Patient-specific vital signs updates
     re_path(r'^ws/vitals/(?P<patient_id>[0-9a-f-]+)/$', VitalSignsConsumer.as_asgi()),

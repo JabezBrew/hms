@@ -18,6 +18,7 @@ from apps.dashboards.tasks import (
     refresh_doctor_dashboard_appointments,
 )
 from .appointment_cache import extract_patient_fhir_id
+from .realtime import admin_dashboard_projection_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -718,6 +719,16 @@ def admin_dashboard(request):
             'wards': [],
         })
 
+    projection_cache_key = admin_dashboard_projection_cache_key(facility.code)
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return Response({
+            'role': 'admin',
+            'user_name': request.user.get_full_name(),
+            'stats': cached_projection.get('stats', {}),
+            'wards': cached_projection.get('wards', []),
+        })
+
     today = timezone.now().date()
 
     # Patient count
@@ -794,9 +805,7 @@ def admin_dashboard(request):
         for ward in wards
     ]
 
-    return Response({
-        'role': 'admin',
-        'user_name': request.user.get_full_name(),
+    projection = {
         'stats': {
             'total_patients': total_patients,
             'current_admissions': current_admissions,
@@ -807,6 +816,13 @@ def admin_dashboard(request):
             'active_staff': active_staff,
         },
         'wards': ward_stats,
+    }
+    cache.set(projection_cache_key, projection, timeout=300)
+
+    return Response({
+        'role': 'admin',
+        'user_name': request.user.get_full_name(),
+        **projection,
     })
 
 

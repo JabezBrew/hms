@@ -28,7 +28,15 @@ class ReferralNotificationConsumer(AsyncJsonWebsocketConsumer):
 
         self.group_name = f'notifications_user_{self.user.id}'
         await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
+        subprotocol = None
+        for offered in self.scope.get('subprotocols', []) or []:
+            if str(offered).lower() == 'hms.jwt':
+                subprotocol = offered
+                break
+        if subprotocol:
+            await self.accept(subprotocol=subprotocol)
+        else:
+            await self.accept()
 
         await self.send_json({
             'type': 'connection.established',
