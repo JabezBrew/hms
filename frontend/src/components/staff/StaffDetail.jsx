@@ -261,7 +261,11 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
 
   const handleManageSchedule = () => {
     if (practitioner?.id) {
-      navigate(`/practitioner-availability?practitioner=${practitioner.id}`);
+      const params = new URLSearchParams({
+        practitioner: String(practitioner.id),
+        practitioner_name: fullName,
+      });
+      navigate(`/practitioner-availability?${params.toString()}`);
       return;
     }
     navigate('/practitioner-availability');
