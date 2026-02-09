@@ -9,6 +9,7 @@ import { Layout } from '@/components/layout/layout'
 import { ReadOnlyBanner } from '@/components/readonly'
 import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext'
 import { PageLoader } from '@/shared/components/page/PageState'
+import { OmniSearchProvider } from '@/shared/components/omni-search/OmniSearchProvider'
 import { featureRoutes } from './routes/featureRoutes'
 import { renderRoutes } from './routes/renderRoutes'
 
@@ -21,27 +22,29 @@ export default function AuthenticatedApp() {
   return (
     <ErrorBoundary>
       <ReadOnlyModeProvider>
-        <ReadOnlyBanner />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route
-              path="/unauthorized"
-              element={
-                <Layout>
-                  <UnauthorizedPage />
-                </Layout>
-              }
-            />
-            {renderRoutes(featureRoutes)}
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </Suspense>
-        <CriticalAlertsMonitor />
-        <OfflineIndicator />
-        <SessionTimeoutWarning />
-        <Suspense fallback={null}>
-          <Toaster />
-        </Suspense>
+        <OmniSearchProvider>
+          <ReadOnlyBanner />
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route
+                path="/unauthorized"
+                element={
+                  <Layout>
+                    <UnauthorizedPage />
+                  </Layout>
+                }
+              />
+              {renderRoutes(featureRoutes)}
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </Suspense>
+          <CriticalAlertsMonitor />
+          <OfflineIndicator />
+          <SessionTimeoutWarning />
+          <Suspense fallback={null}>
+            <Toaster />
+          </Suspense>
+        </OmniSearchProvider>
       </ReadOnlyModeProvider>
     </ErrorBoundary>
   )

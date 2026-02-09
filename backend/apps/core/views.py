@@ -1,16 +1,28 @@
 """
 Core views for system-wide settings and configuration APIs.
 """
+import re
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+
+from django.conf import settings
+from django.db.models import Q, Exists, OuterRef, Prefetch
 
 from .models import Facility, FacilityFluidBalanceSettings
 from .pagination import StandardResultsSetPagination
 from .serializers import FacilityFluidBalanceSettingsSerializer, FacilityListSerializer
 from .mixins import FacilityScopedCreateMixin
-from .security import FacilityScopedPermission, FacilityScopedQuerysetMixin, get_user_facility_codes
+from .security import (
+    FacilityScopedPermission,
+    FacilityScopedQuerysetMixin,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+    get_user_facility_codes,
+)
 
 
 class FacilityScopedViewSet(FacilityScopedQuerysetMixin, FacilityScopedCreateMixin, viewsets.ModelViewSet):
@@ -88,3 +100,410 @@ def update_fluid_balance_settings(request):
         return Response(FacilityFluidBalanceSettingsSerializer(settings).data)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# =============================================================================
+# Omni Search (Command Palette)
+# =============================================================================
+
+
+OMNI_SUPPORTED_TYPES = frozenset({
+    'patients',
+    'wards',
+    'encounters',
+    'appointments',
+    'admissions',
+    'staff',
+})
+
+# Keep this list in sync with frontend `ROLE_GROUPS.CLINICAL` (defensive: backend
+# user_type choices may lag behind).
+OMNI_CLINICAL_USER_TYPES = frozenset({
+    'doctor',
+    'nurse',
+    'head_nurse',
+    'nurse_practitioner',
+    'physician',
+    'practitioner',
+    'inpatient_doctor',
+})
+
+
+def _parse_int(value, *, default, min_value=None, max_value=None):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if min_value is not None:
+        parsed = max(min_value, parsed)
+    if max_value is not None:
+        parsed = min(max_value, parsed)
+    return parsed
+
+
+def _normalize_types_param(types_param):
+    if not types_param:
+        return set()
+    raw = [t.strip().lower() for t in str(types_param).split(',')]
+    return {t for t in raw if t}
+
+
+def _allowed_omni_types_for_user(user_type):
+    # Keep in sync with the frontend's navigable routes.
+    if user_type == 'admin':
+        return set(OMNI_SUPPORTED_TYPES)
+
+    # Clinical staff and providers.
+    if user_type in OMNI_CLINICAL_USER_TYPES:
+        return {'patients', 'wards', 'encounters', 'appointments', 'admissions'}
+
+    # Front desk.
+    if user_type == 'receptionist':
+        return {'patients', 'appointments', 'admissions'}
+
+    # Billing staff can navigate to patient demographics; patient set is scoped.
+    if user_type == 'billing':
+        return {'patients'}
+
+    # Patient portal (if enabled): self only.
+    if user_type == 'patient':
+        return {'patients'}
+
+    return set()
+
+
+def _get_patient_base_queryset(user, facility):
+    from apps.users.models import PatientProfile
+    from apps.core.security import ACTIVE_ADMISSION_STATUSES
+    from apps.wards.models import Admission
+
+    qs = PatientProfile.objects.select_related('user').filter(facility=facility)
+
+    user_type = getattr(user, 'user_type', None)
+    if user_type == 'billing':
+        from apps.billing.models import Invoice
+
+        invoice_exists = Invoice.objects.filter(
+            patient=OuterRef('pk'),
+            facility=facility,
+        )
+        qs = qs.filter(Exists(invoice_exists))
+    elif user_type == 'patient':
+        qs = qs.filter(user=user)
+    elif user_type in {'admin', 'receptionist'} or user_type in OMNI_CLINICAL_USER_TYPES:
+        pass
+    else:
+        return PatientProfile.objects.none()
+
+    # Used by PatientSearchListSerializer without per-row lookups.
+    return qs.prefetch_related(
+        Prefetch(
+            'admissions',
+            queryset=Admission.objects.filter(
+                facility=facility,
+                status__in=ACTIVE_ADMISSION_STATUSES,
+            ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+            to_attr='active_admissions_list',
+        )
+    )
+
+
+def _get_recent_patients_queryset(user, facility, *, limit):
+    from apps.patients.models import RecentPatient
+    from apps.core.security import ACTIVE_ADMISSION_STATUSES
+    from apps.wards.models import Admission
+
+    return RecentPatient.objects.filter(
+        user=user,
+        facility=facility,
+    ).select_related(
+        'patient_profile',
+        'patient_profile__user',
+    ).prefetch_related(
+        Prefetch(
+            'patient_profile__admissions',
+            queryset=Admission.objects.filter(
+                facility=facility,
+                status__in=ACTIVE_ADMISSION_STATUSES,
+            ).select_related('bed', 'bed__ward').order_by('-admission_date'),
+            to_attr='active_admissions_list',
+        )
+    ).order_by('-access_date')[:limit]
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def omni_search(request):
+    """
+    System-wide omni search endpoint for the command palette.
+
+    Security:
+    - Facility-scoped
+    - Role-scoped per group
+    - No PHI query logging
+    - No DB side effects (no search history writes)
+    """
+    facility = get_user_facility(request)
+    if not facility:
+        raise PermissionDenied("Facility context is required.")
+
+    user = request.user
+    user_type = (getattr(user, 'user_type', None) or '').strip()
+
+    query = (request.query_params.get('q') or '').strip()
+    limit = _parse_int(request.query_params.get('limit'), default=8, min_value=1, max_value=20)
+    recent_limit = 10
+
+    requested_types = _normalize_types_param(request.query_params.get('types'))
+    if requested_types:
+        requested_types &= set(OMNI_SUPPORTED_TYPES)
+
+    allowed_types = _allowed_omni_types_for_user(user_type)
+    if requested_types:
+        effective_types = sorted(requested_types & allowed_types)
+    else:
+        effective_types = sorted(allowed_types)
+
+    groups = {
+        'recent_patients': [],
+        'patients': [],
+        'wards': [],
+        'encounters': [],
+        'appointments': [],
+        'admissions': [],
+        'staff': [],
+    }
+
+    # Recent patients are safe to show when the user can navigate patient detail.
+    if 'patients' in allowed_types:
+        from rest_framework import serializers
+
+        class OmniRecentPatientSerializer(serializers.Serializer):
+            id = serializers.UUIDField(source='patient_profile.id', read_only=True)
+            medical_record_number = serializers.CharField(
+                source='patient_profile.medical_record_number',
+                read_only=True,
+            )
+            name = serializers.SerializerMethodField()
+            date_of_birth = serializers.DateField(
+                source='patient_profile.user.date_of_birth',
+                read_only=True,
+                allow_null=True,
+            )
+            gender = serializers.CharField(
+                source='patient_profile.user.gender',
+                read_only=True,
+                allow_null=True,
+            )
+            created_at = serializers.DateTimeField(source='patient_profile.created_at', read_only=True)
+            current_ward = serializers.SerializerMethodField()
+            admission_status = serializers.SerializerMethodField()
+            admission_date = serializers.SerializerMethodField()
+            last_accessed_at = serializers.DateTimeField(source='access_date', read_only=True)
+
+            def _get_active_admission(self, obj):
+                patient = getattr(obj, 'patient_profile', None)
+                if patient and hasattr(patient, 'active_admissions_list') and patient.active_admissions_list:
+                    return patient.active_admissions_list[0]
+                return None
+
+            def get_name(self, obj):
+                patient = getattr(obj, 'patient_profile', None)
+                user_obj = getattr(patient, 'user', None) if patient else None
+                return user_obj.get_full_name() if user_obj else None
+
+            def get_current_ward(self, obj):
+                admission = self._get_active_admission(obj)
+                if not admission:
+                    return None
+                if admission.status == 'waiting':
+                    return "Waiting List"
+                if admission.bed and admission.bed.ward:
+                    return admission.bed.ward.name
+                return "Admitted (No Bed)"
+
+            def get_admission_status(self, obj):
+                admission = self._get_active_admission(obj)
+                return admission.status if admission else None
+
+            def get_admission_date(self, obj):
+                admission = self._get_active_admission(obj)
+                if admission and admission.admission_date:
+                    return admission.admission_date.isoformat()
+                return None
+
+        recent_qs = _get_recent_patients_queryset(user, facility, limit=recent_limit)
+        groups['recent_patients'] = OmniRecentPatientSerializer(recent_qs, many=True).data
+
+    # Treat empty or too-short queries as "recents only" for predictable perf and PHI hygiene.
+    if len(query) < 2:
+        return Response({
+            'query': query,
+            'types': [],
+            'limit': limit,
+            'groups': groups,
+        })
+
+    # Build groups only for requested + allowed types.
+    effective_types_set = set(effective_types)
+
+    if 'patients' in effective_types_set:
+        from apps.users.serializers import PatientSearchListSerializer
+
+        patients_qs = _get_patient_base_queryset(user, facility)
+        patients_qs = patients_qs.filter(
+            Q(user__first_name__icontains=query)
+            | Q(user__last_name__icontains=query)
+            | Q(medical_record_number__icontains=query)
+            | Q(nhis_id__icontains=query)
+        ).order_by('user__last_name', 'user__first_name', 'id')[:limit]
+        groups['patients'] = PatientSearchListSerializer(patients_qs, many=True).data
+
+    if 'wards' in effective_types_set:
+        from apps.wards.models import Ward
+        from apps.wards.serializers import WardSearchSerializer
+
+        wards_qs = Ward.objects.select_related('department').filter(
+            department__facility=facility,
+            is_active=True,
+        ).filter(
+            Q(name__icontains=query) | Q(ward_type__icontains=query)
+        ).order_by('name')[:limit]
+        groups['wards'] = WardSearchSerializer(wards_qs, many=True).data
+
+    if 'encounters' in effective_types_set:
+        from apps.encounters.models import Encounter
+        from apps.encounters.serializers import EncounterListSerializer
+
+        encounters_qs = Encounter.objects.select_related(
+            'patient',
+            'patient__user',
+            'practitioner',
+            'practitioner__staff',
+            'practitioner__staff__user',
+            'clinic',
+            'department',
+            'primary_team',
+            'admitted_by_team',
+        ).filter(facility=facility)
+
+        if user_type == 'patient':
+            encounters_qs = encounters_qs.filter(patient__user=user)
+        elif user_type in OMNI_CLINICAL_USER_TYPES:
+            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                encounters_qs = encounters_qs.filter(patient__in=accessible_patients)
+        elif user_type == 'admin':
+            pass
+        elif user_type == 'receptionist':
+            pass
+        else:
+            encounters_qs = Encounter.objects.none()
+
+        encounters_qs = encounters_qs.filter(
+            Q(patient__user__first_name__icontains=query)
+            | Q(patient__user__last_name__icontains=query)
+            | Q(reason__icontains=query)
+            | Q(location__icontains=query)
+        ).order_by('-start_time')[:limit]
+        groups['encounters'] = EncounterListSerializer(encounters_qs, many=True).data
+
+    if 'appointments' in effective_types_set:
+        from apps.appointments.models import Appointment
+        from apps.appointments.serializers import AppointmentListSerializer
+
+        appointments_qs = Appointment.objects.select_related(
+            'patient',
+            'patient__user',
+            'practitioner',
+            'practitioner__staff',
+            'practitioner__staff__user',
+            'clinic',
+            'appointment_type',
+        ).filter(facility=facility)
+
+        # Match LocalAppointmentViewSet: clinicians see only their own schedule.
+        if user_type in OMNI_CLINICAL_USER_TYPES:
+            appointments_qs = appointments_qs.filter(practitioner__staff__user=user)
+        elif user_type not in {'admin', 'receptionist'}:
+            appointments_qs = Appointment.objects.none()
+
+        appointments_qs = appointments_qs.filter(
+            Q(patient__user__first_name__icontains=query)
+            | Q(patient__user__last_name__icontains=query)
+            | Q(patient__medical_record_number__icontains=query)
+        ).order_by('start_time')[:limit]
+        groups['appointments'] = AppointmentListSerializer(appointments_qs, many=True).data
+
+    if 'admissions' in effective_types_set:
+        from apps.wards.models import Admission
+        from apps.wards.serializers import AdmissionListSerializer
+
+        admissions_qs = Admission.objects.select_related(
+            'patient',
+            'patient__user',
+            'bed',
+            'bed__ward',
+            'admitting_doctor',
+            'admitting_doctor__staff',
+            'admitting_doctor__staff__user',
+        ).filter(facility=facility)
+
+        if user_type in OMNI_CLINICAL_USER_TYPES:
+            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                admissions_qs = admissions_qs.filter(patient__in=accessible_patients)
+        elif user_type not in {'admin', 'receptionist'}:
+            admissions_qs = Admission.objects.none()
+
+        admissions_qs = admissions_qs.filter(
+            Q(patient__user__first_name__icontains=query)
+            | Q(patient__user__last_name__icontains=query)
+            | Q(patient__medical_record_number__icontains=query)
+            | Q(bed__ward__name__icontains=query)
+            | Q(bed__bed_number__icontains=query)
+        ).order_by('-admission_date')[:limit]
+        groups['admissions'] = AdmissionListSerializer(admissions_qs, many=True).data
+
+    if 'staff' in effective_types_set and user_type == 'admin':
+        from apps.users.models import Staff
+        from apps.users.serializers import StaffSearchSerializer
+
+        staff_qs = Staff.objects.select_related('user', 'practitioner_profile').filter(
+            primary_facility=facility
+        )
+
+        normalized_query = (
+            query
+            .replace('\u2013', '-')
+            .replace('\u2014', '-')
+            .replace('\u2212', '-')
+        )
+        is_id_query = bool(re.fullmatch(r"[A-Za-z0-9\\-]+", normalized_query)) and any(
+            char.isdigit() for char in normalized_query
+        )
+        if is_id_query:
+            staff_qs = staff_qs.filter(employee_id__istartswith=normalized_query).order_by('employee_id')
+        else:
+            tokens = [token for token in normalized_query.split() if token]
+            if len(tokens) >= 2:
+                first, second = tokens[0], tokens[1]
+                staff_qs = staff_qs.filter(
+                    Q(user__first_name__icontains=first, user__last_name__icontains=second)
+                    | Q(user__first_name__icontains=second, user__last_name__icontains=first)
+                )
+            else:
+                token = tokens[0] if tokens else normalized_query
+                staff_qs = staff_qs.filter(
+                    Q(user__first_name__icontains=token) | Q(user__last_name__icontains=token)
+                )
+            staff_qs = staff_qs.order_by('user__last_name', 'user__first_name')
+
+        groups['staff'] = StaffSearchSerializer(staff_qs[:limit], many=True).data
+
+    return Response({
+        'query': query,
+        'types': effective_types,
+        'limit': limit,
+        'groups': groups,
+    })

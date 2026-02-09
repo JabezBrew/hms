@@ -12,6 +12,11 @@ router = DefaultRouter()
 router.register(r'facilities', views.FacilityViewSet, basename='facility')
 
 urlpatterns = [
+    path(
+        'search/omni/',
+        views.omni_search,
+        name='omni-search',
+    ),
     # Fluid Balance Settings
     path(
         'settings/fluid-balance/',

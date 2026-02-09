@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
+import isValid from 'date-fns/isValid';
 import { cn } from '@/lib/utils';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 
@@ -39,6 +40,16 @@ import { toast } from 'sonner';
 import { useAppointments } from '@/features/appointments/hooks/useAppointmentQueries';
 import { PageState } from '@/shared/components/page/PageState';
 import { useListFilters } from '@/shared/hooks/useListFilters';
+
+const safeParse = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    const parsed = parseISO(value);
+    return isValid(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
 const AppointmentList = () => {
   const { user } = useAuth();
@@ -107,12 +118,34 @@ const AppointmentList = () => {
     // Apply client-side search if needed
     if (search) {
       appointments = appointments.filter(appointment => {
-        // Search in patient and practitioner names
-        const patientName = appointment.participant?.find(p =>
-          p.actor?.reference?.startsWith('Patient/'))?.actor?.display || '';
+        // Search in patient and practitioner names (local and FHIR shapes)
+        const patientName = (() => {
+          if (appointment.patient_name) return appointment.patient_name;
+          if (appointment.patient_details?.user_details) {
+            const first = appointment.patient_details.user_details.first_name || '';
+            const last = appointment.patient_details.user_details.last_name || '';
+            return `${first} ${last}`.replace(/\s+/g, ' ').trim();
+          }
+          return (
+            appointment.participant?.find((p) =>
+              p.actor?.reference?.startsWith('Patient/')
+            )?.actor?.display || ''
+          );
+        })();
 
-        const practitionerName = appointment.participant?.find(p =>
-          p.actor?.reference?.startsWith('Practitioner/'))?.actor?.display || '';
+        const practitionerName = (() => {
+          if (appointment.practitioner_name) return appointment.practitioner_name;
+          if (appointment.practitioner_details?.staff_details?.user_details) {
+            const first = appointment.practitioner_details.staff_details.user_details.first_name || '';
+            const last = appointment.practitioner_details.staff_details.user_details.last_name || '';
+            return `${first} ${last}`.replace(/\s+/g, ' ').trim();
+          }
+          return (
+            appointment.participant?.find((p) =>
+              p.actor?.reference?.startsWith('Practitioner/')
+            )?.actor?.display || ''
+          );
+        })();
 
         // Search in description and comment
         const description = appointment.description || '';
@@ -187,15 +220,34 @@ const AppointmentList = () => {
 
   // Get patient name from appointment
   const getPatientName = (appointment) => {
-    const patientParticipant = appointment.participant?.find(p =>
-      p.actor?.reference?.startsWith('Patient/'));
+    if (!appointment) return 'Unknown Patient';
+    if (appointment.patient_name) return appointment.patient_name;
+    if (appointment.patient_details?.user_details) {
+      const first = appointment.patient_details.user_details.first_name || '';
+      const last = appointment.patient_details.user_details.last_name || '';
+      const full = `${first} ${last}`.replace(/\s+/g, ' ').trim();
+      if (full) return full;
+    }
+    const patientParticipant = appointment.participant?.find((p) =>
+      p.actor?.reference?.startsWith('Patient/')
+    );
     return patientParticipant?.actor?.display || 'Unknown Patient';
   };
 
   // Get practitioner name from appointment
   const getPractitionerName = (appointment) => {
-    const practitionerParticipant = appointment.participant?.find(p =>
-      p.actor?.reference?.startsWith('Practitioner/'));
+    if (!appointment) return 'Unknown Practitioner';
+    if (appointment.practitioner_name) return appointment.practitioner_name;
+    if (!appointment.practitioner) return 'Assigned at check-in';
+    if (appointment.practitioner_details?.staff_details?.user_details) {
+      const first = appointment.practitioner_details.staff_details.user_details.first_name || '';
+      const last = appointment.practitioner_details.staff_details.user_details.last_name || '';
+      const full = `${first} ${last}`.replace(/\s+/g, ' ').trim();
+      if (full) return full;
+    }
+    const practitionerParticipant = appointment.participant?.find((p) =>
+      p.actor?.reference?.startsWith('Practitioner/')
+    );
     return practitionerParticipant?.actor?.display || 'Unknown Practitioner';
   };
 
@@ -397,6 +449,12 @@ const AppointmentList = () => {
           open
           onClose={handleCloseContext}
           mode="reception"
+          patientId={
+            contextAppointment?.patient_details?.id ||
+            contextAppointment?.patient?.id ||
+            contextAppointment?.patient ||
+            null
+          }
           fhirPatientId={getAppointmentPatientId(contextAppointment)}
           patientContext={contextAppointment.hms_patient_context}
           patientName={getPatientName(contextAppointment)}
@@ -409,7 +467,7 @@ const AppointmentList = () => {
 /**
  * AppointmentCard - Individual appointment card in Chronicle style
  */
-function AppointmentCard({
+  function AppointmentCard({
   appointment,
   index,
   formatDateTime,
@@ -417,7 +475,7 @@ function AppointmentCard({
   getPractitionerName,
   onClick,
   onPatientContext,
-}) {
+  }) {
   const getStatusConfig = (status) => {
     switch (status) {
       case 'proposed':
@@ -439,12 +497,19 @@ function AppointmentCard({
     }
   };
 
-  const statusConfig = getStatusConfig(appointment.status);
-  const patientName = getPatientName(appointment);
-  const practitionerName = getPractitionerName(appointment);
-  const appointmentType = appointment.appointmentType?.coding?.[0]?.display || 'General';
+    const statusConfig = getStatusConfig(appointment.status);
+    const patientName = getPatientName(appointment);
+    const practitionerName = getPractitionerName(appointment);
+    const appointmentType =
+      appointment.appointment_type_name ||
+      appointment.appointment_type_details?.name ||
+      appointment.appointmentType?.coding?.[0]?.display ||
+      'General';
 
-  return (
+    const startAt = appointment.start || appointment.start_time || null;
+    const startDate = safeParse(startAt);
+
+    return (
     <article
       className={cn(
         "group relative bg-card/50 border border-border rounded-xl p-5",
@@ -479,7 +544,7 @@ function AppointmentCard({
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono text-xs">
               <Clock className="h-3 w-3" />
-              {formatDateTime(appointment.start)}
+              {startDate ? format(startDate, 'MMM d, yyyy h:mm a') : formatDateTime(startAt)}
             </span>
             <span className="flex items-center gap-1.5">
               <UserRound className="h-3 w-3" />

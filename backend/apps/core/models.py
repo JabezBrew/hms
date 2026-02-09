@@ -5,6 +5,7 @@ import uuid
 import ipaddress
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
 
@@ -173,12 +174,22 @@ class Facility(models.Model):
         # Ensure code is uppercase
         self.code = self.code.upper()
         super().save(*args, **kwargs)
-        # Clear facility cache for all facility contexts
-        cache.delete('active_facilities')
-        for code in Facility.objects.values_list('code', flat=True):
-            cache.delete(facility_cache_key_for_code(code, 'active_facilities'))
-        cache.delete(facility_cache_key_for_code(self.code, f'facility_{self.code}'))
+        # Clear facility cache for all facility contexts.
+        #
+        # Note: facility_cache_key() prefixes keys using the current facility context,
+        # which can differ from self.code (e.g., DEFAULT_FACILITY_CODE in tests).
+        cache.delete('active_facilities')  # legacy/unscoped key
+        cache.delete(facility_cache_key('active_facilities'))
         cache.delete(facility_cache_key(f'facility_{self.code}'))
+
+        codes = set(Facility.objects.values_list('code', flat=True))
+        default_code = getattr(settings, 'DEFAULT_FACILITY_CODE', None)
+        if default_code:
+            codes.add(str(default_code).strip().upper())
+
+        for code in codes:
+            cache.delete(facility_cache_key_for_code(code, 'active_facilities'))
+            cache.delete(facility_cache_key_for_code(code, f'facility_{self.code}'))
 
     @classmethod
     def get_active_facilities(cls):

@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
+import isValid from 'date-fns/isValid';
 
 import { cn } from '@/lib/utils';
 
@@ -117,12 +118,48 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
     }
   };
 
+  // Normalize local vs FHIR appointment payloads.
+  const startAt = appointment?.start ?? appointment?.start_time ?? null;
+  const endAt = appointment?.end ?? appointment?.end_time ?? null;
+
+  const safeParse = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    try {
+      const parsed = parseISO(value);
+      return isValid(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const startDate = safeParse(startAt);
+  const endDate = safeParse(endAt);
+
   // Get patient details
   const getPatientDetails = () => {
     if (!appointment) return { name: 'Unknown', id: '' };
 
-    const patientParticipant = appointment.participant?.find(p => 
-      p.actor?.reference?.startsWith('Patient/'));
+    // Local appointment shape
+    const localPatient = appointment.patient_details || appointment.patient;
+    if (appointment.patient_details?.user_details) {
+      const first = appointment.patient_details.user_details.first_name || '';
+      const last = appointment.patient_details.user_details.last_name || '';
+      const name = `${first} ${last}`.replace(/\s+/g, ' ').trim() || 'Unknown Patient';
+      const id = appointment.patient_details.id || appointment.patient || '';
+      return { name, id: String(id || '') };
+    }
+    if (appointment.patient_name) {
+      const id = appointment.patient_details?.id || appointment.patient || '';
+      return { name: appointment.patient_name, id: String(id || '') };
+    }
+    if (localPatient && typeof localPatient === 'string') {
+      return { name: 'Unknown Patient', id: localPatient };
+    }
+
+    // FHIR appointment shape
+    const patientParticipant = appointment.participant?.find((p) =>
+      p.actor?.reference?.startsWith('Patient/')
+    );
 
     if (!patientParticipant) return { name: 'Unknown', id: '' };
 
@@ -137,8 +174,29 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   const getPractitionerDetails = () => {
     if (!appointment) return { name: 'Unknown', id: '' };
 
-    const practitionerParticipant = appointment.participant?.find(p => 
-      p.actor?.reference?.startsWith('Practitioner/'));
+    // Local appointment shape
+    if (appointment.practitioner_details?.staff_details?.user_details) {
+      const first = appointment.practitioner_details.staff_details.user_details.first_name || '';
+      const last = appointment.practitioner_details.staff_details.user_details.last_name || '';
+      const name = `${first} ${last}`.replace(/\s+/g, ' ').trim() || 'Unknown Practitioner';
+      const id = appointment.practitioner_details.id || appointment.practitioner || '';
+      return { name, id: String(id || '') };
+    }
+    if (appointment.practitioner_name) {
+      const id = appointment.practitioner_details?.id || appointment.practitioner || '';
+      return { name: appointment.practitioner_name, id: String(id || '') };
+    }
+    if (!appointment.practitioner) {
+      return { name: 'Assigned at check-in', id: '' };
+    }
+    if (appointment.practitioner && typeof appointment.practitioner === 'string') {
+      return { name: 'Unknown Practitioner', id: appointment.practitioner };
+    }
+
+    // FHIR appointment shape
+    const practitionerParticipant = appointment.participant?.find((p) =>
+      p.actor?.reference?.startsWith('Practitioner/')
+    );
 
     if (!practitionerParticipant) return { name: 'Unknown', id: '' };
 
@@ -151,19 +209,26 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
   // Get appointment type
   const getAppointmentType = () => {
-    if (!appointment || !appointment.appointmentType) return 'General';
+    if (!appointment) return 'General';
 
-    return appointment.appointmentType.coding?.[0]?.display || 'General';
+    // Local appointment shape
+    if (appointment.appointment_type_details?.name) {
+      return appointment.appointment_type_details.name;
+    }
+    if (appointment.appointment_type_name) {
+      return appointment.appointment_type_name;
+    }
+
+    // FHIR appointment shape
+    return appointment.appointmentType?.coding?.[0]?.display || 'General';
   };
 
   // Get appointment duration in minutes
   const getAppointmentDuration = () => {
-    if (!appointment || !appointment.start || !appointment.end) return 'N/A';
+    if (!startDate || !endDate) return 'N/A';
 
     try {
-      const start = parseISO(appointment.start);
-      const end = parseISO(appointment.end);
-      const durationMs = end.getTime() - start.getTime();
+      const durationMs = endDate.getTime() - startDate.getTime();
       const durationMinutes = Math.round(durationMs / (1000 * 60));
 
       return `${durationMinutes} minutes`;
@@ -317,19 +382,19 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
               </h1>
 
               {/* Appointment metadata line */}
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
-                <span className="flex items-center gap-1.5 font-mono text-sm">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {format(parseISO(appointment.start), 'EEEE, MMMM d, yyyy')}
-                </span>
-                <span className="flex items-center gap-1.5 font-mono text-sm">
-                  <Clock className="h-3.5 w-3.5" />
-                  {format(parseISO(appointment.start), 'h:mm a')} - {format(parseISO(appointment.end), 'h:mm a')}
-                </span>
-                <span className="font-mono text-sm">
-                  <span className="text-foreground">{getAppointmentDuration()}</span>
-                </span>
-              </div>
+	              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
+	                <span className="flex items-center gap-1.5 font-mono text-sm">
+	                  <Calendar className="h-3.5 w-3.5" />
+	                  {startDate ? format(startDate, 'EEEE, MMMM d, yyyy') : 'N/A'}
+	                </span>
+	                <span className="flex items-center gap-1.5 font-mono text-sm">
+	                  <Clock className="h-3.5 w-3.5" />
+	                  {startDate ? format(startDate, 'h:mm a') : 'N/A'} - {endDate ? format(endDate, 'h:mm a') : 'N/A'}
+	                </span>
+	                <span className="font-mono text-sm">
+	                  <span className="text-foreground">{getAppointmentDuration()}</span>
+	                </span>
+	              </div>
 
               {/* Practitioner */}
               <div className="flex items-center gap-2 text-muted-foreground">
@@ -406,10 +471,10 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   <AlertDialogHeader>
                     <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
                     <AlertDialogDescription className="font-mono text-sm">
-                      This action cannot be undone. This will permanently delete the appointment
-                      for {patient.name} on {format(parseISO(appointment.start), 'MMMM d, yyyy')}.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
+	                      This action cannot be undone. This will permanently delete the appointment
+	                      for {patient.name} on {startDate ? format(startDate, 'MMMM d, yyyy') : 'N/A'}.
+	                    </AlertDialogDescription>
+	                  </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
                     <AlertDialogAction
@@ -439,24 +504,24 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Start Time */}
-              <div className="space-y-2">
-                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Start Time
-                </label>
-                <div className="font-mono text-sm text-foreground">
-                  {formatDateTime(appointment.start)}
-                </div>
-              </div>
+	              <div className="space-y-2">
+	                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+	                  Start Time
+	                </label>
+	                <div className="font-mono text-sm text-foreground">
+		                  {formatDateTime(startAt)}
+		                </div>
+		              </div>
 
               {/* End Time */}
-              <div className="space-y-2">
-                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  End Time
-                </label>
-                <div className="font-mono text-sm text-foreground">
-                  {formatDateTime(appointment.end)}
-                </div>
-              </div>
+	              <div className="space-y-2">
+	                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+	                  End Time
+	                </label>
+	                <div className="font-mono text-sm text-foreground">
+		                  {formatDateTime(endAt)}
+		                </div>
+		              </div>
 
               {/* Duration */}
               <div className="space-y-2">
@@ -482,82 +547,96 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
             </div>
 
             {/* Description & Comments */}
-            {(appointment.description || appointment.comment) && (
-              <>
-                <div className="my-6 h-px bg-gradient-to-r from-border via-border to-transparent" />
+	            {(appointment.description || appointment.reason || appointment.comment || appointment.notes) && (
+	              <>
+	                <div className="my-6 h-px bg-gradient-to-r from-border via-border to-transparent" />
 
-                {appointment.description && (
-                  <div className="space-y-2 mb-4">
-                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Description
-                    </label>
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {appointment.description}
-                    </p>
-                  </div>
-                )}
+	                {(appointment.description || appointment.reason) && (
+	                  <div className="space-y-2 mb-4">
+	                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+	                      Description
+	                    </label>
+	                    <p className="text-sm text-foreground leading-relaxed">
+	                      {appointment.description || appointment.reason}
+	                    </p>
+	                  </div>
+	                )}
 
-                {appointment.comment && (
-                  <div className="space-y-2">
-                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                      <MessageSquare className="h-3 w-3" />
-                      Comments
-                    </label>
-                    <p className="text-sm text-muted-foreground italic leading-relaxed">
-                      "{appointment.comment}"
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
+	                {(appointment.comment || appointment.notes) && (
+	                  <div className="space-y-2">
+	                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+	                      <MessageSquare className="h-3 w-3" />
+	                      Comments
+	                    </label>
+	                    <p className="text-sm text-muted-foreground italic leading-relaxed">
+	                      "{appointment.comment || appointment.notes}"
+	                    </p>
+	                  </div>
+	                )}
+	              </>
+	            )}
           </article>
         </div>
 
         {/* Right Column - Participants */}
         <aside className="space-y-6">
-          {/* Patient Card */}
-          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-2">
+	          {/* Patient Card */}
+	          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-2">
             <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <User className="h-4 w-4 text-[oklch(0.70_0.15_230)]" />
               Patient
             </h3>
 
-            <div className="space-y-3">
-              <div
-                className="group cursor-pointer"
-                onClick={() => navigate(`/patients/${patient.id}`)}
-              >
-                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
-                  {patient.name}
-                </div>
-                <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
-                  View Chronicle →
-                </span>
-              </div>
-            </div>
-          </article>
+	            <div className="space-y-3">
+	              <div
+	                className={cn(
+	                  "group",
+	                  patient.id ? "cursor-pointer" : "cursor-default"
+	                )}
+	                onClick={() => {
+	                  if (patient.id) navigate(`/patients/${patient.id}`);
+	                }}
+	              >
+	                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
+	                  {patient.name}
+	                </div>
+	                {patient.id && (
+	                  <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
+	                    View Chronicle →
+	                  </span>
+	                )}
+	              </div>
+	            </div>
+	          </article>
 
-          {/* Practitioner Card */}
-          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-3">
+	          {/* Practitioner Card */}
+	          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-3">
             <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <Stethoscope className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
               Practitioner
             </h3>
 
-            <div className="space-y-3">
-              <div
-                className="group cursor-pointer"
-                onClick={() => navigate(`/practitioners/${practitioner.id}`)}
-              >
-                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
-                  {practitioner.name}
-                </div>
-                <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
-                  View Profile →
-                </span>
-              </div>
-            </div>
-          </article>
+	            <div className="space-y-3">
+	              <div
+	                className={cn(
+	                  "group",
+	                  practitioner.id ? "cursor-pointer" : "cursor-default"
+	                )}
+	                onClick={() => {
+	                  if (practitioner.id) navigate(`/practitioners/${practitioner.id}`);
+	                }}
+	              >
+	                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
+	                  {practitioner.name}
+	                </div>
+	                {practitioner.id && (
+	                  <span className="font-mono text-xs text-muted-foreground group-hover:text-primary/80 transition-colors">
+	                    View Profile →
+	                  </span>
+	                )}
+	              </div>
+	            </div>
+	          </article>
 
           {/* Status Timeline Mini */}
           <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-4">

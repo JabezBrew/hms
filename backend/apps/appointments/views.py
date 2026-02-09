@@ -660,8 +660,57 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                     end_date=end_date,
                     facility=facility,
                 )
-                slots = slot_payload.get('all_slots', [])
+                raw_slots = slot_payload.get('all_slots', [])
                 practitioners = slot_payload.get('practitioners', [])
+                # Pool clinics can have multiple practitioner-level slots per time window.
+                # Aggregate by (start, end) so the client sees one window with capacity totals.
+                aggregated = {}
+                for slot in raw_slots:
+                    start = slot.get('start')
+                    end = slot.get('end')
+                    if not start or not end:
+                        continue
+                    key = (start, end)
+                    entry = aggregated.setdefault(
+                        key,
+                        {
+                            'id': f'{start}-{end}',
+                            'start': start,
+                            'end': end,
+                            'status': 'free',
+                            'capacity': {'max': 0, 'booked': 0, 'remaining': 0},
+                        },
+                    )
+                    status_value = slot.get('status')
+                    cap = slot.get('capacity') or {}
+                    try:
+                        cap_max = int(cap.get('max', 1) or 1)
+                    except (TypeError, ValueError):
+                        cap_max = 1
+                    try:
+                        cap_booked = int(cap.get('booked', 0) or 0)
+                    except (TypeError, ValueError):
+                        cap_booked = 0
+                    cap_remaining = cap.get('remaining')
+                    if cap_remaining is None:
+                        cap_remaining = max(0, cap_max - cap_booked)
+                    else:
+                        try:
+                            cap_remaining = int(cap_remaining)
+                        except (TypeError, ValueError):
+                            cap_remaining = max(0, cap_max - cap_booked)
+                    # busy-unavailable indicates the practitioner is not usable for this window.
+                    if status_value == 'busy-unavailable':
+                        cap_max = 0
+                        cap_booked = 0
+                        cap_remaining = 0
+                    entry['capacity']['max'] += cap_max
+                    entry['capacity']['remaining'] += max(0, cap_remaining)
+                for entry in aggregated.values():
+                    entry['capacity']['remaining'] = max(0, entry['capacity']['remaining'])
+                    entry['capacity']['booked'] = max(0, entry['capacity']['max'] - entry['capacity']['remaining'])
+                    entry['status'] = 'free' if entry['capacity']['remaining'] > 0 else 'busy'
+                slots = sorted(aggregated.values(), key=lambda s: s['start'])
             else:
                 slots = AvailabilityService.compute_available_slots(
                     practitioner_id=practitioner_id,

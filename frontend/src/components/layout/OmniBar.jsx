@@ -1,31 +1,13 @@
-import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
-import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
-import Settings from 'lucide-react/dist/esm/icons/settings.js';
-import Smile from 'lucide-react/dist/esm/icons/smile.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
-import Search from 'lucide-react/dist/esm/icons/search.js';
-import Bell from 'lucide-react/dist/esm/icons/bell.js';
-import Menu from 'lucide-react/dist/esm/icons/menu.js';
-import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
-import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js';
-import * as React from "react"
+import Settings from 'lucide-react/dist/esm/icons/settings.js'
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js'
+import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js'
+import * as React from 'react'
 
-import {
-    CommandDialog,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-    CommandSeparator,
-    CommandShortcut,
-} from "@/components/ui/command"
-import { Button } from "@/components/ui/button"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { useAuth } from "@/lib/auth"
-import { ThemeToggle } from "../theme-toggle"
-import { FacilitySwitcher } from "./FacilitySwitcher"
+import { Button } from '@/components/ui/button'
+import { SidebarTrigger } from '@/components/ui/sidebar'
+import { useAuth } from '@/lib/auth'
+import { ThemeToggle } from '../theme-toggle'
+import { FacilitySwitcher } from './FacilitySwitcher'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -35,25 +17,14 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useNavigate } from "react-router-dom"
+import { useOmniSearch } from '@/shared/components/omni-search/OmniSearchProvider'
 
 import NotificationCenter from "./NotificationCenter"
 
 export function OmniBar() {
-    const [open, setOpen] = React.useState(false)
     const { user, logout } = useAuth()
     const navigate = useNavigate()
-
-    React.useEffect(() => {
-        const down = (e) => {
-            if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                setOpen((open) => !open)
-            }
-        }
-
-        document.addEventListener("keydown", down)
-        return () => document.removeEventListener("keydown", down)
-    }, [])
+    const { openDialog } = useOmniSearch()
 
     const handleLogout = async () => {
         await logout()
@@ -67,7 +38,7 @@ export function OmniBar() {
                 <Button
                     variant="outline"
                     className="relative h-9 w-full justify-start rounded-[0.5rem] bg-muted/50 text-sm font-normal text-muted-foreground shadow-none sm:pr-12 md:w-full lg:w-[400px]"
-                    onClick={() => setOpen(true)}
+                    onClick={openDialog}
                 >
                     <span className="hidden lg:inline-flex">Search patients, pages, or actions...</span>
                     <span className="inline-flex lg:hidden">Search...</span>
@@ -116,54 +87,6 @@ export function OmniBar() {
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
-
-            <CommandDialog open={open} onOpenChange={setOpen}>
-                <CommandInput placeholder="Type a command or search..." />
-                <CommandList>
-                    <CommandEmpty>No results found.</CommandEmpty>
-                    <CommandGroup heading="Suggestions">
-                        <CommandItem onSelect={() => {
-                            setOpen(false)
-                            navigate('/dashboard')
-                        }}>
-                            <Calendar className="mr-2 h-4 w-4" />
-                            <span>Calendar</span>
-                        </CommandItem>
-                        <CommandItem onSelect={() => {
-                            setOpen(false)
-                            navigate('/patients')
-                        }}>
-                            <Smile className="mr-2 h-4 w-4" />
-                            <span>Search Patients</span>
-                        </CommandItem>
-                        <CommandItem onSelect={() => {
-                            setOpen(false)
-                            navigate('/billing')
-                        }}>
-                            <Calculator className="mr-2 h-4 w-4" />
-                            <span>Billing</span>
-                        </CommandItem>
-                    </CommandGroup>
-                    <CommandGroup heading="Settings">
-                        <CommandItem onSelect={() => {
-                            setOpen(false)
-                            navigate('/profile')
-                        }}>
-                            <User className="mr-2 h-4 w-4" />
-                            <span>Profile</span>
-                            <CommandShortcut>⌘P</CommandShortcut>
-                        </CommandItem>
-                        <CommandItem onSelect={() => {
-                            setOpen(false)
-                            navigate('/settings')
-                        }}>
-                            <Settings className="mr-2 h-4 w-4" />
-                            <span>Settings</span>
-                            <CommandShortcut>⌘S</CommandShortcut>
-                        </CommandItem>
-                    </CommandGroup>
-                </CommandList>
-            </CommandDialog>
         </header>
     )
 }

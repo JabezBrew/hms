@@ -114,7 +114,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
-                        status=400
+                        status=403
                     )
 
         if not facility_code and not allowed_codes:
@@ -149,7 +149,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 if not request.facility_code:
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
-                        status=400
+                        status=403
                     )
 
         return None

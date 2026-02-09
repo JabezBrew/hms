@@ -153,8 +153,12 @@ function getCsrfToken() {
 async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   const url = `${API_BASE_URL}${endpoint}`;
 
-  // Get auth token from memory
-  const token = getAccessToken();
+  // Skip token refresh for auth endpoints.
+  // Note: `/auth/token/refresh/` is intentionally excluded from AUTH_ENDPOINTS.
+  const isAuthEndpoint = AUTH_ENDPOINTS.some(authPath => endpoint.includes(authPath));
+
+  // Get auth token from memory. This is in-memory only, so it can be null after reload.
+  let token = getAccessToken();
 
   const { parseAs, ...fetchOptions } = options;
 
@@ -176,6 +180,19 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   const facilityCode = getFacilityCode();
   if (facilityCode && !headers['X-Facility-Code']) {
     headers['X-Facility-Code'] = facilityCode;
+  }
+
+  // If we are about to make a write request and don't have an access token yet,
+  // refresh it first so we authenticate via JWT (not session cookies + CSRF).
+  const method = (options.method || 'GET').toUpperCase();
+  const isWriteMethod = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  if (!token && isWriteMethod && !isAuthEndpoint && endpoint !== '/auth/token/refresh/') {
+    token = await performTokenRefresh();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      throw new ApiError('Authentication required', 401);
+    }
   }
 
   // Add CSRF token for non-GET requests
@@ -249,8 +266,6 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
       }
 
       // Skip token refresh for auth endpoints
-      const isAuthEndpoint = AUTH_ENDPOINTS.some(authPath => endpoint.includes(authPath));
-
       // If unauthorized and we haven't retried yet, try to refresh the token
       if (response.status === 401 && retryWithRefresh && !isAuthEndpoint) {
         // Don't attempt to refresh for the refresh endpoint itself

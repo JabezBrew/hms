@@ -28,12 +28,13 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source='patient.user.get_full_name', read_only=True)
     practitioner_name = serializers.CharField(source='practitioner.staff.user.get_full_name', read_only=True)
     clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+    appointment_type_name = serializers.CharField(source='appointment_type.name', read_only=True)
 
     class Meta:
         model = Appointment
         fields = [
             'id', 'patient', 'patient_name', 'practitioner', 'practitioner_name',
-            'clinic', 'clinic_name', 'appointment_type', 'status',
+            'clinic', 'clinic_name', 'appointment_type', 'appointment_type_name', 'status',
             'start_time', 'end_time', 'source'
         ]
 
@@ -43,6 +44,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     patient_details = PatientProfileSerializer(source='patient', read_only=True)
     practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
     clinic_name = serializers.CharField(source='clinic.name', read_only=True)
+    appointment_type_name = serializers.CharField(source='appointment_type.name', read_only=True)
 
     class Meta:
         model = Appointment
