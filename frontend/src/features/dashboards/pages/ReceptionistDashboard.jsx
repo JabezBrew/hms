@@ -18,8 +18,11 @@ import {
   DashboardSection,
   DashboardGrid,
 } from '@/components/dashboard';
-import { useReceptionistDashboard } from '@/features/dashboards/hooks';
-import { useDashboardActions } from '@/features/dashboards/hooks';
+import {
+  useDashboardActions,
+  useReceptionDashboardLiveUpdates,
+  useReceptionistDashboard,
+} from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -33,15 +36,18 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function ReceptionistDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useReceptionDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+  });
 
-  // Fetch dashboard data with polling
+  // Fetch dashboard data with websocket-triggered refresh, polling fallback.
   const {
     data: dashboardData,
     isLoading,
     error,
     refetch,
     isFetching,
-  } = useReceptionistDashboard({ refetchInterval: 30000 });
+  } = useReceptionistDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
 
   // Action handlers
   const { checkInPatient, scheduleAppointment } = useDashboardActions();

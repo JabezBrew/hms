@@ -17,8 +17,11 @@ import {
   DashboardGrid,
 } from '@/components/dashboard';
 import { WorkflowLauncher } from '@/components/workflow';
-import { useNurseDashboard } from '@/features/dashboards/hooks';
-import { useDashboardActions } from '@/features/dashboards/hooks';
+import {
+  useDashboardActions,
+  useNurseDashboard,
+  useNurseDashboardLiveUpdates,
+} from '@/features/dashboards/hooks';
 import {
   Select,
   SelectContent,
@@ -46,17 +49,20 @@ export default function NurseDashboard() {
   const { data: wardsData } = useWards();
   const wards = wardsData || [];
 
-  // Fetch dashboard data with polling
+  const wardFilters = selectedWard && selectedWard !== 'all' ? { ward: selectedWard } : {};
+  const { isConnected: isLiveConnected } = useNurseDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+    wardScope: selectedWard,
+  });
+
+  // Fetch dashboard data with websocket-triggered refresh, polling fallback.
   const {
     data: dashboardData,
     isLoading,
     error,
     refetch,
     isFetching,
-  } = useNurseDashboard(
-    selectedWard && selectedWard !== 'all' ? { ward: selectedWard } : {},
-    { refetchInterval: 30000 }
-  );
+  } = useNurseDashboard(wardFilters, { refetchInterval: isLiveConnected ? false : 30000 });
 
   // Action handlers
   const {

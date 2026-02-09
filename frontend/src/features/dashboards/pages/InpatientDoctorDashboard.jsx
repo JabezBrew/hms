@@ -21,7 +21,10 @@ import {
   DashboardGrid,
 } from '@/components/dashboard';
 import { WorkflowLauncher } from '@/components/workflow';
-import { useInpatientDashboard } from '@/features/dashboards/hooks';
+import {
+  useInpatientDashboard,
+  useInpatientDashboardLiveUpdates,
+} from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -36,15 +39,18 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useInpatientDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+  });
 
-  // Fetch dashboard data with polling
+  // Fetch dashboard data with websocket-triggered refresh, polling fallback.
   const {
     data: dashboardData,
     isLoading,
     error,
     refetch,
     isFetching,
-  } = useInpatientDashboard({ refetchInterval: 30000 });
+  } = useInpatientDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
 
   if (!facilityCode) {
     return (

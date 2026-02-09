@@ -18,7 +18,12 @@ from apps.dashboards.tasks import (
     refresh_doctor_dashboard_appointments,
 )
 from .appointment_cache import extract_patient_fhir_id
-from .realtime import admin_dashboard_projection_cache_key
+from .realtime import (
+    admin_dashboard_projection_cache_key,
+    inpatient_dashboard_projection_cache_key,
+    nurse_dashboard_projection_cache_key,
+    reception_dashboard_projection_cache_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,13 +235,15 @@ def get_nurse_dashboard_data(user, request):
     nurse_profile = getattr(user, 'practitionerprofile', None)
     assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
 
-    cache_key = facility_cache_key_for_code(
-        facility.code,
-        f"nurse_dashboard_{assigned_ward or 'all'}_u{user.id}"
-    )
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    ward_scope = str(assigned_ward) if assigned_ward else "all"
+    projection_cache_key = nurse_dashboard_projection_cache_key(facility.code, ward_scope)
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return {
+            'role': 'nurse',
+            'user_name': user.get_full_name(),
+            **cached_projection,
+        }
 
     # Build admission filter
     admission_filter = {'status': 'admitted', 'facility': facility}
@@ -350,9 +357,7 @@ def get_nurse_dashboard_data(user, request):
             'scheduled_time': task.scheduled_time.isoformat(),
         })
 
-    data = {
-        'role': 'nurse',
-        'user_name': user.get_full_name(),
+    projection = {
         'assigned_ward': str(assigned_ward) if assigned_ward else None,
         'urgent': {
             'critical_alerts': alerts_data,
@@ -363,8 +368,13 @@ def get_nurse_dashboard_data(user, request):
         'medications_schedule': meds_due_data,
         'tasks': tasks_data,
     }
-    cache.set(cache_key, data, timeout=30)
-    return data
+    # Avoid keeping async-refresh stale snapshots warm for too long.
+    cache.set(projection_cache_key, projection, timeout=300 if not is_stale else 15)
+    return {
+        'role': 'nurse',
+        'user_name': user.get_full_name(),
+        **projection,
+    }
 
 
 def get_receptionist_dashboard_data(user, request):
@@ -389,6 +399,15 @@ def get_receptionist_dashboard_data(user, request):
             'check_in_queue': [],
             'schedule': {'scheduled': [], 'in_progress': []},
             'stats': {'total_today': 0, 'waiting': 0, 'scheduled': 0, 'in_progress': 0},
+        }
+
+    projection_cache_key = reception_dashboard_projection_cache_key(facility.code)
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return {
+            'role': 'receptionist',
+            'user_name': user.get_full_name(),
+            **cached_projection,
         }
 
     today = timezone.now().date()
@@ -416,9 +435,7 @@ def get_receptionist_dashboard_data(user, request):
     # Sort scheduled by appointment time
     scheduled.sort(key=lambda x: x.get('start_time', ''))
 
-    return {
-        'role': 'receptionist',
-        'user_name': user.get_full_name(),
+    projection = {
         'date': today.isoformat(),
         'check_in_queue': check_in_queue,
         'schedule': {
@@ -432,6 +449,12 @@ def get_receptionist_dashboard_data(user, request):
             'in_progress': len(in_progress),
         },
         'appointments_stale': bool(is_stale),
+    }
+    cache.set(projection_cache_key, projection, timeout=300)
+    return {
+        'role': 'receptionist',
+        'user_name': user.get_full_name(),
+        **projection,
     }
 
 
@@ -605,13 +628,17 @@ def inpatient_dashboard(request):
             'user_name': user.get_full_name(),
         })
 
-    cache_key = facility_cache_key_for_code(
+    projection_cache_key = inpatient_dashboard_projection_cache_key(
         facility.code,
-        f"inpatient_dashboard_{practitioner.id}_u{user.id}"
+        str(practitioner.id),
     )
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return Response(cached)
+    cached_projection = cache.get(projection_cache_key)
+    if cached_projection is not None:
+        return Response({
+            'role': 'inpatient_doctor',
+            'user_name': user.get_full_name(),
+            **cached_projection,
+        })
 
     # New admissions (last 24 hours)
     new_admissions = Admission.objects.filter(
@@ -679,9 +706,7 @@ def inpatient_dashboard(request):
             'expected_discharge_date': admission.expected_discharge_date.isoformat() if admission.expected_discharge_date else None,
         })
 
-    data = {
-        'role': 'inpatient_doctor',
-        'user_name': user.get_full_name(),
+    projection = {
         'new_admissions': new_admissions_data,
         'my_patients': my_patients_data,
         'planned_discharges': discharges_data,
@@ -690,8 +715,12 @@ def inpatient_dashboard(request):
             'results_to_review': [],  # Future: integrate with lab results
         },
     }
-    cache.set(cache_key, data, timeout=30)
-    return Response(data)
+    cache.set(projection_cache_key, projection, timeout=300)
+    return Response({
+        'role': 'inpatient_doctor',
+        'user_name': user.get_full_name(),
+        **projection,
+    })
 
 
 @api_view(['GET'])
