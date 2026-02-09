@@ -1407,7 +1407,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             practitioner_ids.update(team_practitioner_ids)
         return practitioner_ids
 
-    def _validate_entry_against_recurring_schedules(
+    def _build_recurring_conflict_map(
         self,
         practitioner_ids,
         entry_date,
@@ -1416,7 +1416,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         end_time=None,
     ):
         if not practitioner_ids or not duty_type or duty_type.category != 'clinic':
-            return
+            return {}
 
         from apps.appointments.models import RecurringSchedule
 
@@ -1427,34 +1427,65 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             days_of_week__contains=[entry_date.weekday()],
         ).filter(
             Q(active_to__isnull=True) | Q(active_to__gte=entry_date)
-        )
-
-        if duty_type.is_24_hour:
-            conflict = recurring_qs.select_related('practitioner__staff__user').first()
-            if conflict:
-                practitioner_name = conflict.practitioner.staff.user.get_full_name()
-                raise ValidationError(
-                    f"Roster entry conflicts with recurring schedule '{conflict.name}' for {practitioner_name}."
-                )
-            return
+        ).select_related('practitioner__staff__user')
 
         effective_start = start_time or duty_type.start_time
         effective_end = end_time or duty_type.end_time
-        if not effective_start or not effective_end:
+        if duty_type.is_24_hour:
+            conflicts = recurring_qs
+        elif not effective_start or not effective_end:
+            return {}
+        else:
+            conflicts = recurring_qs.filter(
+                start_time__lt=effective_end,
+                end_time__gt=effective_start,
+            )
+
+        conflict_map = {}
+        for conflict in conflicts:
+            conflict_map.setdefault(conflict.practitioner_id, conflict)
+        return conflict_map
+
+    def _validate_entry_against_recurring_schedules(
+        self,
+        team,
+        practitioner,
+        entry_date,
+        duty_type,
+        start_time=None,
+        end_time=None,
+    ):
+        practitioner_ids = self._resolve_entry_practitioner_ids(team, practitioner, entry_date)
+        conflict_map = self._build_recurring_conflict_map(
+            practitioner_ids=practitioner_ids,
+            entry_date=entry_date,
+            duty_type=duty_type,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if not conflict_map:
             return
 
-        conflict = recurring_qs.filter(
-            start_time__lt=effective_end,
-            end_time__gt=effective_start,
-        ).select_related('practitioner__staff__user').first()
-
-        if conflict:
+        if practitioner:
+            conflict = conflict_map.get(practitioner.id)
+            if not conflict:
+                return
             practitioner_name = conflict.practitioner.staff.user.get_full_name()
             raise ValidationError(
                 f"Roster entry conflicts with recurring schedule '{conflict.name}' for "
                 f"{practitioner_name} ({conflict.start_time.strftime('%H:%M')}-"
                 f"{conflict.end_time.strftime('%H:%M')})."
             )
+
+        if team:
+            assigned_ids = set(practitioner_ids)
+            conflicting_ids = set(conflict_map.keys())
+            if assigned_ids and assigned_ids.issubset(conflicting_ids):
+                sample_conflict = next(iter(conflict_map.values()))
+                raise ValidationError(
+                    "Roster team entry conflicts with recurring schedules for all assigned "
+                    f"practitioners (for example: {sample_conflict.name})."
+                )
 
     def perform_create(self, serializer):
         department = self._require_department()
@@ -1482,9 +1513,9 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
         if duty_type and entry_date:
-            practitioner_ids = self._resolve_entry_practitioner_ids(team, serializer.validated_data.get('practitioner'), entry_date)
             self._validate_entry_against_recurring_schedules(
-                practitioner_ids=practitioner_ids,
+                team=team,
+                practitioner=serializer.validated_data.get('practitioner'),
                 entry_date=entry_date,
                 duty_type=duty_type,
                 start_time=serializer.validated_data.get('start_time'),
@@ -1534,9 +1565,9 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
         if duty_type and entry_date:
-            practitioner_ids = self._resolve_entry_practitioner_ids(team, practitioner, entry_date)
             self._validate_entry_against_recurring_schedules(
-                practitioner_ids=practitioner_ids,
+                team=team,
+                practitioner=practitioner,
                 entry_date=entry_date,
                 duty_type=duty_type,
                 start_time=serializer.validated_data.get('start_time', instance.start_time),
@@ -1691,13 +1722,9 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 if back_to_back_error:
                     raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
-            practitioner_ids_for_entry = self._resolve_entry_practitioner_ids(
+            self._validate_entry_against_recurring_schedules(
                 team=team,
                 practitioner=practitioner,
-                entry_date=entry['date'],
-            )
-            self._validate_entry_against_recurring_schedules(
-                practitioner_ids=practitioner_ids_for_entry,
                 entry_date=entry['date'],
                 duty_type=duty_type,
                 start_time=entry.get('start_time'),

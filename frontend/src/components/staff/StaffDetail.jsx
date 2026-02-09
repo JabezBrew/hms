@@ -22,8 +22,7 @@ import GraduationCap from 'lucide-react/dist/esm/icons/graduation-cap.js';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import History from 'lucide-react/dist/esm/icons/history.js';
-import Plus from 'lucide-react/dist/esm/icons/plus.js';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -31,12 +30,10 @@ import * as z from 'zod';
 import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
 import { useUpdateStaff, staffKeys } from '@/features/staff/hooks';
-import { useAppointments } from '@/features/appointments/hooks/useAppointmentQueries';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 import { toast } from 'sonner';
 import {
   Form,
@@ -129,44 +126,10 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
     }
   }, [staff, practitioner, form]);
 
-  const userType = staff?.user_details?.user_type || '';
-  const isDoctorProfile = userType === 'doctor' && Boolean(practitioner?.id);
-
-  const {
-    data: appointmentsData,
-    isLoading: isAppointmentsLoading,
-    isError: isAppointmentsError,
-    error: appointmentsError,
-  } = useAppointments(
-    { practitioner: practitioner?.id, ordering: 'start_time' },
-    { enabled: !isEditing && isDoctorProfile }
-  );
-
-  const upcomingAppointments = useMemo(() => {
-    const now = new Date();
-    const raw = Array.isArray(appointmentsData)
-      ? appointmentsData
-      : (appointmentsData?.results || []);
-
-    return raw
-      .filter((appointment) => {
-        const end = appointment?.end_time ? new Date(appointment.end_time) : null;
-        const start = appointment?.start_time ? new Date(appointment.start_time) : null;
-        return (end || start) && (end || start) >= now;
-      })
-      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
-      .slice(0, 6);
-  }, [appointmentsData]);
-
-  useEffect(() => {
-    if (isAppointmentsError) {
-      toast.error(appointmentsError?.message || 'Failed to load doctor appointments');
-    }
-  }, [isAppointmentsError, appointmentsError]);
-
   if (!staff) return null;
 
   // Data extraction
+  const userType = staff.user_details?.user_type || '';
   const firstName = staff.user_details?.first_name || '';
   const lastName = staff.user_details?.last_name || '';
   const fullName = `${firstName} ${lastName}`.trim() || 'Unknown Staff';
@@ -302,14 +265,6 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
       return;
     }
     navigate('/practitioner-availability');
-  };
-
-  const handleBookAppointment = () => {
-    if (!practitioner?.id) {
-      toast.error('Doctor profile is missing a practitioner ID');
-      return;
-    }
-    navigate(`/appointments/create?practitioner=${practitioner.id}`);
   };
 
   const headerDescription = (
@@ -565,63 +520,6 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                     </p>
                   </div>
                 )}
-              </div>
-            </section>
-          )}
-
-          {!isEditing && isDoctorProfile && (
-            <section>
-              <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-muted-foreground" />
-                Availability & Booking
-              </h2>
-              <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border space-y-6">
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={handleBookAppointment}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Book Appointment
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleManageSchedule}>
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Manage Availability
-                  </Button>
-                </div>
-
-                <DoctorAvailabilityCalendar practitionerId={practitioner.id} useRoster={false} />
-
-                <div className="space-y-3">
-                  <h3 className="font-heading text-sm font-semibold">Upcoming Appointments</h3>
-                  {isAppointmentsLoading ? (
-                    <p className="text-xs text-muted-foreground">Loading appointments...</p>
-                  ) : upcomingAppointments.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No upcoming appointments for this doctor.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {upcomingAppointments.map((appointment) => (
-                        <button
-                          key={appointment.id}
-                          type="button"
-                          className="w-full text-left rounded-lg border border-border/60 bg-background px-3 py-2 hover:border-border transition-colors"
-                          onClick={() => navigate(`/appointments/${appointment.id}`)}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-foreground">
-                              {appointment.patient_name || 'Unknown Patient'}
-                            </p>
-                            <span className="font-mono text-[11px] text-muted-foreground">
-                              {appointment.start_time
-                                ? format(new Date(appointment.start_time), 'MMM d, yyyy p')
-                                : 'No start time'}
-                            </span>
-                          </div>
-                          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mt-1">
-                            {appointment.status || 'booked'}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             </section>
           )}
