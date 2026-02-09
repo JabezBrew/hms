@@ -12,7 +12,36 @@
  *   ws.connect();
  */
 
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8001';
+function resolveWebSocketBaseUrl() {
+  const explicit = import.meta.env.VITE_WS_URL;
+  if (explicit) {
+    return String(explicit).replace(/\/$/, '');
+  }
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
+  if (apiBase && /^https?:\/\//i.test(apiBase)) {
+    try {
+      const parsed = new URL(apiBase);
+      parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Common API base is .../api; WS routes are mounted at /ws.
+      parsed.pathname = parsed.pathname.replace(/\/api\/?$/i, '');
+      return parsed.toString().replace(/\/$/, '');
+    } catch {
+      // Fall through to environment defaults.
+    }
+  }
+
+  // Local development backend default (Django dev server).
+  if (import.meta.env.DEV) {
+    return 'ws://localhost:8000';
+  }
+
+  // Production fallback: same host as frontend.
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${window.location.host}`;
+}
+
+const WS_BASE_URL = resolveWebSocketBaseUrl();
 
 // Reconnection settings
 const INITIAL_RECONNECT_DELAY = 1000; // 1 second
