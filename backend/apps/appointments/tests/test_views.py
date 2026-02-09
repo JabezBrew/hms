@@ -757,6 +757,71 @@ class TestAppointmentViewSet:
         assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
         assert response.data.get('total', 0) > 0
 
+    def test_available_slots_can_force_practitioner_schedule_only(self, admin_client, default_facility, db):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+            assignment_timing=Clinic.AssignmentTiming.BOOKING,
+        )
+        practitioner = PractitionerProfileFactory()
+
+        tomorrow = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+
+        RecurringScheduleFactory(
+            practitioner=practitioner,
+            facility=default_facility,
+            days_of_week=[tomorrow.weekday()],
+            start_time=time(14, 0),
+            end_time=time(15, 0),
+            slot_duration=30,
+            active_from=tomorrow - timedelta(days=1),
+            migrated_to_roster=False,
+        )
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Morning Roster Duty',
+            code='ROSTER-AM',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            source='manual',
+            status='published',
+        )
+
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'practitioner_id': str(practitioner.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': 'free',
+                'use_roster': 'false',
+            }
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        slots = response.data.get('slots') or []
+        assert slots
+        assert all(slot.get('source') == 'recurring_schedule' for slot in slots)
+        slot_hours = {datetime.datetime.fromisoformat(slot['start']).hour for slot in slots}
+        assert slot_hours == {14}
+
     def test_pool_clinic_bookings_decrement_capacity_even_when_unassigned(self, admin_client, default_facility, db):
         """
         Pool bookings often have practitioner=NULL until check-in. Availability must still

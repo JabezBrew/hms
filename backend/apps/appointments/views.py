@@ -61,6 +61,21 @@ def _flatten_error_messages(detail):
     return messages
 
 
+def _parse_optional_bool_param(raw_value, param_name):
+    """Parse optional boolean query params and return None when omitted."""
+    if raw_value is None:
+        return None
+
+    value = str(raw_value).strip().lower()
+    if value in {'1', 'true', 'yes', 'on'}:
+        return True
+    if value in {'0', 'false', 'no', 'off'}:
+        return False
+    raise ValueError(
+        f"Invalid value for '{param_name}'. Use true/false."
+    )
+
+
 class WalkInCheckInSerializer(serializers.Serializer):
     """
     Front-desk walk-in check-in to an active roster-backed clinic session.
@@ -620,6 +635,7 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         appointment_type_id = request.query_params.get('appointment_type_id')
+        use_roster_raw = request.query_params.get('use_roster')
 
         if not all([start_date, end_date]) or (not practitioner_id and not clinic_id):
             return Response(
@@ -628,6 +644,14 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             )
 
         try:
+            try:
+                use_roster = _parse_optional_bool_param(use_roster_raw, 'use_roster')
+            except ValueError as exc:
+                return Response(
+                    {"error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             facility = get_user_facility(request)
             practitioners = []
             mode = None
@@ -662,6 +686,7 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                     end_date=end_date,
                     appointment_type_id=appointment_type_id,
                     facility=facility,
+                    use_roster=use_roster,
                 )
 
             status_filter = request.query_params.get('status')

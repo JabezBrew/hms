@@ -41,6 +41,7 @@ import {
 const DoctorAvailabilityCalendar = ({
   clinicId,
   practitionerId,
+  useRoster,
   onSlotSelect,
 }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -62,12 +63,15 @@ const DoctorAvailabilityCalendar = ({
 
     if (hasPractitioner) {
       params.practitioner_id = practitionerId;
+      if (typeof useRoster === 'boolean') {
+        params.use_roster = useRoster ? 'true' : 'false';
+      }
     } else if (hasClinic) {
       params.clinic_id = clinicId;
     }
 
     return params;
-  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId]);
+  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId, useRoster]);
 
   // Fetch slots with server-side filtering by practitioner or clinic
   const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams, {

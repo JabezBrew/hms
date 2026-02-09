@@ -385,6 +385,7 @@ const PractitionerAvailabilityPage = () => {
               ) : (
                 <DoctorAvailabilityCalendar
                   practitionerId={selectedPractitioner}
+                  useRoster={false}
                   onSlotSelect={(slot) => {
                     toast.info(`Selected: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
                   }}
