@@ -51,6 +51,7 @@ import {
   useDeleteBlockedTime
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import { useSearchPractitioners } from '@/features/encounters/hooks/useEncounterQueries';
+import { usePractitioner } from '@/features/staff/hooks';
 import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
 import BlockedTimeForm from '@/components/appointments/BlockedTimeForm';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
@@ -74,6 +75,9 @@ const PractitionerAvailabilityPage = () => {
   const { user } = useAuth();
   const userRole = user?.role;
   const isDoctor = userRole === 'doctor';
+  const practitionerFromState = location.state?.practitionerId
+    ? String(location.state.practitionerId)
+    : null;
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const practitionerFromQuery = useMemo(() => {
     return queryParams.get('practitioner');
@@ -91,11 +95,14 @@ const PractitionerAvailabilityPage = () => {
     if (isDoctor && user?.practitionerId) {
       return String(user.practitionerId);
     }
+    if (practitionerFromState) {
+      return practitionerFromState;
+    }
     if (practitionerFromQuery) {
       return String(practitionerFromQuery);
     }
     return null;
-  }, [isDoctor, practitionerFromQuery, user?.practitionerId]);
+  }, [isDoctor, practitionerFromQuery, practitionerFromState, user?.practitionerId]);
 
   // Keep selection synchronized when arriving via redirect query params.
   const [selectedPractitioner, setSelectedPractitioner] = useState(desiredSelectedPractitioner);
@@ -156,6 +163,26 @@ const PractitionerAvailabilityPage = () => {
     setPractitionerSearchTerm(value);
   };
 
+  const { data: selectedPractitionerDetails } = usePractitioner(selectedPractitioner);
+
+  const selectedPractitionerLabel = useMemo(() => {
+    if (!selectedPractitionerDetails) return null;
+
+    if (selectedPractitionerDetails?.name) {
+      return selectedPractitionerDetails.name;
+    }
+
+    const userDetails = selectedPractitionerDetails?.staff_details?.user_details
+      || selectedPractitionerDetails?.staff?.user_details
+      || selectedPractitionerDetails?.staff?.user
+      || selectedPractitionerDetails?.user;
+
+    const first = userDetails?.first_name || '';
+    const last = userDetails?.last_name || '';
+    const full = `${first} ${last}`.trim();
+    return full || null;
+  }, [selectedPractitionerDetails]);
+
   // Format practitioner options
   const practitionerOptions = useMemo(() => {
     if (!Array.isArray(practitioners)) return [];
@@ -203,12 +230,12 @@ const PractitionerAvailabilityPage = () => {
 
     return [
       {
-        label: `Practitioner ${String(selectedPractitioner).slice(0, 8)}`,
+        label: selectedPractitionerLabel || 'Selected practitioner',
         value: String(selectedPractitioner),
       },
       ...options,
     ];
-  }, [practitioners, selectedPractitioner]);
+  }, [practitioners, selectedPractitioner, selectedPractitionerLabel]);
 
   // Mutations
   const deleteRecurringMutation = useDeleteRecurringSchedule();

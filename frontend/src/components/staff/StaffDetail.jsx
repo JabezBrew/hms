@@ -261,8 +261,9 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
 
   const handleManageSchedule = () => {
     if (practitioner?.id) {
-      const params = new URLSearchParams({ practitioner: String(practitioner.id) });
-      navigate(`/practitioner-availability?${params.toString()}`);
+      navigate('/practitioner-availability', {
+        state: { practitionerId: String(practitioner.id) },
+      });
       return;
     }
     navigate('/practitioner-availability');
