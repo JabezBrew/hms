@@ -37,6 +37,14 @@ def test_admin_v2_summary_shape_is_compact(admin_client):
 
 
 @pytest.mark.django_db
+def test_admin_v2_summary_query_budget(admin_client, django_assert_max_num_queries):
+    # Keep root payload query cost bounded to avoid regressions in the summary path.
+    with django_assert_max_num_queries(16):
+        response = admin_client.get('/api/dashboards/admin-v2/?window=today')
+    assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
 def test_admin_v2_expand_returns_requested_sections_only(admin_client):
     response = admin_client.get('/api/dashboards/admin-v2/?window=today&expand=capacity,actions')
 
