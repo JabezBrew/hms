@@ -753,6 +753,39 @@ class ClinicBookingService:
     ACTIVE_BOOKING_STATUSES = ['booked', 'arrived', 'fulfilled']
 
     @staticmethod
+    def _add_minutes_to_time(base_time, minutes):
+        """Add minutes to a time object."""
+        from datetime import datetime, timedelta, date
+        dummy_date = date.today()
+        dt = datetime.combine(dummy_date, base_time)
+        dt += timedelta(minutes=minutes)
+        return dt.time()
+
+    @staticmethod
+    def _times_overlap(start1, end1, start2, end2):
+        """Check if two time ranges overlap."""
+        return start1 < end2 and end1 > start2
+
+    @staticmethod
+    def _is_in_break(slot_start, slot_end, breaks):
+        """Check if a slot overlaps with any break period."""
+        from datetime import datetime
+        for break_period in breaks or []:
+            break_start = datetime.strptime(break_period['start'], '%H:%M').time()
+            break_end = datetime.strptime(break_period['end'], '%H:%M').time()
+            if ClinicBookingService._times_overlap(slot_start, slot_end, break_start, break_end):
+                return True
+        return False
+
+    @staticmethod
+    def _local_naive(dt_value):
+        """Return a naive datetime in the current timezone for stable comparisons/keys."""
+        tz = timezone.get_current_timezone()
+        if timezone.is_aware(dt_value):
+            return timezone.localtime(dt_value, tz).replace(tzinfo=None)
+        return dt_value
+
+    @staticmethod
     def _time_matches(start_time, end_time, check_time, is_24_hour=False) -> bool:
         if is_24_hour:
             return True
@@ -783,10 +816,190 @@ class ClinicBookingService:
         return matches
 
     @classmethod
+    def _pool_capacity_allowance(cls, base_capacity: int, clinic) -> int:
+        """
+        Compute additional capacity allowed via overbooking settings.
+
+        This mirrors the logic in validate_pool_booking so UI availability and server
+        acceptance stay consistent.
+        """
+        base_capacity = max(0, int(base_capacity or 0))
+        percent_allowance = (base_capacity * (clinic.overbook_percent or 0)) // 100
+        hard_cap = clinic.overbook_hard_cap or 0
+        if percent_allowance and hard_cap:
+            return min(percent_allowance, hard_cap)
+        return max(percent_allowance, hard_cap)
+
+    @classmethod
+    def _compute_pool_windows(
+        cls,
+        clinic,
+        start_date: str,
+        end_date: str,
+        facility=None,
+        exclude_appointment_id=None,
+    ) -> Dict[str, Any]:
+        """
+        Compute pool-clinic availability as window "buckets" with capacity caps.
+
+        Key behavior:
+        - Capacity is derived from roster entries (published) for the clinic duty types.
+        - Capacity does NOT require practitioner resolution. Team roster entries still
+          produce bookable capacity even when there are no staff assignments.
+        - Booked counts come from Appointment records for the clinic, regardless of
+          practitioner assignment (pool bookings are often unassigned until check-in).
+        """
+        from apps.organization.models import DepartmentDutyType, RosterEntry
+        from apps.appointments.models import Appointment
+
+        # Parse date strings.
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date() if isinstance(start_date, str) else start_date
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date() if isinstance(end_date, str) else end_date
+
+        duty_types = list(
+            DepartmentDutyType.objects.filter(
+                clinic=clinic,
+                category='clinic',
+                is_active=True,
+            ).only(
+                'id',
+                'name',
+                'code',
+                'category',
+                'is_active',
+                'is_24_hour',
+                'start_time',
+                'end_time',
+                'slot_duration_minutes',
+                'max_patients_per_slot',
+                'breaks',
+            )
+        )
+        if not duty_types:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        duty_type_by_id = {dt.id: dt for dt in duty_types}
+
+        entries = list(
+            RosterEntry.objects.filter(
+                duty_type_id__in=[dt.id for dt in duty_types],
+                date__gte=start_date_obj,
+                date__lte=end_date_obj,
+                status='published',
+            ).only(
+                'id',
+                'date',
+                'duty_type_id',
+                'start_time',
+                'end_time',
+                'team_id',
+                'practitioner_id',
+            )
+        )
+        if not entries:
+            return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': []}
+
+        # Pull all active bookings for the clinic in the date range (timezone-aware bounds).
+        tz = timezone.get_current_timezone()
+        range_start = timezone.make_aware(datetime.combine(start_date_obj, datetime.min.time()), tz)
+        range_end = timezone.make_aware(datetime.combine(end_date_obj, datetime.min.time()), tz) + timedelta(days=1)
+        bookings_qs = Appointment.objects.filter(
+            clinic=clinic,
+            status__in=cls.ACTIVE_BOOKING_STATUSES,
+            start_time__gte=range_start,
+            start_time__lt=range_end,
+        )
+        if facility is not None:
+            bookings_qs = bookings_qs.filter(facility=facility)
+        if exclude_appointment_id:
+            bookings_qs = bookings_qs.exclude(id=exclude_appointment_id)
+
+        booked_by_window: Dict[tuple, int] = {}
+        for appt in bookings_qs.only('start_time', 'end_time'):
+            start_local = cls._local_naive(appt.start_time)
+            end_local = cls._local_naive(appt.end_time)
+            booked_by_window[(start_local.isoformat(), end_local.isoformat())] = (
+                booked_by_window.get((start_local.isoformat(), end_local.isoformat()), 0) + 1
+            )
+
+        # Aggregate roster-derived windows to base capacity.
+        base_capacity_by_window: Dict[tuple, int] = {}
+        for entry in entries:
+            duty_type = duty_type_by_id.get(entry.duty_type_id)
+            if not duty_type:
+                continue
+            if not duty_type.slot_duration_minutes:
+                continue
+
+            start_time = entry.start_time or duty_type.start_time
+            end_time = entry.end_time or duty_type.end_time
+            if not start_time or not end_time:
+                continue
+
+            slot_duration = int(duty_type.slot_duration_minutes)
+            breaks = duty_type.breaks or []
+
+            # For pool clinics, interpret max_patients_per_slot as the bucket capacity per window.
+            cap_per_window = int(duty_type.max_patients_per_slot or 1)
+            cap_per_window = max(1, cap_per_window)
+
+            current_time = start_time
+            while current_time < end_time:
+                slot_end = cls._add_minutes_to_time(current_time, slot_duration)
+
+                # SAFETY: time math can wrap past midnight; this generator assumes same-day windows.
+                if slot_end <= current_time:
+                    break
+                if slot_end > end_time:
+                    break
+
+                if not cls._is_in_break(current_time, slot_end, breaks):
+                    slot_start_dt = datetime.combine(entry.date, current_time)
+                    slot_end_dt = datetime.combine(entry.date, slot_end)
+                    key = (slot_start_dt.isoformat(), slot_end_dt.isoformat())
+                    base_capacity_by_window[key] = base_capacity_by_window.get(key, 0) + cap_per_window
+
+                current_time = slot_end
+
+        # Build final slot payload with effective capacity and booked/remaining counts.
+        slots: List[Dict[str, Any]] = []
+        for (start_iso, end_iso), base_capacity in base_capacity_by_window.items():
+            allowance = cls._pool_capacity_allowance(base_capacity, clinic)
+            effective_capacity = base_capacity + allowance
+            booked = int(booked_by_window.get((start_iso, end_iso), 0) or 0)
+            remaining = max(0, effective_capacity - booked)
+            slots.append(
+                {
+                    'id': f'{start_iso}-{end_iso}',
+                    'start': start_iso,
+                    'end': end_iso,
+                    'status': 'free' if remaining > 0 else 'busy',
+                    'capacity': {
+                        'max': effective_capacity,
+                        'booked': booked,
+                        'remaining': remaining,
+                    },
+                    'computed': True,
+                    'source': 'roster',
+                }
+            )
+
+        slots.sort(key=lambda s: s['start'])
+        return {'practitioners': [], 'slots_by_practitioner': {}, 'all_slots': slots}
+
+    @classmethod
     def get_clinic_roster_slots(cls, clinic, start_date: str, end_date: str, facility=None) -> Dict[str, Any]:
         """
         Aggregate roster-derived slots for a clinic across all active clinic duty types.
         """
+        if clinic.booking_mode == clinic.BookingMode.CLINIC_POOL:
+            return cls._compute_pool_windows(
+                clinic=clinic,
+                start_date=start_date,
+                end_date=end_date,
+                facility=facility,
+            )
+
         from apps.organization.models import DepartmentDutyType
         from apps.organization.services import RosterAvailabilityService
 
@@ -844,51 +1057,28 @@ class ClinicBookingService:
             return True, None
 
         date_str = timezone.localtime(start_time).date().isoformat() if timezone.is_aware(start_time) else start_time.date().isoformat()
-        slot_payload = cls.get_clinic_roster_slots(
+        slot_payload = cls._compute_pool_windows(
             clinic=clinic,
             start_date=date_str,
             end_date=date_str,
             facility=facility,
+            exclude_appointment_id=exclude_appointment_id,
         )
 
-        matching_slots = cls._matching_slots(slot_payload['all_slots'], start_time, end_time)
-        if not matching_slots:
+        matching_windows = cls._matching_slots(slot_payload.get('all_slots') or [], start_time, end_time)
+        if not matching_windows:
             return False, 'No published roster clinic session exists for this time.'
 
-        available_slots = [slot for slot in matching_slots if slot.get('status') == 'free']
-        if available_slots:
+        window = matching_windows[0]
+        cap = window.get('capacity') or {}
+        remaining = cap.get('remaining')
+        try:
+            remaining = int(remaining)
+        except (TypeError, ValueError):
+            remaining = 0
+
+        if remaining > 0:
             return True, None
-
-        active_bookings = Appointment.objects.filter(
-            clinic=clinic,
-            status__in=cls.ACTIVE_BOOKING_STATUSES,
-            start_time__lt=end_time,
-            end_time__gt=start_time,
-        )
-        if facility is not None:
-            active_bookings = active_bookings.filter(facility=facility)
-        if exclude_appointment_id:
-            active_bookings = active_bookings.exclude(id=exclude_appointment_id)
-        active_booking_count = active_bookings.count()
-
-        base_capacity = sum(
-            0 if slot.get('status') == 'busy-unavailable' else slot.get('capacity', {}).get('max', 1)
-            for slot in matching_slots
-        )
-        if base_capacity <= 0:
-            return False, 'Clinic roster exists but no active practitioner capacity is available for this slot.'
-
-        percent_allowance = (base_capacity * (clinic.overbook_percent or 0)) // 100
-        hard_cap = clinic.overbook_hard_cap or 0
-        if percent_allowance and hard_cap:
-            overbook_allowance = min(percent_allowance, hard_cap)
-        else:
-            overbook_allowance = max(percent_allowance, hard_cap)
-
-        effective_capacity = base_capacity + overbook_allowance
-        if active_booking_count < effective_capacity:
-            return True, None
-
         return False, 'Clinic slot capacity reached for this session.'
 
     @classmethod
@@ -904,26 +1094,71 @@ class ClinicBookingService:
         if appointment.practitioner_id:
             return appointment.practitioner
 
-        date_str = timezone.localtime(appointment.start_time).date().isoformat() if timezone.is_aware(appointment.start_time) else appointment.start_time.date().isoformat()
-        slot_payload = cls.get_clinic_roster_slots(
-            clinic=clinic,
-            start_date=date_str,
-            end_date=date_str,
-            facility=appointment.facility,
+        # Try to resolve on-duty practitioners for this time window from the roster.
+        # If none exist, leave the appointment unassigned; capacity is handled at booking time.
+        from apps.organization.models import DepartmentDutyType, RosterEntry
+        from apps.organization.services import DepartmentRosterService
+        from apps.organization.models import StaffUnitAssignment
+
+        at_datetime = appointment.start_time
+        local_at = cls._local_naive(at_datetime)
+        check_date = local_at.date()
+
+        duty_type_ids = list(
+            DepartmentDutyType.objects.filter(
+                clinic=clinic,
+                category='clinic',
+                is_active=True,
+            ).values_list('id', flat=True)
+        )
+        if not duty_type_ids:
+            return None
+
+        date_candidates = [check_date, check_date - timedelta(days=1)]
+        entries = (
+            RosterEntry.objects.filter(
+                duty_type_id__in=duty_type_ids,
+                date__in=date_candidates,
+                status='published',
+            )
+            .select_related('duty_type')
+            .only('id', 'date', 'duty_type_id', 'team_id', 'practitioner_id', 'start_time', 'end_time', 'duty_type__start_time', 'duty_type__end_time', 'duty_type__is_24_hour')
         )
 
-        matching_slots = cls._matching_slots(
-            slot_payload['all_slots'],
-            appointment.start_time,
-            appointment.end_time,
-        )
-        candidate_ids = [
-            slot['practitioner_id']
-            for slot in matching_slots
-            if slot.get('status') == 'free' and slot.get('practitioner_id')
-        ]
+        candidate_ids = set()
+        team_ids = set()
+        for entry in entries:
+            duty_type = entry.duty_type
+            start_t = entry.start_time or duty_type.start_time
+            end_t = entry.end_time or duty_type.end_time
+            if not DepartmentRosterService._duty_window_contains(  # noqa: SLF001 (shared logic)
+                at_datetime=appointment.start_time,
+                entry_date=entry.date,
+                start_time=start_t,
+                end_time=end_t,
+                is_24_hour=duty_type.is_24_hour,
+            ):
+                continue
+            if entry.practitioner_id:
+                candidate_ids.add(entry.practitioner_id)
+            if entry.team_id:
+                team_ids.add(entry.team_id)
+
+        if team_ids:
+            today = timezone.localdate()
+            assignments = StaffUnitAssignment.objects.filter(
+                unit_id__in=team_ids,
+                is_active=True,
+            ).filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=today)
+            ).filter(
+                Q(effective_until__isnull=True) | Q(effective_until__gte=today)
+            ).values_list('practitioner_id', flat=True)
+            candidate_ids.update(assignments)
+
+        candidate_ids = list(candidate_ids)
         if not candidate_ids:
-            raise ValueError('No available on-duty practitioner for this clinic slot.')
+            return None
 
         tz = timezone.get_current_timezone()
         if timezone.is_aware(appointment.start_time):
@@ -962,7 +1197,7 @@ class ClinicBookingService:
                 break
 
         if selected_id is None:
-            raise ValueError('No conflict-free practitioner available for this clinic slot.')
+            return None
 
         now = timezone.now()
         appointment.practitioner_id = selected_id

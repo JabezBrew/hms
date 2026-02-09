@@ -757,6 +757,115 @@ class TestAppointmentViewSet:
         assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
         assert response.data.get('total', 0) > 0
 
+    def test_pool_clinic_bookings_decrement_capacity_even_when_unassigned(self, admin_client, default_facility, db):
+        """
+        Pool bookings often have practitioner=NULL until check-in. Availability must still
+        reflect booked capacity, and server-side validation must prevent overbooking.
+        """
+        facility = default_facility
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient1 = PatientProfileFactory(facility=facility)
+        patient2 = PatientProfileFactory(facility=facility)
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+        start_t = time(9, 0)
+        end_t = time(10, 0)
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Capacity Duty',
+            code='POOL-CAP',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=start_t,
+            end_time=end_t,
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        # Team roster (no staff assignments needed) should still create bookable capacity.
+        team_type = UnitTypeConfig.objects.create(
+            code=f"team-{facility.id}",
+            name='Team',
+            depth_level=2,
+        )
+        team_type.allowed_parent_types.add(clinic.department.unit_type)
+        team = ClinicalUnit.objects.create(
+            unit_type=team_type,
+            code='POOL-TEAM',
+            name='Pool Team',
+            parent=clinic.department,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            team=team,
+            start_time=start_t,
+            end_time=end_t,
+            source='manual',
+            status='published',
+        )
+
+        slot_start = timezone.make_aware(datetime.datetime.combine(tomorrow, start_t))
+        slot_end = timezone.make_aware(datetime.datetime.combine(tomorrow, time(9, 30)))
+
+        # First booking consumes the only capacity; practitioner remains NULL (pool clinic).
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient1.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Availability should now show this window as fully booked.
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'clinic_id': str(clinic.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': '',
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        slots = response.data.get('slots') or []
+        assert slots, "Expected pool windows to be returned"
+        first = slots[0]
+        assert first['capacity']['booked'] == 1
+        assert first['capacity']['remaining'] == 0
+
+        # Second booking should be rejected by capacity validation.
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient2.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 @pytest.mark.tier1
 class TestWalkInArrivals:
