@@ -1,85 +1,305 @@
-import Users from 'lucide-react/dist/esm/icons/users.js';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
-import Bed from 'lucide-react/dist/esm/icons/bed.js';
-import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
-import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
-import React from 'react';
+import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
 import { Layout } from '@/components/layout/layout';
-import {
-  StatCard,
-  DashboardSection,
-  DashboardGrid,
-  OccupancyTrendChart,
-} from '@/components/dashboard';
-import { useAdminDashboard, useAdminDashboardLiveUpdates } from '@/features/dashboards/hooks';
-import { useFacilities } from '@/hooks/useFacilityQueries';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
-import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import {
+  useAdminDashboardLiveUpdates,
+  useAdminDashboardV2Capacity,
+  useAdminDashboardV2Compliance,
+  useAdminDashboardV2Summary,
+  useAdminDashboardV2Workforce,
+} from '@/features/dashboards/hooks';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
+
+const WINDOW_OPTIONS = [
+  { value: 'now', label: 'Now (last 2h)' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+];
+
+const STATUS_CLASSES = {
+  normal: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
+  warning: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
+  critical: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
+};
+
+function formatTime(value) {
+  if (!value) {
+    return 'N/A';
+  }
+  try {
+    return format(new Date(value), 'MMM d, h:mm a');
+  } catch {
+    return value;
+  }
+}
+
+function formatPercent(value) {
+  const number = Number(value || 0);
+  return `${number.toFixed(1)}%`;
+}
+
+function formatRatio(filled, required) {
+  if (!required) {
+    return '0/0';
+  }
+  return `${filled}/${required}`;
+}
+
+function statusBadge(status) {
+  const label = String(status || 'normal').toUpperCase();
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide',
+        STATUS_CLASSES[status] || STATUS_CLASSES.normal,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function MetricCard({ icon: Icon, label, value, subvalue, status = 'normal' }) {
+  return (
+    <Card className="gap-3 py-4">
+      <CardContent className="px-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1">
+            <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p className="font-display text-3xl text-foreground">{value}</p>
+            {subvalue ? <p className="text-xs text-muted-foreground">{subvalue}</p> : null}
+          </div>
+          <div
+            className={cn(
+              'rounded-lg border p-2',
+              status === 'critical' && 'border-rose-500/30 bg-rose-500/10 text-rose-500',
+              status === 'warning' && 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+              status === 'normal' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+            )}
+          >
+            <Icon className="h-4 w-4" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionPanel({
+  title,
+  description,
+  summary,
+  open,
+  onToggle,
+  loading,
+  error,
+  children,
+}) {
+  return (
+    <Card className="gap-0 py-0">
+      <CardHeader className="px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="font-heading text-base">{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {statusBadge(summary?.status)}
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onToggle}>
+            {open ? (
+              <ChevronDown className="mr-1 h-4 w-4" />
+            ) : (
+              <ChevronRight className="mr-1 h-4 w-4" />
+            )}
+            {open ? 'Collapse' : 'Expand'}
+          </Button>
+        </div>
+      </CardHeader>
+      {open ? (
+        <CardContent className="space-y-4 border-t px-4 py-4">
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500">
+              {error.message || 'Failed to load section details.'}
+            </div>
+          ) : (
+            children
+          )}
+        </CardContent>
+      ) : null}
+    </Card>
+  );
+}
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const [window, setWindow] = useState('today');
+  const [expanded, setExpanded] = useState({
+    capacity: false,
+    workforce: false,
+    compliance: false,
+  });
+
+  const pageMeta = usePageMeta({
+    title: 'Admin Dashboard | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Dashboards', path: '/' },
+      { label: 'Admin', path: '/dashboards/admin' },
+    ],
+  });
+
   const { isConnected: isLiveConnected } = useAdminDashboardLiveUpdates({
     enabled: Boolean(facilityCode),
   });
 
-  // Fetch dashboard data with polling
-  const {
-    data: dashboardData,
-    isLoading,
-    error,
-    refetch,
-    isFetching,
-  } = useAdminDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
+  const summaryQuery = useAdminDashboardV2Summary(
+    { window },
+    {
+      refetchInterval: isLiveConnected ? false : 30000,
+      enabled: Boolean(facilityCode),
+    },
+  );
 
-  const {
-    data: facilities = [],
-    isLoading: facilitiesLoading,
-    error: facilitiesError,
-  } = useFacilities({ includeInactive: true });
+  const capacityQuery = useAdminDashboardV2Capacity(
+    { window },
+    {
+      enabled: Boolean(facilityCode) && expanded.capacity,
+    },
+  );
+
+  const workforceQuery = useAdminDashboardV2Workforce(
+    { window },
+    {
+      enabled: Boolean(facilityCode) && expanded.workforce,
+    },
+  );
+
+  const complianceQuery = useAdminDashboardV2Compliance(
+    { window },
+    {
+      enabled: Boolean(facilityCode) && expanded.compliance,
+    },
+  );
+
+  const dashboardData = summaryQuery.data || {};
+  const kpis = dashboardData.kpis || {};
+  const sectionSummaries = dashboardData.section_summaries || {};
+  const alerts = dashboardData.alerts_top || [];
+  const actionQueue = dashboardData.action_queue_top || [];
+  const generatedAt = dashboardData?.meta?.generated_at;
+
+  const anyFetching = summaryQuery.isFetching
+    || capacityQuery.isFetching
+    || workforceQuery.isFetching
+    || complianceQuery.isFetching;
+
+  const onRefresh = () => {
+    summaryQuery.refetch();
+    if (expanded.capacity) {
+      capacityQuery.refetch();
+    }
+    if (expanded.workforce) {
+      workforceQuery.refetch();
+    }
+    if (expanded.compliance) {
+      complianceQuery.refetch();
+    }
+  };
+
+  const metricCards = useMemo(() => {
+    const occupancy = kpis.occupancy || {};
+    const admissions = kpis.admissions_today || {};
+    const discharges = kpis.discharges_today || {};
+    const throughput = kpis.appointment_throughput || {};
+    const staffing = kpis.staffing_coverage || {};
+    const compliance = kpis.compliance_risk || {};
+
+    return [
+      {
+        label: 'Bed Occupancy',
+        value: formatPercent(occupancy.percent),
+        subvalue: `${occupancy.occupied_beds || 0}/${occupancy.total_beds || 0} occupied`,
+        icon: Bed,
+        status: Number(occupancy.percent || 0) >= 100 ? 'critical' : Number(occupancy.percent || 0) >= 85 ? 'warning' : 'normal',
+      },
+      {
+        label: 'Admissions Today',
+        value: String(admissions.count || 0),
+        subvalue: `${admissions.trend_pct || 0}% vs yesterday`,
+        icon: UserPlus,
+        status: 'normal',
+      },
+      {
+        label: 'Discharge Progress',
+        value: formatPercent(discharges.completion_rate || 0),
+        subvalue: `${discharges.completed || 0}/${discharges.planned || 0} completed`,
+        icon: ClipboardList,
+        status: Number(discharges.completion_rate || 0) < 70 ? 'warning' : 'normal',
+      },
+      {
+        label: 'Appointment Throughput',
+        value: formatPercent(throughput.completion_rate || 0),
+        subvalue: `${throughput.completed || 0}/${throughput.scheduled || 0} completed`,
+        icon: Calendar,
+        status: Number(throughput.completion_rate || 0) < 70 ? 'warning' : 'normal',
+      },
+      {
+        label: 'Staffing Coverage',
+        value: formatRatio(staffing.filled_shifts || 0, staffing.required_shifts || 0),
+        subvalue: `${staffing.critical_uncovered || 0} uncovered`,
+        icon: Users,
+        status: Number(staffing.critical_uncovered || 0) > 0 ? 'warning' : 'normal',
+      },
+      {
+        label: 'Compliance Queue',
+        value: String(compliance.total || 0),
+        subvalue: `${compliance.break_glass_pending_review || 0} break-glass, ${compliance.audit_anomalies_24h || 0} anomalies`,
+        icon: Shield,
+        status: Number(compliance.total || 0) > 0 ? 'warning' : 'normal',
+      },
+    ];
+  }, [kpis]);
 
   if (!facilityCode) {
     return (
       <Layout>
+        {pageMeta}
         <PageShell>
           <PageHeader
             title="Admin Dashboard"
-            description="System overview and facility management"
-            actions={(
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/admin/settings')}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh dashboard"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-                </Button>
-              </div>
-            )}
+            description="Operational command center for capacity, workforce, and compliance"
           />
           <div className="p-4 sm:p-6">
             <FacilityRequiredPanel />
@@ -89,40 +309,20 @@ export default function AdminDashboard() {
     );
   }
 
-  if (error) {
+  if (summaryQuery.error) {
     return (
       <Layout>
+        {pageMeta}
         <PageShell>
           <PageHeader
             title="Admin Dashboard"
-            description="System overview and facility management"
-            actions={(
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/admin/settings')}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh dashboard"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-                </Button>
-              </div>
-            )}
+            description="Operational command center for capacity, workforce, and compliance"
           />
           <PageState
             variant="error"
-            title="Failed to load dashboard"
-            description={error.message}
-            action={() => refetch()}
+            title="Failed to load admin dashboard"
+            description={summaryQuery.error.message}
+            action={() => summaryQuery.refetch()}
             fullHeight={false}
             className="min-h-0"
           />
@@ -131,442 +331,307 @@ export default function AdminDashboard() {
     );
   }
 
-  const stats = dashboardData?.stats || {};
-  const wards = dashboardData?.wards || [];
-
-  // Calculate overall system health
-  const systemHealth =
-    stats.occupancy_rate > 90
-      ? 'critical'
-      : stats.occupancy_rate > 75
-      ? 'warning'
-      : 'good';
-
   return (
     <Layout>
+      {pageMeta}
       <PageShell>
         <PageHeader
           title="Admin Dashboard"
-          description="System overview and facility management"
+          description="Operational command center for capacity, workforce, and compliance"
           actions={(
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/admin/settings')}
-              >
-                <Settings className="h-4 w-4 mr-2" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={window} onValueChange={setWindow}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Select window" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WINDOW_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => navigate('/admin/settings')}>
+                <Settings className="mr-2 h-4 w-4" />
                 Settings
               </Button>
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => refetch()}
-                disabled={isFetching}
+                onClick={onRefresh}
+                disabled={anyFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <RefreshCw className={cn('h-4 w-4', anyFetching && 'animate-spin')} />
               </Button>
             </div>
           )}
         />
 
-        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
-        {/* System Health Banner */}
-        {!isLoading && systemHealth !== 'good' && (
-          <div
-            className={cn(
-              'rounded-xl border p-4 sm:p-6',
-              systemHealth === 'critical'
-                ? 'bg-rose-500/10 border-rose-500/30'
-                : 'bg-amber-500/10 border-amber-500/30'
-            )}
-          >
-            <div className="flex items-start gap-3">
-              <AlertTriangle
-                className={cn(
-                  'h-6 w-6 mt-1',
-                  systemHealth === 'critical' ? 'text-rose-400' : 'text-amber-400'
-                )}
-                aria-hidden="true"
-              />
-              <div className="flex-1">
-                <h3
-                  className={cn(
-                    'font-heading text-lg font-semibold mb-1',
-                    systemHealth === 'critical' ? 'text-rose-400' : 'text-amber-400'
-                  )}
-                >
-                  {systemHealth === 'critical'
-                    ? 'Critical Bed Capacity'
-                    : 'High Bed Occupancy'}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Current occupancy is at {stats.occupancy_rate?.toFixed(1)}%. Consider
-                  discharge planning and capacity management.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* System Statistics */}
-        {isLoading ? (
-          <DashboardGrid columns="4">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </DashboardGrid>
-        ) : (
-          <DashboardGrid columns="4">
-            <StatCard
-              title="Total Patients"
-              value={stats.total_patients || 0}
-              subtitle="Registered in system"
-              icon={Users}
-              color="amber"
-              onClick={() => navigate('/patients')}
-            />
-            <StatCard
-              title="Bed Occupancy"
-              value={`${stats.occupancy_rate?.toFixed(0)}%`}
-              subtitle={`${stats.occupied_beds}/${stats.total_beds} beds`}
-              icon={Bed}
-              color={
-                stats.occupancy_rate > 90
-                  ? 'rose'
-                  : stats.occupancy_rate > 75
-                  ? 'amber'
-                  : 'emerald'
-              }
-              trend={{
-                value: stats.occupancy_rate > 75 ? 'High' : 'Normal',
-                direction: stats.occupancy_rate > 75 ? 'up' : 'neutral',
-              }}
-              onClick={() => navigate('/wards')}
-            />
-            <StatCard
-              title="Current Admissions"
-              value={stats.current_admissions || 0}
-              subtitle="Active inpatients"
-              icon={UserPlus}
-              color="sky"
-              onClick={() => navigate('/admissions')}
-            />
-            <StatCard
-              title="Today's Appointments"
-              value={stats.todays_appointments || 0}
-              subtitle="Scheduled consultations"
-              icon={Calendar}
-              color="emerald"
-              onClick={() => navigate('/appointments')}
-            />
-          </DashboardGrid>
-        )}
-
-        {/* Quick Actions */}
-        <DashboardSection title="Quick Actions">
-          <DashboardGrid columns="3">
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/patients/create')}
-            >
-              <UserPlus className="h-6 w-6" />
-              <span>Register Patient</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/staff/create')}
-            >
-              <Users className="h-6 w-6" />
-              <span>Add Staff</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/wards')}
-            >
-              <Building2 className="h-6 w-6" />
-              <span>Manage Wards</span>
-            </Button>
-          </DashboardGrid>
-        </DashboardSection>
-
-        {/* Facility Management */}
-        <DashboardSection
-          title="Facilities"
-          subtitle="Facility registry status and availability"
-        >
-          {facilitiesLoading ? (
-            <DashboardGrid columns="3">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </DashboardGrid>
-          ) : facilitiesError ? (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6">
-              <AlertTriangle className="h-5 w-5 text-rose-400 mb-2" aria-hidden="true" />
-              <p className="text-sm text-muted-foreground">
-                {facilitiesError.message || 'Failed to load facilities.'}
-              </p>
-            </div>
-          ) : facilities.length === 0 ? (
-            <div className="text-center py-10 rounded-xl border border-border bg-card/50">
-              <Building2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
-              <p className="text-muted-foreground">No facilities configured</p>
-            </div>
-          ) : (
-            <DashboardGrid columns="3">
-              {facilities.map((facility) => {
-                const status = facility.status || (facility.is_active ? 'ready' : 'suspended');
-                const statusTone =
-                  status === 'ready'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : status === 'running'
-                    ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-                    : status === 'pending'
-                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30';
-
-                return (
-                  <div
-                    key={facility.id}
-                    className="rounded-xl border border-border bg-card p-4 sm:p-5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-heading text-base font-semibold text-foreground">
-                          {facility.name}
-                        </h3>
-                        <p className="text-xs font-mono text-muted-foreground">
-                          {facility.code} · {facility.facility_type?.replace('_', ' ')}
-                        </p>
-                      </div>
-                      <span
-                        className={cn(
-                          'text-[10px] uppercase tracking-wide border rounded-full px-2 py-1',
-                          statusTone
-                        )}
-                      >
-                        {status}
-                      </span>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{facility.parent_facility_code ? `Parent: ${facility.parent_facility_code}` : 'Primary facility'}</span>
-                      <span className={facility.is_active ? 'text-emerald-400' : 'text-rose-400'}>
-                        {facility.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </DashboardGrid>
-          )}
-        </DashboardSection>
-
-        {/* Ward Overview with Analytics Chart */}
-        <DashboardSection
-          title="Ward Overview"
-          subtitle="Bed occupancy by ward with trend visualization"
-          actions={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/wards')}
-            >
-              View All
-            </Button>
-          }
-        >
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(4)].map((_, i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </div>
-          ) : wards.length === 0 ? (
-            <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
-              <p className="text-muted-foreground">No wards configured</p>
-            </div>
-          ) : (
-            <>
-              {/* Occupancy Trend Chart */}
-              <div className="rounded-xl border border-border bg-card p-6 mb-6">
-                <OccupancyTrendChart wards={wards} />
-              </div>
-
-              {/* Detailed Ward Cards */}
-              <div className="space-y-4">
-                {wards.map((ward) => {
-                const occupancyPercent = ward.total_beds > 0
-                  ? (ward.occupied_beds / ward.total_beds) * 100
-                  : 0;
-
-                const wardStatus =
-                  occupancyPercent >= 100
-                    ? 'critical'
-                    : occupancyPercent >= 90
-                    ? 'warning'
-                    : occupancyPercent >= 75
-                    ? 'caution'
-                    : 'good';
-
-                return (
-                  <div
-                    key={ward.id}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`View ${ward.name} ward details`}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/wards/${ward.id}`); } }}
-                    className="rounded-xl border border-border bg-card p-4 sm:p-6 hover:border-primary/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    onClick={() => navigate(`/wards/${ward.id}`)}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                          <Building2 className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-heading text-lg font-semibold text-foreground">
-                            {ward.name}
-                          </h3>
-                          {ward.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {ward.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status badge */}
-                      <span
-                        className={cn(
-                          'text-xs font-mono px-3 py-1 rounded-full shrink-0',
-                          wardStatus === 'critical' &&
-                            'bg-rose-500/10 text-rose-400 border border-rose-500/30',
-                          wardStatus === 'warning' &&
-                            'bg-amber-500/10 text-amber-400 border border-amber-500/30',
-                          wardStatus === 'caution' &&
-                            'bg-sky-500/10 text-sky-400 border border-sky-500/30',
-                          wardStatus === 'good' &&
-                            'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                        )}
-                      >
-                        {occupancyPercent.toFixed(0)}% OCCUPIED
-                      </span>
-                    </div>
-
-                    {/* Bed statistics */}
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div className="space-y-1">
-                        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
-                          Total Beds
-                        </span>
-                        <div className="font-mono text-xl font-semibold text-foreground">
-                          {ward.total_beds}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
-                          Occupied
-                        </span>
-                        <div className="font-mono text-xl font-semibold text-foreground">
-                          {ward.occupied_beds}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
-                          Available
-                        </span>
-                        <div className="font-mono text-xl font-semibold text-emerald-400">
-                          {ward.available_beds}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
-                          Maintenance
-                        </span>
-                        <div className="font-mono text-xl font-semibold text-amber-400">
-                          {ward.maintenance_beds || 0}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-                        <span>Occupancy</span>
-                        <span>
-                          {ward.occupied_beds} / {ward.total_beds}
-                        </span>
-                      </div>
-                      <Progress
-                        value={occupancyPercent}
-                        className="h-2"
-                        indicatorClassName={cn(
-                          wardStatus === 'critical' && 'bg-rose-500',
-                          wardStatus === 'warning' && 'bg-amber-500',
-                          wardStatus === 'caution' && 'bg-sky-500',
-                          wardStatus === 'good' && 'bg-emerald-500'
-                        )}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              </div>
-            </>
-          )}
-        </DashboardSection>
-
-        {/* System Activity */}
-        <DashboardSection title="System Activity" subtitle="Recent system statistics">
-          {isLoading ? (
-            <DashboardGrid columns="2">
-              {[...Array(2)].map((_, i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </DashboardGrid>
-          ) : (
-            <DashboardGrid columns="2">
-              <div className="rounded-xl border border-border bg-card p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h4 className="font-heading text-base font-semibold mb-1">
-                      Active Staff
-                    </h4>
-                    <p className="text-xs text-muted-foreground">Currently on duty</p>
-                  </div>
-                  <Activity className="h-5 w-5 text-emerald-400" />
-                </div>
-                <div className="font-display text-3xl font-semibold text-foreground">
-                  {stats.active_staff || 0}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h4 className="font-heading text-base font-semibold mb-1">
-                      System Status
-                    </h4>
-                    <p className="text-xs text-muted-foreground">Overall health</p>
-                  </div>
-                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+        <div className="space-y-6 p-4 sm:p-6">
+          <Card className="gap-3 border-primary/20 bg-gradient-to-r from-amber-500/5 to-sky-500/5 py-4">
+            <CardContent className="px-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1">
+                  <p className="font-heading text-sm text-foreground">Current operational posture</p>
+                  <p className="text-xs text-muted-foreground">
+                    {generatedAt ? `Last updated ${formatTime(generatedAt)}` : 'Awaiting initial refresh'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-heading text-lg font-semibold text-emerald-400">
-                    Operational
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide',
+                      isLiveConnected
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                        : 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+                    )}
+                  >
+                    {isLiveConnected ? 'LIVE' : 'POLLING'}
                   </span>
+                  {dashboardData?.meta?.stale ? (
+                    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono tracking-wide text-amber-500">
+                      STALE READ
+                    </span>
+                  ) : null}
                 </div>
               </div>
-            </DashboardGrid>
+            </CardContent>
+          </Card>
+
+          {summaryQuery.isLoading ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-28" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {metricCards.map((metric) => (
+                <MetricCard
+                  key={metric.label}
+                  icon={metric.icon}
+                  label={metric.label}
+                  value={metric.value}
+                  subvalue={metric.subvalue}
+                  status={metric.status}
+                />
+              ))}
+            </div>
           )}
-        </DashboardSection>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr_1fr]">
+            <Card className="gap-3 py-4">
+              <CardHeader className="px-4 py-0">
+                <CardTitle className="font-heading text-base">Top Alerts</CardTitle>
+                <CardDescription>Highest-priority issues requiring immediate attention</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 px-4">
+                {alerts.length === 0 ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+                    No critical alerts right now.
+                  </div>
+                ) : (
+                  alerts.map((alert) => (
+                    <div key={alert.id} className="rounded-lg border border-border bg-card/70 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle
+                              className={cn(
+                                'h-4 w-4',
+                                alert.severity === 'critical' ? 'text-rose-500' : 'text-amber-500',
+                              )}
+                            />
+                            <p className="text-sm font-medium text-foreground">{alert.title}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Started {formatTime(alert.started_at)}</p>
+                        </div>
+                        {alert.primary_action?.href ? (
+                          <Button variant="outline" size="sm" onClick={() => navigate(alert.primary_action.href)}>
+                            {alert.primary_action.label || 'Open'}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="gap-3 py-4">
+              <CardHeader className="px-4 py-0">
+                <CardTitle className="font-heading text-base">Action Queue</CardTitle>
+                <CardDescription>Prioritized interventions</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 px-4">
+                {actionQueue.length === 0 ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+                    No pending interventions.
+                  </div>
+                ) : (
+                  actionQueue.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => navigate(action.href)}
+                      className="flex w-full items-center justify-between rounded-lg border border-border bg-card/70 p-3 text-left transition-colors hover:bg-accent/40"
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">{action.title}</p>
+                        {statusBadge(action.severity)}
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            <SectionPanel
+              title="Capacity"
+              description="Ward occupancy, throughput, and wait-time pressure"
+              summary={sectionSummaries.capacity}
+              open={expanded.capacity}
+              onToggle={() => setExpanded((current) => ({ ...current, capacity: !current.capacity }))}
+              loading={capacityQuery.isLoading}
+              error={capacityQuery.error}
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Wait time</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    Median {capacityQuery.data?.wait_time?.median_minutes || 0} min
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    P95 {capacityQuery.data?.wait_time?.p95_minutes || 0} min
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">High occupancy wards</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {capacityQuery.data?.summary?.high_occupancy_wards || 0} of {capacityQuery.data?.summary?.ward_count || 0}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(capacityQuery.data?.wards || []).slice(0, 8).map((ward) => (
+                  <div key={ward.ward_id} className="rounded-lg border border-border p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">{ward.ward_name}</p>
+                      <p className="text-xs text-muted-foreground">{formatPercent(ward.occupancy_pct)}</p>
+                    </div>
+                    <Progress value={Number(ward.occupancy_pct || 0)} className="h-2" />
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {ward.occupied_beds}/{ward.total_beds} occupied, {ward.available_beds} available
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </SectionPanel>
+
+            <SectionPanel
+              title="Workforce"
+              description="Shift coverage gaps and immediate staffing risk"
+              summary={sectionSummaries.workforce}
+              open={expanded.workforce}
+              onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
+              loading={workforceQuery.isLoading}
+              error={workforceQuery.error}
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Coverage</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {formatRatio(
+                      workforceQuery.data?.summary?.filled_shifts || 0,
+                      workforceQuery.data?.summary?.required_shifts || 0,
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Next 2h risks</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {workforceQuery.data?.summary?.next_2h_risks || 0} uncovered starts
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(workforceQuery.data?.uncovered_shifts || []).slice(0, 8).map((shift) => (
+                  <div key={shift.shift_id} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">
+                        {shift.unit_name} - {shift.duty_type_name}
+                      </p>
+                      {statusBadge(shift.priority === 'high' ? 'warning' : 'normal')}
+                    </div>
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {shift.starts_at ? formatTime(shift.starts_at) : 'No start time'}
+                    </p>
+                  </div>
+                ))}
+                {(workforceQuery.data?.uncovered_shifts || []).length === 0 ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+                    All tracked shifts have coverage.
+                  </div>
+                ) : null}
+              </div>
+            </SectionPanel>
+
+            <SectionPanel
+              title="Compliance"
+              description="Break-glass monitoring, audit anomalies, and documentation"
+              summary={sectionSummaries.compliance}
+              open={expanded.compliance}
+              onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
+              loading={complianceQuery.isLoading}
+              error={complianceQuery.error}
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Documentation completeness</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {formatPercent(complianceQuery.data?.summary?.documentation_completeness_pct || 0)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Pending break-glass review</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {complianceQuery.data?.summary?.break_glass_pending_review || 0}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(complianceQuery.data?.break_glass_recent || []).slice(0, 8).map((event) => (
+                  <div key={event.id} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">
+                        {event.scope || 'clinical'} access override
+                      </p>
+                      <span className="text-xs text-muted-foreground">{event.requester_role}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatTime(event.created_at)}</p>
+                  </div>
+                ))}
+                {(complianceQuery.data?.audit_anomalies_breakdown || []).slice(0, 4).map((row) => (
+                  <div key={row.action} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <span className="text-sm text-foreground">{row.action}</span>
+                    <span className="text-xs text-muted-foreground">{row.count}</span>
+                  </div>
+                ))}
+                {(complianceQuery.data?.break_glass_recent || []).length === 0
+                  && (complianceQuery.data?.audit_anomalies_breakdown || []).length === 0 ? (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+                      No recent compliance events in this window.
+                    </div>
+                  ) : null}
+              </div>
+            </SectionPanel>
+          </div>
         </div>
       </PageShell>
     </Layout>

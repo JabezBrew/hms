@@ -1,5 +1,17 @@
 import { apiClient, handleApiError } from '../api-client';
 
+function buildQueryString(params = {}) {
+  const cleanParams = Object.entries(params).reduce((acc, [key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return acc;
+    }
+    acc[key] = String(value);
+    return acc;
+  }, {});
+  const queryString = new URLSearchParams(cleanParams).toString();
+  return queryString ? `?${queryString}` : '';
+}
+
 /**
  * Dashboards API service
  */
@@ -11,8 +23,7 @@ export const dashboardsApi = {
    */
   getNurseDashboard: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/dashboards/nurse/${queryString ? `?${queryString}` : ''}`;
+      const endpoint = `/dashboards/nurse/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch nurse dashboard'));
@@ -62,8 +73,7 @@ export const dashboardsApi = {
    */
   getMyWorkDashboard: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/dashboards/my-work/${queryString ? `?${queryString}` : ''}`;
+      const endpoint = `/dashboards/my-work/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch my work dashboard'));
@@ -77,11 +87,66 @@ export const dashboardsApi = {
    */
   getClinicSchedule: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/dashboards/clinic/${queryString ? `?${queryString}` : ''}`;
+      const endpoint = `/dashboards/clinic/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch clinic schedule'));
+    }
+  },
+
+  /**
+   * Get admin v2 dashboard summary payload
+   * @param {Object} params - Query parameters (window, expand)
+   * @returns {Promise<Object>} Admin dashboard v2 summary data
+   */
+  getAdminDashboardV2: async (params = {}) => {
+    try {
+      const endpoint = `/dashboards/admin-v2/${buildQueryString(params)}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch admin dashboard summary'));
+    }
+  },
+
+  /**
+   * Get admin v2 capacity section detail payload
+   * @param {Object} params - Query parameters (window)
+   * @returns {Promise<Object>} Admin dashboard v2 capacity detail
+   */
+  getAdminDashboardV2Capacity: async (params = {}) => {
+    try {
+      const endpoint = `/dashboards/admin-v2/capacity/${buildQueryString(params)}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch admin capacity details'));
+    }
+  },
+
+  /**
+   * Get admin v2 workforce section detail payload
+   * @param {Object} params - Query parameters (window)
+   * @returns {Promise<Object>} Admin dashboard v2 workforce detail
+   */
+  getAdminDashboardV2Workforce: async (params = {}) => {
+    try {
+      const endpoint = `/dashboards/admin-v2/workforce/${buildQueryString(params)}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch admin workforce details'));
+    }
+  },
+
+  /**
+   * Get admin v2 compliance section detail payload
+   * @param {Object} params - Query parameters (window)
+   * @returns {Promise<Object>} Admin dashboard v2 compliance detail
+   */
+  getAdminDashboardV2Compliance: async (params = {}) => {
+    try {
+      const endpoint = `/dashboards/admin-v2/compliance/${buildQueryString(params)}`;
+      return await apiClient.get(endpoint);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch admin compliance details'));
     }
   },
 };

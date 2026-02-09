@@ -6,6 +6,10 @@ from .views import (
     inpatient_dashboard,
     reception_dashboard,
     admin_dashboard,
+    admin_dashboard_v2,
+    admin_dashboard_v2_capacity,
+    admin_dashboard_v2_workforce,
+    admin_dashboard_v2_compliance,
     my_context_patients,
 )
 
@@ -16,5 +20,9 @@ urlpatterns = [
     path('dashboards/inpatient/', inpatient_dashboard, name='inpatient-dashboard'),
     path('dashboards/reception/', reception_dashboard, name='reception-dashboard'),
     path('dashboards/admin/', admin_dashboard, name='admin-dashboard'),
+    path('dashboards/admin-v2/', admin_dashboard_v2, name='admin-dashboard-v2'),
+    path('dashboards/admin-v2/capacity/', admin_dashboard_v2_capacity, name='admin-dashboard-v2-capacity'),
+    path('dashboards/admin-v2/workforce/', admin_dashboard_v2_workforce, name='admin-dashboard-v2-workforce'),
+    path('dashboards/admin-v2/compliance/', admin_dashboard_v2_compliance, name='admin-dashboard-v2-compliance'),
     path('dashboards/my-context-patients/', my_context_patients, name='my-context-patients'),
 ]

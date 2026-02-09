@@ -83,6 +83,30 @@ def test_invalidate_admin_dashboard_can_clear_appointments_cache(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_invalidate_admin_dashboard_clears_admin_v2_cache_buckets(monkeypatch):
+    facility_code = "ACM"
+    keys = [
+        facility_cache_key_for_code(facility_code, "admin_v2_summary_today"),
+        facility_cache_key_for_code(facility_code, "admin_v2_capacity_today"),
+        facility_cache_key_for_code(facility_code, "admin_v2_workforce_today"),
+        facility_cache_key_for_code(facility_code, "admin_v2_compliance_today"),
+    ]
+    for key in keys:
+        cache.set(key, {"ok": True}, timeout=60)
+
+    class FakeChannelLayer:
+        async def group_send(self, group, payload):
+            return None
+
+    monkeypatch.setattr("apps.dashboards.realtime.get_channel_layer", lambda: FakeChannelLayer())
+
+    invalidate_admin_dashboard(facility_code, reason="admin_v2_changed")
+
+    for key in keys:
+        assert cache.get(key) is None
+
+
+@pytest.mark.django_db
 def test_invalidate_nurse_dashboard_clears_scoped_projection_cache_and_broadcasts(monkeypatch):
     facility_code = "ACM"
     all_scope_key = nurse_dashboard_projection_cache_key(facility_code, "all")

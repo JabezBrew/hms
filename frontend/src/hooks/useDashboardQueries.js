@@ -13,12 +13,26 @@ export const dashboardKeys = {
   inpatient: () => keyWith('dashboards', 'inpatient'),
   receptionist: () => keyWith('dashboards', 'receptionist'),
   admin: () => keyWith('dashboards', 'admin'),
+  adminV2Base: () => keyWith('dashboards', 'admin-v2'),
+  adminV2Root: (filters) => keyWith('dashboards', 'admin-v2', 'root', { filters }),
+  adminV2Capacity: (filters) => keyWith('dashboards', 'admin-v2', 'capacity', { filters }),
+  adminV2Workforce: (filters) => keyWith('dashboards', 'admin-v2', 'workforce', { filters }),
+  adminV2Compliance: (filters) => keyWith('dashboards', 'admin-v2', 'compliance', { filters }),
   myWork: (filters) => keyWith('dashboards', 'my-work', { filters }),
   clinic: (filters) => keyWith('dashboards', 'clinic', { filters }),
 };
 
 // Default polling interval (30 seconds)
 const DEFAULT_REFETCH_INTERVAL = 30000;
+const DEFAULT_ADMIN_WINDOW = 'today';
+
+function normalizeAdminV2Filters(filters = {}) {
+  const window = filters?.window || DEFAULT_ADMIN_WINDOW;
+  return {
+    ...filters,
+    window,
+  };
+}
 
 /**
  * Get nurse dashboard data with real-time polling
@@ -86,6 +100,75 @@ export function useAdminDashboard(options = {}) {
     queryKey: dashboardKeys.admin(),
     queryFn: () => dashboardsApi.getAdminDashboard(),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+  });
+}
+
+/**
+ * Get admin dashboard v2 summary payload.
+ * Defaults to summary-only payload without expanded section detail.
+ */
+export function useAdminDashboardV2Summary(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
+  const normalizedFilters = normalizeAdminV2Filters(filters);
+  return useQuery({
+    queryKey: dashboardKeys.adminV2Root(normalizedFilters),
+    queryFn: () => dashboardsApi.getAdminDashboardV2(normalizedFilters),
+    refetchInterval: DEFAULT_REFETCH_INTERVAL,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+  });
+}
+
+/**
+ * Get admin dashboard v2 capacity section details.
+ */
+export function useAdminDashboardV2Capacity(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
+  const normalizedFilters = normalizeAdminV2Filters(filters);
+  return useQuery({
+    queryKey: dashboardKeys.adminV2Capacity(normalizedFilters),
+    queryFn: () => dashboardsApi.getAdminDashboardV2Capacity(normalizedFilters),
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+  });
+}
+
+/**
+ * Get admin dashboard v2 workforce section details.
+ */
+export function useAdminDashboardV2Workforce(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
+  const normalizedFilters = normalizeAdminV2Filters(filters);
+  return useQuery({
+    queryKey: dashboardKeys.adminV2Workforce(normalizedFilters),
+    queryFn: () => dashboardsApi.getAdminDashboardV2Workforce(normalizedFilters),
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(facilityCode),
+  });
+}
+
+/**
+ * Get admin dashboard v2 compliance section details.
+ */
+export function useAdminDashboardV2Compliance(filters = {}, options = {}) {
+  const { facilityCode } = useAuth();
+  const normalizedFilters = normalizeAdminV2Filters(filters);
+  return useQuery({
+    queryKey: dashboardKeys.adminV2Compliance(normalizedFilters),
+    queryFn: () => dashboardsApi.getAdminDashboardV2Compliance(normalizedFilters),
+    refetchInterval: false,
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,

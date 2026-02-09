@@ -8,6 +8,10 @@ function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
 }
 
+function resolveRole(user) {
+  return (user?.role || user?.user_type || '').toLowerCase();
+}
+
 export function useAdminDashboardLiveUpdates(options = {}) {
   const { enabled = true } = options;
   const queryClient = useQueryClient();
@@ -18,7 +22,7 @@ export function useAdminDashboardLiveUpdates(options = {}) {
   const [connectionError, setConnectionError] = useState(null);
   const [wsToken, setWsToken] = useState(null);
 
-  const shouldConnect = enabled && isAuthenticated && user?.role === 'admin' && Boolean(facilityCode);
+  const shouldConnect = enabled && isAuthenticated && resolveRole(user) === 'admin' && Boolean(facilityCode);
 
   useEffect(() => {
     let isMounted = true;
@@ -100,6 +104,7 @@ export function useAdminDashboardLiveUpdates(options = {}) {
         return;
       }
       queryClient.invalidateQueries({ queryKey: dashboardKeys.admin() });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.adminV2Base() });
     });
 
     ws.connect();

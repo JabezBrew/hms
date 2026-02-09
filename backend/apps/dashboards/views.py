@@ -1,22 +1,32 @@
+from datetime import datetime, timedelta
+import logging
+import math
+import statistics
+
+from django.core.cache import cache
+from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models.functions import TruncHour
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.utils import timezone
-from datetime import timedelta, datetime
-import logging
 
-from django.core.cache import cache
-
-from apps.wards.models import Admission, Ward, Bed
-from apps.nursing.models import NursingAlert, MedicationAdministration, NursingTask
-from apps.users.models import PatientProfile, PractitionerProfile
-from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.appointments.models import Appointment
+from apps.audit.models import AuditAction, AuditLog
+from apps.clinical_notes.models import NoteEntry
 from apps.core.cache_utils import facility_cache_key_for_code
+from apps.core.models import BreakGlassEvent
+from apps.core.security import FacilityScopedPermission, get_user_facility
 from apps.dashboards.tasks import (
     refresh_admin_dashboard_appointments,
-    refresh_facility_dashboard_appointments,
     refresh_doctor_dashboard_appointments,
+    refresh_facility_dashboard_appointments,
 )
+from apps.encounters.models import Encounter
+from apps.nursing.models import MedicationAdministration, NursingAlert, NursingTask
+from apps.organization.models import DepartmentDutyType, RosterEntry
+from apps.users.models import PatientProfile, PractitionerProfile
+from apps.wards.models import Admission, Bed, Ward
 from .appointment_cache import extract_patient_fhir_id
 from .realtime import (
     admin_dashboard_projection_cache_key,
@@ -28,6 +38,10 @@ from .realtime import (
 )
 
 logger = logging.getLogger(__name__)
+
+ADMIN_DASHBOARD_V2_ALLOWED_WINDOWS = {'now', 'today', '7d'}
+ADMIN_DASHBOARD_V2_ROOT_CACHE_TTL = 30
+ADMIN_DASHBOARD_V2_SECTION_CACHE_TTL = 60
 
 
 def _resolve_dashboard_role(user):
@@ -82,6 +96,652 @@ def _get_cached_appointments(facility_code, cache_key, refresh_fn):
         return stale, True
 
     return [], True
+
+
+def _is_admin_actor(user):
+    role = str(_resolve_dashboard_role(user) or '').lower()
+    return role == 'admin' or bool(getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False))
+
+
+def _forbidden_admin_only_response():
+    return Response({'detail': 'Admin role is required.'}, status=403)
+
+
+def _today_bounds(now):
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return day_start, day_start + timedelta(days=1)
+
+
+def _window_bounds(window, now):
+    if window == 'now':
+        return now - timedelta(hours=2), now
+    if window == '7d':
+        day_start, day_end = _today_bounds(now)
+        return day_start - timedelta(days=6), day_end
+    return _today_bounds(now)
+
+
+def _safe_trend_pct(current, baseline):
+    current_value = float(current or 0)
+    baseline_value = float(baseline or 0)
+    if baseline_value <= 0:
+        return 100.0 if current_value > 0 else 0.0
+    return round(((current_value - baseline_value) / baseline_value) * 100, 1)
+
+
+def _severity_rank(severity):
+    return 0 if severity == 'critical' else 1
+
+
+def _percentile_value(values, percentile):
+    if not values:
+        return 0
+    index = max(0, min(len(values) - 1, math.ceil(len(values) * percentile) - 1))
+    return values[index]
+
+
+def _combine_hourly_series(admissions_by_hour, discharges_by_hour):
+    combined = {}
+    for row in admissions_by_hour:
+        bucket = row['bucket']
+        combined.setdefault(bucket, {'hour': bucket.isoformat(), 'admissions': 0, 'discharges': 0})
+        combined[bucket]['admissions'] = row['count']
+    for row in discharges_by_hour:
+        bucket = row['bucket']
+        combined.setdefault(bucket, {'hour': bucket.isoformat(), 'admissions': 0, 'discharges': 0})
+        combined[bucket]['discharges'] = row['count']
+    return [combined[key] for key in sorted(combined.keys())]
+
+
+def _parse_admin_v2_window(raw_window):
+    value = str(raw_window or 'today').strip().lower()
+    return value if value in ADMIN_DASHBOARD_V2_ALLOWED_WINDOWS else None
+
+
+def _parse_admin_v2_expand(raw_expand):
+    if not raw_expand:
+        return set()
+    allowed = {'capacity', 'workforce', 'compliance', 'actions'}
+    tokens = {token.strip().lower() for token in str(raw_expand).split(',') if token.strip()}
+    return {token for token in tokens if token in allowed}
+
+
+def _build_admin_v2_capacity_detail(facility, now, window):
+    start_dt, end_dt = _window_bounds(window, now)
+
+    wards_qs = Ward.objects.filter(
+        is_active=True,
+        department__facility=facility,
+    ).annotate(
+        total_beds_annotated=Count('beds'),
+        occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
+        available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
+        maintenance_beds_annotated=Count('beds', filter=Q(beds__status='maintenance')),
+    )
+    wards = list(wards_qs)
+
+    ward_rows = []
+    high_occupancy_count = 0
+    for ward in wards:
+        occupancy_pct = (
+            (ward.occupied_beds_annotated / ward.total_beds_annotated) * 100
+        ) if ward.total_beds_annotated else 0
+        if occupancy_pct >= 90:
+            high_occupancy_count += 1
+        ward_rows.append({
+            'ward_id': str(ward.id),
+            'ward_name': ward.name,
+            'occupied_beds': ward.occupied_beds_annotated,
+            'available_beds': ward.available_beds_annotated,
+            'maintenance_beds': ward.maintenance_beds_annotated,
+            'total_beds': ward.total_beds_annotated,
+            'occupancy_pct': round(occupancy_pct, 1),
+        })
+    ward_rows.sort(key=lambda row: row['occupancy_pct'], reverse=True)
+
+    admissions_by_hour = Admission.objects.filter(
+        facility=facility,
+        admission_date__gte=start_dt,
+        admission_date__lt=end_dt,
+    ).annotate(
+        bucket=TruncHour('admission_date')
+    ).values('bucket').annotate(
+        count=Count('id')
+    ).order_by('bucket')
+
+    discharges_by_hour = Admission.objects.filter(
+        facility=facility,
+        actual_discharge_date__gte=start_dt,
+        actual_discharge_date__lt=end_dt,
+    ).annotate(
+        bucket=TruncHour('actual_discharge_date')
+    ).values('bucket').annotate(
+        count=Count('id')
+    ).order_by('bucket')
+
+    delay_window_end = min(end_dt, now)
+    delayed_start_times = list(
+        Appointment.objects.filter(
+            facility=facility,
+            status__in=['proposed', 'pending', 'booked', 'arrived'],
+            start_time__gte=start_dt,
+            start_time__lt=delay_window_end,
+        ).order_by('-start_time').values_list('start_time', flat=True)[:500]
+    )
+    delays = sorted(max(int((now - start_time).total_seconds() / 60), 0) for start_time in delayed_start_times)
+    median_wait = round(statistics.median(delays), 1) if delays else 0
+    p95_wait = _percentile_value(delays, 0.95) if delays else 0
+
+    status = 'normal'
+    if high_occupancy_count > 0:
+        status = 'warning'
+    if any(row['occupancy_pct'] >= 100 for row in ward_rows):
+        status = 'critical'
+
+    return {
+        'summary': {
+            'status': status,
+            'ward_count': len(wards),
+            'high_occupancy_wards': high_occupancy_count,
+        },
+        'wards': ward_rows[:20],
+        'admissions_discharges_hourly': _combine_hourly_series(admissions_by_hour, discharges_by_hour),
+        'wait_time': {
+            'median_minutes': median_wait,
+            'p95_minutes': p95_wait,
+        },
+    }
+
+
+def _build_admin_v2_workforce_detail(facility, now, window):
+    today = now.date()
+
+    required_rows = DepartmentDutyType.objects.filter(
+        department__root_unit__code=facility.code,
+        department__is_active=True,
+        is_active=True,
+    ).values(
+        'department_id',
+        'department__name',
+    ).annotate(
+        required=Count('id')
+    )
+
+    filled_rows = RosterEntry.objects.filter(
+        department__root_unit__code=facility.code,
+        department__is_active=True,
+        date=today,
+        status='published',
+    ).values(
+        'department_id',
+        'department__name',
+    ).annotate(
+        filled=Count('id')
+    )
+
+    coverage_map = {}
+    for row in required_rows:
+        dept_id = str(row['department_id'])
+        coverage_map[dept_id] = {
+            'unit_id': dept_id,
+            'unit_name': row['department__name'] or 'Unknown Unit',
+            'required': row['required'],
+            'filled': 0,
+        }
+    for row in filled_rows:
+        dept_id = str(row['department_id'])
+        if dept_id not in coverage_map:
+            coverage_map[dept_id] = {
+                'unit_id': dept_id,
+                'unit_name': row['department__name'] or 'Unknown Unit',
+                'required': 0,
+                'filled': row['filled'],
+            }
+        else:
+            coverage_map[dept_id]['filled'] = row['filled']
+
+    coverage_rows = []
+    for row in coverage_map.values():
+        uncovered = max((row['required'] or 0) - (row['filled'] or 0), 0)
+        coverage_rows.append({
+            **row,
+            'uncovered': uncovered,
+        })
+
+    coverage_rows.sort(key=lambda item: (item['uncovered'] * -1, item['unit_name']))
+
+    published_entry_exists = RosterEntry.objects.filter(
+        duty_type_id=OuterRef('pk'),
+        date=today,
+        status='published',
+    )
+    uncovered_shift_rows = DepartmentDutyType.objects.filter(
+        department__root_unit__code=facility.code,
+        department__is_active=True,
+        is_active=True,
+    ).annotate(
+        has_entry=Exists(published_entry_exists)
+    ).filter(
+        has_entry=False
+    ).select_related('department').order_by(
+        'department__name',
+        'display_order',
+        'name',
+    )[:20]
+
+    uncovered_shifts = []
+    for duty_type in uncovered_shift_rows:
+        starts_at = None
+        if duty_type.start_time:
+            starts_at = timezone.make_aware(
+                datetime.combine(today, duty_type.start_time),
+                timezone.get_current_timezone(),
+            ).isoformat()
+        uncovered_shifts.append({
+            'shift_id': str(duty_type.id),
+            'unit_name': duty_type.department.name if duty_type.department else 'Unknown Unit',
+            'duty_type_name': duty_type.name,
+            'starts_at': starts_at,
+            'priority': 'high' if duty_type.category in {'ward', 'on_call'} else 'medium',
+        })
+
+    required_total = sum(row['required'] for row in coverage_rows)
+    filled_total = sum(row['filled'] for row in coverage_rows)
+    critical_uncovered = sum(1 for row in uncovered_shifts if row['priority'] == 'high')
+    next_2h_cutoff = (now + timedelta(hours=2)).time()
+    next_2h_risks = sum(
+        1 for shift in uncovered_shift_rows
+        if shift.start_time is not None and now.time() <= shift.start_time <= next_2h_cutoff
+    )
+
+    status = 'normal'
+    if critical_uncovered > 0 or next_2h_risks > 0:
+        status = 'warning'
+
+    overtime_risks = [
+        {
+            'unit_name': row['unit_name'],
+            'at_risk_staff_count': row['uncovered'],
+        }
+        for row in coverage_rows if row['uncovered'] > 0
+    ][:5]
+
+    return {
+        'summary': {
+            'status': status,
+            'required_shifts': required_total,
+            'filled_shifts': filled_total,
+            'critical_uncovered_count': critical_uncovered,
+            'next_2h_risks': next_2h_risks,
+        },
+        'coverage_by_unit': coverage_rows[:20],
+        'uncovered_shifts': uncovered_shifts,
+        'overtime_risks': overtime_risks,
+    }
+
+
+def _build_admin_v2_compliance_detail(facility, now, window):
+    last_24h = now - timedelta(hours=24)
+    last_7d = now - timedelta(days=7)
+    today_start, tomorrow_start = _today_bounds(now)
+
+    break_glass_qs = BreakGlassEvent.objects.filter(
+        patient__facility=facility,
+        created_at__gte=last_7d,
+    ).select_related('user').order_by('-created_at')
+
+    break_glass_recent = [
+        {
+            'id': str(event.id),
+            'scope': event.scope,
+            'created_at': event.created_at.isoformat(),
+            'expires_at': event.expires_at.isoformat(),
+            'requester_role': _resolve_dashboard_role(event.user) or 'unknown',
+        }
+        for event in break_glass_qs[:20]
+    ]
+
+    anomaly_actions = [AuditAction.LOGIN_FAILED, AuditAction.OFFSITE_ACCESS, AuditAction.BREAK_GLASS]
+    anomaly_rows = list(
+        AuditLog.objects.filter(
+            facility=facility,
+            timestamp__gte=last_24h,
+            action__in=anomaly_actions,
+        ).values('action').annotate(
+            count=Count('id')
+        ).order_by('-count')
+    )
+    anomalies_24h = sum(row['count'] for row in anomaly_rows)
+
+    encounters_today = Encounter.objects.filter(
+        facility=facility,
+        status='finished',
+        start_time__gte=today_start,
+        start_time__lt=tomorrow_start,
+    )
+    documented_encounters = encounters_today.annotate(
+        has_notes=Exists(NoteEntry.objects.filter(encounter_id=OuterRef('pk')))
+    ).filter(has_notes=True).count()
+    total_encounters = encounters_today.count()
+    documentation_pct = round((documented_encounters / total_encounters) * 100, 1) if total_encounters else 100.0
+
+    break_glass_pending_review = break_glass_qs.filter(created_at__gte=last_24h).count()
+
+    status = 'normal'
+    if anomalies_24h > 0 or break_glass_pending_review > 0:
+        status = 'warning'
+
+    return {
+        'summary': {
+            'status': status,
+            'break_glass_pending_review': break_glass_pending_review,
+            'audit_anomalies_24h': anomalies_24h,
+            'documentation_completeness_pct': documentation_pct,
+        },
+        'break_glass_recent': break_glass_recent,
+        'audit_anomalies_breakdown': [
+            {
+                'action': row['action'],
+                'count': row['count'],
+            }
+            for row in anomaly_rows
+        ],
+        'documentation': {
+            'finished_encounters_today': total_encounters,
+            'documented_encounters_today': documented_encounters,
+            'completeness_pct': documentation_pct,
+        },
+    }
+
+
+def _build_admin_v2_actions(kpis, section_summaries):
+    actions = []
+    occupancy_pct = (kpis.get('occupancy') or {}).get('percent') or 0
+    staffing_uncovered = (kpis.get('staffing_coverage') or {}).get('critical_uncovered') or 0
+    compliance_total = (kpis.get('compliance_risk') or {}).get('total') or 0
+    discharges = kpis.get('discharges_today') or {}
+    planned_discharges = discharges.get('planned') or 0
+    completed_discharges = discharges.get('completed') or 0
+    throughput = kpis.get('appointment_throughput') or {}
+    throughput_rate = throughput.get('completion_rate') or 0
+
+    if occupancy_pct >= 90:
+        actions.append({
+            'id': 'action_bed_board',
+            'severity': 'critical',
+            'title': 'Open bed board for capacity intervention',
+            'href': '/wards',
+        })
+
+    if staffing_uncovered > 0:
+        actions.append({
+            'id': 'action_fill_shift',
+            'severity': 'warning',
+            'title': 'Assign uncovered critical shifts',
+            'href': '/admin/organization/duty-roster',
+        })
+
+    if compliance_total > 0:
+        actions.append({
+            'id': 'action_review_compliance',
+            'severity': 'warning',
+            'title': 'Review compliance queue',
+            'href': '/admin/audit-logs',
+        })
+
+    if planned_discharges > completed_discharges:
+        actions.append({
+            'id': 'action_discharges',
+            'severity': 'warning',
+            'title': 'Resolve delayed discharge workflow',
+            'href': '/admissions/new',
+        })
+
+    if throughput_rate < 70:
+        actions.append({
+            'id': 'action_appointments',
+            'severity': 'warning',
+            'title': 'Investigate low appointment throughput',
+            'href': '/appointments',
+        })
+
+    if not actions:
+        actions.append({
+            'id': 'action_monitor',
+            'severity': 'normal',
+            'title': 'No urgent operational action required',
+            'href': '/dashboards/admin',
+        })
+
+    actions.sort(key=lambda item: (_severity_rank(item['severity']), item['title']))
+    return actions
+
+
+def _build_admin_v2_root_payload(facility, now, window, expand_sections=None):
+    expand_sections = expand_sections or set()
+    today_start, tomorrow_start = _today_bounds(now)
+    yesterday_start = today_start - timedelta(days=1)
+
+    bed_stats = Bed.objects.filter(facility=facility).aggregate(
+        total=Count('id'),
+        occupied=Count('id', filter=Q(status='occupied')),
+    )
+    total_beds = bed_stats['total'] or 0
+    occupied_beds = bed_stats['occupied'] or 0
+    occupancy_pct = round((occupied_beds / total_beds) * 100, 1) if total_beds else 0.0
+
+    admission_rollup = Admission.objects.filter(
+        facility=facility,
+    ).aggregate(
+        admissions_today=Count(
+            'id',
+            filter=Q(admission_date__gte=today_start, admission_date__lt=tomorrow_start),
+        ),
+        admissions_yesterday=Count(
+            'id',
+            filter=Q(admission_date__gte=yesterday_start, admission_date__lt=today_start),
+        ),
+        planned_discharges=Count(
+            'id',
+            filter=Q(
+                status='admitted',
+                expected_discharge_date__gte=today_start,
+                expected_discharge_date__lt=tomorrow_start,
+            ),
+        ),
+        completed_discharges=Count(
+            'id',
+            filter=Q(actual_discharge_date__gte=today_start, actual_discharge_date__lt=tomorrow_start),
+        ),
+    )
+    admissions_today = admission_rollup['admissions_today'] or 0
+    admissions_yesterday = admission_rollup['admissions_yesterday'] or 0
+    planned_discharges = admission_rollup['planned_discharges'] or 0
+    completed_discharges = admission_rollup['completed_discharges'] or 0
+
+    appointment_rollup = Appointment.objects.filter(
+        facility=facility,
+    ).aggregate(
+        scheduled=Count(
+            'id',
+            filter=Q(start_time__gte=today_start, start_time__lt=tomorrow_start) & ~Q(status='cancelled'),
+        ),
+        completed=Count(
+            'id',
+            filter=Q(start_time__gte=today_start, start_time__lt=tomorrow_start, status='fulfilled'),
+        ),
+    )
+    scheduled_appointments = appointment_rollup['scheduled'] or 0
+    completed_appointments = appointment_rollup['completed'] or 0
+    completion_rate = round((completed_appointments / scheduled_appointments) * 100, 1) if scheduled_appointments else 0.0
+
+    required_shifts = DepartmentDutyType.objects.filter(
+        department__root_unit__code=facility.code,
+        department__is_active=True,
+        is_active=True,
+    ).count()
+    filled_shifts = RosterEntry.objects.filter(
+        department__root_unit__code=facility.code,
+        department__is_active=True,
+        date=today_start.date(),
+        status='published',
+    ).count()
+    critical_uncovered = max(required_shifts - filled_shifts, 0)
+
+    last_24h = now - timedelta(hours=24)
+    break_glass_pending_review = BreakGlassEvent.objects.filter(
+        patient__facility=facility,
+        created_at__gte=last_24h,
+    ).count()
+    audit_anomalies_24h = AuditLog.objects.filter(
+        facility=facility,
+        timestamp__gte=last_24h,
+        action__in=[AuditAction.LOGIN_FAILED, AuditAction.OFFSITE_ACCESS, AuditAction.BREAK_GLASS],
+    ).count()
+    compliance_total = break_glass_pending_review + audit_anomalies_24h
+
+    ward_rollup = list(Ward.objects.filter(
+        is_active=True,
+        department__facility=facility,
+    ).annotate(
+        total_beds_annotated=Count('beds'),
+        occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
+    ).values('total_beds_annotated', 'occupied_beds_annotated'))
+    ward_count = len(ward_rollup)
+    high_occupancy_wards = 0
+    for ward in ward_rollup:
+        ward_total_beds = ward['total_beds_annotated'] or 0
+        ward_occupied_beds = ward['occupied_beds_annotated'] or 0
+        ward_occupancy = ((ward_occupied_beds / ward_total_beds) * 100) if ward_total_beds else 0
+        if ward_occupancy >= 90:
+            high_occupancy_wards += 1
+
+    capacity_status = 'normal'
+    if occupancy_pct >= 100:
+        capacity_status = 'critical'
+    elif occupancy_pct >= 85:
+        capacity_status = 'warning'
+
+    workforce_status = 'warning' if critical_uncovered > 0 else 'normal'
+    compliance_status = 'warning' if compliance_total > 0 else 'normal'
+
+    kpis = {
+        'occupancy': {
+            'percent': occupancy_pct,
+            'occupied_beds': occupied_beds,
+            'total_beds': total_beds,
+            'trend_pct': _safe_trend_pct(occupied_beds, max(total_beds - occupied_beds, 0)),
+        },
+        'admissions_today': {
+            'count': admissions_today,
+            'trend_pct': _safe_trend_pct(admissions_today, admissions_yesterday),
+        },
+        'discharges_today': {
+            'planned': planned_discharges,
+            'completed': completed_discharges,
+            'completion_rate': round((completed_discharges / planned_discharges) * 100, 1) if planned_discharges else 0.0,
+        },
+        'appointment_throughput': {
+            'scheduled': scheduled_appointments,
+            'completed': completed_appointments,
+            'completion_rate': completion_rate,
+        },
+        'staffing_coverage': {
+            'required_shifts': required_shifts,
+            'filled_shifts': filled_shifts,
+            'critical_uncovered': critical_uncovered,
+        },
+        'compliance_risk': {
+            'break_glass_pending_review': break_glass_pending_review,
+            'audit_anomalies_24h': audit_anomalies_24h,
+            'total': compliance_total,
+        },
+    }
+
+    section_summaries = {
+        'capacity': {
+            'status': capacity_status,
+            'ward_count': ward_count,
+            'high_occupancy_wards': high_occupancy_wards,
+        },
+        'workforce': {
+            'status': workforce_status,
+            'critical_uncovered_count': critical_uncovered,
+            'next_2h_risks': critical_uncovered,
+        },
+        'compliance': {
+            'status': compliance_status,
+            'break_glass_pending_review': break_glass_pending_review,
+            'audit_anomalies_24h': audit_anomalies_24h,
+        },
+    }
+
+    alerts = []
+    if occupancy_pct >= 90:
+        alerts.append({
+            'id': 'alert_capacity',
+            'severity': 'critical' if occupancy_pct >= 100 else 'warning',
+            'title': f'Bed occupancy at {occupancy_pct:.1f}%',
+            'started_at': now.isoformat(),
+            'primary_action': {'label': 'Open bed board', 'href': '/wards'},
+        })
+    if critical_uncovered > 0:
+        alerts.append({
+            'id': 'alert_staffing',
+            'severity': 'warning',
+            'title': f'{critical_uncovered} critical shifts uncovered',
+            'started_at': now.isoformat(),
+            'primary_action': {'label': 'Open roster', 'href': '/admin/organization/duty-roster'},
+        })
+    if break_glass_pending_review > 0:
+        alerts.append({
+            'id': 'alert_break_glass',
+            'severity': 'warning',
+            'title': f'{break_glass_pending_review} break-glass events awaiting review',
+            'started_at': now.isoformat(),
+            'primary_action': {'label': 'Open audit logs', 'href': '/admin/audit-logs'},
+        })
+    if audit_anomalies_24h > 0:
+        alerts.append({
+            'id': 'alert_audit',
+            'severity': 'warning',
+            'title': f'{audit_anomalies_24h} audit anomalies in the last 24h',
+            'started_at': now.isoformat(),
+            'primary_action': {'label': 'Review anomalies', 'href': '/admin/audit-logs'},
+        })
+    alerts.sort(key=lambda item: (_severity_rank(item['severity']), item['title']))
+
+    actions = _build_admin_v2_actions(kpis, section_summaries)
+
+    payload = {
+        'meta': {
+            'facility_code': facility.code,
+            'window': window,
+            'generated_at': now.isoformat(),
+            'stale': False,
+            'stale_sections': [],
+        },
+        'alerts_top': alerts[:3],
+        'kpis': kpis,
+        'section_summaries': section_summaries,
+        'action_queue_top': actions[:5],
+        'links': {
+            'capacity': '/api/dashboards/admin-v2/capacity/',
+            'workforce': '/api/dashboards/admin-v2/workforce/',
+            'compliance': '/api/dashboards/admin-v2/compliance/',
+        },
+    }
+
+    if 'actions' in expand_sections:
+        payload['actions'] = actions[:20]
+    if 'capacity' in expand_sections:
+        payload['capacity'] = _build_admin_v2_capacity_detail(facility, now, window)
+    if 'workforce' in expand_sections:
+        payload['workforce'] = _build_admin_v2_workforce_detail(facility, now, window)
+    if 'compliance' in expand_sections:
+        payload['compliance'] = _build_admin_v2_compliance_detail(facility, now, window)
+
+    return payload
 
 
 def get_doctor_dashboard_data(user, request):
@@ -894,6 +1554,123 @@ def admin_dashboard(request):
         'user_name': request.user.get_full_name(),
         **projection,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
+def admin_dashboard_v2(request):
+    """
+    Admin v2 dashboard summary payload (summary-first contract).
+
+    GET /api/dashboards/admin-v2/
+    Query params:
+        - window: now | today | 7d
+        - expand: comma-separated optional sections (capacity,workforce,compliance,actions)
+    """
+    if not _is_admin_actor(request.user):
+        return _forbidden_admin_only_response()
+
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'detail': 'Facility context is required.'}, status=400)
+
+    window = _parse_admin_v2_window(request.query_params.get('window'))
+    if window is None:
+        return Response(
+            {'detail': 'Invalid window. Expected one of: now, today, 7d.'},
+            status=400,
+        )
+
+    expand = _parse_admin_v2_expand(request.query_params.get('expand'))
+    now = timezone.now()
+
+    if expand:
+        return Response(_build_admin_v2_root_payload(facility, now, window, expand_sections=expand))
+
+    cache_key = facility_cache_key_for_code(facility.code, f'admin_v2_summary_{window}')
+    payload = cache.get(cache_key)
+    if payload is None:
+        payload = _build_admin_v2_root_payload(facility, now, window, expand_sections=set())
+        cache.set(cache_key, payload, timeout=ADMIN_DASHBOARD_V2_ROOT_CACHE_TTL)
+    return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
+def admin_dashboard_v2_capacity(request):
+    """Detailed capacity panel payload for admin v2."""
+    if not _is_admin_actor(request.user):
+        return _forbidden_admin_only_response()
+
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'detail': 'Facility context is required.'}, status=400)
+
+    window = _parse_admin_v2_window(request.query_params.get('window'))
+    if window is None:
+        return Response(
+            {'detail': 'Invalid window. Expected one of: now, today, 7d.'},
+            status=400,
+        )
+
+    cache_key = facility_cache_key_for_code(facility.code, f'admin_v2_capacity_{window}')
+    payload = cache.get(cache_key)
+    if payload is None:
+        payload = _build_admin_v2_capacity_detail(facility, timezone.now(), window)
+        cache.set(cache_key, payload, timeout=ADMIN_DASHBOARD_V2_SECTION_CACHE_TTL)
+    return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
+def admin_dashboard_v2_workforce(request):
+    """Detailed workforce panel payload for admin v2."""
+    if not _is_admin_actor(request.user):
+        return _forbidden_admin_only_response()
+
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'detail': 'Facility context is required.'}, status=400)
+
+    window = _parse_admin_v2_window(request.query_params.get('window'))
+    if window is None:
+        return Response(
+            {'detail': 'Invalid window. Expected one of: now, today, 7d.'},
+            status=400,
+        )
+
+    cache_key = facility_cache_key_for_code(facility.code, f'admin_v2_workforce_{window}')
+    payload = cache.get(cache_key)
+    if payload is None:
+        payload = _build_admin_v2_workforce_detail(facility, timezone.now(), window)
+        cache.set(cache_key, payload, timeout=ADMIN_DASHBOARD_V2_SECTION_CACHE_TTL)
+    return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, FacilityScopedPermission])
+def admin_dashboard_v2_compliance(request):
+    """Detailed compliance panel payload for admin v2."""
+    if not _is_admin_actor(request.user):
+        return _forbidden_admin_only_response()
+
+    facility = get_user_facility(request)
+    if not facility:
+        return Response({'detail': 'Facility context is required.'}, status=400)
+
+    window = _parse_admin_v2_window(request.query_params.get('window'))
+    if window is None:
+        return Response(
+            {'detail': 'Invalid window. Expected one of: now, today, 7d.'},
+            status=400,
+        )
+
+    cache_key = facility_cache_key_for_code(facility.code, f'admin_v2_compliance_{window}')
+    payload = cache.get(cache_key)
+    if payload is None:
+        payload = _build_admin_v2_compliance_detail(facility, timezone.now(), window)
+        cache.set(cache_key, payload, timeout=ADMIN_DASHBOARD_V2_SECTION_CACHE_TTL)
+    return Response(payload)
 
 
 @api_view(['GET'])

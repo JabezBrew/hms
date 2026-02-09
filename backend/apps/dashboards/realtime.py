@@ -58,6 +58,26 @@ def admin_dashboard_projection_cache_key(facility_code: str) -> str:
     return facility_cache_key_for_code(code, ADMIN_DASHBOARD_PROJECTION_KEY)
 
 
+def _admin_dashboard_v2_summary_cache_key(facility_code: str, window: str) -> str:
+    code = normalize_facility_code(facility_code)
+    return facility_cache_key_for_code(code, f"admin_v2_summary_{window}")
+
+
+def _admin_dashboard_v2_capacity_cache_key(facility_code: str, window: str) -> str:
+    code = normalize_facility_code(facility_code)
+    return facility_cache_key_for_code(code, f"admin_v2_capacity_{window}")
+
+
+def _admin_dashboard_v2_workforce_cache_key(facility_code: str, window: str) -> str:
+    code = normalize_facility_code(facility_code)
+    return facility_cache_key_for_code(code, f"admin_v2_workforce_{window}")
+
+
+def _admin_dashboard_v2_compliance_cache_key(facility_code: str, window: str) -> str:
+    code = normalize_facility_code(facility_code)
+    return facility_cache_key_for_code(code, f"admin_v2_compliance_{window}")
+
+
 def _admin_dashboard_invalidation_lock_key(facility_code: str) -> str:
     code = normalize_facility_code(facility_code)
     return facility_cache_key_for_code(code, "admin_dashboard_invalidate_lock")
@@ -250,6 +270,11 @@ def invalidate_admin_dashboard(
         return False
 
     cache.delete(admin_dashboard_projection_cache_key(code))
+    for window in ("now", "today", "7d"):
+        cache.delete(_admin_dashboard_v2_summary_cache_key(code, window))
+        cache.delete(_admin_dashboard_v2_capacity_cache_key(code, window))
+        cache.delete(_admin_dashboard_v2_workforce_cache_key(code, window))
+        cache.delete(_admin_dashboard_v2_compliance_cache_key(code, window))
     if include_appointments:
         appt_date = target_date or date.today()
         cache.delete(_admin_dashboard_appointments_cache_key(code, appt_date))
