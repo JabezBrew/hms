@@ -143,10 +143,11 @@ export function useNoteWorkflow(patientId, options = {}) {
     mutationFn: async ({ workflowId, template, finalData, patientId, editNoteId }) => {
       // If we're editing an existing note, update it
       if (editNoteId) {
-        const noteEntry = await clinicalNotesApi.updateNoteEntry(editNoteId, {
-          data: finalData,
-          editReason: 'Updated via note editor',
-        });
+        const noteEntry = await clinicalNotesApi.updateNoteEntry(
+          editNoteId,
+          finalData,
+          'Updated via note editor'
+        );
         return { success: true, note: noteEntry, isEdit: true };
       }
 

@@ -45,6 +45,52 @@ def _require_patient_facility(request, patient):
         raise PermissionDenied("Patient does not belong to the active facility.")
 
 
+def _normalize_section_key(section_name):
+    """Normalize section keys for resilient matching across legacy data formats."""
+    if section_name is None:
+        return ''
+    return ''.join(ch for ch in str(section_name).strip().lower() if ch.isalnum())
+
+
+def _has_meaningful_section_value(value):
+    """Treat empty strings/containers as missing data while preserving valid scalar values."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _build_note_data_key_lookup(note_data):
+    """Build a normalized key lookup for section name resolution."""
+    if not isinstance(note_data, dict):
+        return {}
+
+    lookup = {}
+    for key in note_data.keys():
+        normalized = _normalize_section_key(key)
+        if normalized and normalized not in lookup:
+            lookup[normalized] = key
+    return lookup
+
+
+def _resolve_note_data_key(note_data, section_name, key_lookup=None):
+    """
+    Resolve a template section name to a key in note data.
+    Prefers exact matches, then falls back to normalized matching.
+    """
+    if not isinstance(note_data, dict) or not section_name:
+        return None
+
+    if section_name in note_data:
+        return section_name
+
+    lookup = key_lookup if key_lookup is not None else _build_note_data_key_lookup(note_data)
+    return lookup.get(_normalize_section_key(section_name))
+
+
 class NoteTemplateViewSet(viewsets.ModelViewSet):
     """
     API endpoint for note templates.
@@ -282,7 +328,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         Used by the frontend to show a section picker before cloning.
         """
         note = self.get_object()
-        template_structure = note.template.structure
+        template_structure = note.template.structure if note.template else None
 
         # Handle both list and dict structure formats
         if isinstance(template_structure, dict):
@@ -292,38 +338,46 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         else:
             template_sections = []
 
+        note_data = note.data if isinstance(note.data, dict) else {}
+        key_lookup = _build_note_data_key_lookup(note_data)
+
         sections_info = []
         for section in template_sections:
             # Handle different structure formats
             name = section.get('name') or section.get('section', '')
             section_type = section.get('type', 'text')
 
-            # Check if this section has data
-            has_data = name in note.data and note.data[name]
+            # Resolve source key with case/format tolerance (legacy compatibility).
+            source_key = _resolve_note_data_key(note_data, name, key_lookup)
+            section_data = note_data.get(source_key) if source_key is not None else None
+            has_data = _has_meaningful_section_value(section_data)
 
             # Generate preview (truncated content)
             preview = None
             if has_data:
-                section_data = note.data[name]
                 if isinstance(section_data, str):
-                    preview = section_data[:150] + ('...' if len(section_data) > 150 else '')
+                    normalized_text = section_data.strip()
+                    preview = normalized_text[:150] + ('...' if len(normalized_text) > 150 else '')
                 elif isinstance(section_data, dict):
                     # For structured sections, show first few key-value pairs
                     preview_parts = []
                     for key, value in list(section_data.items())[:3]:
-                        if value:
+                        if _has_meaningful_section_value(value):
                             preview_parts.append(f"{key}: {str(value)[:50]}")
                     preview = '; '.join(preview_parts)
                     if len(preview) > 150:
                         preview = preview[:150] + '...'
                 elif isinstance(section_data, list):
                     preview = f"{len(section_data)} items"
+                else:
+                    preview = str(section_data)[:150]
 
             sections_info.append({
                 'name': name,
                 'type': section_type,
                 'has_data': bool(has_data),
                 'preview': preview,
+                'source_key': source_key,
             })
 
         return Response(sections_info)
@@ -404,7 +458,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             template_sections = []
 
         valid_section_names = {
-            s.get('name') or s.get('section', '') for s in template_sections
+            section_name for section_name in (
+                s.get('name') or s.get('section', '') for s in template_sections
+            ) if section_name
         }
 
         # Determine which sections to copy
@@ -423,11 +479,14 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             sections_to_copy = valid_section_names
 
         # Build new data by copying selected sections
+        source_data = source_note.data if isinstance(source_note.data, dict) else {}
+        source_key_lookup = _build_note_data_key_lookup(source_data)
         new_data = {}
         for section_name in sections_to_copy:
-            if section_name in source_note.data:
-                # Deep copy the section data
-                new_data[section_name] = copy.deepcopy(source_note.data[section_name])
+            source_key = _resolve_note_data_key(source_data, section_name, source_key_lookup)
+            if source_key is not None:
+                # Keep template section names in copied data for consistent editor prefill.
+                new_data[section_name] = copy.deepcopy(source_data[source_key])
 
         # Create the new note entry
         facility = get_user_facility(request)
@@ -2002,9 +2061,11 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
     for note in notes_queryset[:500]:  # Limit to prevent memory issues
         # Try to get author name
         author_name = 'Unknown'
+        author_id = None
         if note.practitioner and note.practitioner.staff and note.practitioner.staff.user:
             user = note.practitioner.staff.user
             author_name = f"{user.first_name} {user.last_name}".strip() or user.email
+            author_id = user.id
 
         # Extract note type from template
         note_type = 'progress_note'
@@ -2050,6 +2111,7 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
             'title': title,
             'content': content_summary,
             'author': author_name,
+            'author_id': str(author_id) if author_id else None,
             'data': note.data,
             'template_id': str(note.template_id) if note.template_id else None,
             'template_title': note.template.title if note.template else None,
