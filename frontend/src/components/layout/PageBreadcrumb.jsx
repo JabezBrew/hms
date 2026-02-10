@@ -20,13 +20,16 @@ export function BreadcrumbProvider({ children }) {
   ]);
   const location = useLocation();
   const lastPathRef = useRef(location.pathname);
+  const lastAppliedPathRef = useRef(location.pathname);
 
-  const updateBreadcrumbs = useCallback((newBreadcrumbs) => {
+  const updateBreadcrumbs = useCallback((newBreadcrumbs, appliedPath) => {
+    const safeBreadcrumbs = Array.isArray(newBreadcrumbs) ? newBreadcrumbs : [];
     // Filter out any "Home" breadcrumbs from the input (we add it automatically)
-    const filteredBreadcrumbs = newBreadcrumbs.filter(
+    const filteredBreadcrumbs = safeBreadcrumbs.filter(
       crumb => crumb.label !== 'Home' && crumb.path !== '/'
     );
 
+    lastAppliedPathRef.current = appliedPath || lastAppliedPathRef.current;
     setBreadcrumbs([
       { label: 'Home', path: '/' },
       ...filteredBreadcrumbs
@@ -37,6 +40,10 @@ export function BreadcrumbProvider({ children }) {
   useEffect(() => {
     if (location.pathname !== lastPathRef.current) {
       lastPathRef.current = location.pathname;
+      // Skip reset if breadcrumbs were already applied for this path.
+      if (lastAppliedPathRef.current === location.pathname) {
+        return;
+      }
       // Reset to just Home when route changes
       setBreadcrumbs([{ label: 'Home', path: '/' }]);
     }
@@ -60,14 +67,12 @@ export function useBreadcrumb() {
 
 // Component to set breadcrumbs for a page
 export function BreadcrumbSetter({ breadcrumbs }) {
+  const location = useLocation();
   const { updateBreadcrumbs } = useBreadcrumb();
 
   useEffect(() => {
-    if (breadcrumbs && breadcrumbs.length > 0) {
-      updateBreadcrumbs(breadcrumbs);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [breadcrumbs]);
+    updateBreadcrumbs(breadcrumbs, location.pathname);
+  }, [breadcrumbs, location.pathname, updateBreadcrumbs]);
 
   return null;
 }

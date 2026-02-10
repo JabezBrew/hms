@@ -10,9 +10,7 @@ export function PageMeta({ title, breadcrumbs }) {
           <title>{title}</title>
         </Helmet>
       ) : null}
-      {breadcrumbs && breadcrumbs.length > 0 ? (
-        <BreadcrumbSetter breadcrumbs={breadcrumbs} />
-      ) : null}
+      <BreadcrumbSetter breadcrumbs={breadcrumbs} />
     </>
   )
 }
