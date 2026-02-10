@@ -43,7 +43,7 @@ const StaffChronicleCard = ({
 
   const getEmployeeId = (staff) => staff?.employee_id || "No ID";
 
-  const getUserType = (staff) => staff?.user_details?.user_type || 'staff';
+  const getUserType = (staff) => staff?.user_type || staff?.user_details?.user_type || 'staff';
 
   const getDepartment = (staff) => staff?.department || null;
 

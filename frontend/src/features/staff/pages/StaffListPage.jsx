@@ -63,11 +63,15 @@ const StaffListPage = () => {
     return Array.isArray(staff) ? staff : [];
   }, [staffData]);
 
+  const getStaffUserType = (member) => {
+    return member?.user_type || member?.user_details?.user_type || '';
+  };
+
   // Extract unique roles for filter
   const uniqueRoles = useMemo(() => {
     const roles = new Set();
     staffList.forEach(member => {
-      const role = member?.user_details?.user_type;
+      const role = getStaffUserType(member);
       if (role) roles.add(role);
     });
     return Array.from(roles).sort();
@@ -110,7 +114,7 @@ const StaffListPage = () => {
 
       // Role filter
       if (selectedRole !== "all") {
-        if (member?.user_details?.user_type !== selectedRole) return false;
+        if (getStaffUserType(member) !== selectedRole) return false;
       }
 
       // Department filter
@@ -127,7 +131,7 @@ const StaffListPage = () => {
     const total = staffList.length;
     const active = staffList.filter(s => s?.user_details?.is_active !== false).length;
     const practitioners = staffList.filter(s =>
-      ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(s?.user_details?.user_type)
+      ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(getStaffUserType(s))
     ).length;
 
     return { total, active, practitioners };
