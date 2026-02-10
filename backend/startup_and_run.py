@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Combined startup and Gunicorn launcher.
+Combined startup and ASGI launcher.
 Bypasses bash to ensure we see all output in Railway logs.
 """
 import os
@@ -177,21 +177,18 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Start Gunicorn
+# Start Daphne (ASGI server for HTTP + WebSocket support)
 port = os.environ.get('PORT', '8000')
-log(f"Starting Gunicorn on port {port}...")
+log(f"Starting Daphne on port {port}...")
 log("=" * 50)
 
-# Use os.execvp to replace this process with gunicorn
-os.execvp('gunicorn', [
-    'gunicorn',
-    'hms_backend.wsgi:application',
-    '--bind', f'0.0.0.0:{port}',
-    '--workers', '8',
-    '--threads', '8',
-    '--timeout', '30',
-    '--access-logfile', '-',
-    '--error-logfile', '-',
-    '--capture-output',
-    '--log-level', 'info',
+# Use os.execvp to replace this process with daphne
+os.execvp('daphne', [
+    'daphne',
+    '--bind', '0.0.0.0',
+    '--port', str(port),
+    '--proxy-headers',
+    '--access-log', '-',
+    '--websocket_timeout', '-1',
+    'hms_backend.asgi:application',
 ])

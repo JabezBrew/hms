@@ -39,14 +39,11 @@ fi
 
 echo "[entrypoint] startup.py completed successfully" >&2
 
-# Start Gunicorn
-echo "[entrypoint] Starting Gunicorn on port ${PORT:-8000}..." >&2
-exec gunicorn hms_backend.wsgi:application \
-    --bind "0.0.0.0:${PORT:-8000}" \
-    --workers 8 \
-    --threads 8 \
-    --timeout 30 \
-    --access-logfile - \
-    --error-logfile - \
-    --capture-output \
-    --log-level info
+# Start Daphne (ASGI server for HTTP + WebSocket support)
+echo "[entrypoint] Starting Daphne on port ${PORT:-8000}..." >&2
+exec daphne hms_backend.asgi:application \
+    --bind "0.0.0.0" \
+    --port "${PORT:-8000}" \
+    --proxy-headers \
+    --access-log - \
+    --websocket_timeout -1

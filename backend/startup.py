@@ -100,7 +100,7 @@ def main():
     cors_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
     log(f"CORS origins: {cors_origins}")
 
-    log("Startup complete - ready for Gunicorn")
+    log("Startup complete - ready for ASGI web server")
     return 0
 
 if __name__ == "__main__":
