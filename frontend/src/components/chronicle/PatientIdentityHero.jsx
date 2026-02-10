@@ -12,8 +12,9 @@ import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
+import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
+import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -54,6 +55,11 @@ const PatientIdentityHero = ({
   insurance = [],
   activeAdmission,
   activeVisit,
+  latestVitals,
+  fluidBalance,
+  isFluidBalanceLoading = false,
+  showFluidBalance = false,
+  hideActions = false,
   className
 }) => {
   // ============================================
@@ -245,6 +251,56 @@ const PatientIdentityHero = ({
     }
   };
 
+  const vitalsMetrics = [];
+  if (latestVitals?.blood_pressure) {
+    const systolic = Number(String(latestVitals.blood_pressure).split('/')[0]);
+    vitalsMetrics.push({
+      label: 'BP',
+      value: latestVitals.blood_pressure,
+      abnormal: Number.isFinite(systolic) ? systolic > 140 || systolic < 90 : false,
+    });
+  }
+  if (latestVitals?.heart_rate) {
+    const heartRate = Number(latestVitals.heart_rate);
+    vitalsMetrics.push({
+      label: 'HR',
+      value: `${latestVitals.heart_rate} bpm`,
+      abnormal: Number.isFinite(heartRate) ? heartRate > 100 || heartRate < 60 : false,
+    });
+  }
+  if (latestVitals?.temperature) {
+    const temp = Number(latestVitals.temperature);
+    vitalsMetrics.push({
+      label: 'Temp',
+      value: `${latestVitals.temperature}°C`,
+      abnormal: Number.isFinite(temp) ? temp > 38 || temp < 36 : false,
+    });
+  }
+  if (latestVitals?.oxygen_saturation) {
+    const spo2 = Number(latestVitals.oxygen_saturation);
+    vitalsMetrics.push({
+      label: 'SpO2',
+      value: `${latestVitals.oxygen_saturation}%`,
+      abnormal: Number.isFinite(spo2) ? spo2 < 95 : false,
+    });
+  }
+
+  const fluidIntake = Number(fluidBalance?.total_intake || 0);
+  const fluidOutput = Number(fluidBalance?.total_output || 0);
+  const fluidBalanceNet = Number.isFinite(Number(fluidBalance?.balance))
+    ? Number(fluidBalance.balance)
+    : (fluidIntake - fluidOutput);
+  const hasVitalsMetrics = vitalsMetrics.length > 0;
+  const showClinicalPulse = hasVitalsMetrics || showFluidBalance;
+  const vitalsCapturedAt = latestVitals?.recorded_at
+    ? new Date(latestVitals.recorded_at).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : null;
+
   return (
     <header className={cn(
       "relative bg-card border-b border-border",
@@ -254,9 +310,9 @@ const PatientIdentityHero = ({
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent" />
 
-      <div className="relative flex items-start justify-between">
+      <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
         {/* Left: Patient Identity */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {/* Status + Name */}
           <div className="flex items-center gap-4">
             {status === 'critical' && (
@@ -360,8 +416,10 @@ const PatientIdentityHero = ({
           )}
         </div>
 
-        {/* Right: Quick Actions */}
-        <div className="flex items-center gap-2">
+        {/* Right: Actions + Clinical Pulse */}
+        {!hideActions && (
+          <div className="w-full xl:w-auto xl:min-w-[420px] space-y-3">
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <Button
             variant="outline"
             size="sm"
@@ -505,7 +563,116 @@ const PatientIdentityHero = ({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+            </div>
+
+            {showClinicalPulse && (
+              <section className="rounded-xl border border-border/80 bg-card/70 px-3 py-2 backdrop-blur-sm">
+                <div className={cn(
+                  "grid gap-2",
+                  showFluidBalance ? "md:grid-cols-2" : "grid-cols-1"
+                )}>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        Recent Vitals
+                      </span>
+                      {vitalsCapturedAt && (
+                        <time className="font-mono text-[10px] text-muted-foreground/70">
+                          {vitalsCapturedAt}
+                        </time>
+                      )}
+                    </div>
+                    {hasVitalsMetrics ? (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {vitalsMetrics.slice(0, 4).map((metric) => (
+                          <div
+                            key={metric.label}
+                            className={cn(
+                              "rounded-md border px-2 py-1",
+                              metric.abnormal
+                                ? "border-primary/30 bg-primary/5"
+                                : "border-border bg-muted/20"
+                            )}
+                          >
+                            <div className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                              {metric.label}
+                            </div>
+                            <div className={cn(
+                              "font-mono text-xs",
+                              metric.abnormal ? "text-primary" : "text-foreground"
+                            )}>
+                              {metric.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-dashed border-border px-2 py-2">
+                        <p className="font-mono text-[11px] text-muted-foreground">
+                          No recent vitals recorded
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {showFluidBalance && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          Fluid Balance
+                        </span>
+                        <Droplets className="h-3.5 w-3.5 text-sky-500" />
+                      </div>
+                      {isFluidBalanceLoading ? (
+                        <div className="h-[64px] rounded-md bg-muted/40 animate-pulse" />
+                      ) : (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <div className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1">
+                            <div className="flex items-center gap-1">
+                              <ArrowDownCircle className="h-3 w-3 text-sky-500" />
+                              <span className="font-mono text-[10px] text-sky-600">IN</span>
+                            </div>
+                            <div className="font-mono text-xs text-sky-600">{fluidIntake}ml</div>
+                          </div>
+                          <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1">
+                            <div className="flex items-center gap-1">
+                              <ArrowUpCircle className="h-3 w-3 text-amber-500" />
+                              <span className="font-mono text-[10px] text-amber-600">OUT</span>
+                            </div>
+                            <div className="font-mono text-xs text-amber-600">{fluidOutput}ml</div>
+                          </div>
+                          <div className={cn(
+                            "rounded-md border px-2 py-1",
+                            fluidBalanceNet > 0 && "border-emerald-500/20 bg-emerald-500/10",
+                            fluidBalanceNet < 0 && "border-rose-500/20 bg-rose-500/10",
+                            fluidBalanceNet === 0 && "border-border bg-muted/20"
+                          )}>
+                            <div className={cn(
+                              "font-mono text-[10px]",
+                              fluidBalanceNet > 0 && "text-emerald-600",
+                              fluidBalanceNet < 0 && "text-rose-600",
+                              fluidBalanceNet === 0 && "text-muted-foreground"
+                            )}>
+                              BAL
+                            </div>
+                            <div className={cn(
+                              "font-mono text-xs",
+                              fluidBalanceNet > 0 && "text-emerald-600",
+                              fluidBalanceNet < 0 && "text-rose-600",
+                              fluidBalanceNet === 0 && "text-muted-foreground"
+                            )}>
+                              {fluidBalanceNet > 0 ? '+' : ''}{fluidBalanceNet}ml
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );

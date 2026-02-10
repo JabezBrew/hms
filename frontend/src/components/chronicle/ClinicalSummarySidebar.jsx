@@ -1,15 +1,9 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import FileWarning from 'lucide-react/dist/esm/icons/file-warning.js';
-import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
-import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
-import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
-import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import { cn } from "@/lib/utils";
 
-import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { InvoiceChronicleCard } from "@/components/billing";
 
 /**
@@ -19,26 +13,14 @@ import { InvoiceChronicleCard } from "@/components/billing";
  * - Active problems (with severity indicators)
  * - Current medications
  * - Allergies (high visibility)
- * - Recent lab results (with abnormal highlighting)
  */
 const ClinicalSummarySidebar = ({
   patient,
   problems = [],
   medications = [],
   allergies = [],
-  labResults = [],
   className
 }) => {
-  // Check if patient is admitted (has active admission)
-  // Check multiple fields for backward compatibility
-  const isAdmitted = patient?.local_data?.current_admission_id ||
-    patient?.current_admission_id ||
-    patient?.local_data?.admission_status === 'admitted' ||
-    patient?.admission_status === 'admitted' ||
-    // Fallback: check if current_ward_id exists (means patient has a bed)
-    patient?.local_data?.current_ward_id ||
-    patient?.current_ward_id;
-
   const patientId = patient?.local_data?.id || patient?.id;
 
   return (
@@ -62,20 +44,6 @@ const ClinicalSummarySidebar = ({
 
       {/* Section: Current Medications */}
       <MedicationsSection medications={medications} />
-
-      {/* Divider */}
-      <div className="divider-gradient" />
-
-      {/* Section: Recent Labs */}
-      <LabResultsSection results={labResults} />
-
-      {/* Section: Fluid Balance - Only for admitted patients */}
-      {isAdmitted && patientId && (
-        <>
-          <div className="divider-gradient" />
-          <FluidBalanceSection patientId={patientId} />
-        </>
-      )}
 
       {/* Section: Billing Summary */}
       {patientId && (
@@ -272,172 +240,6 @@ const AllergiesSection = ({ allergies }) => {
 };
 
 /**
- * LabResultsSection - Recent lab results with abnormal highlighting
- */
-const LabResultsSection = ({ results, maxVisible = 4 }) => {
-  const visibleResults = results.slice(0, maxVisible);
-
-  if (!results || results.length === 0) {
-    return null;
-  }
-
-  // Get the most recent timestamp
-  const latestDate = results[0]?.timestamp
-    ? new Date(results[0].timestamp).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-    : 'Recent';
-
-  return (
-    <section>
-      <header className="flex items-center justify-between mb-4">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Recent Vitals
-        </h3>
-        <time className="font-mono text-xs text-muted-foreground/70">
-          {latestDate}
-        </time>
-      </header>
-
-      <div className="grid grid-cols-2 gap-2">
-        {visibleResults.map((result, i) => (
-          <div
-            key={result.id || i}
-            className={cn(
-              "p-3 rounded-lg border",
-              result.is_abnormal
-                ? "bg-primary/5 border-primary/30"
-                : "bg-card/50 border-border"
-            )}
-          >
-            <div className={cn(
-              "font-mono text-lg",
-              result.is_abnormal ? "text-primary" : "text-foreground"
-            )}>
-              {result.value}
-              {result.is_abnormal && (
-                <span className="text-xs ml-1">
-                  {result.abnormal_direction === 'high' ? '↑' : '↓'}
-                </span>
-              )}
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground">
-              {result.name} {result.unit && `(${result.unit})`}
-            </div>
-          </div>
-        ))}
-      </div>
-
-    </section>
-  );
-};
-
-/**
- * FluidBalanceSection - Today's fluid balance for admitted patients
- */
-const FluidBalanceSection = ({ patientId }) => {
-  const { data: fluidData, isLoading } = useTodayFluidBalance(patientId);
-
-  if (isLoading) {
-    return (
-      <section>
-        <header className="flex items-center justify-between mb-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            Fluid Balance
-          </h3>
-        </header>
-        <div className="animate-pulse space-y-2">
-          <div className="h-16 bg-muted rounded-lg" />
-        </div>
-      </section>
-    );
-  }
-
-  const intake = fluidData?.total_intake || 0;
-  const output = fluidData?.total_output || 0;
-  const balance = fluidData?.balance || (intake - output);
-
-  return (
-    <section>
-      <header className="flex items-center justify-between mb-4">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Fluid Balance (Today)
-        </h3>
-        <Droplet className="h-3.5 w-3.5 text-sky-500" />
-      </header>
-
-      <div className="grid grid-cols-3 gap-2">
-        {/* Intake */}
-        <div className="p-3 rounded-lg bg-sky-500/10 border border-sky-500/20">
-          <div className="flex items-center gap-1 mb-1">
-            <ArrowDownCircle className="h-3 w-3 text-sky-500" />
-            <span className="font-mono text-[10px] text-sky-600">IN</span>
-          </div>
-          <div className="font-mono text-sm font-medium text-sky-600">
-            {intake}
-            <span className="text-[10px] ml-0.5">ml</span>
-          </div>
-        </div>
-
-        {/* Output */}
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <div className="flex items-center gap-1 mb-1">
-            <ArrowUpCircle className="h-3 w-3 text-amber-500" />
-            <span className="font-mono text-[10px] text-amber-600">OUT</span>
-          </div>
-          <div className="font-mono text-sm font-medium text-amber-600">
-            {output}
-            <span className="text-[10px] ml-0.5">ml</span>
-          </div>
-        </div>
-
-        {/* Balance */}
-        <div className={cn(
-          "p-3 rounded-lg border",
-          balance > 0 && "bg-emerald-500/10 border-emerald-500/20",
-          balance < 0 && "bg-rose-500/10 border-rose-500/20",
-          balance === 0 && "bg-muted border-border"
-        )}>
-          <div className="flex items-center gap-1 mb-1">
-            <Droplet className={cn(
-              "h-3 w-3",
-              balance > 0 && "text-emerald-500",
-              balance < 0 && "text-rose-500",
-              balance === 0 && "text-muted-foreground"
-            )} />
-            <span className={cn(
-              "font-mono text-[10px]",
-              balance > 0 && "text-emerald-600",
-              balance < 0 && "text-rose-600",
-              balance === 0 && "text-muted-foreground"
-            )}>BAL</span>
-          </div>
-          <div className={cn(
-            "font-mono text-sm font-medium",
-            balance > 0 && "text-emerald-600",
-            balance < 0 && "text-rose-600",
-            balance === 0 && "text-muted-foreground"
-          )}>
-            {balance > 0 ? '+' : ''}{balance}
-            <span className="text-[10px] ml-0.5">ml</span>
-          </div>
-        </div>
-      </div>
-
-      {/* No data message */}
-      {intake === 0 && output === 0 && (
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          No fluid entries recorded today
-        </p>
-      )}
-    </section>
-  );
-};
-
-/**
  * MiniClinicalSummary - Compact version for inline use
  */
 const MiniClinicalSummary = ({ allergies = [], problems = [] }) => {
@@ -489,7 +291,5 @@ export {
   ProblemsSection,
   MedicationsSection,
   AllergiesSection,
-  LabResultsSection,
-  FluidBalanceSection,
   MiniClinicalSummary
 };
