@@ -32,6 +32,130 @@ function deriveStepsFromTemplate(template) {
   }));
 }
 
+function normalizeDataKey(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function toSubsectionFieldKey(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+function buildNormalizedKeyLookup(record) {
+  const lookup = new Map();
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return lookup;
+  }
+
+  Object.keys(record).forEach((key) => {
+    const normalized = normalizeDataKey(key);
+    if (normalized && !lookup.has(normalized)) {
+      lookup.set(normalized, key);
+    }
+  });
+
+  return lookup;
+}
+
+function resolveByAliases(record, lookup, aliases = []) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return undefined;
+  }
+
+  for (const alias of aliases) {
+    if (!alias) continue;
+
+    if (Object.prototype.hasOwnProperty.call(record, alias)) {
+      return record[alias];
+    }
+
+    const normalizedAlias = normalizeDataKey(alias);
+    const matchedKey = lookup.get(normalizedAlias);
+    if (matchedKey !== undefined) {
+      return record[matchedKey];
+    }
+  }
+
+  return undefined;
+}
+
+function mapStructuredStepValue(step, rawValue) {
+  if (rawValue === undefined || rawValue === null) return undefined;
+
+  const subsections = Array.isArray(step?.subsections) ? step.subsections : [];
+
+  // Legacy notes may store structured sections as plain strings.
+  // Put the text into the first subsection so clinicians can edit without retyping.
+  if (typeof rawValue === 'string') {
+    if (subsections.length === 0) return rawValue;
+    const firstSubsectionName = subsections[0]?.name;
+    const firstSubsectionKey = toSubsectionFieldKey(firstSubsectionName);
+    if (!firstSubsectionKey) return rawValue;
+    return { [firstSubsectionKey]: rawValue };
+  }
+
+  if (typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (subsections.length === 0) {
+    return rawValue;
+  }
+
+  const rawLookup = buildNormalizedKeyLookup(rawValue);
+  const mappedValue = {};
+
+  subsections.forEach((subsection) => {
+    if (!subsection?.name) return;
+    const subsectionKey = toSubsectionFieldKey(subsection.name);
+    if (!subsectionKey) return;
+
+    const subsectionValue = resolveByAliases(rawValue, rawLookup, [
+      subsectionKey,
+      subsection.name,
+    ]);
+
+    if (subsectionValue !== undefined) {
+      mappedValue[subsectionKey] = subsectionValue;
+    }
+  });
+
+  return Object.keys(mappedValue).length > 0 ? mappedValue : rawValue;
+}
+
+function mapInitialDataToWorkflowSteps(initialData, derivedSteps) {
+  if (!initialData || typeof initialData !== 'object' || Array.isArray(initialData)) {
+    return {};
+  }
+
+  const initialLookup = buildNormalizedKeyLookup(initialData);
+  const mappedFormData = {};
+
+  derivedSteps.forEach((step) => {
+    if (!step?.id) return;
+
+    const rawStepValue = resolveByAliases(initialData, initialLookup, [step.id, step.title]);
+    if (rawStepValue === undefined) return;
+
+    if (step.type === 'structured') {
+      const structuredValue = mapStructuredStepValue(step, rawStepValue);
+      if (structuredValue !== undefined) {
+        mappedFormData[step.id] = structuredValue;
+      }
+      return;
+    }
+
+    mappedFormData[step.id] = rawStepValue;
+  });
+
+  return mappedFormData;
+}
+
 /**
  * useNoteWorkflow - Hook for managing clinical note workflow state
  *
@@ -173,7 +297,7 @@ export function useNoteWorkflow(patientId, options = {}) {
       });
       return { success: true, note: noteEntry };
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
       queryClient.invalidateQueries({ queryKey: encounterKeys.all });
@@ -200,22 +324,8 @@ export function useNoteWorkflow(patientId, options = {}) {
 
     // If initial data provided (e.g., from copy), pre-populate formData
     if (initialData && typeof initialData === 'object') {
-      // Map the initial data to step IDs
       const derivedSteps = deriveStepsFromTemplate(selectedTemplate);
-      const mappedFormData = {};
-
-      derivedSteps.forEach((step) => {
-        // Try to find matching data by step ID or original section name
-        const stepId = step.id;
-        const originalName = step.title;
-
-        if (initialData[stepId]) {
-          mappedFormData[stepId] = initialData[stepId];
-        } else if (initialData[originalName]) {
-          mappedFormData[stepId] = initialData[originalName];
-        }
-      });
-
+      const mappedFormData = mapInitialDataToWorkflowSteps(initialData, derivedSteps);
       setFormData(mappedFormData);
     } else {
       setFormData({});
@@ -421,3 +531,4 @@ export function useNoteWorkflow(patientId, options = {}) {
 }
 
 export default useNoteWorkflow;
+export { deriveStepsFromTemplate, mapInitialDataToWorkflowSteps };
