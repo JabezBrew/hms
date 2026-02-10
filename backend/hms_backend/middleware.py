@@ -173,16 +173,29 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
         client_ip = get_client_ip(request)
         request.client_ip = client_ip
 
-        # Check if IP is on-site
-        is_on_site = SiteNetwork.is_ip_on_site(client_ip)
-        request.is_offsite = not is_on_site
+        try:
+            # Check if IP is on-site
+            is_on_site = SiteNetwork.is_ip_on_site(client_ip)
+            request.is_offsite = not is_on_site
 
-        # Get settings
-        settings = OffSiteAccessSettings.get_settings()
-        request.offsite_mode = settings.offsite_mode
+            # Get settings
+            settings = OffSiteAccessSettings.get_settings()
+            request.offsite_mode = settings.offsite_mode
+            readonly_message = settings.readonly_message
+            deny_message = settings.deny_message
+            allow_admin_override = settings.allow_admin_override
+        except Exception:
+            # Never hard-fail requests when off-site settings lookups fail.
+            logger.exception("Off-site access lookup failed; defaulting to restricted readonly mode.")
+            is_on_site = False
+            request.is_offsite = True
+            request.offsite_mode = 'readonly'
+            readonly_message = "System is in restricted mode. Write operations are temporarily disabled."
+            deny_message = "Access is temporarily unavailable."
+            allow_admin_override = False
 
         # If on-site or mode is 'allow', proceed normally
-        if is_on_site or settings.offsite_mode == 'allow':
+        if is_on_site or request.offsite_mode == 'allow':
             return None
 
         # Skip checks for certain endpoints
@@ -191,26 +204,26 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
             return None
 
         # Check if admin override is allowed
-        if settings.allow_admin_override:
+        if allow_admin_override:
             # Need to check if user is admin - but user might not be authenticated yet
             # This will be handled in the permission class instead
             pass
 
         # If mode is 'deny', block all off-site access
-        if settings.offsite_mode == 'deny':
+        if request.offsite_mode == 'deny':
             return JsonResponse(
                 {
-                    'detail': settings.deny_message,
+                    'detail': deny_message,
                     'code': 'offsite_access_denied'
                 },
                 status=403
             )
 
         # For 'readonly' mode, block write operations
-        if settings.offsite_mode == 'readonly' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        if request.offsite_mode == 'readonly' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
             return JsonResponse(
                 {
-                    'detail': settings.readonly_message,
+                    'detail': readonly_message,
                     'code': 'offsite_readonly',
                     'is_offsite': True
                 },

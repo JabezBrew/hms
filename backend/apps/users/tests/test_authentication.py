@@ -160,6 +160,28 @@ class TestLogin:
         # Behavior depends on implementation - either 200 or 401 is acceptable
         assert response.status_code in [status.HTTP_200_OK, status.HTTP_401_UNAUTHORIZED]
 
+    @patch('apps.core.models.OffSiteAccessSettings.get_settings', side_effect=Exception("settings unavailable"))
+    @patch('apps.core.models.SiteNetwork.is_ip_on_site', side_effect=Exception("network lookup unavailable"))
+    def test_login_survives_offsite_lookup_failure(self, _mock_on_site, _mock_settings, api_client, db):
+        """Login must not return 500 when off-site settings/network lookups fail."""
+        UserFactory(email='offsite@test.com', password='testpass')
+
+        response = api_client.post('/api/auth/login/', {
+            'email': 'offsite@test.com',
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['access_context']['offsite_mode'] == 'readonly'
+        assert response.data['access_context']['is_offsite'] is True
+
+    @patch('apps.core.models.OffSiteAccessSettings.get_settings', side_effect=Exception("settings unavailable"))
+    @patch('apps.core.models.SiteNetwork.is_ip_on_site', side_effect=Exception("network lookup unavailable"))
+    def test_non_auth_get_survives_offsite_lookup_failure(self, _mock_on_site, _mock_settings, api_client, db):
+        """Generic unauthenticated GET requests should not crash on off-site lookup failure."""
+        response = api_client.get('/favicon.ico')
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
 
 # =============================================================================
 # Token Refresh Tests

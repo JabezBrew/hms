@@ -1,10 +1,14 @@
 """
 Authentication response helpers.
 """
+import logging
+
 from django.conf import settings
 from rest_framework.response import Response
 
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
+
+logger = logging.getLogger(__name__)
 
 
 def get_access_context(request):
@@ -16,15 +20,23 @@ def get_access_context(request):
     else:
         client_ip = request.META.get('REMOTE_ADDR')
 
-    is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
-    settings_obj = OffSiteAccessSettings.get_settings()
+    try:
+        is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
+        settings_obj = OffSiteAccessSettings.get_settings()
+        offsite_mode = settings_obj.offsite_mode
+        readonly_message = settings_obj.readonly_message
+    except Exception:
+        logger.exception("Failed to resolve off-site access context during authentication response.")
+        is_offsite = True
+        offsite_mode = 'readonly'
+        readonly_message = "System is in restricted mode. Write operations are temporarily disabled."
 
     return {
         'is_offsite': is_offsite,
-        'offsite_mode': settings_obj.offsite_mode,
+        'offsite_mode': offsite_mode,
         'readonly_message': (
-            settings_obj.readonly_message
-            if is_offsite and settings_obj.offsite_mode == 'readonly'
+            readonly_message
+            if is_offsite and offsite_mode == 'readonly'
             else None
         ),
     }
