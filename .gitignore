@@ -57,6 +57,7 @@ google_credentials.json
 
 # Docs
 .junie/
+docs/
 .claude/
 .codex/
 .opencode/
