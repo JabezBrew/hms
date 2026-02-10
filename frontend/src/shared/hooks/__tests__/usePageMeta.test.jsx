@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HelmetProvider } from 'react-helmet-async'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate, useLocation } from 'react-router-dom'
 import { BreadcrumbProvider, PageBreadcrumb } from '@/components/layout/PageBreadcrumb'
 import { usePageMeta } from '../usePageMeta'
 
@@ -59,6 +59,23 @@ function RouteWithMeta() {
 
 function RouteWithoutMeta() {
   return <div>Unauthorized</div>
+}
+
+function SettingsSecurityPage() {
+  const meta = usePageMeta({
+    title: 'Security Settings | HMS',
+    breadcrumbs: [
+      { label: 'Settings', href: '/settings' },
+      { label: 'Security' },
+    ],
+  })
+
+  return <>{meta}<div>Security Page</div></>
+}
+
+function LocationDisplay() {
+  const location = useLocation()
+  return <div>Current Path: {location.pathname}</div>
 }
 
 describe('usePageMeta', () => {
@@ -127,6 +144,32 @@ describe('usePageMeta', () => {
     await waitFor(() => {
       expect(queryByText('Patient')).not.toBeInTheDocument()
       expect(queryByText('Patients')).not.toBeInTheDocument()
+    })
+  })
+
+  it('supports href breadcrumbs and navigates correctly', async () => {
+    const user = userEvent.setup()
+
+    const { getByText } = render(
+      <HelmetProvider>
+        <MemoryRouter initialEntries={['/settings/security']}>
+          <BreadcrumbProvider>
+            <Routes>
+              <Route path="/settings/security" element={<SettingsSecurityPage />} />
+              <Route path="/settings" element={<div>Settings Hub</div>} />
+            </Routes>
+            <PageBreadcrumb />
+            <LocationDisplay />
+          </BreadcrumbProvider>
+        </MemoryRouter>
+      </HelmetProvider>
+    )
+
+    await user.click(getByText('Settings'))
+
+    await waitFor(() => {
+      expect(getByText('Current Path: /settings')).toBeInTheDocument()
+      expect(getByText('Settings Hub')).toBeInTheDocument()
     })
   })
 })

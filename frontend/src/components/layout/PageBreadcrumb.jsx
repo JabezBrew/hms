@@ -24,8 +24,12 @@ export function BreadcrumbProvider({ children }) {
 
   const updateBreadcrumbs = useCallback((newBreadcrumbs, appliedPath) => {
     const safeBreadcrumbs = Array.isArray(newBreadcrumbs) ? newBreadcrumbs : [];
+    const normalizedBreadcrumbs = safeBreadcrumbs.map((crumb) => ({
+      ...crumb,
+      path: crumb.path || crumb.href,
+    }));
     // Filter out any "Home" breadcrumbs from the input (we add it automatically)
-    const filteredBreadcrumbs = safeBreadcrumbs.filter(
+    const filteredBreadcrumbs = normalizedBreadcrumbs.filter(
       crumb => crumb.label !== 'Home' && crumb.path !== '/'
     );
 
@@ -94,7 +98,7 @@ export function PageBreadcrumb() {
           return (
             <React.Fragment key={index}>
               <BreadcrumbItem>
-                {isLast ? (
+                {isLast || !crumb.path ? (
                   <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>
