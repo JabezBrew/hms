@@ -27,6 +27,15 @@ For production Railway deployments, use a split startup model:
 
 1. **Migration job**: run `python /app/run_migrations.py` before traffic cutover.
 2. **Web service**: run `python /app/startup_and_run.py` with `MIGRATE_ON_STARTUP=False`.
+3. **Safety gate**: keep `FAIL_ON_PENDING_MIGRATIONS=True` so web pods never serve with schema drift.
+
+Recommended Railway environment variables:
+
+```bash
+MIGRATE_ON_STARTUP=False
+FAIL_ON_PENDING_MIGRATIONS=True
+DEFAULT_FACILITY_CODE=<valid existing facility code>
+```
 
 Before running migrations, execute:
 

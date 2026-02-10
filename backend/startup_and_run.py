@@ -138,7 +138,7 @@ migrate_on_startup = parse_bool(
 )
 fail_on_pending = parse_bool(
     os.environ.get("FAIL_ON_PENDING_MIGRATIONS"),
-    default=False,
+    default=not bool(settings.DEBUG),
 )
 
 log(
