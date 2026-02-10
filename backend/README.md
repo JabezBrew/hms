@@ -37,6 +37,9 @@ FAIL_ON_PENDING_MIGRATIONS=True
 DEFAULT_FACILITY_CODE=<valid existing facility code>
 ```
 
+If `core_facility` exists but is empty, `run_migrations.py` will bootstrap a minimal
+facility row using `DEFAULT_FACILITY_CODE` before strict preflight checks.
+
 Before running migrations, execute:
 
 ```bash
