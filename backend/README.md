@@ -21,6 +21,21 @@ This will automatically start:
 
 Press `Ctrl+C` to stop all services at once.
 
+### Railway Deployment Pattern
+
+For production Railway deployments, use a split startup model:
+
+1. **Migration job**: run `python /app/run_migrations.py` before traffic cutover.
+2. **Web service**: run `python /app/startup_and_run.py` with `MIGRATE_ON_STARTUP=False`.
+
+Before running migrations, execute:
+
+```bash
+python manage.py preflight_migration_checks --strict
+```
+
+This prevents known facility-backfill migrations from failing mid-deploy due to missing fallback configuration (for example missing `DEFAULT_FACILITY_CODE` on multi-facility datasets).
+
 ### Prerequisites
 
 - Python 3.8+

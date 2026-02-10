@@ -63,6 +63,28 @@ jobs:
         # exit-zero treats all errors as warnings
         flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
+    - name: Migration preflight checks
+      env:
+        DEBUG: True
+        SECRET_KEY: test-secret-key-ci-${{ github.run_id }}
+        DB_NAME: hms_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
+        REDIS_URL: redis://localhost:6379/0
+        SENDGRID_API_KEY: test-sendgrid-key
+        DEFAULT_FROM_EMAIL: ci@example.com
+        GOOGLE_APPLICATION_CREDENTIALS: ""
+        GOOGLE_CLOUD_PROJECT: test-project
+        GOOGLE_HEALTHCARE_DATASET: test-dataset
+        GOOGLE_FHIR_STORE: test-fhir-store
+        GOOGLE_DICOM_STORE: test-dicom-store
+        GOOGLE_HL7V2_STORE: test-hl7v2-store
+      run: |
+        cd backend
+        python manage.py preflight_migration_checks --strict
+
     - name: Run tests with coverage
       env:
         DEBUG: True
@@ -161,10 +183,38 @@ jobs:
         retention-days: 30
 
   # ==========================================================================
+  # Railway Docker Build Parity
+  # ==========================================================================
+  railway-docker-builds:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build backend image (Railway parity)
+      run: |
+        docker build \
+          --file backend/Dockerfile \
+          --tag hms-backend:ci-${{ github.sha }} \
+          backend
+
+    - name: Build frontend image (Railway parity)
+      run: |
+        docker build \
+          --file frontend/Dockerfile \
+          --build-arg VITE_API_BASE_URL=https://example.invalid/api \
+          --build-arg VITE_WS_URL=wss://example.invalid \
+          --tag hms-frontend:ci-${{ github.sha }} \
+          frontend
+
+  # ==========================================================================
   # Build and Deploy (only on main branch push)
   # ==========================================================================
   build-and-deploy:
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-tests, frontend-tests, railway-docker-builds]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
