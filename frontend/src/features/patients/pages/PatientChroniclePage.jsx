@@ -23,7 +23,6 @@ import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInv
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
-import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api-client";
@@ -215,11 +214,87 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get latest vitals from context
   const latestVitals = chronicleContext?.latest_vitals;
-  const shouldShowFluidBalance = admissionStatus === 'admitted' ||
-    !!patient?.local_data?.current_admission_id ||
-    !!patient?.current_admission_id ||
-    !!patient?.local_data?.current_ward_id ||
-    !!patient?.current_ward_id;
+  // Use primitive values for memoization to avoid object reference issues
+  const vitalsId = latestVitals?.id;
+  const vitalsRecordedAt = latestVitals?.recorded_at;
+
+  // Transform latest_vitals from context into labResults format for sidebar
+  const labResults = useMemo(() => {
+    // Early return using the primitives we already checked
+    if (!vitalsId || !latestVitals) return [];
+
+    const results = [];
+    const timestamp = vitalsRecordedAt;
+
+    if (latestVitals.temperature) {
+      const temp = parseFloat(latestVitals.temperature);
+      results.push({
+        id: `temp-${vitalsId}`,
+        name: 'Temp',
+        value: latestVitals.temperature,
+        unit: '°C',
+        timestamp,
+        is_abnormal: temp > 38 || temp < 36,
+        abnormal_direction: temp > 38 ? 'high' : 'low',
+      });
+    }
+
+    if (latestVitals.heart_rate) {
+      const hr = parseInt(latestVitals.heart_rate);
+      results.push({
+        id: `hr-${vitalsId}`,
+        name: 'HR',
+        value: latestVitals.heart_rate,
+        unit: 'bpm',
+        timestamp,
+        is_abnormal: hr > 100 || hr < 60,
+        abnormal_direction: hr > 100 ? 'high' : 'low',
+      });
+    }
+
+    if (latestVitals.blood_pressure) {
+      const parts = latestVitals.blood_pressure.split('/');
+      const systolic = parts.length > 0 ? Number(parts[0]) : null;
+      results.push({
+        id: `bp-${vitalsId}`,
+        name: 'BP',
+        value: latestVitals.blood_pressure,
+        unit: 'mmHg',
+        timestamp,
+        is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
+        abnormal_direction: systolic > 140 ? 'high' : 'low',
+      });
+    }
+
+    if (latestVitals.oxygen_saturation) {
+      const spo2 = parseInt(latestVitals.oxygen_saturation);
+      results.push({
+        id: `spo2-${vitalsId}`,
+        name: 'SpO2',
+        value: latestVitals.oxygen_saturation,
+        unit: '%',
+        timestamp,
+        is_abnormal: spo2 < 95,
+        abnormal_direction: 'low',
+      });
+    }
+
+    if (latestVitals.respiratory_rate) {
+      const rr = parseInt(latestVitals.respiratory_rate);
+      results.push({
+        id: `rr-${vitalsId}`,
+        name: 'RR',
+        value: latestVitals.respiratory_rate,
+        unit: '/min',
+        timestamp,
+        is_abnormal: rr > 20 || rr < 12,
+        abnormal_direction: rr > 20 ? 'high' : 'low',
+      });
+    }
+
+    return results;
+    // Use primitive vitalsId as dependency - will only re-run when vitals actually change
+  }, [vitalsId, vitalsRecordedAt, latestVitals]);
 
   // Fetch active chart assignments for this patient
   const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(
@@ -231,13 +306,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
       enabled: canFetchClinical,
     }
   );
-
-  const {
-    data: fluidBalance,
-    isLoading: isFluidBalanceLoading,
-  } = useTodayFluidBalance(patientLocalId, {
-    enabled: canFetchClinical && !!patientLocalId && shouldShowFluidBalance,
-  });
 
   // Map filter to API type
   const typeMapping = {
@@ -965,10 +1033,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
         }}
         insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
-        latestVitals={latestVitals}
-        fluidBalance={fluidBalance}
-        isFluidBalanceLoading={isFluidBalanceLoading}
-        showFluidBalance={shouldShowFluidBalance}
       />
 
       {/* Main Content: Sidebar + Timeline */}
@@ -982,6 +1046,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
           problems={problems}
           medications={medications}
           allergies={allergies}
+          labResults={labResults}
           className={cn(
             "hidden lg:block",
             isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
