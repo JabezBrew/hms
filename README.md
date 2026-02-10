@@ -2,6 +2,14 @@
 
 A modern, modular, and scalable Hospital Management System using Django REST Framework for the backend and React (Vite) with shadcn/ui components for the frontend.
 
+## Codebase Documentation
+
+For detailed, implementation-level documentation of this repository:
+
+- `/Users/jebre/Desktop/hms/CODEBASE_DEEP_DIVE.md`
+- `/Users/jebre/Desktop/hms/backend/CODEBASE_BACKEND.md`
+- `/Users/jebre/Desktop/hms/frontend/CODEBASE_FRONTEND.md`
+
 ## Project Overview
 
 The Hospital Management System is designed to integrate with Google Cloud Healthcare API while implementing custom modules and logic that the API doesn't natively support.
