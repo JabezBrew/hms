@@ -16,16 +16,15 @@ import { InvoiceChronicleCard } from "@/components/billing";
  * ClinicalSummarySidebar - Always-visible patient context panel
  *
  * Displays critical patient information:
+ * - Recent vitals snapshot
  * - Active problems (with severity indicators)
  * - Current medications
- * - Allergies (high visibility)
- * - Recent lab results (with abnormal highlighting)
+ * - Fluid balance (admitted patients)
  */
 const ClinicalSummarySidebar = ({
   patient,
   problems = [],
   medications = [],
-  allergies = [],
   labResults = [],
   className
 }) => {
@@ -48,8 +47,16 @@ const ClinicalSummarySidebar = ({
       "chronicle-scrollbar",
       className
     )}>
-      {/* Section: Allergies - High Visibility (First for safety) */}
-      <AllergiesSection allergies={allergies} />
+      {/* Section: Recent Vitals */}
+      <LabResultsSection results={labResults} />
+
+      {/* Section: Fluid Balance - Only for admitted patients */}
+      {isAdmitted && patientId && (
+        <>
+          <div className="divider-gradient" />
+          <FluidBalanceSection patientId={patientId} />
+        </>
+      )}
 
       {/* Divider */}
       <div className="divider-gradient" />
@@ -62,20 +69,6 @@ const ClinicalSummarySidebar = ({
 
       {/* Section: Current Medications */}
       <MedicationsSection medications={medications} />
-
-      {/* Divider */}
-      <div className="divider-gradient" />
-
-      {/* Section: Recent Labs */}
-      <LabResultsSection results={labResults} />
-
-      {/* Section: Fluid Balance - Only for admitted patients */}
-      {isAdmitted && patientId && (
-        <>
-          <div className="divider-gradient" />
-          <FluidBalanceSection patientId={patientId} />
-        </>
-      )}
 
       {/* Section: Billing Summary */}
       {patientId && (
