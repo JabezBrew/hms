@@ -90,6 +90,11 @@ log(f"PORT: {os.environ.get('PORT', 'NOT SET')}")
 log(f"PWD: {os.getcwd()}")
 log(f"USER: {os.getuid()}")
 
+run_migrations_only = parse_bool(os.environ.get("RUN_MIGRATIONS_ONLY"), default=False)
+if run_migrations_only:
+    log("RUN_MIGRATIONS_ONLY=True detected. Delegating to run_migrations.py and exiting.")
+    os.execvp(sys.executable, [sys.executable, "/app/run_migrations.py"])
+
 # Check critical env vars
 secret_key = os.environ.get('SECRET_KEY')
 if not secret_key:

@@ -29,12 +29,20 @@ For production Railway deployments, use a split startup model:
 2. **Web service**: run `python /app/startup_and_run.py` with `MIGRATE_ON_STARTUP=False`.
 3. **Safety gate**: keep `FAIL_ON_PENDING_MIGRATIONS=True` so web pods never serve with schema drift.
 
+Single-command alternative (no start-command switching):
+
+- Keep Railway start command as `python /app/startup_and_run.py`.
+- For a one-off migration deployment, set `RUN_MIGRATIONS_ONLY=True` and deploy.
+  `startup_and_run.py` will delegate to `run_migrations.py` and exit after completion.
+- Set `RUN_MIGRATIONS_ONLY=False` and deploy again to resume normal web serving.
+
 Recommended Railway environment variables:
 
 ```bash
 MIGRATE_ON_STARTUP=False
 FAIL_ON_PENDING_MIGRATIONS=True
 DEFAULT_FACILITY_CODE=<valid existing facility code>
+RUN_MIGRATIONS_ONLY=False
 ```
 
 If `core_facility` exists but is empty, `run_migrations.py` will bootstrap a minimal
