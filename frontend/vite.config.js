@@ -24,35 +24,7 @@ export default defineConfig(({ mode }) => {
           ]
         : []),
     ],
-    build: {
-      modulePreload: false,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-          if (id.includes("node_modules")) {
-            if (id.includes("react-dom") || id.includes("react/")) return "vendor-react"
-            if (id.includes("react-router")) return "vendor-router"
-            if (id.includes("@tanstack/react-query") || id.includes("@tanstack/query-core")) return "vendor-query"
-            if (id.includes("recharts") || id.includes("react-smooth") || id.includes("d3-")) return "vendor-recharts"
-            if (id.includes("@dnd-kit")) return "vendor-dnd"
-            if (id.includes("date-fns")) return "vendor-date"
-            if (id.includes("react-hook-form") || id.includes("@hookform/resolvers")) return "vendor-form"
-            if (id.includes("zod")) return "vendor-zod"
-            if (id.includes("react-day-picker")) return "vendor-day-picker"
-            if (id.includes("react-resizable-panels")) return "vendor-panels"
-            if (id.includes("sonner")) return "vendor-sonner"
-            if (id.includes("lodash")) return "vendor-lodash"
-            if (
-              id.includes("@radix-ui") ||
-              id.includes("@floating-ui") ||
-              id.includes("react-remove-scroll")
-            ) return "vendor-radix"
-            return undefined
-          }
-        },
-      },
-      },
-    },
+    // Use Vite/Rollup default chunking to avoid brittle cross-chunk init ordering.
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
