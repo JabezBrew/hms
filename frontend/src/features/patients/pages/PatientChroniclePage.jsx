@@ -42,6 +42,7 @@ import { labKeys } from "@/features/laboratory/hooks";
 import { drugSafetyApi } from "@/shared/api/drugSafety";
 import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
 import { keyWith } from "@/shared/lib/queryKeys";
+import { emitOnboardingEvent } from "@/features/onboarding";
 
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -90,6 +91,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const { user, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const prefetchedActionsRef = useRef(new Set());
+  const openedPatientChartsRef = useRef(new Set());
+  const lastFilterEventRef = useRef(null);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -201,6 +204,35 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // The URL id is the patient UUID which works for all clinical endpoints
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+
+  useEffect(() => {
+    if (!hasClinicalAccess || !patientLocalId) {
+      return;
+    }
+    if (openedPatientChartsRef.current.has(patientLocalId)) {
+      return;
+    }
+    openedPatientChartsRef.current.add(patientLocalId);
+    emitOnboardingEvent('patients.chart_opened', {
+      success: true,
+      patient_id: patientLocalId,
+    });
+  }, [hasClinicalAccess, patientLocalId]);
+
+  useEffect(() => {
+    if (!patientLocalId) {
+      return;
+    }
+    const token = `${patientLocalId}:${activeFilter}`;
+    if (lastFilterEventRef.current === token) {
+      return;
+    }
+    lastFilterEventRef.current = token;
+    emitOnboardingEvent('chronicle.filter_changed', {
+      filter: activeFilter,
+      patient_id: patientLocalId,
+    });
+  }, [activeFilter, patientLocalId]);
 
   useEffect(() => {
     prefetchedActionsRef.current = new Set();

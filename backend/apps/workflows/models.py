@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -420,3 +423,140 @@ class WorkflowTemplate(models.Model):
         """Increment usage count"""
         self.usage_count += 1
         self.save(update_fields=['usage_count'])
+
+
+class OnboardingProgressStatus(models.TextChoices):
+    """Onboarding progress status choices."""
+
+    IN_PROGRESS = 'in_progress', 'In Progress'
+    COMPLETED = 'completed', 'Completed'
+
+
+class OnboardingFlowDefinition(models.Model):
+    """
+    Versioned onboarding flow definition.
+
+    `definition` contains the full flow contract consumed by frontend and evaluator.
+    """
+
+    flow_key = models.CharField(max_length=120, db_index=True)
+    version = models.PositiveIntegerField(default=1)
+    active = models.BooleanField(default=True, db_index=True)
+    roles = models.JSONField(default=list, blank=True)
+    definition = models.JSONField(default=dict)
+    etag = models.CharField(max_length=64, editable=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'workflows_onboarding_flow_definition'
+        ordering = ['flow_key', '-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['flow_key', 'version'],
+                name='uq_workflows_onboarding_flow_definition_key_version',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['active', 'updated_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.flow_key}:v{self.version}"
+
+    def save(self, *args, **kwargs):
+        payload = {
+            'flow_key': self.flow_key,
+            'version': self.version,
+            'active': self.active,
+            'roles': self.roles,
+            'definition': self.definition,
+        }
+        serialized = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+        self.etag = hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+        super().save(*args, **kwargs)
+
+
+class OnboardingProgress(models.Model):
+    """Per-user onboarding progress for a specific flow version."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='onboarding_progress',
+    )
+    flow_definition = models.ForeignKey(
+        OnboardingFlowDefinition,
+        on_delete=models.CASCADE,
+        related_name='progress_records',
+    )
+    flow_key = models.CharField(max_length=120, db_index=True)
+    flow_version = models.PositiveIntegerField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=OnboardingProgressStatus.choices,
+        default=OnboardingProgressStatus.IN_PROGRESS,
+        db_index=True,
+    )
+    current_step_index = models.PositiveIntegerField(default=0)
+    completed_steps_mask = models.BigIntegerField(default=0)
+    skipped_steps_mask = models.BigIntegerField(default=0)
+    state_json = models.JSONField(default=dict, blank=True)
+    step_runtime_json = models.JSONField(default=dict, blank=True)
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'workflows_onboarding_progress'
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'flow_key', 'flow_version'],
+                name='uq_workflows_onboarding_progress_user_flow',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'status', 'updated_at']),
+            models.Index(fields=['user', 'flow_key']),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.flow_key}:v{self.flow_version}"
+
+    def save(self, *args, **kwargs):
+        if self.flow_definition_id:
+            self.flow_key = self.flow_definition.flow_key
+            self.flow_version = self.flow_definition.version
+        super().save(*args, **kwargs)
+
+
+class OnboardingEventReceipt(models.Model):
+    """Idempotency receipts for ingested onboarding events."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='onboarding_event_receipts',
+    )
+    event_id = models.CharField(max_length=64)
+    event_name = models.CharField(max_length=120, db_index=True)
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'workflows_onboarding_event_receipt'
+        ordering = ['-received_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'event_id'],
+                name='uq_workflows_onboarding_event_receipt_user_event',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'received_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.event_id}"

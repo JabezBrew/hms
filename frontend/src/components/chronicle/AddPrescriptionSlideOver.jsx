@@ -32,6 +32,7 @@ import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutoc
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
 import { prescriptionKeys } from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
+import { emitOnboardingEvent } from "@/features/onboarding";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -319,6 +320,12 @@ const AddPrescriptionSlideOver = ({
 
     try {
       const result = await createPrescriptionMutation.mutateAsync(data);
+      emitOnboardingEvent('chronicle.prescription_created', {
+        success: true,
+        prescription_id: result?.id || null,
+        patient_id: patientId || null,
+      });
+
       if (result.mar_generated) {
         toast.success('Prescription created and MAR entries generated for nursing');
       } else {

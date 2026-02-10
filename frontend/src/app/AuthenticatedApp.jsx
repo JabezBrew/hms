@@ -17,6 +17,7 @@ const UnauthorizedPage = lazy(() => import('@/pages/UnauthorizedPage'))
 const Toaster = lazy(() =>
   import('@/components/ui/sonner').then((module) => ({ default: module.Toaster }))
 )
+const OnboardingRuntime = lazy(() => import('@/features/onboarding/components/OnboardingRuntime'))
 
 export default function AuthenticatedApp() {
   return (
@@ -37,6 +38,9 @@ export default function AuthenticatedApp() {
               {renderRoutes(featureRoutes)}
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
+          </Suspense>
+          <Suspense fallback={null}>
+            <OnboardingRuntime />
           </Suspense>
           <CriticalAlertsMonitor />
           <OfflineIndicator />

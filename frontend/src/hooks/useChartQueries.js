@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { emitOnboardingEvent } from '@/features/onboarding';
 
 // =============================================================================
 // Query Keys
@@ -136,6 +137,10 @@ export function useCreateChartTemplate() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: chartKeys.templates() });
       toast.success('Chart template created');
+      emitOnboardingEvent('templates.chart.created', {
+        success: true,
+        template_id: data?.id || null,
+      });
     },
     onError: (error) => {
       const message = error.response?.data?.detail || 'Failed to create template';
@@ -375,9 +380,15 @@ export function useCreateChartAssignment() {
     mutationFn: async (assignmentData) => {
       return await apiClient.post('/charts/assignments/', assignmentData);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
       toast.success('Chart assigned to patient');
+      emitOnboardingEvent('charts.assignment.created', {
+        success: true,
+        assignment_id: data?.id || null,
+        template_id: data?.template?.id || data?.template || variables?.template_id || null,
+        patient_id: data?.patient || variables?.patient || null,
+      });
     },
     onError: (error) => {
       const message = error.response?.data?.detail || 'Failed to assign chart';
@@ -605,9 +616,15 @@ export function useCreateChartEntry() {
     mutationFn: async (entryData) => {
       return await apiClient.post('/charts/entries/', entryData);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: chartKeys.entries() });
       queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+
+      emitOnboardingEvent('charts.entry.created', {
+        success: true,
+        entry_id: data?.id || null,
+        assignment_id: data?.assignment || variables?.assignment || null,
+      });
 
       if (data.has_critical_values) {
         toast.warning('Entry recorded with critical values', {

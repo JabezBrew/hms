@@ -37,6 +37,7 @@ import {
   useCreateLabOrder,
   useSubmitLabOrder,
 } from "@/features/laboratory/hooks";
+import { emitOnboardingEvent } from "@/features/onboarding";
 import { toast } from "sonner";
 
 /**
@@ -248,6 +249,12 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
       // Submit order immediately
       await submitOrder.mutateAsync(createdOrder.id);
+
+      emitOnboardingEvent('labs.order_created', {
+        success: true,
+        order_id: createdOrder.id,
+        patient_id: patientId || null,
+      });
 
       toast.success("Lab order created and submitted", {
         description: `Order #${createdOrder.order_number} has been submitted`,

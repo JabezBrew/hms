@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinicalNotesApi } from '@/features/clinical-notes/api';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { timelineKeys } from './useTimelineQueries';
+import { emitOnboardingEvent } from '@/features/onboarding';
 
 // Query keys
 const clinicalNotesKeyFactory = createKeyFactory('clinical-notes');
@@ -67,9 +68,27 @@ export function useCreateNoteTemplate() {
   
   return useMutation({
     mutationFn: (data) => clinicalNotesApi.createNoteTemplate(data),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       // Invalidate the templates list query to refetch
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.templates() });
+
+      const sectionsFromResponse = Array.isArray(data?.structure)
+        ? data.structure
+        : data?.structure?.sections;
+      const sectionsFromRequest = Array.isArray(variables?.structure)
+        ? variables.structure
+        : variables?.structure?.sections;
+      const sectionCount = Array.isArray(sectionsFromResponse)
+        ? sectionsFromResponse.length
+        : Array.isArray(sectionsFromRequest)
+        ? sectionsFromRequest.length
+        : 0;
+
+      emitOnboardingEvent('templates.note.created', {
+        success: true,
+        template_id: data?.id || null,
+        section_count: sectionCount,
+      });
     },
   });
 }
@@ -249,7 +268,7 @@ export function useCreateNoteEntry() {
 
   return useMutation({
     mutationFn: (data) => clinicalNotesApi.createNoteEntry(data),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       // Invalidate the entries list query to refetch
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
 
@@ -259,6 +278,13 @@ export function useCreateNoteEntry() {
           queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter_id)
         });
       }
+
+      emitOnboardingEvent('chronicle.note_created', {
+        success: true,
+        note_id: data?.id || null,
+        template_id: data?.template || variables?.template || null,
+        patient_id: data?.patient || variables?.patient || null,
+      });
     },
   });
 }
