@@ -119,14 +119,14 @@ class MyViewSet(viewsets.ModelViewSet):
 
 ## Frontend Modularization (Current)
 
-- Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.ts`, `index.ts`.
+- Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.js`, `index.js`.
 - `frontend/src/pages/*` are route wrappers only. Keep page logic in feature `pages/`.
 - Shared primitives belong in `frontend/src/shared/` (page shell, meta hooks, constants, utils).
 - Route metadata is centralized in `frontend/src/app/routes/*` and rendered via `renderRoutes` with role gating.
 - Prefer `PageShell`, `PageHeader`, and `PageState` for consistent Chronicle layout and error/loading states.
 - Use `usePageMeta` to set titles and breadcrumbs; avoid per-page ad hoc `Helmet` + breadcrumb wiring.
-- Prefer feature/shared API modules over `frontend/src/lib/api.ts` (legacy compatibility only).
-- Standardize React Query keys with `shared/lib/queryKeys.ts` and feature key exports.
+- Prefer feature/shared API modules over `frontend/src/lib/api.js` (legacy compatibility only).
+- Standardize React Query keys with `shared/lib/queryKeys.js` and feature key exports.
 
 ### shadcn/ui Components
 If a UI component doesn't exist in `frontend/src/components/ui/`, install it:
@@ -216,7 +216,7 @@ python manage.py makemigrations && python manage.py migrate
 
 # Frontend (from frontend/)
 npm run test                              # Unit tests
-npm run test -- path/to/test.test.tsx     # Specific file
+npm run test -- path/to/test.test.jsx     # Specific file
 npm run test:coverage                     # Coverage run
 ```
 

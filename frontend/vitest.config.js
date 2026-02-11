@@ -12,7 +12,7 @@ export default defineConfig({
     environment: 'jsdom',
 
     // Setup files to run before each test file
-    setupFiles: ['./tests/setup.ts'],
+    setupFiles: ['./tests/setup.js'],
 
     // Test file patterns
     include: [
@@ -34,7 +34,7 @@ export default defineConfig({
       exclude: [
         'node_modules/',
         'tests/',
-        'src/main.tsx',
+        'src/main.jsx',
         '**/*.config.{js,ts}',
         '**/index.{js,jsx,ts,tsx}',
         '**/*.d.ts'

@@ -150,16 +150,6 @@ jobs:
         cd frontend
         npm run lint
 
-    - name: Typecheck
-      run: |
-        cd frontend
-        npm run typecheck
-
-    - name: Enforce no JS/JSX in src/tests
-      run: |
-        cd frontend
-        npm run check:no-js
-
     - name: Run unit tests with coverage
       run: |
         cd frontend
