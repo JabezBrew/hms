@@ -3,7 +3,7 @@ import type { AppRoute, RouteLayout } from '@/types/routes'
 export const ROUTE_LAYOUTS = Object.freeze({
   APP: 'app',
   BARE: 'bare',
-})
+} as const)
 
 function isValidLayout(layout: unknown): layout is RouteLayout {
   return typeof layout === 'string' && Object.values(ROUTE_LAYOUTS).includes(layout as RouteLayout)
