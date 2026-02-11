@@ -128,14 +128,14 @@ frontend/
 │   ├── context/           # React context providers
 │   ├── hooks/             # Custom React hooks
 │   ├── utils/             # Utility functions
-│   └── App.jsx            # Main application component
+│   └── App.tsx            # Main application component
 └── vite.config.js         # Vite configuration
 ```
 
 ## Development Guidelines
 
 - Follow PEP 8 style guide for Python code
-- Use ESLint and Prettier for JavaScript/React code
+- Use ESLint and Prettier for TypeScript/React code
 - Write tests for all new features
 - Document code using docstrings and comments
 - Follow the Git workflow (feature branches, pull requests)

@@ -17,14 +17,14 @@ Core stack:
 
 Primary entry files:
 
-- `/Users/jebre/Desktop/hms/frontend/src/main.jsx`
-- `/Users/jebre/Desktop/hms/frontend/src/App.jsx`
-- `/Users/jebre/Desktop/hms/frontend/src/app/AuthenticatedApp.jsx`
-- `/Users/jebre/Desktop/hms/frontend/src/app/PublicAuthApp.jsx`
+- `/Users/jebre/Desktop/hms/frontend/src/main.tsx`
+- `/Users/jebre/Desktop/hms/frontend/src/App.tsx`
+- `/Users/jebre/Desktop/hms/frontend/src/app/AuthenticatedApp.tsx`
+- `/Users/jebre/Desktop/hms/frontend/src/app/PublicAuthApp.tsx`
 
 ## 2. App Boot and Provider Composition
 
-`App.jsx` composes providers in this order:
+`App.tsx` composes providers in this order:
 
 1. `QueryClientProvider`
 2. `ThemeProvider`
@@ -47,11 +47,11 @@ Boot behavior:
 
 All feature route definitions are merged by:
 
-- `/Users/jebre/Desktop/hms/frontend/src/app/routes/featureRoutes.js`
+- `/Users/jebre/Desktop/hms/frontend/src/app/routes/featureRoutes.ts`
 
 Routes are rendered by:
 
-- `/Users/jebre/Desktop/hms/frontend/src/app/routes/renderRoutes.jsx`
+- `/Users/jebre/Desktop/hms/frontend/src/app/routes/renderRoutes.tsx`
 
 Layout strategy:
 
@@ -67,7 +67,7 @@ Layout strategy:
 
 Role constants/groups live in:
 
-- `/Users/jebre/Desktop/hms/frontend/src/shared/constants/roles.js`
+- `/Users/jebre/Desktop/hms/frontend/src/shared/constants/roles.ts`
 
 ### 3.3 Feature route groups (current)
 
@@ -113,11 +113,11 @@ Typical folders:
 - `api/`
 - `hooks/`
 - `components/`
-- `routes.js`
+- `routes.ts`
 
 Current-state note:
 
-- Many feature `api/index.js` files are thin re-exports over legacy central APIs in `/src/lib/api/*`.
+- Many feature `api/index.ts` files are thin re-exports over legacy central APIs in `/src/lib/api/*`.
 - Some features do not yet have a local `api/` implementation and still rely entirely on central lib API modules.
 
 ## 5. Data Layer
@@ -126,7 +126,7 @@ Current-state note:
 
 Core API transport is in:
 
-- `/Users/jebre/Desktop/hms/frontend/src/lib/api-client.js`
+- `/Users/jebre/Desktop/hms/frontend/src/lib/api-client.ts`
 
 Key behavior:
 
@@ -142,7 +142,7 @@ Key behavior:
 
 Auth state logic is in:
 
-- `/Users/jebre/Desktop/hms/frontend/src/lib/auth.jsx`
+- `/Users/jebre/Desktop/hms/frontend/src/lib/auth.tsx`
 
 Important behaviors:
 
@@ -154,7 +154,7 @@ Important behaviors:
 
 ## 5.3 Query caching
 
-QueryClient defaults (`/src/lib/react-query.js`):
+QueryClient defaults (`/src/lib/react-query.ts`):
 
 - `staleTime`: 5 minutes
 - `gcTime`: 30 minutes
@@ -163,13 +163,13 @@ QueryClient defaults (`/src/lib/react-query.js`):
 
 Query key utilities:
 
-- `/Users/jebre/Desktop/hms/frontend/src/shared/lib/queryKeys.js`
+- `/Users/jebre/Desktop/hms/frontend/src/shared/lib/queryKeys.ts`
 
 ## 6. Realtime Layer
 
 Client websocket implementation:
 
-- `/Users/jebre/Desktop/hms/frontend/src/lib/websocket.js`
+- `/Users/jebre/Desktop/hms/frontend/src/lib/websocket.ts`
 
 Key capabilities:
 
@@ -188,7 +188,7 @@ Supported client classes:
 
 React hooks around websocket clients:
 
-- `/Users/jebre/Desktop/hms/frontend/src/hooks/useWebSocket.js`
+- `/Users/jebre/Desktop/hms/frontend/src/hooks/useWebSocket.ts`
 - dashboard-specific hooks under `/src/features/dashboards/hooks/`
 
 ## 7. Shared UX Infrastructure
@@ -246,7 +246,7 @@ Pattern:
 
 1. Feature route modularization is in place and broadly consistent.
 2. API modularization is partially complete; many feature modules still proxy to central `/lib/api`.
-3. Auth/session/facility handling is robust and centralized in `auth.jsx` + `api-client.js`.
+3. Auth/session/facility handling is robust and centralized in `auth.tsx` + `api-client.ts`.
 4. Realtime support exists for alerts/vitals/referrals/dashboards with reconnect logic.
 5. Performance-conscious build chunking is configured at the bundler layer.
 
@@ -255,32 +255,32 @@ Pattern:
 ### 12.1 Add a new feature page
 
 1. add page component under `features/<feature>/pages`
-2. register route in `features/<feature>/routes.js` with explicit `roles` and `layout`
+2. register route in `features/<feature>/routes.ts` with explicit `roles` and `layout`
 3. ensure route metadata includes title/breadcrumbs
-4. expose route in `app/routes/featureRoutes.js`
+4. expose route in `app/routes/featureRoutes.ts`
 
 ### 12.2 Add a new API interaction
 
-1. define domain method in `lib/api/<domain>.js` or feature api module
+1. define domain method in `lib/api/<domain>.ts` or feature api module
 2. use `apiClient` (not raw fetch) for auth/facility/refresh handling
 3. add React Query hook with stable query key
 4. handle loading/error via shared page state primitives
 
 ### 12.3 Add realtime invalidation
 
-1. create websocket client event mapping in `lib/websocket.js`
+1. create websocket client event mapping in `lib/websocket.ts`
 2. add hook wrapper for lifecycle and cache invalidation
 3. keep websocket payload minimal and refetch full data via API
 
 ## 13. File Index (High-Value Read Order)
 
-1. `/Users/jebre/Desktop/hms/frontend/src/App.jsx`
-2. `/Users/jebre/Desktop/hms/frontend/src/app/AuthenticatedApp.jsx`
-3. `/Users/jebre/Desktop/hms/frontend/src/app/routes/featureRoutes.js`
-4. `/Users/jebre/Desktop/hms/frontend/src/app/routes/renderRoutes.jsx`
-5. `/Users/jebre/Desktop/hms/frontend/src/lib/auth.jsx`
-6. `/Users/jebre/Desktop/hms/frontend/src/lib/api-client.js`
-7. `/Users/jebre/Desktop/hms/frontend/src/lib/react-query.js`
-8. `/Users/jebre/Desktop/hms/frontend/src/shared/constants/roles.js`
-9. `/Users/jebre/Desktop/hms/frontend/src/lib/websocket.js`
+1. `/Users/jebre/Desktop/hms/frontend/src/App.tsx`
+2. `/Users/jebre/Desktop/hms/frontend/src/app/AuthenticatedApp.tsx`
+3. `/Users/jebre/Desktop/hms/frontend/src/app/routes/featureRoutes.ts`
+4. `/Users/jebre/Desktop/hms/frontend/src/app/routes/renderRoutes.tsx`
+5. `/Users/jebre/Desktop/hms/frontend/src/lib/auth.tsx`
+6. `/Users/jebre/Desktop/hms/frontend/src/lib/api-client.ts`
+7. `/Users/jebre/Desktop/hms/frontend/src/lib/react-query.ts`
+8. `/Users/jebre/Desktop/hms/frontend/src/shared/constants/roles.ts`
+9. `/Users/jebre/Desktop/hms/frontend/src/lib/websocket.ts`
 10. `/Users/jebre/Desktop/hms/frontend/vite.config.js`

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
+    "lint": "npx -y -p typescript-eslint@8.26.0 eslint .",
+    "typecheck": "npx -y typescript@5.6.3 tsc --noEmit",
+    "check:no-js": "node ./scripts/check-no-js.mjs",
     "preview": "vite preview",
     "preview:ci": "serve -s dist -l 4173",
     "perf:bundle-budget": "node ./scripts/check-bundle-budget.mjs",

@@ -20,6 +20,8 @@ npm run dev
 
 ```bash
 npm run lint
+npm run typecheck
+npm run check:no-js
 npm run test:run
 npm run build
 ```

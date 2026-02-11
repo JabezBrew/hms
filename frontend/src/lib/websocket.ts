@@ -1,0 +1,461 @@
+/**
+ * WebSocket client for real-time HMS notifications.
+ *
+ * Provides auto-reconnect with exponential backoff, JWT authentication,
+ * and event handling for nursing alerts and vital signs.
+ *
+ * Usage:
+ *   import { AlertWebSocket } from '@/lib/websocket';
+ *
+ *   const ws = new AlertWebSocket(token, { wardId: '123' });
+ *   ws.on('alert.new', (alert) => console.log('New alert:', alert));
+ *   ws.connect();
+ */
+
+interface BaseWebSocketOptions {
+  useQueryTokenFallback?: boolean
+  baseProtocol?: string
+  wardId?: string
+  wardScope?: string
+  [key: string]: unknown
+}
+
+type EventListener = (data: unknown) => void
+
+function resolveWebSocketBaseUrl(): string {
+  const explicit = import.meta.env.VITE_WS_URL;
+  if (explicit) {
+    return String(explicit).replace(/\/$/, '');
+  }
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
+  if (apiBase && /^https?:\/\//i.test(apiBase)) {
+    try {
+      const parsed = new URL(apiBase);
+      parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Common API base is .../api; WS routes are mounted at /ws.
+      parsed.pathname = parsed.pathname.replace(/\/api\/?$/i, '');
+      return parsed.toString().replace(/\/$/, '');
+    } catch {
+      // Fall through to environment defaults.
+    }
+  }
+
+  // Local development backend default (Django dev server).
+  if (import.meta.env.DEV) {
+    return 'ws://localhost:8000';
+  }
+
+  // Production fallback: same host as frontend.
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${window.location.host}`;
+}
+
+const WS_BASE_URL = resolveWebSocketBaseUrl()
+
+// Reconnection settings
+const INITIAL_RECONNECT_DELAY = 1000 // 1 second
+const MAX_RECONNECT_DELAY = 30000 // 30 seconds
+const RECONNECT_MULTIPLIER = 1.5
+const MAX_RECONNECT_ATTEMPTS = 10
+
+/**
+ * Base WebSocket client with auto-reconnect and event handling.
+ */
+class BaseWebSocket {
+  path: string
+  token: string | null
+  options: BaseWebSocketOptions
+  ws: WebSocket | null
+  listeners: Map<string, Set<EventListener>>
+  reconnectAttempts: number
+  reconnectDelay: number
+  reconnectTimer: ReturnType<typeof setTimeout> | null
+  pingInterval: ReturnType<typeof setInterval> | null
+  isIntentionalClose: boolean
+
+  constructor(path: string, token: string | null, options: BaseWebSocketOptions = {}) {
+    this.path = path
+    this.token = token
+    this.options = options
+    this.ws = null
+    this.listeners = new Map()
+    this.reconnectAttempts = 0
+    this.reconnectDelay = INITIAL_RECONNECT_DELAY
+    this.reconnectTimer = null
+    this.pingInterval = null
+    this.isIntentionalClose = false
+  }
+
+  /**
+   * Build the WebSocket URL.
+   */
+  getUrl(): string {
+    const url = `${WS_BASE_URL}${this.path}`
+
+    // Optional legacy fallback for backends that still require query param token auth.
+    if (this.options.useQueryTokenFallback && this.token) {
+      const params = new URLSearchParams({ token: this.token })
+      return `${url}?${params.toString()}`
+    }
+
+    return url
+  }
+
+  /**
+   * Build requested subprotocols.
+   * Default auth transport is subprotocols: ['hms.jwt', '<access_token>'].
+   */
+  getProtocols(): string[] | undefined {
+    const protocols: string[] = []
+    if (this.options.baseProtocol) {
+      protocols.push(this.options.baseProtocol)
+    }
+    if (this.token) {
+      protocols.push('hms.jwt', this.token)
+    }
+    return protocols.length > 0 ? protocols : undefined
+  }
+
+  /**
+   * Connect to the WebSocket server.
+   */
+  connect(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return
+    }
+
+    this.isIntentionalClose = false
+
+    try {
+      const protocols = this.getProtocols()
+      this.ws = protocols ? new WebSocket(this.getUrl(), protocols) : new WebSocket(this.getUrl())
+      this.setupEventHandlers()
+    } catch (error) {
+      console.error('[WebSocket] Connection error:', error)
+      this.scheduleReconnect()
+    }
+  }
+
+  /**
+   * Disconnect from the WebSocket server.
+   */
+  disconnect(): void {
+    this.isIntentionalClose = true
+    this.clearTimers()
+
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnect')
+      this.ws = null
+    }
+  }
+
+  /**
+   * Set up WebSocket event handlers.
+   */
+  setupEventHandlers(): void {
+    if (!this.ws) {
+      return
+    }
+
+    this.ws.onopen = () => {
+      console.log('[WebSocket] Connected to', this.path)
+      this.reconnectAttempts = 0
+      this.reconnectDelay = INITIAL_RECONNECT_DELAY
+      this.startPingInterval()
+      this.emit('connection.open', { path: this.path })
+    }
+
+    this.ws.onclose = (event) => {
+      console.log('[WebSocket] Disconnected:', event.code, event.reason)
+      this.clearTimers()
+      this.emit('connection.close', { code: event.code, reason: event.reason })
+
+      if (!this.isIntentionalClose) {
+        this.scheduleReconnect()
+      }
+    }
+
+    this.ws.onerror = (error) => {
+      console.error('[WebSocket] Error:', error)
+      this.emit('connection.error', { error })
+    }
+
+    this.ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as Record<string, unknown>
+        this.handleMessage(data)
+      } catch (error) {
+        console.error('[WebSocket] Failed to parse message:', error)
+      }
+    }
+  }
+
+  /**
+   * Handle incoming WebSocket messages.
+   */
+  handleMessage(data: Record<string, unknown>): void {
+    const { type, ...payload } = data
+
+    // Handle pong responses
+    if (type === 'pong') {
+      return
+    }
+
+    // Emit the event to listeners
+    this.emit(String(type), payload)
+  }
+
+  /**
+   * Send a message to the server.
+   */
+  send(data: unknown): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data))
+    } else {
+      console.warn('[WebSocket] Cannot send - not connected')
+    }
+  }
+
+  /**
+   * Register an event listener.
+   */
+  on(event: string, callback: EventListener): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set())
+    }
+    this.listeners.get(event)?.add(callback)
+    return () => this.off(event, callback)
+  }
+
+  /**
+   * Remove an event listener.
+   */
+  off(event: string, callback: EventListener): void {
+    this.listeners.get(event)?.delete(callback)
+  }
+
+  /**
+   * Emit an event to all listeners.
+   */
+  emit(event: string, data: Record<string, unknown>): void {
+    this.listeners.get(event)?.forEach((callback) => {
+      try {
+        callback(data)
+      } catch (error) {
+        console.error(`[WebSocket] Error in ${event} handler:`, error)
+      }
+    })
+
+    // Also emit to wildcard listeners
+    this.listeners.get('*')?.forEach((callback) => {
+      try {
+        callback({ type: event, ...data })
+      } catch (error) {
+        console.error('[WebSocket] Error in wildcard handler:', error)
+      }
+    })
+  }
+
+  /**
+   * Schedule a reconnection attempt.
+   */
+  scheduleReconnect(): void {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('[WebSocket] Max reconnect attempts reached')
+      this.emit('connection.failed', { attempts: this.reconnectAttempts })
+      return
+    }
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectAttempts++
+      console.log(
+        `[WebSocket] Reconnecting (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`
+      )
+      this.connect()
+    }, this.reconnectDelay)
+
+    // Increase delay for next attempt (exponential backoff)
+    this.reconnectDelay = Math.min(
+      this.reconnectDelay * RECONNECT_MULTIPLIER,
+      MAX_RECONNECT_DELAY
+    )
+  }
+
+  /**
+   * Start sending ping messages to keep connection alive.
+   */
+  startPingInterval(): void {
+    this.pingInterval = setInterval(() => {
+      this.send({ type: 'ping' })
+    }, 30000) // Every 30 seconds
+  }
+
+  /**
+   * Clear all timers.
+   */
+  clearTimers(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval)
+      this.pingInterval = null
+    }
+  }
+
+  /**
+   * Get the current connection state.
+   */
+  get isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
+  }
+}
+
+/**
+ * WebSocket client for nursing alerts.
+ *
+ * Events:
+ * - alert.new: New alert created
+ * - alert.acknowledged: Alert acknowledged
+ * - alert.escalated: Alert severity increased
+ * - connection.open: Connected to server
+ * - connection.close: Disconnected from server
+ * - connection.error: Connection error
+ * - connection.failed: Max reconnect attempts reached
+ */
+export class AlertWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    const path = options.wardId
+      ? `/ws/alerts/ward/${options.wardId}/`
+      : '/ws/alerts/';
+    super(path, token, options)
+  }
+
+  /**
+   * Subscribe to alerts for a specific ward.
+   */
+  subscribeToWard(wardId: string): void {
+    this.send({ type: 'subscribe_ward', ward_id: wardId })
+  }
+
+  /**
+   * Unsubscribe from alerts for a specific ward.
+   */
+  unsubscribeFromWard(wardId: string): void {
+    this.send({ type: 'unsubscribe_ward', ward_id: wardId })
+  }
+}
+
+/**
+ * WebSocket client for patient vital signs.
+ *
+ * Events:
+ * - vitals.new: New vital signs recorded
+ * - vitals.critical: Critical vital signs detected
+ * - connection.open: Connected to server
+ * - connection.close: Disconnected from server
+ */
+export class VitalsWebSocket extends BaseWebSocket {
+  patientId: string
+
+  constructor(patientId: string, token: string | null, options: BaseWebSocketOptions = {}) {
+    super(`/ws/vitals/${patientId}/`, token, options)
+    this.patientId = patientId
+  }
+}
+
+/**
+ * WebSocket client for referral notifications.
+ *
+ * Events:
+ * - notification.new: New referral notification
+ * - connection.open: Connected to server
+ * - connection.close: Disconnected from server
+ * - connection.error: Connection error
+ * - connection.failed: Max reconnect attempts reached
+ */
+export class NotificationWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/notifications/', token, options)
+  }
+}
+
+/**
+ * WebSocket client for admin dashboard invalidations.
+ *
+ * Events:
+ * - dashboard.invalidate
+ * - connection.open
+ * - connection.close
+ * - connection.error
+ * - connection.failed
+ */
+export class AdminDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/dashboards/admin/', token, options)
+  }
+}
+
+/**
+ * WebSocket client for doctor dashboard invalidations (my-work).
+ */
+export class DoctorDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/dashboards/my-work/', token, options)
+  }
+}
+
+/**
+ * WebSocket client for clinic dashboard invalidations.
+ */
+export class ClinicDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/dashboards/clinic/', token, options)
+  }
+}
+
+/**
+ * WebSocket client for nurse dashboard invalidations.
+ */
+export class NurseDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    const wardScope = options.wardScope && options.wardScope !== 'all'
+      ? `?ward=${encodeURIComponent(options.wardScope)}`
+      : ''
+    super(`/ws/dashboards/nurse/${wardScope}`, token, options)
+  }
+}
+
+/**
+ * WebSocket client for inpatient dashboard invalidations.
+ */
+export class InpatientDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/dashboards/inpatient/', token, options)
+  }
+}
+
+/**
+ * WebSocket client for reception dashboard invalidations.
+ */
+export class ReceptionDashboardWebSocket extends BaseWebSocket {
+  constructor(token: string | null, options: BaseWebSocketOptions = {}) {
+    super('/ws/dashboards/reception/', token, options)
+  }
+}
+
+const websocketClients = {
+  AlertWebSocket,
+  VitalsWebSocket,
+  NotificationWebSocket,
+  AdminDashboardWebSocket,
+  DoctorDashboardWebSocket,
+  ClinicDashboardWebSocket,
+  NurseDashboardWebSocket,
+  InpatientDashboardWebSocket,
+  ReceptionDashboardWebSocket,
+}
+
+export default websocketClients
