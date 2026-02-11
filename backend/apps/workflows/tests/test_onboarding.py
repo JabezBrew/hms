@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 from apps.workflows.models import (
@@ -229,4 +231,3 @@ class TestOnboardingApi:
             user=doctor_user,
             event_id='dup-evt',
         ).count() == 1
-
