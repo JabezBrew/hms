@@ -26,8 +26,8 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             '--first-name',
-            default=os.environ.get('ADMIN_FIRST_NAME', 'System'),
-            help='Admin first name (default: ADMIN_FIRST_NAME env var or System)',
+            default=os.environ.get('ADMIN_FIRST_NAME', 'Platform'),
+            help='Admin first name (default: ADMIN_FIRST_NAME env var or Platform)',
         )
         parser.add_argument(
             '--last-name',
@@ -68,10 +68,11 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.SUCCESS(f'Updated user_type to admin')
                 )
-            if (
-                (not superuser.first_name or superuser.first_name.strip().lower() == 'admin')
-                and (not superuser.last_name or superuser.last_name.strip().lower() == 'user')
-            ):
+            first_name_value = (superuser.first_name or "").strip().lower()
+            last_name_value = (superuser.last_name or "").strip().lower()
+            legacy_first_names = {"", "admin", "system"}
+            legacy_last_names = {"", "user", "administrator"}
+            if first_name_value in legacy_first_names and last_name_value in legacy_last_names:
                 superuser.first_name = first_name
                 superuser.last_name = last_name
                 superuser.save(update_fields=['first_name', 'last_name'])

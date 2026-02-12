@@ -11,7 +11,7 @@ class Command(BaseCommand):
         parser.add_argument('--facility', required=True, help="Facility code")
         parser.add_argument('--email', required=True, help="Admin email")
         parser.add_argument('--password', required=True, help="Admin password")
-        parser.add_argument('--first-name', default='System', help="First name")
+        parser.add_argument('--first-name', default='Platform', help="First name")
         parser.add_argument('--last-name', default='Administrator', help="Last name")
 
     def handle(self, *args, **options):

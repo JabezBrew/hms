@@ -247,7 +247,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--admin-first-name",
             type=str,
-            default="System",
+            default="Platform",
             help="Seeder admin first name.",
         )
         parser.add_argument(
@@ -289,7 +289,7 @@ class Command(BaseCommand):
         admin_user = self._ensure_admin(
             email=options["admin_email"].strip().lower(),
             password=options["admin_password"],
-            first_name=options["admin_first_name"].strip() or "System",
+            first_name=options["admin_first_name"].strip() or "Platform",
             last_name=options["admin_last_name"].strip() or "Administrator",
         )
 
