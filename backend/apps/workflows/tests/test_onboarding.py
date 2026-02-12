@@ -63,6 +63,25 @@ class TestOnboardingApi:
         )
         assert cached.status_code == 304
 
+    def test_seeded_steps_include_ui_metadata(self, doctor_client, db):
+        response = doctor_client.get('/api/workflows/onboarding/flows/active/')
+        assert response.status_code == 200
+
+        flows_by_key = {flow['flow_key']: flow for flow in response.json()['flows']}
+
+        core_steps = {step['id']: step for step in flows_by_key['doctor_core_v1']['definition']['steps']}
+        assert core_steps['core_02_open_registry']['ui']['target'] == '[data-onboarding="nav-patients"]'
+        assert core_steps['core_02_open_registry']['ui']['placement'] == 'right'
+
+        template_steps = {
+            step['id']: step for step in flows_by_key['doctor_templates_v1']['definition']['steps']
+        }
+        assert (
+            template_steps['tpl_05_create_chart_template']['ui']['target']
+            == '[data-onboarding="chart-template-create"]'
+        )
+        assert template_steps['tpl_05_create_chart_template']['ui']['arrow'] is True
+
     def test_start_progress_is_idempotent(self, doctor_client, doctor_user, db):
         flow_key = 'test_start_idempotent'
         _create_flow(

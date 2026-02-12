@@ -366,6 +366,7 @@ const PatientIdentityHero = ({
             variant="outline"
             size="sm"
             className="font-mono text-xs"
+            data-onboarding="chronicle-add-note"
             onClick={onAddNote}
             onPointerEnter={() => prefetchAction('note')}
             onFocus={() => prefetchAction('note')}
@@ -390,6 +391,7 @@ const PatientIdentityHero = ({
             variant="outline"
             size="sm"
             className="font-mono text-xs"
+            data-onboarding="chronicle-prescribe"
             onClick={onPrescribe}
             onPointerEnter={() => prefetchAction('prescription')}
             onFocus={() => prefetchAction('prescription')}
@@ -416,6 +418,7 @@ const PatientIdentityHero = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                data-onboarding="chronicle-more-actions"
                 onPointerEnter={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');

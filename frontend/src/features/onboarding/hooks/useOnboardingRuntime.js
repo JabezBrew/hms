@@ -33,61 +33,157 @@ const STEP_COPY = {
     title: 'Open your dashboard',
     description: 'Begin from the inpatient dashboard.',
     action: { label: 'Open Dashboard', route: '/dashboards/inpatient' },
+    ui: {
+      target: '[data-onboarding="nav-dashboard"]',
+      placement: 'right',
+      title: 'Open Inpatient Dashboard',
+      body: 'Click here to begin the onboarding flow.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   core_02_open_registry: {
     title: 'Open patient registry',
     description: 'Go to the patient registry or your assigned patient list.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="nav-patients"]',
+      placement: 'right',
+      title: 'Open Patient Registry',
+      body: 'Click Patient Registry in the sidebar.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   core_03_open_patient_chart: {
     title: 'Open a patient chart',
     description: 'Select any patient and load the chronicle.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="patient-list-row"]',
+      placement: 'left',
+      title: 'Open A Patient Chart',
+      body: 'Click a patient row to open their chronicle.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   core_04_timeline_filters: {
     title: 'Use timeline filters',
     description: 'Switch to Notes, then back to All for one patient.',
     action: { label: 'Return To Chart', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="chronicle-filter-group"]',
+      placement: 'bottom',
+      title: 'Use Chronicle Filters',
+      body: 'Use Notes, then switch back to All to complete this step.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   core_05_create_note: {
     title: 'Create a clinical note',
     description: 'Add a note from the patient chronicle.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="chronicle-add-note"]',
+      placement: 'bottom',
+      title: 'Create A Note',
+      body: 'Click Add Note to create a clinical note.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   core_06_place_order: {
     title: 'Place an order',
     description: 'Create a prescription or submit a lab order.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="chronicle-prescribe"]',
+      placement: 'bottom',
+      title: 'Place An Order',
+      body: 'Click Prescribe (or use More for lab orders).',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_01_open_note_templates: {
     title: 'Open note templates',
     description: 'Go to clinical note templates.',
     action: { label: 'Open Note Templates', route: '/clinical-notes/templates' },
+    ui: {
+      target: '[data-onboarding="nav-clinical-content-toggle"]',
+      placement: 'right',
+      title: 'Open Clinical Content',
+      body: 'Use this menu to access note and chart templates.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_02_create_note_template: {
     title: 'Create a note template',
     description: 'Build a note template with at least 3 sections.',
     action: { label: 'Create Note Template', route: '/clinical-notes/templates' },
+    ui: {
+      target: '[data-onboarding="note-template-create"]',
+      placement: 'left',
+      title: 'Create Note Template',
+      body: 'Click Create Template, then build one with 3+ sections.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_03_use_note_template: {
     title: 'Use your note template',
     description: 'Create a note using the template you just created.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="chronicle-add-note"]',
+      placement: 'bottom',
+      title: 'Use The Template',
+      body: 'Open Add Note and create a note with your new template.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_04_open_chart_templates: {
     title: 'Open chart templates',
     description: 'Go to chart templates.',
     action: { label: 'Open Chart Templates', route: '/charts/templates' },
+    ui: {
+      target: '[data-onboarding="nav-clinical-content-toggle"]',
+      placement: 'right',
+      title: 'Open Clinical Content',
+      body: 'Open Clinical Content to access chart templates.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_05_create_chart_template: {
     title: 'Create a chart template',
     description: 'Create a chart template you can assign to a patient.',
     action: { label: 'Create Chart Template', route: '/charts/builder' },
+    ui: {
+      target: '[data-onboarding="chart-template-create"]',
+      placement: 'left',
+      title: 'Create Chart Template',
+      body: 'Click New Template to create a chart template.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
   tpl_06_use_chart_template: {
     title: 'Use your chart template',
     description: 'Assign the template and record one chart entry.',
     action: { label: 'Open Patients', route: '/patients' },
+    ui: {
+      target: '[data-onboarding="chronicle-more-actions"]',
+      placement: 'bottom',
+      title: 'Assign Then Record',
+      body: 'Use More actions to assign a chart, then record a chart entry.',
+      arrow: true,
+      scroll_into_view: true,
+    },
   },
 }
 
@@ -119,6 +215,10 @@ function mergeStepMeta(step) {
   const fallback = STEP_COPY[step?.id] || {}
   const stepAction = step?.action || {}
   const fallbackAction = fallback.action || {}
+  const stepUi = step?.ui && typeof step.ui === 'object' ? step.ui : {}
+  const fallbackUi = fallback.ui && typeof fallback.ui === 'object' ? fallback.ui : {}
+  const mergedUi = { ...fallbackUi, ...stepUi }
+
   const action = {
     label: stepAction.label || fallbackAction.label || 'Open Step',
     route: stepAction.route || fallbackAction.route || null,
@@ -129,6 +229,7 @@ function mergeStepMeta(step) {
     title: step?.title || fallback.title || 'Next Step',
     description: step?.description || fallback.description || '',
     action,
+    ui: Object.keys(mergedUi).length > 0 ? mergedUi : null,
   }
 }
 
@@ -320,6 +421,9 @@ export function useOnboardingRuntime() {
 
   const totalSteps = stepList.length
   const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0
+  const currentStepNumber = inProgressSnapshot
+    ? Math.min(inProgressSnapshot.current_step_index + 1, Math.max(totalSteps, 1))
+    : 0
 
   const openCurrentStep = useCallback(() => {
     const route = currentStep?.action?.route
@@ -349,6 +453,7 @@ export function useOnboardingRuntime() {
     currentStep,
     completedCount,
     totalSteps,
+    currentStepNumber,
     progressPercent,
     isMutating: startProgress.isPending || skipStep.isPending,
     openCurrentStep,

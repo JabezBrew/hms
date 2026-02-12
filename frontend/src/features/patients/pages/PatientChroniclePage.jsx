@@ -1177,7 +1177,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               {/* Filter Tabs */}
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
-                <div className="flex bg-muted rounded-lg p-1">
+                <div className="flex bg-muted rounded-lg p-1" data-onboarding="chronicle-filter-group">
                   {[
                     { key: 'all', label: 'All', icon: null },
                     { key: 'progress_note', label: 'Notes', icon: FileText },
@@ -1188,6 +1188,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     <button
                       key={filter.key}
                       onClick={() => setActiveFilter(filter.key)}
+                      data-onboarding={
+                        filter.key === 'all'
+                          ? 'chronicle-filter-all'
+                          : filter.key === 'progress_note'
+                            ? 'chronicle-filter-notes'
+                            : undefined
+                      }
                       className={cn(
                         "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
                         "flex items-center gap-1.5",

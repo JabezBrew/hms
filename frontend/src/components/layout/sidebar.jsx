@@ -207,7 +207,11 @@ export function AppSidebar() {
           <SidebarMenu>
             {hasAccess(userRole, menuItems.primary.dashboard) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Dashboard" href={getDashboardUrl(userRole)}>
+                <SidebarMenuButton
+                  tooltip="Dashboard"
+                  href={getDashboardUrl(userRole)}
+                  data-onboarding="nav-dashboard"
+                >
                   <LayoutDashboard />
                   <span>Dashboard</span>
                 </SidebarMenuButton>
@@ -228,7 +232,11 @@ export function AppSidebar() {
 
             {hasAccess(userRole, menuItems.primary.patients) && (
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Patient Registry" href="/patients">
+                <SidebarMenuButton
+                  tooltip="Patient Registry"
+                  href="/patients"
+                  data-onboarding="nav-patients"
+                >
                   <BookOpen />
                   <span>Patient Registry</span>
                 </SidebarMenuButton>
@@ -469,7 +477,10 @@ export function AppSidebar() {
               <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('clinical-content')}>
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Clinical Content">
+                    <SidebarMenuButton
+                      tooltip="Clinical Content"
+                      data-onboarding="nav-clinical-content-toggle"
+                    >
                       <FileText />
                       <span>Clinical Content</span>
                       <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
@@ -479,7 +490,10 @@ export function AppSidebar() {
                     <SidebarMenuSub>
                       {hasAccess(userRole, menuItems.operations.noteTemplates) && (
                         <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/clinical-notes/templates">
+                          <SidebarMenuSubButton
+                            href="/clinical-notes/templates"
+                            data-onboarding="nav-note-templates"
+                          >
                             <ClipboardList className="h-4 w-4" />
                             <span>Note Templates</span>
                           </SidebarMenuSubButton>
@@ -487,7 +501,10 @@ export function AppSidebar() {
                       )}
                       {hasAccess(userRole, menuItems.operations.chartTemplates) && (
                         <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/charts/templates">
+                          <SidebarMenuSubButton
+                            href="/charts/templates"
+                            data-onboarding="nav-chart-templates"
+                          >
                             <BarChart3 className="h-4 w-4" />
                             <span>Chart Builder</span>
                           </SidebarMenuSubButton>

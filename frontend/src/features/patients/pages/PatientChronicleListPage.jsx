@@ -1032,6 +1032,7 @@ const SearchResultsTable = ({
               <TableRow
                 key={rowKey}
                 className="cursor-pointer"
+                data-onboarding={index === 0 ? 'patient-list-row' : undefined}
                 onMouseEnter={() => onPrefetchPatient(patientId)}
                 onFocus={() => onPrefetchPatient(patientId)}
                 onClick={() => onOpenPatient(patient)}

@@ -208,6 +208,7 @@ const ChartTemplateListPage = () => {
           <Button
             onClick={handleCreate}
             className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+            data-onboarding="chart-template-create"
           >
             <Plus className="h-4 w-4 mr-1.5" />
             New Template
@@ -329,6 +330,7 @@ const ChartTemplateListPage = () => {
               <Button
                 onClick={handleCreate}
                 className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+                data-onboarding="chart-template-create"
               >
                 <Plus className="h-4 w-4 mr-1.5" />
                 Create Template

@@ -148,6 +148,7 @@ export default function TemplateListPage() {
                 onClick={() => setView('create')}
                 size="sm"
                 className="font-mono text-xs w-full sm:w-auto"
+                data-onboarding="note-template-create"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Create Template
@@ -635,7 +636,7 @@ function EmptyState({ hasSearch, onClear, onCreate }) {
           Clear Search
         </Button>
       ) : (
-        <Button size="sm" onClick={onCreate}>
+        <Button size="sm" onClick={onCreate} data-onboarding="note-template-create">
           <Plus className="h-4 w-4 mr-2" />
           Create Template
         </Button>
