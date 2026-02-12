@@ -223,8 +223,10 @@ class TestStaffViewSet:
 
         assert response.status_code == status.HTTP_201_CREATED
         user = User.objects.get(email='v2tui.doctor@inbox.testmail.app')
+        staff = Staff.objects.get(user=user)
         assert not user.has_usable_password()
-        assert Staff.objects.filter(user=user).exists()
+        assert staff.employee_id.startswith('EMP-TEST-')
+        assert len(staff.employee_id.rsplit('-', 1)[-1]) == 7
         assert PractitionerProfile.objects.filter(staff__user=user).exists()
         assert called.get('user_email') == 'v2tui.doctor@inbox.testmail.app'
 

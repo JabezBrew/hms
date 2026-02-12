@@ -1,9 +1,5 @@
 from rest_framework import serializers
 import logging
-import itertools
-import random
-import datetime
-import threading
 from zoneinfo import ZoneInfo
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -11,6 +7,7 @@ from .models import (
 )
 from ..users.models import PatientProfile, User
 from ..users.serializers import PatientProfileSerializer, UserSerializer, generate_secure_password
+from ..users.identifiers import generate_unique_mrn
 from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
 from hms_backend.tenancy import get_current_facility_code
@@ -20,29 +17,6 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
-_mrn_lock = threading.Lock()
-_mrn_counter = itertools.count(random.SystemRandom().randrange(0, 100000))
-
-
-def generate_unique_mrn():
-    """
-    Generate a unique medical record number following a specific pattern.
-    Format: HMS-YYYY-NNNNN where YYYY is the current year and NNNNN is a random 5-digit number
-    """
-    year = datetime.datetime.now().year
-
-    # Try up to 1000 times to generate a unique MRN
-    for _ in range(1000):
-        with _mrn_lock:
-            counter_value = next(_mrn_counter) % 100000
-        mrn = f"HMS-{year}-{counter_value:05d}"
-
-        # Check if this MRN already exists
-        if not PatientProfile.objects.filter(medical_record_number=mrn).exists():
-            return mrn
-
-    # If we couldn't generate a unique MRN after multiple attempts, raise an exception
-    raise Exception("Unable to generate a unique medical record number after multiple attempts.")
 
 
 class PatientFHIRMappingListSerializer(serializers.ModelSerializer):
@@ -491,6 +465,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
         # Extract admission details
         admission_details = validated_data.pop('admission_details', None)
 
+        request = self.context.get('request')
+        facility_code = getattr(request, 'facility_code', None) or get_current_facility_code()
+        facility = get_user_facility(request) if request else None
+        if not facility and facility_code:
+            facility = Facility.get_by_code(facility_code)
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
         # Generate a secure password for the patient (not provided during registration)
         generated_password = generate_secure_password()
 
@@ -507,15 +489,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
         )
 
         # Generate a unique medical record number
-        medical_record_number = generate_unique_mrn()
-
-        request = self.context.get('request')
-        facility_code = getattr(request, 'facility_code', None) or get_current_facility_code()
-        facility = get_user_facility(request) if request else None
-        if not facility and facility_code:
-            facility = Facility.get_by_code(facility_code)
-        if not facility:
-            raise serializers.ValidationError("Facility context is required.")
+        medical_record_number = generate_unique_mrn(facility)
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")

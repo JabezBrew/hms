@@ -3,10 +3,10 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from apps.core.security import get_user_facility
+from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
 import random
 import string
-import datetime
 import logging
 
 User = get_user_model()
@@ -352,29 +352,6 @@ class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'last_synced', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
-def generate_unique_employee_id():
-    """
-    Generate a unique employee ID following a specific pattern.
-    Format: EMP-YYYY-NNNNN where YYYY is the current year and NNNNN is a random 5-digit number
-    """
-    year = datetime.datetime.now().year
-
-    # Try up to 100 times to generate a unique employee ID
-    for _ in range(100):
-        # Generate a random 5-digit number
-        random_digits = ''.join(random.choices(string.digits, k=5))
-
-        # Create the employee ID in the format EMP-YYYY-NNNNN
-        employee_id = f"EMP-{year}-{random_digits}"
-
-        # Check if this employee ID already exists
-        if not Staff.objects.filter(employee_id=employee_id).exists():
-            return employee_id
-
-    # If we couldn't generate a unique employee ID after 100 attempts, raise an exception
-    raise Exception("Unable to generate a unique employee ID after multiple attempts.")
-
-
 def generate_secure_password(length=12):
     """
     Generate a secure random password with a mix of letters, numbers, and special characters.
@@ -500,7 +477,7 @@ class StaffInviteSerializer(serializers.Serializer):
         staff, staff_created = Staff.objects.get_or_create(
             user=user,
             defaults={
-                'employee_id': generate_unique_employee_id(),
+                'employee_id': generate_unique_employee_id(facility),
                 'department': validated_data['department'],
                 'position': validated_data['position'],
                 'hire_date': validated_data['hire_date'],
@@ -659,7 +636,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
         user.facilities.add(facility)
 
         # Generate a unique employee ID
-        employee_id = generate_unique_employee_id()
+        employee_id = generate_unique_employee_id(facility)
 
         # Create Staff
         staff = Staff.objects.create(

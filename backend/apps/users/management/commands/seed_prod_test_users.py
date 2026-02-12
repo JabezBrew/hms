@@ -1,15 +1,13 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from apps.users.models import Staff, PractitionerProfile, PractitionerFHIRMapping
+from apps.users.identifiers import generate_unique_employee_id
+from apps.core.models import Facility
 from apps.fhir_client.client import fhir_client
 from apps.fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
     create_address, generate_fhir_id
 )
-import datetime
-import random
-import string
-import secrets
 
 User = get_user_model()
 
@@ -90,6 +88,11 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR('No admin/superuser found. Please create one first.'))
             return
 
+        facility = admin_user.primary_facility or Facility.objects.filter(is_active=True).order_by('created_at').first()
+        if not facility:
+            self.stdout.write(self.style.ERROR('No active facility found. Create a facility before seeding users.'))
+            return
+
         for user_data in test_users:
             email = user_data['email']
             
@@ -109,13 +112,13 @@ class Command(BaseCommand):
                 phone_number=user_data['phone_number'],
                 date_of_birth=user_data['date_of_birth'],
                 user_type=user_data['user_type'],
-                is_active=True
+                is_active=True,
+                primary_facility=facility,
             )
+            user.facilities.add(facility)
 
             # Generate unique employee ID
-            year = datetime.datetime.now().year
-            random_digits = ''.join(random.choices(string.digits, k=5))
-            employee_id = f"EMP-{year}-{random_digits}"
+            employee_id = generate_unique_employee_id(facility)
 
             # Create Staff
             staff = Staff.objects.create(
@@ -124,6 +127,7 @@ class Command(BaseCommand):
                 department=user_data['department'],
                 position=user_data['position'],
                 hire_date=user_data['hire_date'],
+                primary_facility=facility,
                 created_by=admin_user,
                 updated_by=admin_user
             )

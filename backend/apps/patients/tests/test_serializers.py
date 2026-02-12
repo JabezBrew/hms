@@ -11,6 +11,7 @@ Tests for:
 """
 import pytest
 from datetime import date, time
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, MagicMock
 
 from django.utils import timezone
@@ -568,7 +569,7 @@ class TestPatientRegistrationSerializer:
 
         assert patient_profile.user.email == 'fhirpatient@test.com'
         assert patient_profile.user.first_name == 'FHIR'
-        assert patient_profile.medical_record_number.startswith('HMS-')
+        assert patient_profile.medical_record_number.startswith(f"MRN-{facility.code}-")
         assert patient_profile.patient_identity_id is not None
 
         from apps.mpi.models import PatientFacilityLink
@@ -588,29 +589,29 @@ class TestMRNGeneration:
 
     def test_mrn_format(self, db):
         """Test MRN follows expected format."""
-        mrn = generate_unique_mrn()
+        facility = DefaultFacilityFactory(code='MAIN')
+        mrn = generate_unique_mrn(facility)
 
-        # Format: HMS-YYYY-NNNNN
-        parts = mrn.split('-')
-        assert len(parts) == 3
-        assert parts[0] == 'HMS'
-        assert len(parts[1]) == 4  # Year
-        assert len(parts[2]) == 5  # Random digits
-        assert parts[1].isdigit()
-        assert parts[2].isdigit()
+        assert mrn.startswith('MRN-MAIN-')
+        year, sequence = mrn.rsplit('-', 2)[1:]
+        assert len(year) == 4
+        assert len(sequence) == 7
+        assert year.isdigit()
+        assert sequence.isdigit()
 
     def test_mrn_uniqueness(self, db):
         """Test generated MRNs are unique."""
+        facility = DefaultFacilityFactory()
         mrns = set()
         for _ in range(100):
-            mrn = generate_unique_mrn()
+            mrn = generate_unique_mrn(facility)
             assert mrn not in mrns
             mrns.add(mrn)
 
     def test_mrn_includes_current_year(self, db):
         """Test MRN includes current year."""
-        from datetime import datetime
-        mrn = generate_unique_mrn()
-        current_year = str(datetime.now().year)
+        facility = DefaultFacilityFactory()
+        mrn = generate_unique_mrn(facility)
+        current_year = str(timezone.now().astimezone(ZoneInfo(facility.timezone)).year)
 
         assert current_year in mrn
