@@ -2,7 +2,7 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
@@ -15,7 +15,6 @@ import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useNoteTemplates, useDeleteNoteTemplate } from '@/features/clinical-notes/hooks';
 import { toast } from 'sonner';
@@ -47,7 +46,6 @@ import { PageShell } from '@/shared/components/page/PageShell';
  * - Mobile responsive
  */
 export default function TemplateListPage() {
-  const navigate = useNavigate();
   const [view, setView] = useState('list'); // 'list', 'create', 'edit', 'detail'
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateToDelete, setTemplateToDelete] = useState(null);
@@ -285,28 +283,44 @@ export default function TemplateListPage() {
 
   // Render create/edit view
   if (view === 'create' || view === 'edit') {
+    const isEditingTemplate = view === 'edit';
+
     return (
       <PageShell>
         {pageMeta}
           <PageHeader
-            title={view === 'edit' ? 'Edit Template' : 'Create Template'}
-            contentClassName="max-w-5xl mx-auto w-full"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setView('list');
-                setSelectedTemplate(null);
-              }}
-              className="-ml-2"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Templates
-            </Button>
-          </PageHeader>
+            title={(
+              <span className="flex items-center gap-3">
+                <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                  <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                </span>
+                {isEditingTemplate ? 'Edit Note Template' : 'New Note Template'}
+              </span>
+            )}
+            description={
+              isEditingTemplate
+                ? selectedTemplate?.title || 'Update template sections and sharing rules.'
+                : 'Build a Chronicle-aligned template for structured clinical documentation.'
+            }
+            descriptionClassName="font-mono text-xs text-muted-foreground"
+            contentClassName="max-w-6xl mx-auto w-full"
+            actions={(
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setView('list');
+                  setSelectedTemplate(null);
+                }}
+                className="font-mono text-xs"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1.5" />
+                Back to Templates
+              </Button>
+            )}
+          />
 
-          <main className="p-4 sm:p-6 max-w-5xl mx-auto w-full">
+          <main className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
             <TemplateBuilder
               initialTemplate={selectedTemplate}
               onSuccess={handleTemplateSuccess}
