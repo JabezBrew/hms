@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import format from "date-fns/format";
 import { useRegisterStaff } from "@/features/staff/hooks";
+import { useClinicalUnits } from "@/features/admin/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -60,6 +61,26 @@ const StaffForm = ({ onSuccess }) => {
     resolver: zodResolver(staffFormSchema),
     defaultValues,
   });
+
+  const { data: departmentUnits = [], isLoading: isDepartmentsLoading } = useClinicalUnits({
+    unit_type_code: 'department',
+    is_active: true,
+  });
+
+  const departmentOptions = useMemo(() => (
+    (Array.isArray(departmentUnits) ? departmentUnits : [])
+      .filter((unit) => typeof unit?.id === 'string' && typeof unit?.name === 'string' && unit.name.trim())
+      .map((unit) => ({
+        id: unit.id,
+        name: unit.name.trim(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  ), [departmentUnits]);
+
+  const departmentNameById = useMemo(
+    () => new Map(departmentOptions.map((department) => [department.id, department.name])),
+    [departmentOptions]
+  );
 
   const userType = form.watch('user_type');
   const dateOfBirth = form.watch('date_of_birth');
@@ -140,7 +161,11 @@ const StaffForm = ({ onSuccess }) => {
   const submitRegistration = useCallback(async (values) => {
     setIsLoading(true);
     try {
-      const payload = buildRegistrationPayload(values);
+      const payload = buildRegistrationPayload(values, {
+        resolveDepartment: (departmentValue) => (
+          departmentNameById.get(departmentValue) || departmentValue
+        ),
+      });
       const response = await registerStaffMutation.mutateAsync(payload);
       const responseData = response?.data !== undefined ? response.data : response;
 
@@ -156,7 +181,7 @@ const StaffForm = ({ onSuccess }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [form, onSuccess, registerStaffMutation, stepKeys]);
+  }, [departmentNameById, form, onSuccess, registerStaffMutation, stepKeys]);
 
   const onFormSubmit = useCallback(async (values) => {
     if (activeStep !== 'review') {
@@ -406,9 +431,37 @@ const StaffForm = ({ onSuccess }) => {
                         <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                           Department <span className="text-rose-500">*</span>
                         </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Department" {...field} />
-                        </FormControl>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          disabled={isDepartmentsLoading || !departmentOptions.length}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue
+                                placeholder={
+                                  isDepartmentsLoading
+                                    ? "Loading departments..."
+                                    : departmentOptions.length
+                                      ? "Select department"
+                                      : "No departments configured"
+                                }
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {departmentOptions.map((department) => (
+                              <SelectItem key={department.id} value={department.id}>
+                                {department.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {!isDepartmentsLoading && !departmentOptions.length ? (
+                          <p className="text-[11px] font-mono text-amber-600">
+                            Create a department under Organization first.
+                          </p>
+                        ) : null}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -683,7 +736,8 @@ const StaffForm = ({ onSuccess }) => {
                   <div className="p-4 rounded-lg border border-border bg-card/40">
                     <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Employment</p>
                     <p className="text-sm">
-                      <span className="font-medium">Department:</span> {form.getValues('department') || 'Not set'}
+                      <span className="font-medium">Department:</span>{' '}
+                      {departmentNameById.get(form.getValues('department')) || form.getValues('department') || 'Not set'}
                     </p>
                     <p className="text-sm">
                       <span className="font-medium">Position:</span> {form.getValues('position') || 'Not set'}

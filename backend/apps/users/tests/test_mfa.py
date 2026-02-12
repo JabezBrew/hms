@@ -1,10 +1,12 @@
-import pytest
+import json
+
 import pytest
 import pyotp
 from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.users import mfa_views
 from apps.users.models import User
 
 
@@ -99,3 +101,82 @@ def test_totp_enrollment_flow():
         'code': code,
     }, format='json')
     assert confirm_resp.status_code == status.HTTP_200_OK
+
+
+def _create_admin_with_mfa_session():
+    user = User.objects.create_user(
+        username='admin-webauthn',
+        email='admin-webauthn@example.com',
+        password='StrongPass123!',
+        user_type='admin',
+    )
+    client = APIClient()
+    login_resp = client.post('/api/auth/login/', {
+        'email': user.email,
+        'password': 'StrongPass123!',
+    }, format='json')
+    return client, login_resp.data['mfa_session']
+
+
+@pytest.mark.django_db
+@override_settings(
+    WEBAUTHN_RP_ID='localhost',
+    WEBAUTHN_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+)
+def test_webauthn_registration_uses_request_origin_rp_id_when_configured_rp_id_is_incompatible(monkeypatch):
+    client, session_token = _create_admin_with_mfa_session()
+    captured = {}
+
+    monkeypatch.setattr(mfa_views, '_ensure_webauthn_available', lambda: None)
+
+    def fake_generate_registration_options(**kwargs):
+        captured['rp_id'] = kwargs['rp_id']
+        return {
+            'challenge': 'test-challenge',
+            'rp': {
+                'id': kwargs['rp_id'],
+                'name': kwargs['rp_name'],
+            },
+            'user': {
+                'id': 'dGVzdA',
+                'name': kwargs['user_name'],
+                'displayName': kwargs['user_display_name'],
+            },
+            'excludeCredentials': [],
+        }
+
+    monkeypatch.setattr(mfa_views, 'generate_registration_options', fake_generate_registration_options)
+    monkeypatch.setattr(mfa_views, 'options_to_json', lambda options: json.dumps(options))
+
+    response = client.post(
+        '/api/auth/mfa/webauthn/registration/options/',
+        {'mfa_session': session_token},
+        format='json',
+        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert captured['rp_id'] == 'hms-frontend-staging.up.railway.app'
+    assert response.data['rp']['id'] == 'hms-frontend-staging.up.railway.app'
+
+
+@pytest.mark.django_db
+@override_settings(
+    WEBAUTHN_RP_ID='localhost',
+    WEBAUTHN_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+)
+def test_webauthn_registration_rejects_untrusted_origin(monkeypatch):
+    client, session_token = _create_admin_with_mfa_session()
+    monkeypatch.setattr(mfa_views, '_ensure_webauthn_available', lambda: None)
+
+    response = client.post(
+        '/api/auth/mfa/webauthn/registration/options/',
+        {'mfa_session': session_token},
+        format='json',
+        HTTP_ORIGIN='https://evil.example.com',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data['detail'] == 'WebAuthn origin is not allowed.'

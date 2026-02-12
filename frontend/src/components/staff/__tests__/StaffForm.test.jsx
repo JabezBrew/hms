@@ -87,4 +87,18 @@ describe('buildRegistrationPayload', () => {
     expect(payload.specialization).toBe('Cardiology');
     expect(payload.qualification).toBe('MBBS, MD');
   });
+
+  it('maps selected department IDs to department names when resolver is provided', () => {
+    const payload = buildRegistrationPayload(
+      {
+        ...baseFormValues,
+        department: 'department-unit-id',
+      },
+      {
+        resolveDepartment: (value) => (value === 'department-unit-id' ? 'Finance' : value),
+      }
+    );
+
+    expect(payload.department).toBe('Finance');
+  });
 });

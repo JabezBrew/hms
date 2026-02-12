@@ -169,7 +169,9 @@ export const defaultValues = {
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : value);
 
-export const buildRegistrationPayload = (values) => {
+export const buildRegistrationPayload = (values, options = {}) => {
+  const resolveDepartment = options.resolveDepartment || ((value) => value);
+  const resolvedDepartment = resolveDepartment(values.department);
   const payload = {
     email: normalizeText(values.email)?.toLowerCase(),
     first_name: normalizeText(values.first_name),
@@ -177,7 +179,7 @@ export const buildRegistrationPayload = (values) => {
     phone_number: normalizeText(values.phone_number) || '',
     date_of_birth: format(values.date_of_birth, 'yyyy-MM-dd'),
     user_type: values.user_type,
-    department: normalizeText(values.department),
+    department: normalizeText(resolvedDepartment),
     position: normalizeText(values.position),
     hire_date: format(values.hire_date, 'yyyy-MM-dd'),
     address_line1: normalizeText(values.address_line1) || '',
