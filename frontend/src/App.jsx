@@ -14,10 +14,11 @@ import { PageLoader } from './shared/components/page/PageState'
 
 const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
 const PublicAuthApp = lazy(() => import('./app/PublicAuthApp'))
+const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequiredApp'))
 
 // Main app content with routes
 function AppContent() {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, passwordChangeRequired } = useAuth()
 
   if (loading) {
     return (
@@ -64,6 +65,14 @@ function AppContent() {
     return (
       <Suspense fallback={<PageLoader />}>
         <PublicAuthApp />
+      </Suspense>
+    )
+  }
+
+  if (passwordChangeRequired) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <PasswordChangeRequiredApp />
       </Suspense>
     )
   }

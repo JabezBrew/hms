@@ -97,6 +97,23 @@ class TestLogin:
         assert response.data['user']['first_name'] == 'John'
         assert response.data['user']['last_name'] == 'Doe'
 
+    def test_login_returns_password_change_requirement(self, api_client, db):
+        """Login response should include first-login password change requirement flag."""
+        UserFactory(
+            email='force-change@test.com',
+            password='testpass',
+            must_change_password=True,
+        )
+
+        response = api_client.post('/api/auth/login/', {
+            'email': 'force-change@test.com',
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['password_change_required'] is True
+        assert response.data['user']['must_change_password'] is True
+
     def test_login_invalid_password(self, api_client, db):
         """Test login fails with wrong password."""
         UserFactory(email='wrongpass@test.com', password='correctpassword')
@@ -296,6 +313,36 @@ class TestPasswordChange:
         assert not user.check_password('oldpassword')
         assert user.check_password('NewSecurePass123!')
 
+    def test_change_password_clears_password_change_requirement(self, db):
+        """Changing password should clear first-login requirement."""
+        user = UserFactory(password='oldpassword', must_change_password=True)
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.post('/api/users/users/change_password/', {
+            'old_password': 'oldpassword',
+            'new_password': 'NewSecurePass123!'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+        user.refresh_from_db()
+        assert user.must_change_password is False
+        assert user.password_changed_at is not None
+
+    def test_password_change_required_blocks_protected_endpoints(self, db):
+        """Users flagged for first-login password change must be restricted."""
+        user = AdminUserFactory(password='oldpassword', must_change_password=True)
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.get('/api/users/users/')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json().get('code') == 'password_change_required'
+
     def test_change_password_wrong_old_password(self, db):
         """Test password change fails with wrong old password."""
         user = UserFactory(password='correctoldpassword')
@@ -403,6 +450,23 @@ class TestPasswordReset:
         # Verify new password works
         user.refresh_from_db()
         assert user.check_password('NewSecurePassword123!')
+
+    def test_reset_password_confirm_clears_password_change_requirement(self, api_client, db):
+        """Completing reset confirmation should clear first-login requirement."""
+        user = UserFactory(must_change_password=True)
+        plain_token, _ = PasswordResetToken.create_for_user(user, reset_type='admin_force')
+
+        response = api_client.post('/api/auth/password-reset/confirm/', {
+            'token': plain_token,
+            'password': 'NewSecurePassword123!',
+            'password_confirm': 'NewSecurePassword123!'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+        user.refresh_from_db()
+        assert user.must_change_password is False
+        assert user.password_changed_at is not None
 
     def test_reset_password_token_invalidated_after_use(self, api_client, db):
         """Test that token is invalidated after use."""

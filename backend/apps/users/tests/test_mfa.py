@@ -29,6 +29,28 @@ def test_admin_login_requires_mfa():
 
 
 @pytest.mark.django_db
+def test_mfa_login_payload_includes_password_change_requirement():
+    user = User.objects.create_user(
+        username='admin-change',
+        email='admin-change@example.com',
+        password='StrongPass123!',
+        user_type='admin',
+        must_change_password=True,
+    )
+
+    client = APIClient()
+    response = client.post('/api/auth/login/', {
+        'email': user.email,
+        'password': 'StrongPass123!',
+    }, format='json')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data.get('mfa_required') is True
+    assert response.data.get('password_change_required') is True
+    assert response.data.get('user', {}).get('must_change_password') is True
+
+
+@pytest.mark.django_db
 @override_settings(MFA_REQUIRED_FOR_ADMIN=False, MFA_REQUIRED_FOR_ALL=True)
 def test_all_users_login_requires_mfa():
     user = User.objects.create_user(

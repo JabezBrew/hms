@@ -126,7 +126,9 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'detail': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
-        user.save()
+        user.must_change_password = False
+        user.password_changed_at = timezone.now()
+        user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
         return Response({'detail': 'Password changed successfully.'})
 
 

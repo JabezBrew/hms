@@ -19,6 +19,15 @@ class User(AbstractUser):
     # Additional fields
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Require user to change password before full access."
+    )
+    password_changed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last completed password change."
+    )
 
     GENDER_CHOICES = (
         ('M', 'Male'),

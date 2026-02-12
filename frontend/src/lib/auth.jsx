@@ -46,6 +46,17 @@ export function AuthProvider({ children }) {
     }
   }, [user, mfaUser])
 
+  const clearPasswordChangeRequirement = useCallback(() => {
+    setUser((currentUser) => {
+      if (!currentUser || !currentUser.passwordChangeRequired) {
+        return currentUser
+      }
+      const updatedUser = { ...currentUser, passwordChangeRequired: false }
+      setAuthValue("user", JSON.stringify(updatedUser))
+      return updatedUser
+    })
+  }, [])
+
   // Logout function - defined early to avoid circular dependency
   const logout = useCallback(async (localOnly = false) => {
     try {
@@ -212,6 +223,10 @@ export function AuthProvider({ children }) {
     setAuthValue("sessionStartTime", now)
     setAuthValue("refreshTokenIssuedAt", now)
 
+    const passwordChangeRequired = Boolean(
+      response.password_change_required ?? response?.user?.must_change_password
+    )
+
     const userData = {
       email: response.user.email,
       id: response.user.id,
@@ -222,6 +237,7 @@ export function AuthProvider({ children }) {
       practitionerId: response.user.practitioner_id || null,
       facilityCode: response.user.facility_code || defaultFacilityCode,
       accessContext: response.access_context || null,
+      passwordChangeRequired,
     }
     setAuthValue("user", JSON.stringify(userData))
     setUser(userData)
@@ -304,6 +320,8 @@ export function AuthProvider({ children }) {
       mfaUser,
       mfaEnrollmentRequired,
       mfaAvailableMethods,
+      passwordChangeRequired: Boolean(user?.passwordChangeRequired),
+      clearPasswordChangeRequirement,
       isAuthenticated: !!user,
     }),
     [
@@ -319,6 +337,7 @@ export function AuthProvider({ children }) {
       mfaUser,
       mfaEnrollmentRequired,
       mfaAvailableMethods,
+      clearPasswordChangeRequirement,
       completeMfa,
     ]
   )

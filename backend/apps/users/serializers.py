@@ -34,10 +34,11 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
-                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined']
+                  'date_of_birth', 'gender', 'user_type', 'is_active',
+                  'must_change_password', 'date_joined']
         # SECURITY: user_type and is_active are read-only to prevent privilege escalation
         # Only admins can modify these fields via admin-specific endpoints
-        read_only_fields = ['id', 'date_joined', 'user_type', 'is_active']
+        read_only_fields = ['id', 'date_joined', 'user_type', 'is_active', 'must_change_password']
 
 
 class UserWithAccessContextSerializer(serializers.ModelSerializer):
@@ -53,8 +54,9 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
                   'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
+                  'must_change_password',
                   'is_offsite', 'offsite_mode', 'readonly_message']
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'date_joined', 'must_change_password']
 
     def get_is_offsite(self, obj):
         """Return whether the user is accessing from off-site."""

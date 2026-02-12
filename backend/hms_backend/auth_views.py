@@ -399,6 +399,7 @@ class LoginView(APIView):
                 enrollment_required = not (
                     enrollment_status['totp_enrolled'] or enrollment_status['webauthn_enrolled']
                 )
+                password_change_required = bool(getattr(user, 'must_change_password', False))
                 session, session_token = create_mfa_session(
                     user=user,
                     facility_code=facility_code,
@@ -410,6 +411,7 @@ class LoginView(APIView):
                 return Response({
                     'mfa_required': True,
                     'mfa_session': session_token,
+                    'password_change_required': password_change_required,
                     'mfa': {
                         'totp': enrollment_status['totp_enrolled'],
                         'webauthn': enrollment_status['webauthn_enrolled'],
@@ -422,6 +424,7 @@ class LoginView(APIView):
                         'first_name': user.first_name,
                         'last_name': user.last_name,
                         'facility_code': facility_code or None,
+                        'must_change_password': password_change_required,
                     },
                     'access_context': access_context,
                 })

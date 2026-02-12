@@ -45,6 +45,7 @@ def get_access_context(request):
 def build_auth_response(request, user, facility_code=None):
     resolved_facility = resolve_user_facility_code(user, facility_code)
     tokens = get_tokens_for_user(user, facility_code=resolved_facility)
+    password_change_required = bool(getattr(user, 'must_change_password', False))
 
     staff_id = None
     practitioner_id = None
@@ -64,6 +65,7 @@ def build_auth_response(request, user, facility_code=None):
 
     response = Response({
         'access': tokens['access'],
+        'password_change_required': password_change_required,
         'user': {
             'email': user.email,
             'id': user.id,
@@ -73,6 +75,7 @@ def build_auth_response(request, user, facility_code=None):
             'staff_id': staff_id,
             'practitioner_id': practitioner_id,
             'facility_code': resolved_facility or None,
+            'must_change_password': password_change_required,
         },
         'access_context': access_context,
     })

@@ -357,3 +357,55 @@ class JWTUserTypeValidationMiddleware(MiddlewareMixin):
             pass
 
         return None
+
+
+class PasswordChangeRequiredMiddleware(MiddlewareMixin):
+    """
+    Restrict authenticated users with password-change requirements
+    to the minimal endpoints needed to complete the change.
+    """
+
+    def process_request(self, request):
+        # Always allow preflight
+        if request.method == 'OPTIONS':
+            return None
+
+        skip_paths = [
+            '/api/auth/',
+            '/api/health/',
+            '/api/users/users/change_password',
+            '/api/users/users/me/',
+            '/api/users/sessions/',
+            '/admin/',
+            '/static/',
+            '/media/',
+        ]
+        if any(request.path.startswith(path) for path in skip_paths):
+            return None
+
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            jwt_auth = JWTAuthentication()
+            try:
+                header = jwt_auth.get_header(request)
+                if header is not None:
+                    raw_token = jwt_auth.get_raw_token(header)
+                    if raw_token is not None:
+                        validated_token = jwt_auth.get_validated_token(raw_token)
+                        user = jwt_auth.get_user(validated_token)
+            except (InvalidToken, AuthenticationFailed, AttributeError, KeyError, TypeError):
+                user = None
+
+        if not user or not getattr(user, 'is_authenticated', False):
+            return None
+
+        if not getattr(user, 'must_change_password', False):
+            return None
+
+        return JsonResponse(
+            {
+                'detail': 'Password change required before accessing this resource.',
+                'code': 'password_change_required',
+            },
+            status=403,
+        )

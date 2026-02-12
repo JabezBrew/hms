@@ -87,6 +87,7 @@ function TestConsumer() {
       <div data-testid="user">{auth.user ? JSON.stringify(auth.user) : 'null'}</div>
       <div data-testid="loading">{auth.loading.toString()}</div>
       <div data-testid="isAuthenticated">{auth.isAuthenticated.toString()}</div>
+      <div data-testid="passwordChangeRequired">{Boolean(auth.passwordChangeRequired).toString()}</div>
       <div data-testid="error">{auth.error || 'null'}</div>
       <button onClick={() => auth.login('test@test.com', 'password123').catch(() => {})}>Login</button>
       <button onClick={() => auth.logout()}>Logout</button>
@@ -263,6 +264,40 @@ describe('AuthProvider', () => {
         expect(storedUser.role).toBe('doctor')
         expect(storedUser.email).toBe('doctor@test.com')
       })
+    })
+
+    it('stores first-login password change requirement in auth state', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+      authApi.login.mockResolvedValue({
+        access: 'access-token-123',
+        password_change_required: true,
+        user: {
+          id: 'user-123',
+          email: 'doctor@test.com',
+          user_type: 'doctor',
+          must_change_password: true,
+        },
+      })
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      await user.click(screen.getByText('Login'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('passwordChangeRequired').textContent).toBe('true')
+      })
+
+      const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
+      expect(storedUser.passwordChangeRequired).toBe(true)
     })
 
     it('handles login failure', async () => {

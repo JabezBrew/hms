@@ -33,7 +33,9 @@ class Command(BaseCommand):
             try:
                 user = User.objects.get(email=email)
                 user.set_password(password)
-                user.save()
+                user.must_change_password = True
+                user.password_changed_at = None
+                user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
                 self.stdout.write(self.style.SUCCESS(f'Successfully reset password for {email}'))
             except User.DoesNotExist:
                 self.stdout.write(self.style.WARNING(f'User {email} not found'))
