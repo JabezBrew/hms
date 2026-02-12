@@ -1,12 +1,13 @@
 import uuid
 import hashlib
+import logging
 from rest_framework import viewsets, mixins, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
@@ -61,6 +62,8 @@ from .psp import get_psp_adapter
 LEGACY_PAYMENT_METHOD_MAP = {
     'card': 'credit_card',
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _to_decimal(value, *, default=Decimal('0.00')) -> Decimal:
@@ -1733,19 +1736,24 @@ class HubtelWebhookView(APIView):
                 safe_headers[key] = request.headers.get(key)
 
         try:
-            event = PSPWebhookEvent.objects.create(
-                provider='hubtel',
-                provider_reference=provider_reference,
-                client_reference=client_reference,
-                received_at=timezone.now(),
-                headers=safe_headers,
-                payload_hash=payload_hash,
-                payload_encrypted=encrypt_payload(body),
-                processing_status='pending',
-            )
-        except Exception as e:
-            # Likely duplicate payload_hash (idempotent re-delivery). Acknowledge.
+            with transaction.atomic():
+                event = PSPWebhookEvent.objects.create(
+                    provider='hubtel',
+                    provider_reference=provider_reference,
+                    client_reference=client_reference,
+                    received_at=timezone.now(),
+                    headers=safe_headers,
+                    payload_hash=payload_hash,
+                    payload_encrypted=encrypt_payload(body),
+                    processing_status='pending',
+                )
+        except IntegrityError:
+            # Duplicate payload_hash for this provider (idempotent re-delivery). Acknowledge.
             return Response({"ok": True}, status=status.HTTP_200_OK)
+        except Exception:
+            logger.exception("Failed to persist Hubtel webhook event.")
+            # Retryable failure: return non-2xx so provider retries delivery.
+            return Response({"error": "webhook_persistence_failed"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         from apps.billing.tasks import process_psp_webhook_event
         process_psp_webhook_event.delay(str(event.id))

@@ -41,13 +41,16 @@ def _get_user_facility_codes(user):
 def resolve_user_facility_code(user, requested_code=None):
     requested = _normalize_facility_code(requested_code)
     allowed_codes = _get_user_facility_codes(user)
+    allow_cross_facility = bool(getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False))
+    is_admin = bool(user and getattr(user, 'user_type', None) == 'admin')
+    default_facility_code = _normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', ''))
 
     if requested:
         if requested in allowed_codes:
             return requested
-        if not allowed_codes:
+        if allow_cross_facility and is_admin:
             return requested
-        if getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False) and user.user_type == 'admin':
+        if not allowed_codes and default_facility_code and requested == default_facility_code:
             return requested
         return ''
 
@@ -65,7 +68,7 @@ def resolve_user_facility_code(user, requested_code=None):
             return _normalize_facility_code(staff.primary_facility.code)
         return ''
 
-    return _normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', ''))
+    return default_facility_code
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

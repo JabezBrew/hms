@@ -78,6 +78,7 @@ def get_user_facility(request):
     user = getattr(request, 'user', None) if request else None
     allowed_codes = None
     allow_cross_facility = False
+    default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
     is_admin = False
     primary_facility = None
     primary_code = None
@@ -104,7 +105,10 @@ def get_user_facility(request):
         if primary_code and facility_code == primary_code:
             return True
         resolved_codes = _load_allowed_codes()
-        return not resolved_codes or facility_code in resolved_codes
+        if resolved_codes:
+            return facility_code in resolved_codes
+        # Users without explicit assignments may only access deployment default facility.
+        return bool(default_facility_code and facility_code == default_facility_code)
 
     facility = getattr(request, 'facility', None)
     if facility:

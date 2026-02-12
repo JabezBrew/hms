@@ -106,6 +106,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
             else:
                 allowed_codes = get_user_facility_codes(user)
         allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
 
         if not facility_code and allowed_codes:
             if len(allowed_codes) == 1:
@@ -124,9 +125,15 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 facility_code = default_code
                 facility_code_source = 'default'
 
-        if facility_code and allowed_codes:
-            is_admin = bool(user and user.user_type == 'admin')
-            if facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+        if facility_code and user:
+            is_admin = bool(user.user_type == 'admin')
+            if allowed_codes:
+                is_facility_allowed = facility_code in allowed_codes
+            else:
+                # Users without explicit assignments are restricted to the deployment default facility.
+                is_facility_allowed = bool(default_facility_code and facility_code == default_facility_code)
+
+            if not is_facility_allowed and not (allow_cross_facility and is_admin):
                 return JsonResponse(
                     {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
                     status=403

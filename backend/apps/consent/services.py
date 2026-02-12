@@ -25,6 +25,15 @@ def issue_access_token(consent_grant: ConsentGrant, target_facility_code: str, t
     """
     Issue a short-lived access token for a consent grant.
     """
+    now = timezone.now()
+    if consent_grant.status != ConsentStatus.ACTIVE:
+        raise ValueError("Consent must be active to issue access tokens.")
+    if consent_grant.expires_at and consent_grant.expires_at <= now:
+        if consent_grant.status == ConsentStatus.ACTIVE:
+            consent_grant.status = ConsentStatus.EXPIRED
+            consent_grant.save(update_fields=['status', 'updated_at'])
+        raise ValueError("Consent has expired.")
+
     raw_token = secrets.token_urlsafe(32)
     ConsentAccessToken.objects.create(
         consent_grant=consent_grant,
@@ -93,11 +102,12 @@ def validate_access_token(
     """
     Validate a consent access token for cross-facility data access.
     """
+    now = timezone.now()
     token_hash = _hash_token(raw_token)
     token = ConsentAccessToken.objects.select_related('consent_grant').filter(
         token_hash=token_hash,
         is_active=True,
-        expires_at__gt=timezone.now(),
+        expires_at__gt=now,
         target_facility_code=target_facility_code,
     ).first()
 
@@ -107,6 +117,11 @@ def validate_access_token(
     consent = token.consent_grant
     if consent.status != ConsentStatus.ACTIVE:
         return None
+    if consent.expires_at and consent.expires_at <= now:
+        if consent.status == ConsentStatus.ACTIVE:
+            consent.status = ConsentStatus.EXPIRED
+            consent.save(update_fields=['status', 'updated_at'])
+        return None
     if consent.patient_identity_id != patient_identity_id:
         return None
     if consent.source_facility_code != source_facility_code:
@@ -114,6 +129,6 @@ def validate_access_token(
     if consent.target_facility_code != target_facility_code:
         return None
 
-    token.last_used_at = timezone.now()
+    token.last_used_at = now
     token.save(update_fields=['last_used_at'])
     return consent

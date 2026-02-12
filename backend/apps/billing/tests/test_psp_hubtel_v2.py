@@ -166,3 +166,46 @@ def test_hubtel_webhook_requires_secret_token_when_configured(client, settings):
     r2 = client.post("/api/billing/psp/webhooks/hubtel/?token=secret-token", {"x": 1}, format="json")
     assert r2.status_code == 200
 
+
+def test_hubtel_webhook_duplicate_payload_is_acknowledged(client, monkeypatch):
+    monkeypatch.setattr("apps.billing.views.get_psp_adapter", lambda provider: _StubAdapter())
+
+    payload = {
+        "data": {
+            "paylinkId": "PAYLINK-DUP",
+            "clientReference": "REF-DUP",
+            "amount": 5,
+            "status": "Successful",
+        }
+    }
+
+    r1 = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
+    r2 = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert PSPWebhookEvent.objects.filter(provider='hubtel').count() == 1
+
+
+def test_hubtel_webhook_returns_retryable_error_on_non_idempotent_persistence_failure(client, monkeypatch):
+    from apps.billing import views as billing_views
+
+    monkeypatch.setattr("apps.billing.views.get_psp_adapter", lambda provider: _StubAdapter())
+
+    def _raise_failure(*args, **kwargs):
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr(billing_views, "encrypt_payload", lambda body: "encrypted-payload")
+    monkeypatch.setattr(billing_views.PSPWebhookEvent.objects, "create", _raise_failure)
+
+    payload = {
+        "data": {
+            "paylinkId": "PAYLINK-FAIL",
+            "clientReference": "REF-FAIL",
+            "amount": 5,
+            "status": "Successful",
+        }
+    }
+    response = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
+
+    assert response.status_code == 503

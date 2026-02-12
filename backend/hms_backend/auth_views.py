@@ -340,9 +340,16 @@ class LoginView(APIView):
         if user is not None:
             allowed_codes = get_user_facility_codes(user)
             allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
-            if requested_facility and allowed_codes:
+            default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
+            if requested_facility:
                 is_admin = user.user_type == 'admin'
-                if requested_facility not in allowed_codes and not (allow_cross_facility and is_admin):
+                if allowed_codes:
+                    requested_allowed = requested_facility in allowed_codes
+                else:
+                    requested_allowed = bool(
+                        default_facility_code and requested_facility == default_facility_code
+                    )
+                if not requested_allowed and not (allow_cross_facility and is_admin):
                     self._log_login_failure(
                         request,
                         email=email,
@@ -368,6 +375,18 @@ class LoginView(APIView):
                 )
 
             facility_code = resolve_user_facility_code(user, requested_facility)
+            if requested_facility and facility_code != requested_facility:
+                self._log_login_failure(
+                    request,
+                    email=email,
+                    user=user,
+                    details=f"Facility access denied for {requested_facility}.",
+                    facility_code=requested_facility,
+                )
+                return Response(
+                    {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
             if facility_code:
                 set_current_facility_code(facility_code)
                 # Also set on request so audit logging can access it
