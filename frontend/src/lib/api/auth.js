@@ -130,9 +130,10 @@ export const authApi = {
     }
   },
 
-  mfaStatus: async () => {
+  mfaStatus: async (mfaSession = null) => {
     try {
-      return await apiClient.get('/auth/mfa/status/');
+      const headers = mfaSession ? { 'X-MFA-Session': mfaSession } : undefined;
+      return await apiClient.get('/auth/mfa/status/', { headers });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to load MFA status'));
     }
