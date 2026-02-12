@@ -6,7 +6,9 @@ Bypasses bash to ensure we see all output in Railway logs.
 import os
 import sys
 import time
+import uuid
 from collections import OrderedDict
+from datetime import datetime, timezone
 
 # Force unbuffered output IMMEDIATELY
 sys.stdout = sys.stderr  # Send all output to stderr
@@ -51,35 +53,140 @@ def get_pending_migrations(db_connection):
     return list(ordered.keys())
 
 
-def run_migrations_with_lock(db_connection, call_command):
-    log("Running migration preflight checks...")
-    call_command("preflight_migration_checks", strict=True)
-    log("Migration preflight checks passed")
+def ensure_default_facility_seed(connection, default_code):
+    """
+    Seed a bootstrap facility when core_facility exists but has no rows.
 
-    log("Running migrations with advisory lock...")
+    This keeps startup migration mode aligned with run_migrations.py behavior.
+    """
+    if not default_code:
+        return
+
+    normalized_code = str(default_code).strip().upper()
+    if not normalized_code:
+        return
+
+    table_names = set(connection.introspection.table_names())
+    if "core_facility" not in table_names:
+        return
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM core_facility")
+        facility_count = int(cursor.fetchone()[0])
+
+        cursor.execute(
+            "SELECT 1 FROM core_facility WHERE UPPER(code) = %s LIMIT 1",
+            [normalized_code],
+        )
+        facility_exists = cursor.fetchone() is not None
+
+        if facility_exists:
+            log(f"DEFAULT_FACILITY_CODE {normalized_code} already exists.")
+            return
+
+        if facility_count > 0:
+            raise RuntimeError(
+                f"DEFAULT_FACILITY_CODE={normalized_code!r} does not match existing facilities. "
+                "Set it to a valid code before running migrations."
+            )
+
+        now = datetime.now(timezone.utc)
+        available_columns = {
+            column.name
+            for column in connection.introspection.get_table_description(cursor, "core_facility")
+        }
+
+        values_by_column = {
+            "id": uuid.uuid4(),
+            "code": normalized_code,
+            "name": f"{normalized_code} Facility",
+            "facility_type": "hospital",
+            "address": "Bootstrap Address",
+            "city": "Bootstrap City",
+            "region": "",
+            "country": "Ghana",
+            "postal_code": "",
+            "latitude": None,
+            "longitude": None,
+            "phone": "+0000000000",
+            "email": f"{normalized_code.lower()}@example.invalid",
+            "website": "",
+            "timezone": "UTC",
+            "currency": "GHS",
+            "tax_id": "",
+            "license_number": "",
+            "status": "ready",
+            "is_active": True,
+            "is_headquarters": True,
+            "provisioned_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "created_by_id": None,
+            "updated_by_id": None,
+            "parent_facility_id": None,
+        }
+
+        insert_columns = [key for key in values_by_column if key in available_columns]
+        placeholders = ", ".join(["%s"] * len(insert_columns))
+        sql = (
+            f"INSERT INTO core_facility ({', '.join(insert_columns)}) "
+            f"VALUES ({placeholders})"
+        )
+        params = [values_by_column[column] for column in insert_columns]
+        cursor.execute(sql, params)
+        log(f"Bootstrapped facility {normalized_code} in empty core_facility table.")
+
+
+def run_migrations_with_lock(db_connection, call_command, default_facility_code):
+    log("Attempting to acquire migration advisory lock...")
     with db_connection.cursor() as cursor:
-        cursor.execute('SELECT pg_try_advisory_lock(1)')
-        acquired = cursor.fetchone()[0]
+        cursor.execute("SELECT pg_try_advisory_lock(1)")
+        acquired = bool(cursor.fetchone()[0])
 
-        if acquired:
-            log("Lock acquired - running migrations...")
-            try:
-                call_command('migrate', '--noinput', verbosity=1)
-                log("Migrations complete")
+    if acquired:
+        log("Migration lock acquired.")
+    else:
+        log("Another instance is handling migrations. Waiting for lock...")
+        with db_connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_lock(1)")
+        log("Migration lock acquired after wait.")
 
-                try:
-                    call_command('ensure_admin')
-                    log("ensure_admin complete")
-                except Exception as exc:
-                    log(f"ensure_admin skipped: {exc}")
-            finally:
-                cursor.execute('SELECT pg_advisory_unlock(1)')
-                log("Lock released")
+    pending = []
+    log("Running migration preflight checks...")
+    try:
+        pending = get_pending_migrations(db_connection)
+        if pending:
+            preview = ", ".join(f"{app}.{name}" for app, name in pending[:5])
+            if len(pending) > 5:
+                preview = f"{preview}, ..."
+            log(f"{len(pending)} pending migration(s) detected: {preview}")
         else:
-            log("Another instance running migrations, waiting...")
-            cursor.execute('SELECT pg_advisory_lock(1)')
-            cursor.execute('SELECT pg_advisory_unlock(1)')
-            log("Migrations done by other instance")
+            log("No pending migrations detected once lock acquired.")
+
+        ensure_default_facility_seed(db_connection, default_facility_code)
+        call_command("preflight_migration_checks", strict=True)
+        log("Migration preflight checks passed")
+
+        if pending:
+            log("Running migrations...")
+            call_command("migrate", interactive=False, verbosity=1)
+            log("Migrations complete")
+        else:
+            log("Skipping migrate command; schema is already up to date.")
+
+        try:
+            call_command("ensure_admin")
+            log("ensure_admin complete")
+        except Exception as exc:
+            log(f"ensure_admin skipped: {exc}")
+    finally:
+        with db_connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(1)")
+            lock_released = bool(cursor.fetchone()[0])
+        if lock_released:
+            log("Migration lock released")
+        else:
+            log("WARNING: Migration advisory lock was not held at release time.")
 
 
 log("=" * 50)
@@ -139,7 +246,7 @@ wait_for_database(connection)
 
 migrate_on_startup = parse_bool(
     os.environ.get("MIGRATE_ON_STARTUP"),
-    default=bool(settings.DEBUG),
+    default=True,
 )
 fail_on_pending = parse_bool(
     os.environ.get("FAIL_ON_PENDING_MIGRATIONS"),
@@ -154,7 +261,11 @@ log(
 
 try:
     if migrate_on_startup:
-        run_migrations_with_lock(connection, call_command)
+        run_migrations_with_lock(
+            connection,
+            call_command,
+            getattr(settings, "DEFAULT_FACILITY_CODE", None),
+        )
     else:
         pending = get_pending_migrations(connection)
         if pending:
