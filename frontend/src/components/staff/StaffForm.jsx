@@ -1,11 +1,15 @@
+import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
-import { useState } from "react";
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { toast } from "sonner";
-import { staffApi } from '@/features/staff/api';
+import format from "date-fns/format";
+import { useRegisterStaff } from "@/features/staff/hooks";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Form,
   FormControl,
@@ -23,11 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
-
-import format from "date-fns/format";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -35,142 +36,230 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  buildRegistrationPayload,
+  defaultValues,
+  isPractitionerUserType,
+  staffFieldToStep,
+  staffFormSchema,
+  staffRoleLabels,
+  staffRoleOptions,
+  staffStepDefs,
+  stepFieldsByKey,
+} from './staffForm.utils';
 
-// Form validation schema
-const staffFormSchema = z.object({
-  // User fields
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  first_name: z.string().min(1, { message: "First name is required" }),
-  last_name: z.string().min(1, { message: "Last name is required" }),
-  phone_number: z.string().optional(),
-  date_of_birth: z.date({ required_error: "Date of birth is required" }),
-  user_type: z.enum(['admin', 'doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing'], {
-    required_error: "Please select a user type",
-  }),
-
-  // Staff fields
-  department: z.string().min(1, { message: "Department is required" }),
-  position: z.string().min(1, { message: "Position is required" }),
-  hire_date: z.date({ required_error: "Hire date is required" }),
-
-  // PractitionerProfile fields (only required if user_type is doctor or nurse)
-  license_number: z.string().optional(),
-  specialization: z.string().optional(),
-  qualification: z.string().optional(),
-
-  // Address fields
-  address_line1: z.string().optional(),
-  address_line2: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  postal_code: z.string().optional(),
-  country: z.string().optional(),
-}).refine(
-  (data) => {
-    // If user_type is doctor or nurse, then license_number, specialization, and qualification are required
-    if (data.user_type === 'doctor' || data.user_type === 'nurse') {
-      return !!data.license_number && !!data.specialization && !!data.qualification;
-    }
-    return true;
-  },
-  {
-    message: "License number, specialization, and qualification are required for doctors and nurses",
-    path: ["license_number"],
-  }
-);
-
-const StaffForm = ({ staff, onSuccess }) => {
+const StaffForm = ({ onSuccess }) => {
+  const registerStaffMutation = useRegisterStaff();
   const [isLoading, setIsLoading] = useState(false);
-  const isEditMode = !!staff;
+  const [showValidation, setShowValidation] = useState(false);
 
-  // Initialize form with default values or staff data
+  const stepKeys = useMemo(() => staffStepDefs.map((step) => step.key), []);
+  const [activeStep, setActiveStep] = useState(stepKeys[0]);
+
   const form = useForm({
     resolver: zodResolver(staffFormSchema),
-    defaultValues: {
-      email: "",
-      first_name: "",
-      last_name: "",
-      phone_number: "",
-      date_of_birth: undefined,
-      user_type: undefined,
-      department: "",
-      position: "",
-      hire_date: new Date(),
-      license_number: "",
-      specialization: "",
-      qualification: "",
-      address_line1: "",
-      address_line2: "",
-      city: "",
-      state: "",
-      postal_code: "",
-      country: "",
-    },
+    defaultValues,
   });
 
-  // Watch user_type to conditionally render practitioner fields
-  const userType = form.watch("user_type");
-  const isPractitioner = userType === 'doctor' || userType === 'nurse';
+  const userType = form.watch('user_type');
+  const dateOfBirth = form.watch('date_of_birth');
+  const isPractitioner = isPractitionerUserType(userType);
 
-  const onSubmit = async (data) => {
+  useEffect(() => {
+    if (!stepKeys.includes(activeStep)) {
+      setActiveStep(stepKeys[0]);
+    }
+  }, [activeStep, stepKeys]);
+
+  useEffect(() => {
+    if (!isPractitioner) {
+      form.clearErrors(['license_number', 'specialization', 'qualification']);
+    }
+  }, [form, isPractitioner]);
+
+  const currentStepIndex = stepKeys.indexOf(activeStep);
+  const isFirstStep = currentStepIndex <= 0;
+  const isLastStep = currentStepIndex === stepKeys.length - 1;
+  const isSubmitting = isLoading || registerStaffMutation.isPending;
+
+  const goToStep = useCallback((stepKey, focusField = null) => {
+    setActiveStep(stepKey);
+    if (focusField) {
+      setTimeout(() => form.setFocus(focusField), 0);
+    }
+  }, [form]);
+
+  const validateStep = useCallback(async (stepKey) => {
+    if (stepKey === 'credentials' && !isPractitioner) {
+      return true;
+    }
+
+    const fields = stepFieldsByKey[stepKey] || [];
+    if (!fields.length) return true;
+
+    const fieldsToValidate = stepKey === 'credentials' && !isPractitioner
+      ? []
+      : fields;
+
+    if (!fieldsToValidate.length) return true;
+
+    return form.trigger(fieldsToValidate);
+  }, [form, isPractitioner]);
+
+  const goToFirstErrorStep = useCallback(() => {
+    const errors = form.formState.errors || {};
+    const errorFields = Object.keys(errors);
+
+    for (const step of stepKeys) {
+      const fieldInStep = errorFields.find((field) => staffFieldToStep[field] === step);
+      if (fieldInStep) {
+        goToStep(step, fieldInStep);
+        return;
+      }
+    }
+  }, [form.formState.errors, goToStep, stepKeys]);
+
+  const handleBack = useCallback(() => {
+    if (isFirstStep) return;
+    setShowValidation(false);
+    setActiveStep(stepKeys[currentStepIndex - 1]);
+  }, [currentStepIndex, isFirstStep, stepKeys]);
+
+  const handleNext = useCallback(async () => {
+    setShowValidation(true);
+    const ok = await validateStep(activeStep);
+    if (!ok) {
+      goToFirstErrorStep();
+      return false;
+    }
+    if (isLastStep) return true;
+    setActiveStep(stepKeys[currentStepIndex + 1]);
+    return true;
+  }, [activeStep, currentStepIndex, goToFirstErrorStep, isLastStep, stepKeys, validateStep]);
+
+  const submitRegistration = useCallback(async (values) => {
     setIsLoading(true);
     try {
-      let response;
-        // Format dates to YYYY-MM-DD
-        const formattedData = {
-            ...data,
-            date_of_birth: format(data.date_of_birth, 'yyyy-MM-dd'),
-            hire_date: format(data.hire_date, 'yyyy-MM-dd')
-        };
-      if (isEditMode) {
-        // Update existing staff
-        response = await staffApi.updateStaff(staff.id, formattedData);
-        toast.success("Staff member updated successfully");
-      } else {
-        // Create new staff with FHIR resource for practitioners
-        response = await staffApi.registerStaff(formattedData);
-        toast.success("Staff member created successfully");
-        form.reset(); // Reset form after successful creation
-      }
+      const payload = buildRegistrationPayload(values);
+      const response = await registerStaffMutation.mutateAsync(payload);
+      const responseData = response?.data !== undefined ? response.data : response;
+
+      form.reset(defaultValues);
+      setShowValidation(false);
+      setActiveStep(stepKeys[0]);
 
       if (onSuccess) {
-        onSuccess(response);
+        onSuccess(responseData);
       }
     } catch (error) {
-      toast.error(error.message || "Failed to save staff member");
-      console.error("Error saving staff member:", error);
+      toast.error(error.message || "Failed to register staff member");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [form, onSuccess, registerStaffMutation, stepKeys]);
+
+  const onFormSubmit = useCallback(async (values) => {
+    if (activeStep !== 'review') {
+      await handleNext();
+      return;
+    }
+
+    setShowValidation(true);
+    for (const stepKey of stepKeys) {
+      // Validate sequentially to avoid overlapping `form.trigger()` calls.
+      const ok = await validateStep(stepKey);
+      if (!ok) {
+        goToFirstErrorStep();
+        return;
+      }
+    }
+
+    await submitRegistration(values);
+  }, [activeStep, goToFirstErrorStep, handleNext, stepKeys, submitRegistration, validateStep]);
+
+  const stepErrorCounts = useMemo(() => {
+    const errors = form.formState.errors || {};
+    const counts = Object.fromEntries(stepKeys.map((step) => [step, 0]));
+    Object.keys(errors).forEach((field) => {
+      const step = staffFieldToStep[field];
+      if (step && counts[step] !== undefined) {
+        counts[step] += 1;
+      }
+    });
+    return counts;
+  }, [form.formState.errors, stepKeys]);
+
+  const hasFormErrors = Object.keys(form.formState.errors || {}).length > 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{isEditMode ? "Edit Staff Member" : "Create New Staff Member"}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <Tabs defaultValue="personal" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="personal">Personal Information</TabsTrigger>
-                <TabsTrigger value="employment">Employment Details</TabsTrigger>
-                <TabsTrigger value="practitioner">Practitioner Details</TabsTrigger>
-                <TabsTrigger value="address">Address</TabsTrigger>
-              </TabsList>
+    <Card className="w-full border-border">
+      <CardContent className="pt-6">
+        {showValidation && hasFormErrors && (
+          <Alert className="mb-6 border-amber-200 bg-amber-50/60 text-amber-950 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-100">
+            <AlertCircle />
+            <AlertTitle>Fix a few items to continue</AlertTitle>
+            <AlertDescription>
+              <div className="space-y-1">
+                {Object.entries(form.formState.errors || {}).map(([field, err]) => {
+                  const targetStep = staffFieldToStep[field];
+                  return (
+                    <button
+                      key={field}
+                      type="button"
+                      className="text-left hover:underline font-mono text-xs"
+                      onClick={() => {
+                        if (targetStep) {
+                          goToStep(targetStep, field);
+                        } else {
+                          goToFirstErrorStep();
+                        }
+                      }}
+                    >
+                      {String(err?.message || field)}
+                    </button>
+                  );
+                })}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
-              {/* Personal Information Tab */}
-              <TabsContent value="personal" className="space-y-4 pt-4">
+        <Tabs value={activeStep} onValueChange={setActiveStep}>
+          <TabsList className="grid w-full mb-6 grid-cols-5">
+            {staffStepDefs.map((step, idx) => {
+              const count = stepErrorCounts[step.key] || 0;
+              return (
+                <TabsTrigger key={step.key} value={step.key} className="font-mono text-xs">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                      {idx + 1}
+                    </span>
+                    <span>{step.label}</span>
+                    {count > 0 && (
+                      <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                        {count}
+                      </Badge>
+                    )}
+                  </span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-6">
+              <TabsContent value="identity" className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="first_name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>First Name</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          First Name <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="John" {...field} />
+                          <Input placeholder="First name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -182,23 +271,29 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="last_name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Last Name</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Last Name <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="Doe" {...field} />
+                          <Input placeholder="Last name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Email <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input type="email" placeholder="john.doe@example.com" {...field} />
+                          <Input type="email" placeholder="Email address" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -210,36 +305,38 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="phone_number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Phone Number
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="+1234567890" {...field} />
+                          <Input placeholder="Phone number" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="date_of_birth"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Date of Birth</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Date of Birth <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
-                                variant={"outline"}
+                                variant="outline"
                                 className={cn(
                                   "w-full pl-3 text-left font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>Pick a date</span>
-                                )}
+                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
@@ -249,9 +346,7 @@ const StaffForm = ({ staff, onSuccess }) => {
                               mode="single"
                               selected={field.value}
                               onSelect={field.onChange}
-                              disabled={(date) =>
-                                date > new Date() || date < new Date("1900-01-01")
-                              }
+                              disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
                               initialFocus
                             />
                           </PopoverContent>
@@ -266,9 +361,19 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="user_type"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>User Type</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          User Type <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <Select
-                          onValueChange={field.onChange}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            if (!isPractitionerUserType(value)) {
+                              form.setValue('license_number', '');
+                              form.setValue('specialization', '');
+                              form.setValue('qualification', '');
+                              form.clearErrors(['license_number', 'specialization', 'qualification']);
+                            }
+                          }}
                           value={field.value}
                         >
                           <FormControl>
@@ -277,13 +382,11 @@ const StaffForm = ({ staff, onSuccess }) => {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="admin">Administrator</SelectItem>
-                            <SelectItem value="doctor">Doctor</SelectItem>
-                            <SelectItem value="nurse">Nurse</SelectItem>
-                            <SelectItem value="receptionist">Receptionist</SelectItem>
-                            <SelectItem value="lab_technician">Lab Technician</SelectItem>
-                            <SelectItem value="pharmacist">Pharmacist</SelectItem>
-                            <SelectItem value="billing">Billing Clerk</SelectItem>
+                            {staffRoleOptions.map((role) => (
+                              <SelectItem key={role.value} value={role.value}>
+                                {role.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -291,22 +394,20 @@ const StaffForm = ({ staff, onSuccess }) => {
                     )}
                   />
                 </div>
-
-                <Separator />
-
               </TabsContent>
 
-              {/* Employment Details Tab */}
-              <TabsContent value="employment" className="space-y-4 pt-4">
+              <TabsContent value="employment" className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="department"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Department</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Department <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="Cardiology" {...field} />
+                          <Input placeholder="Department" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -318,36 +419,38 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="position"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Position</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Position <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="Senior Doctor" {...field} />
+                          <Input placeholder="Position" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="hire_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Hire Date</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Hire Date <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
-                                variant={"outline"}
+                                variant="outline"
                                 className={cn(
                                   "w-full pl-3 text-left font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>Pick a date</span>
-                                )}
+                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
@@ -357,9 +460,11 @@ const StaffForm = ({ staff, onSuccess }) => {
                               mode="single"
                               selected={field.value}
                               onSelect={field.onChange}
-                              disabled={(date) =>
-                                date > new Date() || date < new Date("1900-01-01")
-                              }
+                              disabled={(date) => (
+                                date > new Date() ||
+                                date < new Date("1900-01-01") ||
+                                (dateOfBirth ? date < dateOfBirth : false)
+                              )}
                               initialFocus
                             />
                           </PopoverContent>
@@ -371,47 +476,60 @@ const StaffForm = ({ staff, onSuccess }) => {
                 </div>
               </TabsContent>
 
-              {/* Practitioner Details Tab */}
-              <TabsContent value="practitioner" className="space-y-4 pt-4">
+              <TabsContent value="credentials" className="space-y-4 mt-4">
                 {isPractitioner ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="license_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>License Number</FormLabel>
-                          <FormControl>
-                            <Input placeholder="MD12345" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-border bg-muted/20 p-4">
+                      <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                        Practitioner credentials are required for {staffRoleLabels[userType]?.toLowerCase()} roles.
+                      </p>
+                    </div>
 
-                    <FormField
-                      control={form.control}
-                      name="specialization"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Specialization</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Cardiology" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="license_number"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                              License Number <span className="text-rose-500">*</span>
+                            </FormLabel>
+                            <FormControl>
+                              <Input placeholder="License number" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="specialization"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                              Specialization <span className="text-rose-500">*</span>
+                            </FormLabel>
+                            <FormControl>
+                              <Input placeholder="Specialization" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <FormField
                       control={form.control}
                       name="qualification"
                       render={({ field }) => (
-                        <FormItem className="col-span-2">
-                          <FormLabel>Qualification</FormLabel>
+                        <FormItem>
+                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                            Qualification <span className="text-rose-500">*</span>
+                          </FormLabel>
                           <FormControl>
-                            <Textarea 
-                              placeholder="MD, PhD in Cardiology, Harvard Medical School"
+                            <Textarea
+                              placeholder="Qualification and training background"
                               className="min-h-[100px]"
                               {...field}
                             />
@@ -422,25 +540,32 @@ const StaffForm = ({ staff, onSuccess }) => {
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-40">
-                    <p className="text-muted-foreground">
-                      Practitioner details are only required for doctors and nurses.
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-900/10">
+                    <div className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      <p className="text-sm text-emerald-800 dark:text-emerald-200 font-medium">
+                        No practitioner credentials needed for this role.
+                      </p>
+                    </div>
+                    <p className="text-xs text-emerald-700/90 dark:text-emerald-300 mt-2 font-mono">
+                      Credentials are only required for doctors and nurses.
                     </p>
                   </div>
                 )}
               </TabsContent>
 
-              {/* Address Tab */}
-              <TabsContent value="address" className="space-y-4 pt-4">
+              <TabsContent value="contact" className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="address_line1"
                     render={({ field }) => (
-                      <FormItem className="col-span-2">
-                        <FormLabel>Address Line 1</FormLabel>
+                      <FormItem className="md:col-span-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Address Line 1
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="123 Main St" {...field} />
+                          <Input placeholder="Address line 1" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -451,24 +576,30 @@ const StaffForm = ({ staff, onSuccess }) => {
                     control={form.control}
                     name="address_line2"
                     render={({ field }) => (
-                      <FormItem className="col-span-2">
-                        <FormLabel>Address Line 2</FormLabel>
+                      <FormItem className="md:col-span-2">
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Address Line 2
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="Apt 4B" {...field} />
+                          <Input placeholder="Address line 2" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          City
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="New York" {...field} />
+                          <Input placeholder="City" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -480,23 +611,29 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="state"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>State/Province</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          State/Province
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="NY" {...field} />
+                          <Input placeholder="State/Province" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="postal_code"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Postal Code</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Postal Code
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="10001" {...field} />
+                          <Input placeholder="Postal code" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -508,9 +645,11 @@ const StaffForm = ({ staff, onSuccess }) => {
                     name="country"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Country</FormLabel>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Country
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="USA" {...field} />
+                          <Input placeholder="Country" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -518,15 +657,112 @@ const StaffForm = ({ staff, onSuccess }) => {
                   />
                 </div>
               </TabsContent>
-            </Tabs>
 
-            <div className="flex justify-end space-x-2">
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? "Saving..." : isEditMode ? "Update Staff Member" : "Create Staff Member"}
-              </Button>
-            </div>
-          </form>
-        </Form>
+              <TabsContent value="review" className="space-y-4 mt-4">
+                <div className="space-y-3">
+                  <div className="p-4 rounded-lg border border-border bg-card/40">
+                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Identity</p>
+                    <p className="text-sm">
+                      <span className="font-medium">Name:</span> {form.getValues('first_name')} {form.getValues('last_name')}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Email:</span> {form.getValues('email') || 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Phone:</span> {form.getValues('phone_number') || 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">DOB:</span>{' '}
+                      {form.getValues('date_of_birth') ? format(form.getValues('date_of_birth'), 'yyyy-MM-dd') : 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Role:</span> {staffRoleLabels[form.getValues('user_type')] || 'Not set'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-lg border border-border bg-card/40">
+                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Employment</p>
+                    <p className="text-sm">
+                      <span className="font-medium">Department:</span> {form.getValues('department') || 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Position:</span> {form.getValues('position') || 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Hire Date:</span>{' '}
+                      {form.getValues('hire_date') ? format(form.getValues('hire_date'), 'yyyy-MM-dd') : 'Not set'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-lg border border-border bg-card/40">
+                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Credentials</p>
+                    {isPractitioner ? (
+                      <>
+                        <p className="text-sm">
+                          <span className="font-medium">License:</span> {form.getValues('license_number') || 'Not set'}
+                        </p>
+                        <p className="text-sm">
+                          <span className="font-medium">Specialization:</span> {form.getValues('specialization') || 'Not set'}
+                        </p>
+                        <p className="text-sm">
+                          <span className="font-medium">Qualification:</span> {form.getValues('qualification') || 'Not set'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No practitioner credentials required for this role</p>
+                    )}
+                  </div>
+
+                  <div className="p-4 rounded-lg border border-border bg-card/40">
+                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
+                    <p className="text-sm">
+                      <span className="font-medium">Address:</span>{' '}
+                      {[
+                        form.getValues('address_line1'),
+                        form.getValues('address_line2'),
+                        form.getValues('city'),
+                        form.getValues('state'),
+                        form.getValues('postal_code'),
+                        form.getValues('country'),
+                      ].filter(Boolean).join(', ') || 'Not set'}
+                    </p>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <div className="flex items-center justify-between pt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBack}
+                  disabled={isFirstStep || isSubmitting}
+                  className="font-mono text-sm"
+                >
+                  Back
+                </Button>
+
+                {!isLastStep ? (
+                  <Button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={isSubmitting}
+                    className="font-mono text-sm bg-primary hover:bg-primary/90"
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="font-mono text-sm bg-primary hover:bg-primary/90"
+                  >
+                    {isSubmitting ? "Saving..." : "Create Staff Member"}
+                  </Button>
+                )}
+              </div>
+            </form>
+          </Form>
+        </Tabs>
       </CardContent>
     </Card>
   );
