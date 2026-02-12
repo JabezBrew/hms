@@ -27,6 +27,7 @@ from rest_framework.response import Response
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, get_user_facility
 from apps.users.rbac import IsAdmin
+from apps.users.permissions import IsAdminOrReadOnly
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
 
@@ -254,7 +255,7 @@ class UnitTypeConfigViewSet(viewsets.ModelViewSet):
     (e.g., facility, department, team) and their capabilities.
     """
     queryset = UnitTypeConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -282,7 +283,7 @@ class LeadershipRoleConfigViewSet(viewsets.ModelViewSet):
     and their associated permissions.
     """
     queryset = LeadershipRoleConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -315,7 +316,7 @@ class StaffAssignmentTypeConfigViewSet(viewsets.ModelViewSet):
     """
     queryset = StaffAssignmentTypeConfig.objects.all()
     serializer_class = StaffAssignmentTypeConfigSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):

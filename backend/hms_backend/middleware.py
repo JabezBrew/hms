@@ -6,6 +6,7 @@ from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework import status as http_status
 
@@ -88,7 +89,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 if raw_token is not None:
                     validated_token = jwt_auth.get_validated_token(raw_token)
                     user = jwt_auth.get_user(validated_token)
-        except (InvalidToken, AttributeError, KeyError, TypeError):
+        except (InvalidToken, AuthenticationFailed, AttributeError, KeyError, TypeError):
             validated_token = None
             user = None
 

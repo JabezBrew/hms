@@ -58,6 +58,15 @@ def authenticated_client(api_client, admin_user, default_facility):
 
 
 @pytest.fixture
+def staff_authenticated_client(staff_user, default_facility):
+    """Create an authenticated non-admin API client."""
+    client = APIClient()
+    client.force_authenticate(user=staff_user)
+    client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)
+    return client
+
+
+@pytest.fixture
 def seed_organization_data(db):
     """Seed the organization configuration data."""
     from django.core.management import call_command
@@ -172,6 +181,14 @@ class TestUnitTypeConfigAPI:
         assert response.data['code'] == 'facility'
         assert response.data['can_be_root'] is True
 
+    def test_non_admin_cannot_create_unit_type(self, staff_authenticated_client, seed_organization_data):
+        """Test that non-admin users cannot mutate unit type config."""
+        response = staff_authenticated_client.post('/api/organization/unit-types/', {
+            'code': 'NON_ADMIN_UT',
+            'name': 'Non Admin Unit Type',
+        })
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 # =============================================================================
 # Leadership Role Config API Tests
@@ -197,6 +214,14 @@ class TestLeadershipRoleConfigAPI:
         assert response.data['code'] == 'head'
         assert response.data['is_primary_leader'] is True
 
+    def test_non_admin_cannot_create_leadership_role(self, staff_authenticated_client, seed_organization_data):
+        """Test that non-admin users cannot mutate leadership role config."""
+        response = staff_authenticated_client.post('/api/organization/leadership-roles/', {
+            'code': 'NON_ADMIN_ROLE',
+            'name': 'Non Admin Role',
+        })
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 # =============================================================================
 # Assignment Type Config API Tests
@@ -213,6 +238,14 @@ class TestAssignmentTypeConfigAPI:
         assert response.status_code == status.HTTP_200_OK
         assert 'results' in response.data
         assert len(response.data['results']) >= 4
+
+    def test_non_admin_cannot_create_assignment_type(self, staff_authenticated_client, seed_organization_data):
+        """Test that non-admin users cannot mutate assignment type config."""
+        response = staff_authenticated_client.post('/api/organization/assignment-types/', {
+            'code': 'NON_ADMIN_ASSIGNMENT',
+            'name': 'Non Admin Assignment Type',
+        })
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 # =============================================================================

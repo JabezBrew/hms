@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, SimpleRateThrottle
+from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
@@ -174,7 +175,7 @@ class LogoutView(APIView):
                     user = jwt_auth.get_user(validated_token)
                     if not user and token_user_id:
                         user = User.objects.filter(id=token_user_id).first()
-        except (InvalidToken, TokenError, AttributeError, KeyError, TypeError):
+        except (InvalidToken, TokenError, AuthenticationFailed, AttributeError, KeyError, TypeError):
             pass
 
         if refresh_token:

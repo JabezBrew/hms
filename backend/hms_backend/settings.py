@@ -458,12 +458,7 @@ REST_FRAMEWORK = {
 # CORS settings
 # Filter out invalid origins (e.g., empty or just "https://")
 _cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
-
-# Add known Railway domains explicitly to ensure they work even if env vars are missing them
-_railway_origins = [
-    'https://frontend-staging-e202.up.railway.app',
-    'https://frontend-production-40e0.up.railway.app',
-]
+_railway_origins = env.list('RAILWAY_FRONTEND_ORIGINS', default=[])
 for origin in _railway_origins:
     if origin not in _cors_origins:
         _cors_origins.append(origin)
@@ -496,7 +491,6 @@ CORS_ALLOW_HEADERS = [
 # CSRF settings
 _csrf_origins = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
 
-# Add known Railway domains to CSRF trusted origins as well
 for origin in _railway_origins:
     if origin not in _csrf_origins:
         _csrf_origins.append(origin)
