@@ -24,10 +24,22 @@ class Command(BaseCommand):
             default=os.environ.get('ADMIN_PASSWORD', 'Admin123!'),
             help='Admin password (default: ADMIN_PASSWORD env var or Admin123!)',
         )
+        parser.add_argument(
+            '--first-name',
+            default=os.environ.get('ADMIN_FIRST_NAME', 'System'),
+            help='Admin first name (default: ADMIN_FIRST_NAME env var or System)',
+        )
+        parser.add_argument(
+            '--last-name',
+            default=os.environ.get('ADMIN_LAST_NAME', 'Administrator'),
+            help='Admin last name (default: ADMIN_LAST_NAME env var or Administrator)',
+        )
 
     def handle(self, *args, **options):
         email = options['email']
         password = options['password']
+        first_name = options['first_name']
+        last_name = options['last_name']
 
         default_facility = None
         try:
@@ -56,6 +68,16 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.SUCCESS(f'Updated user_type to admin')
                 )
+            if (
+                (not superuser.first_name or superuser.first_name.strip().lower() == 'admin')
+                and (not superuser.last_name or superuser.last_name.strip().lower() == 'user')
+            ):
+                superuser.first_name = first_name
+                superuser.last_name = last_name
+                superuser.save(update_fields=['first_name', 'last_name'])
+                self.stdout.write(
+                    self.style.SUCCESS(f'Updated admin name to {first_name} {last_name}')
+                )
             if default_facility and superuser.primary_facility_id is None:
                 superuser.primary_facility = default_facility
                 superuser.save(update_fields=['primary_facility'])
@@ -72,8 +94,8 @@ class Command(BaseCommand):
             username=username,
             email=email,
             password=password,
-            first_name='Admin',
-            last_name='User',
+            first_name=first_name,
+            last_name=last_name,
             user_type='admin',
         )
 
