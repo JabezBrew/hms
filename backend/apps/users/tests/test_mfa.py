@@ -180,3 +180,33 @@ def test_webauthn_registration_rejects_untrusted_origin(monkeypatch):
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.data['detail'] == 'WebAuthn origin is not allowed.'
+
+
+@override_settings(
+    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOW_HEADERS=[
+        'accept',
+        'accept-encoding',
+        'authorization',
+        'content-type',
+        'dnt',
+        'origin',
+        'user-agent',
+        'x-csrftoken',
+        'x-facility-code',
+        'x-mfa-session',
+        'x-requested-with',
+    ],
+)
+def test_mfa_status_preflight_allows_mfa_session_header():
+    client = APIClient()
+    response = client.options(
+        '/api/auth/mfa/status/',
+        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET',
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-mfa-session',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    allowed_headers = response.get('Access-Control-Allow-Headers', '')
+    assert 'x-mfa-session' in allowed_headers.lower()
