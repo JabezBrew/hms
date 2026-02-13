@@ -5,6 +5,7 @@ from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIR
 from apps.core.security import get_user_facility
 from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
+from .unit_assignment import auto_assign_staff_to_department_unit
 import random
 import string
 import logging
@@ -404,6 +405,7 @@ class StaffInviteSerializer(serializers.Serializer):
     date_of_birth = serializers.DateField(required=False, allow_null=True)
 
     department = serializers.CharField()
+    department_unit_id = serializers.UUIDField(required=False, allow_null=True)
     position = serializers.CharField()
     hire_date = serializers.DateField()
 
@@ -510,6 +512,20 @@ class StaffInviteSerializer(serializers.Serializer):
                 }
             )
 
+        try:
+            auto_assign_staff_to_department_unit(
+                staff,
+                facility=facility,
+                department_name=validated_data.get('department'),
+                department_unit_id=validated_data.get('department_unit_id'),
+                assigned_by=actor if getattr(actor, 'is_authenticated', False) else None,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to auto-assign invited staff to department unit",
+                extra={'staff_id': str(staff.id)},
+            )
+
         # Expose creation context to the view without changing API response.
         staff._user_created = created
         staff._user_had_usable_password = had_usable_password
@@ -532,6 +548,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
 
     # Staff fields
     department = serializers.CharField()
+    department_unit_id = serializers.UUIDField(required=False, allow_null=True)
     position = serializers.CharField()
     hire_date = serializers.DateField()
 
@@ -704,6 +721,20 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 )
             except Exception:
                 logger.warning("Failed to queue FHIR practitioner creation")
+
+        try:
+            auto_assign_staff_to_department_unit(
+                staff,
+                facility=facility,
+                department_name=validated_data.get('department'),
+                department_unit_id=validated_data.get('department_unit_id'),
+                assigned_by=getattr(self.context.get('request'), 'user', None),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to auto-assign registered staff to department unit",
+                extra={'staff_id': str(staff.id)},
+            )
 
         return staff
 

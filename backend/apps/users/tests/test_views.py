@@ -8,12 +8,22 @@ Tests for:
 - PatientProfileViewSet
 - UserPatientListViewSet (my patients)
 """
+import uuid
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.organization.models import (
+    ClinicalUnit,
+    StaffAssignmentTypeConfig,
+    StaffUnitAssignment,
+    UnitMemberAssignment,
+    UnitTypeConfig,
+)
 from apps.users.models import User, Staff, PractitionerProfile, PatientProfile, UserPatientList
+from apps.users.unit_assignment import auto_assign_staff_to_department_unit
 from apps.core.tests.factories import DefaultFacilityFactory
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory, NurseUserFactory,
@@ -33,6 +43,69 @@ def get_authenticated_client(user, facility=None):
         HTTP_X_FACILITY_CODE=facility.code
     )
     return client
+
+
+def _noop_delay(*args, **kwargs):
+    return {"status": "queued"}
+
+
+def _stub_staff_tasks(monkeypatch):
+    monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', _noop_delay)
+    monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', _noop_delay)
+    monkeypatch.setattr('apps.users.serializers.create_practitioner_in_fhir.delay', _noop_delay)
+
+
+def _ensure_single_assignment_type():
+    StaffAssignmentTypeConfig.objects.get_or_create(
+        code='single',
+        defaults={'name': 'Single Assignment', 'is_active': True}
+    )
+
+
+def _create_department_unit_for_facility(facility, *, name='Internal Medicine', staffing_mode='mixed'):
+    facility_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='facility',
+        defaults={
+            'name': 'Facility',
+            'can_be_root': True,
+            'depth_level': 0,
+            'is_active': True,
+        }
+    )
+    department_type, _ = UnitTypeConfig.objects.get_or_create(
+        code='department',
+        defaults={
+            'name': 'Department',
+            'can_be_root': False,
+            'depth_level': 1,
+            'is_active': True,
+        }
+    )
+    department_type.allowed_parent_types.add(facility_type)
+
+    root_unit, _ = ClinicalUnit.objects.get_or_create(
+        code=facility.code,
+        parent=None,
+        defaults={
+            'name': facility.name,
+            'unit_type': facility_type,
+            'staffing_mode': 'mixed',
+            'unit_category': 'clinical',
+            'is_active': True,
+        }
+    )
+
+    department = ClinicalUnit.objects.create(
+        code=f"DEPT-{uuid.uuid4().hex[:8].upper()}",
+        name=name,
+        unit_type=department_type,
+        parent=root_unit,
+        staffing_mode=staffing_mode,
+        unit_category='ops_only' if staffing_mode == 'ops_only' else 'clinical',
+        is_active=True,
+    )
+    department.refresh_from_db()
+    return department
 
 
 # =============================================================================
@@ -229,6 +302,148 @@ class TestStaffViewSet:
         assert len(staff.employee_id.rsplit('-', 1)[-1]) == 7
         assert PractitionerProfile.objects.filter(staff__user=user).exists()
         assert called.get('user_email') == 'v2tui.doctor@inbox.testmail.app'
+
+    def test_register_staff_auto_assigns_practitioner_to_department_unit(self, db, monkeypatch):
+        """Doctor/nurse registration should auto-create clinical department assignment."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        department_unit = _create_department_unit_for_facility(
+            facility,
+            name='Internal Medicine',
+            staffing_mode='mixed'
+        )
+        _ensure_single_assignment_type()
+        _stub_staff_tasks(monkeypatch)
+
+        client = get_authenticated_client(admin, facility=facility)
+        payload = {
+            'email': 'auto.assign.doctor@test.com',
+            'first_name': 'Auto',
+            'last_name': 'Doctor',
+            'phone_number': '1234567890',
+            'date_of_birth': '1988-05-20',
+            'user_type': 'doctor',
+            'department': department_unit.name,
+            'department_unit_id': str(department_unit.id),
+            'position': 'Attending Physician',
+            'hire_date': '2024-01-15',
+            'license_number': 'MD-AUTO-001',
+            'specialization': 'Internal Medicine',
+            'qualification': 'MD',
+            'address_line1': '',
+            'address_line2': '',
+            'city': '',
+            'state': '',
+            'postal_code': '',
+            'country': '',
+        }
+
+        response = client.post('/api/users/staff/register/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+
+        staff = Staff.objects.get(user__email=payload['email'])
+        assert StaffUnitAssignment.objects.filter(
+            unit=department_unit,
+            practitioner__staff=staff,
+            is_active=True
+        ).count() == 1
+        assert UnitMemberAssignment.objects.filter(
+            unit=department_unit,
+            staff=staff,
+            is_active=True
+        ).count() == 0
+
+    def test_register_staff_auto_assigns_ops_staff_to_department_member_assignment(self, db, monkeypatch):
+        """Ops registration should auto-create unit member assignment."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        department_unit = _create_department_unit_for_facility(
+            facility,
+            name='Revenue Operations',
+            staffing_mode='ops_only'
+        )
+        _ensure_single_assignment_type()
+        _stub_staff_tasks(monkeypatch)
+
+        client = get_authenticated_client(admin, facility=facility)
+        payload = {
+            'email': 'auto.assign.billing@test.com',
+            'first_name': 'Ops',
+            'last_name': 'Staff',
+            'phone_number': '1234567890',
+            'date_of_birth': '1990-06-10',
+            'user_type': 'billing',
+            'department': department_unit.name,
+            'department_unit_id': str(department_unit.id),
+            'position': 'Billing Specialist',
+            'hire_date': '2024-02-01',
+            'address_line1': '',
+            'address_line2': '',
+            'city': '',
+            'state': '',
+            'postal_code': '',
+            'country': '',
+        }
+
+        response = client.post('/api/users/staff/register/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+
+        staff = Staff.objects.get(user__email=payload['email'])
+        assert UnitMemberAssignment.objects.filter(
+            unit=department_unit,
+            staff=staff,
+            is_active=True
+        ).count() == 1
+        assert StaffUnitAssignment.objects.filter(
+            unit=department_unit,
+            practitioner__staff=staff,
+            is_active=True
+        ).count() == 0
+
+    def test_auto_department_assignment_is_idempotent(self, db):
+        """Running auto-assignment multiple times should not create duplicate active rows."""
+        facility = DefaultFacilityFactory()
+        admin = AdminUserFactory(primary_facility=facility)
+        department_unit = _create_department_unit_for_facility(
+            facility,
+            name='Surgery',
+            staffing_mode='mixed'
+        )
+        _ensure_single_assignment_type()
+
+        doctor = DoctorUserFactory(
+            email='idempotent.doctor@test.com',
+            primary_facility=facility
+        )
+        staff = StaffFactory(
+            user=doctor,
+            primary_facility=facility,
+            department=department_unit.name,
+            created_by=admin,
+            updated_by=admin,
+        )
+        PractitionerProfileFactory(staff=staff)
+
+        auto_assign_staff_to_department_unit(
+            staff,
+            facility=facility,
+            department_name=department_unit.name,
+            department_unit_id=department_unit.id,
+            assigned_by=admin,
+        )
+        auto_assign_staff_to_department_unit(
+            staff,
+            facility=facility,
+            department_name=department_unit.name,
+            department_unit_id=department_unit.id,
+            assigned_by=admin,
+        )
+
+        assert StaffUnitAssignment.objects.filter(
+            unit=department_unit,
+            practitioner=staff.practitioner_profile,
+            is_active=True
+        ).count() == 1
 
 
 # =============================================================================

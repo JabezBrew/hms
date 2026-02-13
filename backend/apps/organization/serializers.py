@@ -459,10 +459,26 @@ class StaffUnitAssignmentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         unit = data.get('unit') or (self.instance.unit if self.instance else None)
+        practitioner = data.get('practitioner') or (self.instance.practitioner if self.instance else None)
+        is_active = data.get('is_active', self.instance.is_active if self.instance else True)
+
         if unit and unit.staffing_mode == 'ops_only':
             raise serializers.ValidationError({
                 'unit': 'Operations units cannot have clinical staff assignments.'
             })
+
+        if unit and practitioner and is_active:
+            existing = StaffUnitAssignment.objects.filter(
+                unit=unit,
+                practitioner=practitioner,
+                is_active=True,
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'practitioner': 'This practitioner already has an active assignment in the selected unit.'
+                })
         return data
 
     def create(self, validated_data):
@@ -521,6 +537,7 @@ class UnitMemberAssignmentSerializer(serializers.ModelSerializer):
     def validate(self, data):
         unit = data.get('unit') or (self.instance.unit if self.instance else None)
         staff = data.get('staff') or (self.instance.staff if self.instance else None)
+        is_active = data.get('is_active', self.instance.is_active if self.instance else True)
 
         if unit and unit.staffing_mode == 'clinical_only':
             raise serializers.ValidationError({
@@ -531,6 +548,19 @@ class UnitMemberAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'staff': 'Clinical practitioners must be assigned via clinical staff assignments.'
             })
+
+        if unit and staff and is_active:
+            existing = UnitMemberAssignment.objects.filter(
+                unit=unit,
+                staff=staff,
+                is_active=True,
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'staff': 'This staff member already has an active assignment in the selected unit.'
+                })
 
         return data
 

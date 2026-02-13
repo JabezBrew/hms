@@ -168,9 +168,13 @@ export const defaultValues = {
 };
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : value);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUuid = (value) => UUID_RE.test(String(value || '').trim());
 
 export const buildRegistrationPayload = (values, options = {}) => {
   const resolveDepartment = options.resolveDepartment || ((value) => value);
+  const selectedDepartmentValue = normalizeText(values.department);
   const resolvedDepartment = resolveDepartment(values.department);
   const payload = {
     email: normalizeText(values.email)?.toLowerCase(),
@@ -189,6 +193,10 @@ export const buildRegistrationPayload = (values, options = {}) => {
     postal_code: normalizeText(values.postal_code) || '',
     country: normalizeText(values.country) || '',
   };
+
+  if (isUuid(selectedDepartmentValue)) {
+    payload.department_unit_id = selectedDepartmentValue;
+  }
 
   if (isPractitionerUserType(values.user_type)) {
     payload.license_number = normalizeText(values.license_number);
