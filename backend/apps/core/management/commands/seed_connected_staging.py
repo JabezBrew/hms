@@ -857,7 +857,21 @@ class Command(BaseCommand):
                 "is_active": True,
             }
             data = api.post("/api/laboratory/tests/", user=admin_user, data=payload, expected=(201,))
-            created_or_existing.append(LabTestCatalog.objects.get(id=data["id"]))
+            created_test = None
+            if isinstance(data, dict):
+                created_id = data.get("id")
+                if created_id:
+                    created_test = LabTestCatalog.objects.filter(id=created_id, facility=facility).first()
+            if created_test is None:
+                created_test = LabTestCatalog.objects.filter(
+                    facility=facility,
+                    code=spec["code"],
+                ).first()
+            if created_test is None:
+                raise CommandError(
+                    f"Failed to resolve created lab test for code={spec['code']} in facility={facility.code}."
+                )
+            created_or_existing.append(created_test)
 
         return created_or_existing
 
