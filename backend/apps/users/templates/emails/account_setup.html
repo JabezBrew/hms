@@ -1,82 +1,100 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Set Up Your Password</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            line-height: 1.6;
-            color: #1f2937;
-            background-color: #f3f4f6;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background-color: #ffffff;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .header {
-            background-color: #1e3a5f;
-            color: #ffffff;
-            padding: 30px;
-            text-align: center;
-        }
-        .content { padding: 30px; }
-        .button {
-            display: inline-block;
-            background-color: #2563eb;
-            color: #ffffff !important;
-            text-decoration: none;
-            padding: 14px 28px;
-            border-radius: 6px;
-            font-weight: 600;
-            margin: 20px 0;
-        }
-        .note {
-            background-color: #e0f2fe;
-            border: 1px solid #38bdf8;
-            border-radius: 6px;
-            padding: 15px;
-            margin: 20px 0;
-        }
-        .footer {
-            background-color: #f9fafb;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #6b7280;
-        }
-    </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{{ hospital_name }}</h1>
-        </div>
-        <div class="content">
-            <h2>Welcome — Set up your password</h2>
-            <p>Hello {{ user_name }},</p>
-            <p>Your account has been created. Click the button below to set up your password:</p>
+<body style="margin:0; padding:0; background-color:#eef2f7;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#eef2f7; padding:24px 12px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="width:100%; max-width:640px; background-color:#ffffff; border:1px solid #d7e0ea; border-radius:12px; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+                    <tr>
+                        <td style="height:8px; background-color:#0e4aa6; font-size:0; line-height:0;">&nbsp;</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:28px 32px; background-color:#173a6a;">
+                            <div style="font-size:30px; line-height:36px; font-weight:700; color:#ffffff; margin:0;">{{ hospital_name }}</div>
+                            <div style="font-size:14px; line-height:22px; color:#d5e3ff; margin-top:6px;">Account setup invitation</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:32px;">
+                            <h1 style="margin:0 0 14px 0; font-size:30px; line-height:36px; color:#0f172a; font-weight:700;">Welcome, {{ user_name }}</h1>
+                            <p style="margin:0 0 20px 0; font-size:16px; line-height:26px; color:#334155;">
+                                Your account is ready. Use the secure button below to create your password and access HMS.
+                            </p>
 
-            <div style="text-align: center;">
-                <a href="{{ setup_url }}" class="button">Set Up Password</a>
-            </div>
+                            {% if has_staff_details %}
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px 0; border:1px solid #dbe6f6; border-radius:10px; background-color:#f8fbff;">
+                                <tr>
+                                    <td style="padding:16px 18px;">
+                                        <div style="font-size:13px; line-height:20px; color:#33588a; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Staff details</div>
+                                        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                                            {% if employee_id %}
+                                            <tr>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Employee ID</td>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ employee_id }}</td>
+                                            </tr>
+                                            {% endif %}
+                                            {% if department %}
+                                            <tr>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Department</td>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ department }}</td>
+                                            </tr>
+                                            {% endif %}
+                                            {% if position %}
+                                            <tr>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Position</td>
+                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ position }}</td>
+                                            </tr>
+                                            {% endif %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endif %}
 
-            <div class="note">
-                <strong>Important:</strong> This link will expire in {{ expiry_minutes }} minutes.
-            </div>
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 22px 0;">
+                                <tr>
+                                    <td align="center">
+                                        <table role="presentation" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" bgcolor="#1d4ed8" style="border-radius:9px;">
+                                                    <a href="{{ setup_url }}" style="display:inline-block; padding:14px 28px; font-size:16px; line-height:20px; font-weight:700; color:#ffffff; text-decoration:none;">Set Up Password</a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
 
-            <p>If you weren’t expecting this email, you can ignore it.</p>
-            <p style="word-break: break-all; color: #6b7280; font-size: 12px;">{{ setup_url }}</p>
-        </div>
-        <div class="footer">
-            <p>This is an automated message. Please do not reply.</p>
-        </div>
-    </div>
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 18px 0; border:1px solid #f6cf8f; border-radius:10px; background-color:#fff8ed;">
+                                <tr>
+                                    <td style="padding:14px 16px; font-size:14px; line-height:22px; color:#92400e;">
+                                        <strong>Important:</strong> This link expires in {{ expiry_minutes }} minutes.
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin:0 0 8px 0; font-size:14px; line-height:22px; color:#475569;">
+                                If you did not expect this email, you can safely ignore it.
+                            </p>
+                            <p style="margin:0 0 4px 0; font-size:13px; line-height:20px; color:#64748b;">Manual link (if the button does not work):</p>
+                            <p style="margin:0; font-size:12px; line-height:20px; color:#64748b; word-break:break-all;">{{ setup_url }}</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:16px 32px 24px 32px; border-top:1px solid #e6edf5; background-color:#f9fbfd;">
+                            <p style="margin:0; font-size:12px; line-height:18px; color:#64748b;">
+                                This is an automated message from {{ hospital_name }}. Please do not reply.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

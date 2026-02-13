@@ -421,6 +421,9 @@ class StaffViewSet(viewsets.ModelViewSet):
                     token=plain_token,
                     user_email=staff.user.email,
                     user_name=staff.user.get_full_name() or staff.user.email,
+                    employee_id=staff.employee_id,
+                    department=staff.department,
+                    position=staff.position,
                 )
             else:
                 send_password_reset_email.delay(

@@ -24,6 +24,44 @@ from .models import PractitionerFHIRMapping, PractitionerProfile, User
 logger = logging.getLogger(__name__)
 
 
+def _send_staff_onboarding_email(
+    *,
+    user_email,
+    user_name,
+    setup_url,
+    employee_id=None,
+    department=None,
+    position=None,
+):
+    """
+    Shared sender for staff onboarding email.
+
+    Uses the secure account setup flow and can optionally include staff details.
+    """
+    context = {
+        'user_name': user_name,
+        'setup_url': setup_url,
+        'expiry_minutes': settings.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES,
+        'hospital_name': 'HMS Hospital',
+        'employee_id': employee_id or '',
+        'department': department or '',
+        'position': position or '',
+        'has_staff_details': any([employee_id, department, position]),
+    }
+
+    html_content = render_to_string('emails/account_setup.html', context)
+    text_content = render_to_string('emails/account_setup.txt', context)
+
+    email = EmailMultiAlternatives(
+        subject='Welcome to HMS - Set Up Your Password',
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user_email],
+    )
+    email.attach_alternative(html_content, 'text/html')
+    email.send(fail_silently=False)
+
+
 @shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_password_reset_email(self, user_id, token, user_email, user_name):
     """
@@ -61,32 +99,30 @@ def send_password_reset_email(self, user_id, token, user_email, user_name):
 
 
 @shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
-def send_account_setup_email(self, user_id, token, user_email, user_name):
+def send_account_setup_email(
+    self,
+    user_id,
+    token,
+    user_email,
+    user_name,
+    employee_id=None,
+    department=None,
+    position=None,
+):
     """
     Send initial account setup email with a secure set-password link.
     Uses exponential backoff for retries.
     """
     try:
         setup_url = f"{settings.FRONTEND_URL}/reset-password/confirm?token={token}"
-
-        context = {
-            'user_name': user_name,
-            'setup_url': setup_url,
-            'expiry_minutes': settings.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES,
-            'hospital_name': 'HMS Hospital',
-        }
-
-        html_content = render_to_string('emails/account_setup.html', context)
-        text_content = render_to_string('emails/account_setup.txt', context)
-
-        email = EmailMultiAlternatives(
-            subject='Welcome to HMS - Set Up Your Password',
-            body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user_email],
+        _send_staff_onboarding_email(
+            user_email=user_email,
+            user_name=user_name,
+            setup_url=setup_url,
+            employee_id=employee_id,
+            department=department,
+            position=position,
         )
-        email.attach_alternative(html_content, 'text/html')
-        email.send(fail_silently=False)
 
         logger.info("Account setup email sent successfully")
         return {"status": "success"}
@@ -136,37 +172,40 @@ def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_
 @shared_task(bind=True, max_retries=EMAIL_CONFIG.max_retries)
 def send_welcome_credentials_email(self, user_email, user_name, password, employee_id, department, position):
     """
-    Send welcome email with login credentials to newly created staff.
-    Uses exponential backoff for retries.
+    Backward-compatible wrapper for legacy callers.
+
+    This task now uses the secure account setup flow instead of emailing
+    plaintext credentials.
     """
     try:
-        login_url = f"{settings.FRONTEND_URL}/login"
+        from .models import PasswordResetToken
 
-        context = {
-            'user_name': user_name,
-            'email': user_email,
-            'password': password,
-            'employee_id': employee_id,
-            'department': department,
-            'position': position,
-            'login_url': login_url,
-            'hospital_name': 'HMS Hospital',
-        }
+        # Keep function signature for compatibility, but never email plaintext passwords.
+        _ = password
 
-        html_content = render_to_string('emails/welcome_credentials.html', context)
-        text_content = render_to_string('emails/welcome_credentials.txt', context)
+        user = User.objects.filter(email=user_email).only('id').first()
+        if not user:
+            raise ValueError(f"Cannot send onboarding email: user with email {user_email} not found")
 
-        email = EmailMultiAlternatives(
-            subject='Welcome to HMS - Your Login Credentials',
-            body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user_email],
+        plain_token, _token_obj = PasswordResetToken.create_for_user(
+            user=user,
+            reset_type='admin_force',
+            initiated_by=None,
+            expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
         )
-        email.attach_alternative(html_content, 'text/html')
-        email.send(fail_silently=False)
+        setup_url = f"{settings.FRONTEND_URL}/reset-password/confirm?token={plain_token}"
 
-        logger.info(f"Welcome credentials email sent successfully")
-        return {"status": "success"}
+        _send_staff_onboarding_email(
+            user_email=user_email,
+            user_name=user_name,
+            setup_url=setup_url,
+            employee_id=employee_id,
+            department=department,
+            position=position,
+        )
+
+        logger.info("Legacy welcome credentials task sent secure account setup email")
+        return {"status": "success", "mode": "account_setup"}
 
     except Exception as e:
         logger.error(f"Failed to send welcome credentials email: {str(e)}")

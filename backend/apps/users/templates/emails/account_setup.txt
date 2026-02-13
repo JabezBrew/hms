@@ -1,18 +1,32 @@
 {{ hospital_name }}
 ===================
 
-WELCOME — SET UP YOUR PASSWORD
+WELCOME - SET UP YOUR PASSWORD
 
 Hello {{ user_name }},
 
-Your account has been created.
+Your HMS account is ready.
 
-To set up your password, visit this link:
+Set up your password with this secure link:
 {{ setup_url }}
 
-IMPORTANT: This link will expire in {{ expiry_minutes }} minutes.
+{% if has_staff_details %}
+STAFF DETAILS
+-------------
+{% if employee_id %}Employee ID: {{ employee_id }}
+{% endif %}{% if department %}Department: {{ department }}
+{% endif %}{% if position %}Position: {{ position }}
+{% endif %}
+{% endif %}
 
-If you weren’t expecting this email, you can ignore it.
+Quick steps:
+1) Open the link
+2) Create a strong password
+3) Sign in to HMS
+
+IMPORTANT: This link expires in {{ expiry_minutes }} minutes.
+
+If you did not expect this email, you can safely ignore it.
 
 ---
-This is an automated message. Please do not reply.
+This is an automated message from {{ hospital_name }}. Please do not reply.

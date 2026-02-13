@@ -667,6 +667,9 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 token=plain_token,
                 user_email=user.email,
                 user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
+                employee_id=staff.employee_id,
+                department=staff.department,
+                position=staff.position,
             )
         except Exception as e:
             logger.error(f"Failed to send account setup/reset email for user {user.id}: {e}")
