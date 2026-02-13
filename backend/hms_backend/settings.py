@@ -511,6 +511,14 @@ SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000 if not DEB
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True if not DEBUG else False)
 SECURE_HSTS_PRELOAD = env.bool('SECURE_HSTS_PRELOAD', default=True if not DEBUG else False)
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
+_secure_redirect_exempt = [
+    pattern.strip()
+    for pattern in env.list('SECURE_REDIRECT_EXEMPT', default=[r'^api/health/$'])
+    if pattern and pattern.strip()
+]
+if r'^api/health/$' not in _secure_redirect_exempt:
+    _secure_redirect_exempt.append(r'^api/health/$')
+SECURE_REDIRECT_EXEMPT = _secure_redirect_exempt
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
 
