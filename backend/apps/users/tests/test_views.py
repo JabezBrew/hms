@@ -306,6 +306,62 @@ class TestStaffViewSet:
         assert PractitionerProfile.objects.filter(staff__user=user).exists()
         assert called.get('user_email') == 'v2tui.doctor@inbox.testmail.app'
 
+    def test_invite_existing_staff_without_password_sends_account_setup_email(self, db, monkeypatch):
+        """Re-inviting a user with no usable password should keep account-setup copy."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        client = get_authenticated_client(admin, facility=facility)
+
+        user = DoctorUserFactory(
+            email='resend.setup@test.com',
+            first_name='Resend',
+            last_name='Doctor',
+            primary_facility=facility,
+        )
+        user.set_unusable_password()
+        user.save(update_fields=['password'])
+        user.facilities.add(facility)
+        StaffFactory(
+            user=user,
+            primary_facility=facility,
+            created_by=admin,
+            updated_by=admin,
+        )
+
+        setup_calls = []
+        reset_calls = []
+
+        def fake_setup_delay(**kwargs):
+            setup_calls.append(kwargs)
+            return {"status": "queued"}
+
+        def fake_reset_delay(**kwargs):
+            reset_calls.append(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_setup_delay)
+        monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', fake_reset_delay)
+
+        payload = {
+            'email': user.email,
+            'first_name': 'Resend',
+            'last_name': 'Doctor',
+            'user_type': 'doctor',
+            'department': 'Internal Medicine',
+            'position': 'Attending Physician',
+            'hire_date': '2020-01-15',
+            'license_number': 'MD-INV-RESEND',
+            'specialization': 'Internal Medicine',
+            'qualification': 'MD, MBBS',
+        }
+
+        response = client.post('/api/users/staff/invite/', payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert len(setup_calls) == 1
+        assert len(reset_calls) == 0
+        assert setup_calls[0].get('user_email') == user.email
+
     def test_register_staff_auto_assigns_practitioner_to_department_unit(self, db, monkeypatch):
         """Doctor/nurse registration should auto-create clinical department assignment."""
         admin = AdminUserFactory()

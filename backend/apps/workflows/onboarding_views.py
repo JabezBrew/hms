@@ -1,4 +1,3 @@
-from django.http import HttpResponseNotModified
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -26,12 +25,6 @@ class OnboardingActiveFlowsView(APIView):
         role = getattr(request.user, 'user_type', None)
         flows_payload = get_active_flows_payload(role)
         etag = compute_flows_etag(flows_payload)
-
-        incoming_etag = (request.headers.get('If-None-Match') or '').strip().strip('"')
-        if incoming_etag and incoming_etag == etag:
-            response = HttpResponseNotModified()
-            response['ETag'] = f'"{etag}"'
-            return response
 
         response = Response({'flows': flows_payload})
         response['ETag'] = f'"{etag}"'

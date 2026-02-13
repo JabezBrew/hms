@@ -33,7 +33,17 @@ def _create_flow(
 
 @pytest.mark.tier1
 class TestOnboardingApi:
-    def test_active_flows_returns_latest_version_and_etag(self, doctor_client, db):
+    def test_active_flows_returns_latest_version_and_etag(
+        self,
+        doctor_client,
+        doctor_user,
+        default_facility,
+        db,
+    ):
+        doctor_user.primary_facility = default_facility
+        doctor_user.save(update_fields=['primary_facility'])
+        doctor_user.facilities.add(default_facility)
+
         flow_key = 'test_etag_flow'
         _create_flow(
             flow_key=flow_key,
@@ -61,7 +71,12 @@ class TestOnboardingApi:
             '/api/workflows/onboarding/flows/active/',
             HTTP_IF_NONE_MATCH=etag,
         )
-        assert cached.status_code == 304
+        assert cached.status_code == 200
+        assert cached['ETag'] == etag
+        cached_flows = cached.json()['flows']
+        cached_matching = [flow for flow in cached_flows if flow['flow_key'] == flow_key]
+        assert len(cached_matching) == 1
+        assert cached_matching[0]['version'] == 2
 
     def test_seeded_steps_include_ui_metadata(self, doctor_client, db):
         response = doctor_client.get('/api/workflows/onboarding/flows/active/')

@@ -484,8 +484,8 @@ class StaffViewSet(viewsets.ModelViewSet):
                 expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
             )
 
-            # First-time creation gets a clearer "set up your password" message.
-            if getattr(staff, '_user_created', False):
+            # Use account setup copy whenever the account still has no usable password.
+            if getattr(staff, '_user_created', False) or not staff.user.has_usable_password():
                 send_account_setup_email.delay(
                     user_id=str(staff.user.id),
                     token=plain_token,
