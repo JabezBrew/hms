@@ -572,9 +572,13 @@ class StaffRegistrationSerializer(serializers.Serializer):
         # Check if email is already in use by an active staff member
         existing_user = User.objects.filter(email=data['email']).first()
         if existing_user:
-            # Check if this user has an active staff record
-            if hasattr(existing_user, 'staff') and existing_user.staff:
-                raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+            existing_staff = getattr(existing_user, 'staff_profile', None)
+            if existing_staff:
+                if existing_user.is_active:
+                    raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+                raise serializers.ValidationError({
+                    "email": "This email belongs to a deactivated staff account. Reactivate that staff record instead of re-registering."
+                })
             # Otherwise, we'll reuse this orphaned user - store it for create()
             data['_existing_user'] = existing_user
 
@@ -678,16 +682,23 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 initiated_by=self.context['request'].user,
                 expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
             )
-            task = send_account_setup_email if (user_created or not user.has_usable_password()) else send_password_reset_email
-            task.delay(
-                user_id=str(user.id),
-                token=plain_token,
-                user_email=user.email,
-                user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
-                employee_id=staff.employee_id,
-                department=staff.department,
-                position=staff.position,
-            )
+            if user_created or not user.has_usable_password():
+                send_account_setup_email.delay(
+                    user_id=str(user.id),
+                    token=plain_token,
+                    user_email=user.email,
+                    user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
+                    employee_id=staff.employee_id,
+                    department=staff.department,
+                    position=staff.position,
+                )
+            else:
+                send_password_reset_email.delay(
+                    user_id=str(user.id),
+                    token=plain_token,
+                    user_email=user.email,
+                    user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
+                )
         except Exception as e:
             logger.error(f"Failed to send account setup/reset email for user {user.id}: {e}")
 

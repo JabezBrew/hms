@@ -9,6 +9,7 @@ Tests for:
 - UserPatientListViewSet (my patients)
 """
 import uuid
+from datetime import date
 
 import pytest
 from rest_framework import status
@@ -17,8 +18,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.organization.models import (
     ClinicalUnit,
+    LeadershipRoleConfig,
     StaffAssignmentTypeConfig,
     StaffUnitAssignment,
+    UnitLeadership,
     UnitMemberAssignment,
     UnitTypeConfig,
 )
@@ -444,6 +447,193 @@ class TestStaffViewSet:
             practitioner=staff.practitioner_profile,
             is_active=True
         ).count() == 1
+
+    def test_delete_staff_deprovisions_and_preserves_record(self, db):
+        """Deleting staff should deactivate access and keep records for audit."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        department_unit = _create_department_unit_for_facility(
+            facility,
+            name='Cardiology',
+            staffing_mode='mixed'
+        )
+        _ensure_single_assignment_type()
+        assignment_type = StaffAssignmentTypeConfig.objects.get(code='single')
+
+        doctor = DoctorUserFactory(
+            email='deprovision.doctor@test.com',
+            primary_facility=facility,
+        )
+        staff = StaffFactory(
+            user=doctor,
+            primary_facility=facility,
+            department=department_unit.name,
+            created_by=admin,
+            updated_by=admin,
+        )
+        practitioner = PractitionerProfileFactory(staff=staff)
+        StaffUnitAssignment.objects.create(
+            unit=department_unit,
+            practitioner=practitioner,
+            assignment_type=assignment_type,
+            is_active=True,
+            is_primary=True,
+            assigned_by=admin,
+        )
+        leadership_role = LeadershipRoleConfig.objects.create(
+            code=f'head_{uuid.uuid4().hex[:8]}',
+            name='Department Head',
+            is_active=True,
+        )
+        UnitLeadership.objects.create(
+            unit=department_unit,
+            role=leadership_role,
+            user=doctor,
+            effective_from=date(2025, 1, 1),
+            is_active=True,
+            created_by=admin,
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.delete(f'/api/users/staff/{staff.id}/')
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert Staff.objects.filter(id=staff.id).exists()
+
+        doctor.refresh_from_db()
+        assert doctor.is_active is False
+
+        staff.refresh_from_db()
+        assert staff.updated_by_id == admin.id
+
+        assert StaffUnitAssignment.objects.filter(
+            unit=department_unit,
+            practitioner=practitioner,
+            is_active=True
+        ).count() == 0
+        assert UnitLeadership.objects.filter(
+            unit=department_unit,
+            user=doctor,
+            is_active=True
+        ).count() == 0
+
+        list_response = client.get('/api/users/staff/')
+        assert list_response.status_code == status.HTTP_200_OK
+        list_results = list_response.data.get('results', list_response.data)
+        assert all(result['id'] != str(staff.id) for result in list_results)
+
+        list_inactive_response = client.get('/api/users/staff/?include_inactive=true')
+        assert list_inactive_response.status_code == status.HTTP_200_OK
+        list_inactive_results = list_inactive_response.data.get('results', list_inactive_response.data)
+        assert any(result['id'] == str(staff.id) for result in list_inactive_results)
+
+    def test_register_existing_user_uses_reset_task_without_staff_kwargs(self, db, monkeypatch):
+        """Reusing an existing user must call reset task with the correct signature."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        department_unit = _create_department_unit_for_facility(
+            facility,
+            name='Neurology',
+            staffing_mode='mixed'
+        )
+        _ensure_single_assignment_type()
+
+        existing_user = DoctorUserFactory(
+            email='existing.user@test.com',
+            first_name='Existing',
+            last_name='User',
+            primary_facility=facility,
+        )
+        assert not Staff.objects.filter(user=existing_user).exists()
+        _stub_staff_tasks(monkeypatch)
+
+        reset_calls = []
+        setup_calls = []
+
+        def fake_reset_delay(**kwargs):
+            reset_calls.append(kwargs)
+            return {"status": "queued"}
+
+        def fake_setup_delay(**kwargs):
+            setup_calls.append(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', fake_reset_delay)
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_setup_delay)
+
+        client = get_authenticated_client(admin, facility=facility)
+        payload = {
+            'email': existing_user.email,
+            'first_name': 'Updated',
+            'last_name': 'Doctor',
+            'phone_number': '1234567890',
+            'date_of_birth': '1988-05-20',
+            'user_type': 'doctor',
+            'department': department_unit.name,
+            'department_unit_id': str(department_unit.id),
+            'position': 'Consultant',
+            'hire_date': '2024-01-15',
+            'license_number': 'MD-EXIST-001',
+            'specialization': 'Neurology',
+            'qualification': 'MD',
+            'address_line1': '',
+            'address_line2': '',
+            'city': '',
+            'state': '',
+            'postal_code': '',
+            'country': '',
+        }
+
+        response = client.post('/api/users/staff/register/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert len(reset_calls) == 1
+        assert len(setup_calls) == 0
+        assert 'employee_id' not in reset_calls[0]
+        assert 'department' not in reset_calls[0]
+        assert 'position' not in reset_calls[0]
+
+    def test_register_rejects_email_from_deprovisioned_staff(self, db):
+        """Emails tied to deprovisioned staff records should require reactivation."""
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        deprovisioned_user = DoctorUserFactory(
+            email='deprovisioned.user@test.com',
+            primary_facility=facility,
+            is_active=False,
+        )
+        StaffFactory(
+            user=deprovisioned_user,
+            primary_facility=facility,
+            created_by=admin,
+            updated_by=admin,
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        payload = {
+            'email': deprovisioned_user.email,
+            'first_name': 'New',
+            'last_name': 'Doctor',
+            'phone_number': '1234567890',
+            'date_of_birth': '1990-05-20',
+            'user_type': 'doctor',
+            'department': 'Internal Medicine',
+            'position': 'Resident',
+            'hire_date': '2024-03-10',
+            'license_number': 'MD-REREG-001',
+            'specialization': 'Internal Medicine',
+            'qualification': 'MD',
+            'address_line1': '',
+            'address_line2': '',
+            'city': '',
+            'state': '',
+            'postal_code': '',
+            'country': '',
+        }
+
+        response = client.post('/api/users/staff/register/', payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data
+        assert 'deactivated staff account' in str(response.data['email']).lower()
 
 
 # =============================================================================

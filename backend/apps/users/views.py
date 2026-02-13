@@ -264,6 +264,9 @@ class StaffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Staff.objects.select_related('user').filter(primary_facility=facility)
 
+        if self.action == 'list' and self.request.query_params.get('include_inactive') != 'true':
+            base_qs = base_qs.filter(user__is_active=True)
+
         if user.user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
             # These roles can see staff in their facility
             return base_qs
@@ -281,6 +284,73 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        """
+        Deprovision staff access while retaining records for audit/compliance.
+
+        "Delete staff" in HMS means:
+        - Disable user login (user.is_active=False)
+        - Revoke all active sessions
+        - Deactivate organization assignments and leadership links
+        - Keep staff/user records for traceability
+        """
+        user = getattr(instance, 'user', None)
+        today = timezone.now().date()
+        actor = self.request.user if getattr(self.request, 'user', None) else None
+
+        from apps.organization.models import (
+            StaffUnitAssignment,
+            UnitMemberAssignment,
+            UnitLeadership,
+        )
+
+        with transaction.atomic():
+            if user:
+                revoke_sessions_for_user(
+                    user,
+                    revoked_by=actor if getattr(actor, 'is_authenticated', False) else None
+                )
+                if user.is_active:
+                    user.is_active = False
+                    user.save(update_fields=['is_active'])
+
+            practitioner = getattr(instance, 'practitioner_profile', None)
+            if practitioner:
+                clinical_assignments = StaffUnitAssignment.objects.filter(
+                    practitioner=practitioner,
+                    is_active=True
+                ).select_related('unit')
+                for assignment in clinical_assignments:
+                    assignment.is_active = False
+                    if assignment.effective_until is None or assignment.effective_until > today:
+                        assignment.effective_until = today
+                    assignment.save(update_fields=['is_active', 'effective_until', 'updated_at'])
+
+            member_assignments = UnitMemberAssignment.objects.filter(
+                staff=instance,
+                is_active=True
+            ).select_related('unit')
+            for assignment in member_assignments:
+                assignment.is_active = False
+                if assignment.effective_until is None or assignment.effective_until > today:
+                    assignment.effective_until = today
+                assignment.save(update_fields=['is_active', 'effective_until', 'updated_at'])
+
+            if user:
+                leadership_assignments = UnitLeadership.objects.filter(
+                    user=user,
+                    is_active=True
+                ).select_related('unit')
+                for leadership in leadership_assignments:
+                    leadership.is_active = False
+                    if leadership.effective_until is None or leadership.effective_until > today:
+                        leadership.effective_until = today
+                    leadership.save(update_fields=['is_active', 'effective_until'])
+
+            if getattr(actor, 'is_authenticated', False):
+                instance.updated_by = actor
+                instance.save(update_fields=['updated_by', 'updated_at'])
 
     @action(detail=False, methods=['get'])
     def search(self, request):
