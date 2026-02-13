@@ -638,6 +638,7 @@ class Command(BaseCommand):
             if exists:
                 continue
             payload = {
+                "facility": str(facility.id),
                 "department": str(units["opd_department"].id),
                 "clinic": str(clinic.id),
                 "day_of_week": day,
