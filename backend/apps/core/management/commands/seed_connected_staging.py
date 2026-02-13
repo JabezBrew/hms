@@ -1172,7 +1172,7 @@ class Command(BaseCommand):
                 expected=(201,),
             )
             created_count = int(bulk_result_data.get("created_count", 0)) if isinstance(bulk_result_data, dict) else 0
-        except CommandError as exc:
+        except Exception as exc:
             error_text = str(exc).lower()
             if "laboratory_labresult" not in error_text or "facility_id" not in error_text:
                 raise
