@@ -29,7 +29,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
-import { useUpdateStaff, staffKeys } from '@/features/staff/hooks';
+import { useUpdateStaff, useResendStaffSetupLink, staffKeys } from '@/features/staff/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -90,6 +90,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
 
   // Update mutation
   const updateMutation = useUpdateStaff();
+  const resendSetupLinkMutation = useResendStaffSetupLink();
 
   // Form setup
   const form = useForm({
@@ -256,6 +257,28 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
       toast.error(error.message || 'Failed to reset password');
     } finally {
       setIsResettingPassword(false);
+    }
+  };
+
+  const handleResendSetupLink = async () => {
+    if (!staff.id) {
+      toast.error('Cannot resend setup link: Staff information not available');
+      return;
+    }
+    try {
+      const response = await resendSetupLinkMutation.mutateAsync(staff.id);
+      const mode = response?.mode;
+      if (mode === 'account_setup') {
+        toast.success('Account setup link sent successfully');
+        return;
+      }
+      if (mode === 'password_reset') {
+        toast.success('Password reset link sent successfully');
+        return;
+      }
+      toast.success(response?.detail || 'Setup link sent successfully');
+    } catch (error) {
+      toast.error(error.message || 'Failed to resend setup link');
     }
   };
 
@@ -583,6 +606,28 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={handleResetPassword} disabled={isResettingPassword}>
                       {isResettingPassword ? 'Sending...' : 'Send Reset Email'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Mail className="h-4 w-4 mr-2" />
+                    Resend Setup Link
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Resend setup link to {fullName}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      A fresh account setup/reset link will be emailed to {email || 'the user\'s email'}.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleResendSetupLink} disabled={resendSetupLinkMutation.isPending}>
+                      {resendSetupLinkMutation.isPending ? 'Sending...' : 'Resend Link'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

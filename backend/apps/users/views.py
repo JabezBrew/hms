@@ -4,6 +4,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.apps import apps
 from django.db import transaction
 from django.db.models import Q
@@ -466,44 +467,91 @@ class StaffViewSet(viewsets.ModelViewSet):
         Creates/updates the user + staff profile and sends a password reset link email.
         This avoids emailing plaintext passwords.
         """
-        from .models import PasswordResetToken
-        from .tasks import send_password_reset_email, send_account_setup_email
-        from django.conf import settings
-
         serializer = StaffInviteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
             staff = serializer.save()
-
-            # Generate reset token and email link (admin-initiated)
-            plain_token, _ = PasswordResetToken.create_for_user(
-                user=staff.user,
-                reset_type='admin_force',
-                initiated_by=request.user,
-                expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
-            )
-
-            # Use account setup copy whenever the account still has no usable password.
-            if getattr(staff, '_user_created', False) or not staff.user.has_usable_password():
-                send_account_setup_email.delay(
-                    user_id=str(staff.user.id),
-                    token=plain_token,
-                    user_email=staff.user.email,
-                    user_name=staff.user.get_full_name() or staff.user.email,
-                    employee_id=staff.employee_id,
-                    department=staff.department,
-                    position=staff.position,
-                )
-            else:
-                send_password_reset_email.delay(
-                    user_id=str(staff.user.id),
-                    token=plain_token,
-                    user_email=staff.user.email,
-                    user_name=staff.user.get_full_name() or staff.user.email,
-                )
+            self._dispatch_staff_setup_or_reset_email(staff=staff, initiated_by=request.user)
 
         return Response(StaffSerializer(staff, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='resend-setup-link')
+    def resend_setup_link(self, request, pk=None):
+        """
+        Resend a secure setup/reset link to an existing staff account.
+
+        Uses account setup copy for users without a usable password and
+        password reset copy for users with an existing password.
+        """
+        staff = self.get_object()
+        user = getattr(staff, 'user', None)
+        if not user:
+            return Response({"detail": "Staff user account not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not user.is_active:
+            return Response(
+                {"detail": "Staff account is deactivated. Reactivate the account before resending setup."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            mode = self._dispatch_staff_setup_or_reset_email(staff=staff, initiated_by=request.user)
+        except Exception:
+            logger.exception(
+                "Failed to resend setup link for staff",
+                extra={"staff_id": str(staff.id), "user_id": str(user.id)},
+            )
+            return Response(
+                {"detail": "Failed to resend setup link. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        detail = (
+            "Account setup link sent successfully."
+            if mode == "account_setup"
+            else "Password reset link sent successfully."
+        )
+        return Response({"detail": detail, "mode": mode}, status=status.HTTP_200_OK)
+
+    def _dispatch_staff_setup_or_reset_email(self, *, staff, initiated_by):
+        """
+        Queue the correct onboarding email variant for a staff user.
+
+        Returns:
+            str: 'account_setup' when user has no usable password,
+                 otherwise 'password_reset'.
+        """
+        from .models import PasswordResetToken
+        from .tasks import send_password_reset_email, send_account_setup_email
+
+        plain_token, _ = PasswordResetToken.create_for_user(
+            user=staff.user,
+            reset_type='admin_force',
+            initiated_by=initiated_by,
+            expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
+        )
+
+        user_name = staff.user.get_full_name() or staff.user.email
+        if not staff.user.has_usable_password():
+            send_account_setup_email.delay(
+                user_id=str(staff.user.id),
+                token=plain_token,
+                user_email=staff.user.email,
+                user_name=user_name,
+                employee_id=staff.employee_id,
+                department=staff.department,
+                position=staff.position,
+            )
+            return "account_setup"
+
+        send_password_reset_email.delay(
+            user_id=str(staff.user.id),
+            token=plain_token,
+            user_email=staff.user.email,
+            user_name=user_name,
+        )
+        return "password_reset"
 
 
 class PractitionerProfileViewSet(viewsets.ModelViewSet):

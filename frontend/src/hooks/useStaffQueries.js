@@ -173,6 +173,16 @@ export function useRegisterStaff() {
 }
 
 /**
+ * Resend setup/reset link for an existing staff account
+ * @returns {Object} Mutation result
+ */
+export function useResendStaffSetupLink() {
+  return useMutation({
+    mutationFn: (staffId) => staffApi.resendSetupLink(staffId),
+  });
+}
+
+/**
  * Get practitioners list with optional filtering
  * @param {Object} filters - Query parameters for filtering
  * @returns {Object} Query result

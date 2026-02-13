@@ -362,6 +362,66 @@ class TestStaffViewSet:
         assert len(reset_calls) == 0
         assert setup_calls[0].get('user_email') == user.email
 
+    def test_resend_setup_link_uses_account_setup_for_unusable_password(self, db, monkeypatch):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        user = DoctorUserFactory(primary_facility=facility, email='resend.unusable@test.com')
+        user.set_unusable_password()
+        user.save(update_fields=['password'])
+        user.facilities.add(facility)
+        staff = StaffFactory(user=user, primary_facility=facility, created_by=admin, updated_by=admin)
+
+        setup_calls = []
+        reset_calls = []
+
+        def fake_setup_delay(**kwargs):
+            setup_calls.append(kwargs)
+            return {"status": "queued"}
+
+        def fake_reset_delay(**kwargs):
+            reset_calls.append(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_setup_delay)
+        monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', fake_reset_delay)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.post(f'/api/users/staff/{staff.id}/resend-setup-link/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['mode'] == 'account_setup'
+        assert len(setup_calls) == 1
+        assert len(reset_calls) == 0
+
+    def test_resend_setup_link_uses_password_reset_for_existing_password(self, db, monkeypatch):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        user = DoctorUserFactory(primary_facility=facility, email='resend.reset@test.com')
+        user.facilities.add(facility)
+        staff = StaffFactory(user=user, primary_facility=facility, created_by=admin, updated_by=admin)
+
+        setup_calls = []
+        reset_calls = []
+
+        def fake_setup_delay(**kwargs):
+            setup_calls.append(kwargs)
+            return {"status": "queued"}
+
+        def fake_reset_delay(**kwargs):
+            reset_calls.append(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_setup_delay)
+        monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', fake_reset_delay)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.post(f'/api/users/staff/{staff.id}/resend-setup-link/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['mode'] == 'password_reset'
+        assert len(setup_calls) == 0
+        assert len(reset_calls) == 1
+
     def test_register_staff_auto_assigns_practitioner_to_department_unit(self, db, monkeypatch):
         """Doctor/nurse registration should auto-create clinical department assignment."""
         admin = AdminUserFactory()
