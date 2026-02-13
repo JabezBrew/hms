@@ -26,7 +26,8 @@ from rest_framework.test import APIClient
 from apps.appointments.models import AppointmentType, RecurringSchedule
 from apps.clinical_notes.models import NoteTemplate
 from apps.core.models import Department, Facility
-from apps.laboratory.models import LabTestCatalog
+from apps.encounters.models import Encounter
+from apps.laboratory.models import LabSpecimen, LabTestCatalog
 from apps.organization.models import ClinicalUnit, Clinic, ClinicSchedule, StaffAssignmentTypeConfig, UnitTypeConfig
 from apps.users.models import PatientProfile, PractitionerProfile, Staff
 
@@ -995,12 +996,27 @@ class Command(BaseCommand):
             "location": clinic.name,
         }
         encounter_data = api.post("/api/encounters/", user=doctor.user, data=encounter_payload, expected=(201,))
+        encounter_id = encounter_data.get("id") if isinstance(encounter_data, dict) else None
+        if not encounter_id:
+            encounter_id = (
+                Encounter.objects.filter(
+                    appointment_id=appointment_data.get("id"),
+                    patient_id=patient.id,
+                )
+                .order_by("-created_at")
+                .values_list("id", flat=True)
+                .first()
+            )
+        if not encounter_id:
+            raise CommandError(
+                f"Failed to resolve encounter id for patient={patient.id} appointment={appointment_data.get('id')}"
+            )
         stats["encounters_created"] += 1
 
         vitals_payload = {
             "patient": str(patient.id),
             "recorded_by": str(nurse.practitioner.id),
-            "encounter": str(encounter_data["id"]),
+            "encounter": str(encounter_id),
             "temperature": round(self.random.uniform(36.4, 38.1), 1),
             "heart_rate": self.random.randint(68, 108),
             "blood_pressure_systolic": self.random.randint(108, 142),
@@ -1017,7 +1033,7 @@ class Command(BaseCommand):
         note_payload = {
             "template": str(template.id),
             "patient": str(patient.id),
-            "encounter": str(encounter_data["id"]),
+            "encounter": str(encounter_id),
             "data": self._build_note_data(template=template, patient=patient),
         }
         api.post("/api/clinical-notes/entries/", user=doctor.user, data=note_payload, expected=(201,))
@@ -1025,7 +1041,7 @@ class Command(BaseCommand):
 
         prescription_payload = {
             "patient": str(patient.id),
-            "encounter": str(encounter_data["id"]),
+            "encounter": str(encounter_id),
             "medication_name": self.random.choice(["Paracetamol", "Amoxicillin", "Omeprazole", "Metformin"]),
             "dosage": self.random.choice(["500mg", "1g", "250mg"]),
             "route": "oral",
@@ -1040,7 +1056,7 @@ class Command(BaseCommand):
 
         order_payload = {
             "patient": str(patient.id),
-            "encounter": str(encounter_data["id"]),
+            "encounter": str(encounter_id),
             "ordering_provider": str(doctor.practitioner.id),
             "test_ids": [str(test.id) for test in lab_tests[:2]],
             "priority": self.random.choice(["routine", "urgent"]),
@@ -1062,7 +1078,17 @@ class Command(BaseCommand):
             "collected_at": (start_time + timedelta(minutes=30)).isoformat(),
         }
         specimen_data = api.post("/api/laboratory/specimens/", user=labtech.user, data=specimen_payload, expected=(201,))
-        specimen_id = str(specimen_data["id"])
+        specimen_id = specimen_data.get("id") if isinstance(specimen_data, dict) else None
+        if not specimen_id:
+            specimen_id = (
+                LabSpecimen.objects.filter(order_id=order_id)
+                .order_by("-created_at")
+                .values_list("id", flat=True)
+                .first()
+            )
+        if not specimen_id:
+            raise CommandError(f"Failed to resolve specimen id for lab order {order_id}")
+        specimen_id = str(specimen_id)
 
         api.post(f"/api/laboratory/orders/{order_id}/collect/", user=labtech.user, data={}, expected=(200,))
         api.post(
