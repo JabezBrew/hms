@@ -435,7 +435,9 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Start Discharge',
                       variant: 'default',
-                      onClick: () => console.log('Start discharge:', discharge.id),
+                      onClick: () => navigate(
+                        `/patients/${discharge.patient_id}?action=discharge&admission=${discharge.id}&source=dashboard`
+                      ),
                     },
                     {
                       label: 'View Details',

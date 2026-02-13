@@ -1390,6 +1390,7 @@ def inpatient_dashboard(request):
     # Format planned discharges
     discharges_data = []
     for admission in planned_discharges:
+        los_days = (timezone.now().date() - admission.admission_date.date()).days
         discharges_data.append({
             'id': str(admission.id),
             'patient_id': str(admission.patient.id),
@@ -1398,6 +1399,7 @@ def inpatient_dashboard(request):
             'ward_name': admission.bed.ward.name if admission.bed else None,
             'bed_number': admission.bed.bed_number if admission.bed else None,
             'expected_discharge_date': admission.expected_discharge_date.isoformat() if admission.expected_discharge_date else None,
+            'length_of_stay': max(los_days, 0),
         })
 
     projection = {

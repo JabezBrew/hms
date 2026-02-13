@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DischargeForm } from '@/components/wards/DischargeForm';
 import format from 'date-fns/format';
 import { admissionsApi } from '@/features/admissions/api';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -22,7 +21,6 @@ export default function AdmissionDetailPage() {
   const [admission, setAdmission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showDischargeForm, setShowDischargeForm] = useState(false);
 
   const loadAdmission = useCallback(async () => {
     if (!admissionId) return;
@@ -43,12 +41,6 @@ export default function AdmissionDetailPage() {
   useEffect(() => {
     loadAdmission();
   }, [loadAdmission]);
-
-  // Handle discharge completion
-  const handleDischargeComplete = () => {
-    setShowDischargeForm(false);
-    loadAdmission();
-  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -146,7 +138,10 @@ export default function AdmissionDetailPage() {
             {admission.status === 'admitted' && (
               <Button
                 size="sm"
-                onClick={() => setShowDischargeForm(true)}
+                disabled={!admission?.patient?.id}
+                onClick={() => navigate(
+                  `/patients/${admission.patient.id}?action=discharge&admission=${admission.id}&source=admission-detail`
+                )}
               >
                 Discharge Patient
               </Button>
@@ -214,14 +209,8 @@ export default function AdmissionDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Discharge form or tabs */}
-      {showDischargeForm ? (
-        <DischargeForm 
-          admission={admission} 
-          onDischargeComplete={handleDischargeComplete} 
-        />
-      ) : (
-        <Tabs defaultValue="notes">
+      {/* Clinical details */}
+      <Tabs defaultValue="notes">
           <TabsList>
             <TabsTrigger value="notes">
               <Clipboard className="h-4 w-4 mr-2" />
@@ -326,8 +315,7 @@ export default function AdmissionDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
-      )}
+      </Tabs>
       </main>
     </PageShell>
   );

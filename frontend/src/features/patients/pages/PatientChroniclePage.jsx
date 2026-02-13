@@ -53,6 +53,7 @@ const loadAddFluidBalanceSlideOver = () => import("@/components/chronicle/AddFlu
 const loadPatientInsuranceSlideOver = () => import("@/components/chronicle/PatientInsuranceSlideOver");
 const loadWardRoundSlideOver = () => import("@/components/chronicle/WardRoundSlideOver");
 const loadConsultationSlideOver = () => import("@/components/chronicle/ConsultationSlideOver");
+const loadDischargeSlideOver = () => import("@/components/chronicle/DischargeSlideOver");
 const loadAddChartSlideOver = () => import("@/components/charts/AddChartSlideOver");
 const loadChartEntryForm = () => import("@/components/charts/ChartEntryForm");
 const loadLabOrderForm = () => import("@/components/laboratory/LabOrderForm");
@@ -67,6 +68,7 @@ const AddFluidBalanceSlideOver = lazy(loadAddFluidBalanceSlideOver);
 const PatientInsuranceSlideOver = lazy(loadPatientInsuranceSlideOver);
 const WardRoundSlideOver = lazy(loadWardRoundSlideOver);
 const ConsultationSlideOver = lazy(loadConsultationSlideOver);
+const DischargeSlideOver = lazy(loadDischargeSlideOver);
 const AddChartSlideOver = lazy(loadAddChartSlideOver);
 const ChartEntryForm = lazy(loadChartEntryForm);
 const LabOrderForm = lazy(loadLabOrderForm);
@@ -103,6 +105,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Edit note state - holds note ID and data for editing existing notes
   const [editNoteData, setEditNoteData] = useState(null);
+  const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -111,6 +114,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
+  const admissionParam = searchParams.get('admission');
   const clearQueryParams = useCallback(() => {
     if (location.search) {
       navigate(location.pathname, { replace: true });
@@ -132,6 +136,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     'insurance',
     'wardRound',
     'consultation',
+    'discharge',
   ]);
 
   // Chart entry state - which assignment is being recorded
@@ -157,12 +162,39 @@ const PatientChroniclePage = ({ defaultAction }) => {
       slideOvers.open('consultation');
       // Clear the query params after opening
       if (actionParam || consultationParam) clearQueryParams();
+    } else if (action === 'discharge') {
+      const admissionId = admissionParam
+        || patient?.local_data?.current_admission_id
+        || patient?.current_admission_id;
+
+      if (!admissionId) {
+        if (!patient && !admissionParam) {
+          return;
+        }
+        toast.error('No active admission found for this patient');
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
+
+      setRequestedDischargeAdmissionId(String(admissionId));
+      loadDischargeSlideOver();
+      slideOvers.open('discharge');
+      if (actionParam || admissionParam) clearQueryParams();
     } else if (action === 'add_prescription') {
       loadAddPrescriptionSlideOver();
       slideOvers.open('prescription');
       if (actionParam) clearQueryParams();
     }
-  }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, clearQueryParams]);
+  }, [
+    actionParam,
+    defaultAction,
+    wardRoundParam,
+    consultationParam,
+    admissionParam,
+    patient,
+    slideOvers,
+    clearQueryParams,
+  ]);
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -236,6 +268,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   useEffect(() => {
     prefetchedActionsRef.current = new Set();
+    setRequestedDischargeAdmissionId(null);
   }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
@@ -686,6 +719,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
     if (action === 'consultation') {
       loadConsultationSlideOver();
+      return;
+    }
+
+    if (action === 'discharge') {
+      loadDischargeSlideOver();
     }
   }, [patientLocalId, queryClient]);
 
@@ -726,12 +764,27 @@ const PatientChroniclePage = ({ defaultAction }) => {
     prefetchActionResources('wardRound');
     slideOvers.open('wardRound');
   }, [prefetchActionResources, slideOvers]);
+  const handleStartDischarge = useCallback(() => {
+    const admissionId = patient?.local_data?.current_admission_id
+      || patient?.current_admission_id
+      || activeEncounter?.admission_id;
+
+    if (!admissionId) {
+      toast.error('No active admission found for this patient');
+      return;
+    }
+
+    setRequestedDischargeAdmissionId(String(admissionId));
+    prefetchActionResources('discharge');
+    slideOvers.open('discharge');
+  }, [patient, activeEncounter, prefetchActionResources, slideOvers]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data when closing
     setEditNoteData(null); // Clear edit note data when closing
+    setRequestedDischargeAdmissionId(null);
   }, [slideOvers]);
 
   // Created handlers - refresh data and close
@@ -803,6 +856,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const handleWardRoundCompleted = useCallback(() => {
     refreshData();
     slideOvers.close();
+  }, [refreshData, slideOvers]);
+
+  const handleDischargeCompleted = useCallback(() => {
+    refreshData();
+    slideOvers.close();
+    setRequestedDischargeAdmissionId(null);
   }, [refreshData, slideOvers]);
 
   // Chart handlers
@@ -1059,6 +1118,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
         onStartWardRound={handleStartWardRound}
+        onStartDischarge={handleStartDischarge}
         onManageInsurance={() => {
           prefetchActionResources('insurance');
           slideOvers.open('insurance');
@@ -1624,6 +1684,27 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     : null
               }
               onComplete={handleWardRoundCompleted}
+            />
+          </Suspense>
+        )}
+
+        {/* Discharge Slide-Over */}
+        {slideOvers.isOpen('discharge') && (
+          <Suspense fallback={null}>
+            <DischargeSlideOver
+              open
+              onClose={handleSlideOverClose}
+              patient={patient}
+              admission={
+                requestedDischargeAdmissionId
+                  ? { id: requestedDischargeAdmissionId }
+                  : patient?.local_data?.current_admission_id
+                    ? { id: patient.local_data.current_admission_id }
+                    : patient?.current_admission_id
+                      ? { id: patient.current_admission_id }
+                      : null
+              }
+              onComplete={handleDischargeCompleted}
             />
           </Suspense>
         )}

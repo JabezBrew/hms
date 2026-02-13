@@ -549,10 +549,27 @@ class DischargeWorkflowCreateSerializer(serializers.Serializer):
     def validate_admission_id(self, value):
         """Validate admission exists and is active"""
         try:
-            admission = Admission.objects.get(id=value, status='admitted')
+            Admission.objects.get(id=value, status='admitted')
         except Admission.DoesNotExist:
             raise serializers.ValidationError("Active admission not found")
         return value
+
+    def validate(self, attrs):
+        patient_id = attrs.get('patient_id')
+        admission_id = attrs.get('admission_id')
+        if not patient_id or not admission_id:
+            return attrs
+
+        admission = Admission.objects.filter(
+            id=admission_id,
+            patient_id=patient_id,
+            status='admitted',
+        ).first()
+        if not admission:
+            raise serializers.ValidationError(
+                "Admission does not match the provided patient or is not active."
+            )
+        return attrs
 
 
 class DischargeWorkflowUpdateSerializer(serializers.Serializer):
@@ -587,3 +604,4 @@ class DischargeWorkflowCompleteSerializer(serializers.Serializer):
     Serializer for completing discharge workflow
     """
     final_data = serializers.JSONField(required=False, default=dict)
+    idempotency_key = serializers.CharField(required=False, allow_blank=False)

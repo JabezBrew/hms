@@ -574,8 +574,9 @@ class Admission(models.Model):
         self.save()
 
         # Update bed status to available
-        self.bed.status = 'available'
-        self.bed.save()
+        if self.bed:
+            self.bed.status = 'available'
+            self.bed.save()
 
 
 class CareTeamAssignment(models.Model):

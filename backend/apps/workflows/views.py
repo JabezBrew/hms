@@ -762,11 +762,17 @@ class WorkflowViewSet(viewsets.ModelViewSet):
 
             workflow_serializer = ClinicalWorkflowSerializer(result['workflow'])
             discharge_serializer = DischargeWorkflowSerializer(result['discharge_data'])
+            response_status = (
+                status.HTTP_200_OK
+                if result.get('resumed')
+                else status.HTTP_201_CREATED
+            )
 
             return Response({
                 'workflow': workflow_serializer.data,
                 'discharge_data': discharge_serializer.data,
-            }, status=status.HTTP_201_CREATED)
+                'resumed': bool(result.get('resumed', False)),
+            }, status=response_status)
 
         except ValueError as e:
             return Response(
@@ -794,6 +800,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid workflow type'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_patient_access(request, workflow.patient_id)
 
         serializer = DischargeWorkflowUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -815,6 +822,11 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 'message': f'Step {workflow.current_step} updated successfully'
             })
 
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             logger.error(f"Error updating discharge step: {str(e)}")
             return Response(
@@ -836,6 +848,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid workflow type'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_patient_access(request, workflow.patient_id)
 
         serializer = DischargeWorkflowCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -844,10 +857,22 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             result = DischargeEngine.complete(
                 workflow=workflow,
                 final_data=serializer.validated_data.get('final_data', {}),
+                idempotency_key=serializer.validated_data.get('idempotency_key'),
             )
 
             return Response(result)
 
+        except ValueError as e:
+            error_message = str(e)
+            response_status = (
+                status.HTTP_409_CONFLICT
+                if 'already completed' in error_message.lower()
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response(
+                {'error': error_message},
+                status=response_status
+            )
         except Exception as e:
             logger.error(f"Error completing discharge: {str(e)}")
             return Response(

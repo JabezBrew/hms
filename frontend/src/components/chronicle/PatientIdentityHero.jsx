@@ -12,6 +12,7 @@ import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import { cn } from "@/lib/utils";
@@ -50,6 +51,7 @@ const PatientIdentityHero = ({
   onRecordFluids,
   onAssignChart,
   onStartWardRound,
+  onStartDischarge,
   onManageInsurance,
   insurance = [],
   activeAdmission,
@@ -423,11 +425,13 @@ const PatientIdentityHero = ({
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('charts');
+                  prefetchAction('discharge');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('charts');
+                  prefetchAction('discharge');
                 }}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -470,6 +474,16 @@ const PatientIdentityHero = ({
                     >
                       <Stethoscope className="h-4 w-4 mr-2" />
                       Ward Round
+                    </DropdownMenuItem>
+                  )}
+                  {onStartDischarge && (
+                    <DropdownMenuItem
+                      onClick={onStartDischarge}
+                      onPointerEnter={() => prefetchAction('discharge')}
+                      onFocus={() => prefetchAction('discharge')}
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Start Discharge
                     </DropdownMenuItem>
                   )}
                   {onRecordFluids && (

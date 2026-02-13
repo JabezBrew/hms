@@ -3,6 +3,7 @@ Workflow engines - Business logic for clinical workflows
 """
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from typing import Dict, Any, Optional, List
 import logging
 from apps.organization.services import UnitHierarchyService
@@ -49,7 +50,7 @@ from .models import (
     WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
     WorkflowStatus, WorkflowType, ClinicalNoteType
 )
-from .definitions import WorkflowDefinition, WorkflowStepDefinition
+from .definitions import WorkflowDefinition, WorkflowStepDefinition, FieldType
 from .registry import get_workflow_definition, WORKFLOW_DEFINITIONS
 from apps.users.models import PatientProfile
 from apps.wards.models import Admission, Ward, Bed
@@ -130,13 +131,42 @@ class BaseWorkflowEngine:
         except ValueError as e:
             return [str(e)]
 
-        # Validate required fields
-        for field in step_config.fields:
-            if field.required and not step_data.get(field.name):
-                errors.append(f"{field.label} is required")
+        errors.extend(cls._validate_required_fields(step_config, step_data))
 
         # TODO: Add more validation rules based on ValidationRule definitions
 
+        return errors
+
+    @staticmethod
+    def _is_missing_required_value(field_type: FieldType, value: Any) -> bool:
+        """Return True if a required field value should be treated as missing."""
+        if field_type == FieldType.BOOLEAN:
+            return value is not True
+
+        if value is None:
+            return True
+
+        if isinstance(value, str):
+            return value.strip() == ''
+
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) == 0
+
+        return False
+
+    @classmethod
+    def _validate_required_fields(
+        cls,
+        step_config: WorkflowStepDefinition,
+        step_data: Dict[str, Any],
+    ) -> List[str]:
+        errors = []
+        for field in step_config.fields:
+            if not field.required:
+                continue
+            value = (step_data or {}).get(field.name)
+            if cls._is_missing_required_value(field.field_type, value):
+                errors.append(f"{field.label} is required")
         return errors
 
     @staticmethod
@@ -1130,6 +1160,14 @@ class DischargeEngine(BaseWorkflowEngine):
 
     workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.DISCHARGE]
 
+    STEP_KEYS = {
+        'discharge_planning',
+        'medications',
+        'instructions',
+        'documentation',
+        'summary',
+    }
+
     @staticmethod
     @transaction.atomic
     def start(user, patient_id, admission_id, initial_data=None) -> Dict[str, Any]:
@@ -1154,6 +1192,25 @@ class DischargeEngine(BaseWorkflowEngine):
             )
         except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
             raise ValueError(str(e))
+
+        existing_workflow = ClinicalWorkflow.objects.filter(
+            workflow_type=WorkflowType.DISCHARGE,
+            patient=patient,
+            status__in=[WorkflowStatus.DRAFT, WorkflowStatus.IN_PROGRESS],
+            context_data__admission_id=str(admission_id),
+        ).select_related('discharge_data').order_by('-created_at').first()
+        if existing_workflow:
+            logger.info(
+                "Resuming discharge workflow %s for patient %s and admission %s",
+                existing_workflow.id,
+                patient_id,
+                admission_id,
+            )
+            return {
+                'workflow': existing_workflow,
+                'discharge_data': existing_workflow.discharge_data,
+                'resumed': True,
+            }
 
         definition = DischargeEngine.get_definition()
 
@@ -1187,6 +1244,7 @@ class DischargeEngine(BaseWorkflowEngine):
         return {
             'workflow': workflow,
             'discharge_data': discharge_data,
+            'resumed': False,
         }
 
     @staticmethod
@@ -1201,22 +1259,92 @@ class DischargeEngine(BaseWorkflowEngine):
             'admission_date': admission.admission_date.isoformat(),
         }
 
+    @classmethod
+    def _flatten_discharge_payload(cls, payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+
+        flattened: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if key in cls.STEP_KEYS and isinstance(value, dict):
+                flattened.update(value)
+                continue
+            flattened[key] = value
+        return flattened
+
+    @staticmethod
+    def _coerce_discharge_field(field: str, value: Any) -> Any:
+        if field == 'discharge_date' and isinstance(value, str) and value:
+            parsed = parse_datetime(value)
+            if parsed is None:
+                raise ValueError("Discharge Date & Time must be a valid ISO datetime.")
+            return parsed
+        return value
+
+    @classmethod
+    def _validate_step_requirements(
+        cls,
+        step_number: int,
+        payload: Dict[str, Any],
+        discharge_data: DischargeWorkflow,
+    ) -> List[str]:
+        step_config = cls.get_step_config(step_number)
+        normalized_payload = payload or {}
+
+        step_payload = {}
+        for field in step_config.fields:
+            if field.name in normalized_payload:
+                step_payload[field.name] = normalized_payload[field.name]
+            else:
+                step_payload[field.name] = getattr(discharge_data, field.name, None)
+
+        errors = cls._validate_required_fields(step_config, step_payload)
+
+        if step_number == 2 and step_payload.get('medications_reconciled') is not True:
+            errors.append("Medication Reconciliation Completed must be confirmed.")
+
+        if step_number == 4:
+            prescriptions = normalized_payload.get(
+                'discharge_prescriptions',
+                getattr(discharge_data, 'discharge_prescriptions', []) or [],
+            )
+            if prescriptions and step_payload.get('prescriptions_sent') is not True:
+                errors.append(
+                    "Prescriptions Sent to Pharmacy must be confirmed when discharge prescriptions exist."
+                )
+
+        return errors
+
     @staticmethod
     @transaction.atomic
     def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
         """Update discharge step data"""
+        if workflow.status == WorkflowStatus.COMPLETED:
+            raise ValueError("Discharge workflow already completed.")
+
         discharge_data = workflow.discharge_data
+        normalized_step_data = DischargeEngine._flatten_discharge_payload(step_data)
+
+        validation_errors = DischargeEngine._validate_step_requirements(
+            step_number=step_number,
+            payload=normalized_step_data,
+            discharge_data=discharge_data,
+        )
+        if validation_errors:
+            unique_errors = list(dict.fromkeys(validation_errors))
+            raise ValueError("; ".join(unique_errors))
 
         # Update discharge specific fields
-        for field, value in step_data.items():
+        for field, value in normalized_step_data.items():
             if hasattr(discharge_data, field):
-                setattr(discharge_data, field, value)
+                coerced_value = DischargeEngine._coerce_discharge_field(field, value)
+                setattr(discharge_data, field, coerced_value)
         discharge_data.save()
 
         # Update workflow
-        workflow.context_data.update(step_data)
+        workflow.context_data.update(normalized_step_data)
         workflow.mark_step_complete(step_number)
-        if step_number < workflow.total_steps:
+        if step_number < workflow.total_steps and workflow.current_step == step_number:
             workflow.advance_to_step(step_number + 1)
         workflow.save()
 
@@ -1226,18 +1354,60 @@ class DischargeEngine(BaseWorkflowEngine):
 
     @staticmethod
     @transaction.atomic
-    def complete(workflow, final_data) -> Dict[str, Any]:
+    def complete(workflow, final_data, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         """Complete discharge and update admission record"""
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
         from apps.encounters.services import get_or_create_active_encounter
 
+        if workflow.status == WorkflowStatus.COMPLETED:
+            stored_key = workflow.context_data.get('completion_idempotency_key')
+            stored_result = workflow.context_data.get('completion_result')
+            if (
+                idempotency_key
+                and stored_key
+                and stored_key == idempotency_key
+                and isinstance(stored_result, dict)
+            ):
+                return stored_result
+            raise ValueError("Discharge workflow already completed.")
+
         discharge_data = workflow.discharge_data
+        normalized_final_data = DischargeEngine._flatten_discharge_payload(final_data)
+
+        all_validation_errors: List[str] = []
+        for step_number in range(1, workflow.total_steps + 1):
+            all_validation_errors.extend(
+                DischargeEngine._validate_step_requirements(
+                    step_number=step_number,
+                    payload=normalized_final_data,
+                    discharge_data=discharge_data,
+                )
+            )
+        if all_validation_errors:
+            unique_errors = list(dict.fromkeys(all_validation_errors))
+            raise ValueError("; ".join(unique_errors))
+
+        admission_id = workflow.context_data.get('admission_id')
+        if not admission_id:
+            raise ValueError("Missing admission context for discharge workflow.")
+
+        try:
+            admission = Admission.objects.select_for_update().get(
+                id=admission_id,
+                patient=workflow.patient,
+            )
+        except Admission.DoesNotExist as exc:
+            raise ValueError("Admission not found for discharge workflow.") from exc
+
+        if admission.status != 'admitted':
+            raise ValueError(f"Admission is not active. Current status: {admission.status}.")
 
         # Update final data
-        for field, value in final_data.items():
+        for field, value in normalized_final_data.items():
             if hasattr(discharge_data, field):
-                setattr(discharge_data, field, value)
+                coerced_value = DischargeEngine._coerce_discharge_field(field, value)
+                setattr(discharge_data, field, coerced_value)
         discharge_data.save()
 
         # Get practitioner profile
@@ -1255,38 +1425,26 @@ class DischargeEngine(BaseWorkflowEngine):
                 practitioner = None
 
         # Update Admission record
-        admission_id = workflow.context_data.get('admission_id')
-        admission = None
-        if admission_id:
-            try:
-                admission = Admission.objects.get(id=admission_id)
-                admission.discharge_date = discharge_data.discharge_date or timezone.now()
-                admission.status = 'discharged'
-                admission.discharge_notes = discharge_data.discharge_summary
-                admission.save()
+        admission.discharge_patient(discharge_notes=discharge_data.discharge_summary)
+        if discharge_data.discharge_date:
+            admission.actual_discharge_date = discharge_data.discharge_date
+            admission.save(update_fields=['actual_discharge_date', 'updated_at'])
 
-                # Mark bed as available
-                if admission.bed:
-                    admission.bed.status = 'available'
-                    admission.bed.save()
-
-                logger.info(f"Updated admission {admission_id} to discharged status")
-            except Admission.DoesNotExist:
-                logger.warning(f"Admission {admission_id} not found")
+        logger.info(f"Updated admission {admission_id} to discharged status")
 
         # Get or create encounter
-        encounter, _ = get_or_create_active_encounter(
-            patient=workflow.patient,
-            practitioner=practitioner,
-            encounter_type='inpatient',
-            reason='Discharge'
+        encounter = getattr(admission, 'encounter', None)
+        if encounter is None:
+            encounter, _ = get_or_create_active_encounter(
+                patient=workflow.patient,
+                practitioner=practitioner,
+                encounter_type='inpatient',
+                reason='Discharge'
+            )
+        encounter.finish(
+            end_time=admission.actual_discharge_date or timezone.now(),
+            discharge_disposition=discharge_data.discharge_disposition,
         )
-
-        # Update encounter status to finished
-        encounter.status = 'finished'
-        encounter.end_time = timezone.now()
-        encounter.discharge_disposition = discharge_data.discharge_disposition if hasattr(discharge_data, 'discharge_disposition') else None
-        encounter.save()
 
         # Create discharge note with proper model fields
         note = None
@@ -1318,9 +1476,11 @@ class DischargeEngine(BaseWorkflowEngine):
                 # Build note data
                 note_data = {
                     'Discharge Summary': discharge_data.discharge_summary or '',
-                    'Follow-up Instructions': discharge_data.follow_up_instructions or '' if hasattr(discharge_data, 'follow_up_instructions') else '',
+                    'Follow-up Instructions': discharge_data.follow_up_appointments or '',
                     '_metadata': {
-                        'discharge_date': (discharge_data.discharge_date or timezone.now()).isoformat() if discharge_data.discharge_date else timezone.now().isoformat(),
+                        'discharge_date': (
+                            discharge_data.discharge_date or admission.actual_discharge_date or timezone.now()
+                        ).isoformat(),
                         'admission_id': str(admission_id) if admission_id else None,
                     }
                 }
@@ -1338,25 +1498,31 @@ class DischargeEngine(BaseWorkflowEngine):
             except Exception as e:
                 logger.error(f"Failed to create discharge note for workflow {workflow.id}: {str(e)}")
 
-        workflow.encounter_id = str(encounter.id)
-        workflow.complete_workflow()
-
-        logger.info(f"Completed discharge workflow {workflow.id}")
-
         artifacts = [
             {'type': 'encounter_update', 'id': str(encounter.id)},
-            {'type': 'discharge_record', 'id': admission_id},
+            {'type': 'discharge_record', 'id': str(admission_id)},
         ]
         if note:
             artifacts.append({'type': 'note', 'id': str(note.id)})
 
-        return {
+        completion_result = {
             'success': True,
             'workflow_id': str(workflow.id),
-            'admission_id': admission_id,
+            'admission_id': str(admission_id),
             'encounter_id': str(encounter.id),
             'artifacts': artifacts,
         }
+
+        workflow.encounter_id = str(encounter.id)
+        workflow.context_data['completion_result'] = completion_result
+        if idempotency_key:
+            workflow.context_data['completion_idempotency_key'] = idempotency_key
+        workflow.save(update_fields=['encounter_id', 'context_data', 'updated_at'])
+        workflow.complete_workflow()
+
+        logger.info(f"Completed discharge workflow {workflow.id}")
+
+        return completion_result
 
 
 class ClinicalNoteEngine(BaseWorkflowEngine):
