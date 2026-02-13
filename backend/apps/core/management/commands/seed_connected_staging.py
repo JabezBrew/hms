@@ -150,6 +150,21 @@ class FacilityApi:
     def __init__(self, facility_code: str):
         self.facility_code = facility_code
         self.client = APIClient()
+        self.http_host = self._resolve_http_host()
+
+    @staticmethod
+    def _resolve_http_host() -> str:
+        hosts = [str(host).strip() for host in getattr(settings, "ALLOWED_HOSTS", []) if str(host).strip()]
+
+        concrete_hosts = [host for host in hosts if not host.startswith(".") and host not in {"*", ""}]
+        if concrete_hosts:
+            return concrete_hosts[0]
+
+        dotted_hosts = [host for host in hosts if host.startswith(".")]
+        if dotted_hosts:
+            return f"seed{dotted_hosts[0]}"
+
+        return "testserver"
 
     def _request(
         self,
@@ -163,7 +178,11 @@ class FacilityApi:
         self.client.force_authenticate(user=user)
         method_name = method.lower()
         fn = getattr(self.client, method_name)
-        kwargs = {"HTTP_X_FACILITY_CODE": self.facility_code}
+        kwargs = {
+            "HTTP_X_FACILITY_CODE": self.facility_code,
+            "HTTP_HOST": self.http_host,
+            "secure": True,
+        }
         if method_name in {"post", "put", "patch"}:
             response = fn(path, data=data or {}, format="json", **kwargs)
         else:
