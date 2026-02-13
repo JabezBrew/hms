@@ -1163,13 +1163,40 @@ class Command(BaseCommand):
                 }
             )
 
-        bulk_result_data = api.post(
-            "/api/laboratory/results/bulk/",
-            user=labtech.user,
-            data=bulk_results_payload,
-            expected=(201,),
-        )
-        created_count = int(bulk_result_data.get("created_count", 0)) if isinstance(bulk_result_data, dict) else 0
+        created_count = 0
+        try:
+            bulk_result_data = api.post(
+                "/api/laboratory/results/bulk/",
+                user=labtech.user,
+                data=bulk_results_payload,
+                expected=(201,),
+            )
+            created_count = int(bulk_result_data.get("created_count", 0)) if isinstance(bulk_result_data, dict) else 0
+        except CommandError as exc:
+            error_text = str(exc).lower()
+            if "laboratory_labresult" not in error_text or "facility_id" not in error_text:
+                raise
+
+            # Fallback path for environments where bulk result create does not
+            # populate facility_id server-side.
+            for item in bulk_results_payload["results"]:
+                api.post(
+                    "/api/laboratory/results/",
+                    user=labtech.user,
+                    data={
+                        "order_test": item["order_test_id"],
+                        "specimen": specimen_id,
+                        "value": item["value"],
+                        "unit": item["unit"],
+                        "reference_low": item["reference_low"],
+                        "reference_high": item["reference_high"],
+                        "flag": item["flag"],
+                        "interpretation": item["interpretation"],
+                        "performed_at": bulk_results_payload["performed_at"],
+                    },
+                    expected=(201,),
+                )
+                created_count += 1
         stats["lab_results_created"] += created_count
 
         api.post(
