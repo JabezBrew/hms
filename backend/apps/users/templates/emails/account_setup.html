@@ -5,49 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Set Up Your Password</title>
 </head>
-<body style="margin:0; padding:0; background-color:#eef2f7;">
-    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#eef2f7; padding:24px 12px;">
+<body style="margin:0; padding:0; background-color:#f5f2ec;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f5f2ec; padding:24px 12px;">
         <tr>
             <td align="center">
-                <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="width:100%; max-width:640px; background-color:#ffffff; border:1px solid #d7e0ea; border-radius:12px; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="width:100%; max-width:640px; background-color:#ffffff; border:1px solid #e8ded0; border-radius:12px; overflow:hidden; font-family:'DM Sans','Segoe UI',Roboto,Arial,sans-serif;">
                     <tr>
-                        <td style="height:8px; background-color:#0e4aa6; font-size:0; line-height:0;">&nbsp;</td>
+                        <td style="height:7px; background-color:#c87b2a; font-size:0; line-height:0;">&nbsp;</td>
                     </tr>
                     <tr>
-                        <td style="padding:28px 32px; background-color:#173a6a;">
-                            <div style="font-size:30px; line-height:36px; font-weight:700; color:#ffffff; margin:0;">{{ hospital_name }}</div>
-                            <div style="font-size:14px; line-height:22px; color:#d5e3ff; margin-top:6px;">Account setup invitation</div>
+                        <td style="padding:28px 32px; background-color:#1f2a34;">
+                            <div style="font-size:30px; line-height:36px; font-weight:700; color:#fbf8f3; margin:0; font-family:'Fraunces','Iowan Old Style',Georgia,'Times New Roman',serif;">{{ hospital_name }}</div>
+                            <div style="font-size:13px; line-height:20px; color:#d7c9b5; margin-top:6px; letter-spacing:0.4px; text-transform:uppercase;">Chronicle account setup</div>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:32px;">
-                            <h1 style="margin:0 0 14px 0; font-size:30px; line-height:36px; color:#0f172a; font-weight:700;">Welcome, {{ user_name }}</h1>
-                            <p style="margin:0 0 20px 0; font-size:16px; line-height:26px; color:#334155;">
-                                Your account is ready. Use the secure button below to create your password and access HMS.
+                        <td style="padding:34px 32px 30px 32px;">
+                            <h1 style="margin:0 0 12px 0; font-size:34px; line-height:40px; color:#1f2933; font-weight:600; font-family:'Fraunces','Iowan Old Style',Georgia,'Times New Roman',serif;">Welcome, {{ user_name }}</h1>
+                            <p style="margin:0 0 18px 0; font-size:16px; line-height:26px; color:#475569;">
+                                Your HMS access is ready. Create your password to continue to your Chronicle workspace.
                             </p>
 
                             {% if has_staff_details %}
-                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px 0; border:1px solid #dbe6f6; border-radius:10px; background-color:#f8fbff;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 20px 0; border:1px solid #e8dfd1; border-radius:10px; background-color:#fcfaf7;">
                                 <tr>
                                     <td style="padding:16px 18px;">
-                                        <div style="font-size:13px; line-height:20px; color:#33588a; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Staff details</div>
+                                        <div style="font-size:12px; line-height:18px; color:#8b5c21; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:8px;">Staff details</div>
                                         <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                                             {% if employee_id %}
                                             <tr>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Employee ID</td>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ employee_id }}</td>
+                                                <td style="padding:3px 0; font-size:13px; line-height:20px; color:#7a6550; width:128px;">Employee ID</td>
+                                                <td style="padding:3px 0; font-size:13px; line-height:20px; color:#27323f; font-weight:600; font-family:'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace;">{{ employee_id }}</td>
                                             </tr>
                                             {% endif %}
                                             {% if department %}
                                             <tr>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Department</td>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ department }}</td>
+                                                <td style="padding:3px 0; font-size:13px; line-height:20px; color:#7a6550; width:128px;">Department</td>
+                                                <td style="padding:3px 0; font-size:14px; line-height:20px; color:#27323f; font-weight:600;">{{ department }}</td>
                                             </tr>
                                             {% endif %}
                                             {% if position %}
                                             <tr>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#64748b; width:130px;">Position</td>
-                                                <td style="padding:3px 0; font-size:14px; line-height:22px; color:#1e293b; font-weight:600;">{{ position }}</td>
+                                                <td style="padding:3px 0; font-size:13px; line-height:20px; color:#7a6550; width:128px;">Position</td>
+                                                <td style="padding:3px 0; font-size:14px; line-height:20px; color:#27323f; font-weight:600;">{{ position }}</td>
                                             </tr>
                                             {% endif %}
                                         </table>
@@ -56,13 +56,24 @@
                             </table>
                             {% endif %}
 
-                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 22px 0;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 18px 0; border:1px solid #efe6d8; border-radius:10px; background-color:#fffdf9;">
+                                <tr>
+                                    <td style="padding:14px 16px;">
+                                        <div style="font-size:12px; line-height:18px; color:#9a6b30; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Quick steps</div>
+                                        <div style="font-size:14px; line-height:21px; color:#3d4958;">1. Set your password</div>
+                                        <div style="font-size:14px; line-height:21px; color:#3d4958;">2. Sign in to HMS</div>
+                                        <div style="font-size:14px; line-height:21px; color:#3d4958;">3. Update your profile if needed</div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 20px 0;">
                                 <tr>
                                     <td align="center">
                                         <table role="presentation" cellpadding="0" cellspacing="0">
                                             <tr>
-                                                <td align="center" bgcolor="#1d4ed8" style="border-radius:9px;">
-                                                    <a href="{{ setup_url }}" style="display:inline-block; padding:14px 28px; font-size:16px; line-height:20px; font-weight:700; color:#ffffff; text-decoration:none;">Set Up Password</a>
+                                                <td align="center" bgcolor="#c87b2a" style="border-radius:9px;">
+                                                    <a href="{{ setup_url }}" style="display:inline-block; padding:14px 30px; font-size:16px; line-height:20px; font-weight:700; color:#fffaf3; text-decoration:none;">Set Up Password</a>
                                                 </td>
                                             </tr>
                                         </table>
@@ -70,23 +81,23 @@
                                 </tr>
                             </table>
 
-                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 18px 0; border:1px solid #f6cf8f; border-radius:10px; background-color:#fff8ed;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 16px 0; border:1px solid #ebd8bc; border-radius:10px; background-color:#fff6e9;">
                                 <tr>
-                                    <td style="padding:14px 16px; font-size:14px; line-height:22px; color:#92400e;">
+                                    <td style="padding:14px 16px; font-size:14px; line-height:22px; color:#8b5e2b;">
                                         <strong>Important:</strong> This link expires in {{ expiry_minutes }} minutes.
                                     </td>
                                 </tr>
                             </table>
 
-                            <p style="margin:0 0 8px 0; font-size:14px; line-height:22px; color:#475569;">
+                            <p style="margin:0 0 8px 0; font-size:14px; line-height:22px; color:#5b6877;">
                                 If you did not expect this email, you can safely ignore it.
                             </p>
                             <p style="margin:0 0 4px 0; font-size:13px; line-height:20px; color:#64748b;">Manual link (if the button does not work):</p>
-                            <p style="margin:0; font-size:12px; line-height:20px; color:#64748b; word-break:break-all;">{{ setup_url }}</p>
+                            <p style="margin:0; font-size:12px; line-height:20px; color:#6b7280; word-break:break-all; font-family:'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace;">{{ setup_url }}</p>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:16px 32px 24px 32px; border-top:1px solid #e6edf5; background-color:#f9fbfd;">
+                        <td style="padding:16px 32px 24px 32px; border-top:1px solid #ece4d8; background-color:#faf7f2;">
                             <p style="margin:0; font-size:12px; line-height:18px; color:#64748b;">
                                 This is an automated message from {{ hospital_name }}. Please do not reply.
                             </p>
