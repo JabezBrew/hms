@@ -968,17 +968,46 @@ class Command(BaseCommand):
             "appointment_type": str(appointment_type.id),
             "status": "booked",
             "source": "scheduled",
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
             "reason": f"Routine review for patient {patient.medical_record_number}",
             "notes": "Seeded connected journey appointment",
         }
-        appointment_data = api.post(
-            "/api/appointments/appointments/",
-            user=receptionist.user,
-            data=appointment_payload,
-            expected=(201,),
-        )
+        slot_minutes = max(5, int(appointment_type.duration_minutes or 30))
+        appointment_data = None
+        candidate_start = start_time
+        for attempt in range(0, 24):
+            candidate_end = candidate_start + timedelta(minutes=slot_minutes)
+            payload = {
+                **appointment_payload,
+                "start_time": candidate_start.isoformat(),
+                "end_time": candidate_end.isoformat(),
+            }
+            try:
+                appointment_data = api.post(
+                    "/api/appointments/appointments/",
+                    user=receptionist.user,
+                    data=payload,
+                    expected=(201,),
+                )
+                start_time = candidate_start
+                end_time = candidate_end
+                break
+            except CommandError as exc:
+                error_text = str(exc).lower()
+                can_retry = (
+                    "already has an appointment during this time" in error_text
+                    or "not available for this time" in error_text
+                    or "capacity reached" in error_text
+                )
+                if not can_retry:
+                    raise
+                if (attempt + 1) % 8 == 0:
+                    candidate_start = (candidate_start + timedelta(days=1)).replace(hour=9, minute=0)
+                else:
+                    candidate_start = candidate_start + timedelta(minutes=slot_minutes)
+        if not appointment_data:
+            raise CommandError(
+                f"Unable to book seeded appointment for patient={patient.id} after retries."
+            )
         stats["appointments_created"] += 1
 
         encounter_payload = {
