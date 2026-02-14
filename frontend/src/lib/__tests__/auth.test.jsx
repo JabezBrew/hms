@@ -194,6 +194,34 @@ describe('AuthProvider', () => {
       })
 
       expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(notifications.success).not.toHaveBeenCalled()
+    })
+
+    it('still clears startup-expired session when backend logout fails', async () => {
+      const storedUser = {
+        id: 'user-123',
+        email: 'stored@test.com',
+        role: 'doctor',
+      }
+
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = (Date.now() - 9 * 60 * 60 * 1000).toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      authApi.logout.mockRejectedValueOnce(new Error('Network error'))
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
     })
   })
 

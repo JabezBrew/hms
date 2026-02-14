@@ -57,51 +57,40 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
+  const clearLocalAuthState = useCallback(() => {
+    removeAuthValue("user")
+    removeAuthValue("sessionStartTime")
+    removeAuthValue("refreshTokenIssuedAt")
+    setUser(null)
+    setAccessToken(null)
+    setFacilityCodeState(null)
+    setMfaSession(null)
+    setMfaUser(null)
+    setMfaEnrollmentRequired(false)
+    setMfaAvailableMethods(null)
+    queryClient.clear()
+  }, [setAccessToken])
+
+  const notifyBackendLogout = useCallback(async () => {
+    try {
+      await authApi.logout()
+    } catch (_error) {
+      // Session may already be invalid/expired; local cleanup still proceeds.
+    }
+  }, [])
+
   // Logout function - defined early to avoid circular dependency
   const logout = useCallback(async (localOnly = false) => {
-    try {
-      if (!localOnly) {
-        try {
-          await authApi.logout()
-        } catch (_error) {
-          // Suppress errors during logout - token may already be expired
-          // Still proceed with local cleanup
-        }
-      }
-
-      // Clear all session data
-      removeAuthValue("user")
-      removeAuthValue("sessionStartTime")
-      removeAuthValue("refreshTokenIssuedAt")
-      setUser(null)
-      setAccessToken(null)
-      setFacilityCodeState(null)
-      setMfaSession(null)
-      setMfaUser(null)
-      setMfaEnrollmentRequired(false)
-      setMfaAvailableMethods(null)
-
-      // Clear the React Query cache when logging out
-      queryClient.clear()
-
-      if (!localOnly) {
-        notifications.success("Logged out successfully")
-      }
-    } catch (_error) {
-      // Always proceed with local cleanup even if logout fails
-      removeAuthValue("user")
-      removeAuthValue("sessionStartTime")
-      removeAuthValue("refreshTokenIssuedAt")
-      setUser(null)
-      setAccessToken(null)
-      setFacilityCodeState(null)
-      setMfaSession(null)
-      setMfaUser(null)
-      setMfaEnrollmentRequired(false)
-      setMfaAvailableMethods(null)
-      queryClient.clear()
+    if (!localOnly) {
+      await notifyBackendLogout()
     }
-  }, [setAccessToken])
+
+    clearLocalAuthState()
+
+    if (!localOnly) {
+      notifications.success("Logged out successfully")
+    }
+  }, [clearLocalAuthState, notifyBackendLogout])
 
   // Function to check if session is still valid
   const isSessionValid = useCallback(() => {
@@ -172,10 +161,9 @@ export function AuthProvider({ children }) {
 
           // Validate session before restoring user
           if (!isSessionValid()) {
-            // Session expired, clear everything
-            removeAuthValue("user")
-            removeAuthValue("sessionStartTime")
-            removeAuthValue("refreshTokenIssuedAt")
+            // Session expired while app was closed; best-effort server revoke.
+            void notifyBackendLogout()
+            clearLocalAuthState()
             setLoading(false)
             return
           }
@@ -194,16 +182,15 @@ export function AuthProvider({ children }) {
           }
         } catch (_e) {
           // Failed to parse stored user
-          removeAuthValue("user")
-          removeAuthValue("sessionStartTime")
-          removeAuthValue("refreshTokenIssuedAt")
+          void notifyBackendLogout()
+          clearLocalAuthState()
         }
       }
       setLoading(false)
     }
 
     initializeAuth()
-  }, [isSessionValid, refreshAccessToken])
+  }, [clearLocalAuthState, isSessionValid, notifyBackendLogout, refreshAccessToken])
 
   // Connect auth context to api-client
   useEffect(() => {
