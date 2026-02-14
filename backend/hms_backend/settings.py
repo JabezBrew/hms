@@ -485,6 +485,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'user-agent',
     'x-csrftoken',
+    'x-device-label',
     'x-facility-code',
     'x-mfa-session',
     'x-requested-with',

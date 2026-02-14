@@ -193,6 +193,7 @@ def test_webauthn_registration_rejects_untrusted_origin(monkeypatch):
         'origin',
         'user-agent',
         'x-csrftoken',
+        'x-device-label',
         'x-facility-code',
         'x-mfa-session',
         'x-requested-with',
@@ -210,3 +211,35 @@ def test_mfa_status_preflight_allows_mfa_session_header():
     assert response.status_code == status.HTTP_200_OK
     allowed_headers = response.get('Access-Control-Allow-Headers', '')
     assert 'x-mfa-session' in allowed_headers.lower()
+
+
+@override_settings(
+    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOW_HEADERS=[
+        'accept',
+        'accept-encoding',
+        'authorization',
+        'content-type',
+        'dnt',
+        'origin',
+        'user-agent',
+        'x-csrftoken',
+        'x-device-label',
+        'x-facility-code',
+        'x-mfa-session',
+        'x-requested-with',
+    ],
+)
+def test_login_preflight_allows_device_label_header():
+    client = APIClient()
+    response = client.options(
+        '/api/auth/login/',
+        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST',
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-device-label,x-facility-code,content-type',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    allowed_headers = response.get('Access-Control-Allow-Headers', '').lower()
+    assert 'x-device-label' in allowed_headers
+    assert 'x-facility-code' in allowed_headers
