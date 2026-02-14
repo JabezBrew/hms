@@ -142,6 +142,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
 
+  // Fetch patient data (includes access flags for conditional fetching)
+  const { data: patient, isLoading, error, refetch } = usePatient(id);
+
+  // Check if user has clinical access (from patient endpoint response)
+  const hasClinicalAccess = patient?.access?.clinical === true;
+
   // Auto-open slide-over based on action query param or defaultAction prop
   const wardRoundParam = searchParams.get('wardRound');
   const consultationParam = searchParams.get('consultation');
@@ -201,12 +207,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Check if any slide-over is open (for timeline compression)
   const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
-
-  // Fetch patient data (includes access flags for conditional fetching)
-  const { data: patient, isLoading, error, refetch } = usePatient(id);
-
-  // Check if user has clinical access (from patient endpoint response)
-  const hasClinicalAccess = patient?.access?.clinical === true;
 
   // ====== TIER 1: Chronicle Context (optimized single-call) ======
   // Only fetch if user has clinical access - prevents wasted 403 requests
