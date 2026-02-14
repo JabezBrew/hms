@@ -21,6 +21,7 @@ redis>=4.5.0
 sendgrid>=6.9.0
 honcho>=1.1.0
 requests>=2.31.0
+ua-parser>=0.18.0
 reportlab>=4.0.0
 openpyxl>=3.1.0
 

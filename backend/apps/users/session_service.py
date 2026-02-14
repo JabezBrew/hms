@@ -18,6 +18,10 @@ from rest_framework_simplejwt.state import token_backend
 from apps.core.security import normalize_facility_code
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+try:
+    from ua_parser import user_agent_parser
+except Exception:  # pragma: no cover - optional dependency safety
+    user_agent_parser = None
 
 from hms_backend.middleware import get_client_ip
 from .models import UserSession
@@ -41,11 +45,45 @@ def _hash_value(value: Optional[str]) -> str:
     return hmac.new(salt_bytes, value.encode('utf-8'), hashlib.sha256).hexdigest()
 
 
-def _summarize_user_agent(user_agent: str) -> str:
-    ua = (user_agent or '').lower()
-    if not ua:
-        return ''
+def _normalize_browser_name(browser_family: str, ua: str) -> str:
+    family = (browser_family or '').lower()
+    if 'edge' in family or 'edg/' in ua or 'edgios' in ua or 'edga/' in ua:
+        return 'Edge'
+    if 'chrome' in family or 'crios' in family or 'crios' in ua:
+        return 'Chrome'
+    if 'firefox' in family or 'fxios' in family or 'fxios' in ua:
+        return 'Firefox'
+    if 'opera' in family or 'opr/' in family or 'opios' in family or 'opr/' in ua:
+        return 'Opera'
+    if 'safari' in family or ('safari' in ua and 'chrome' not in ua and 'crios' not in ua):
+        return 'Safari'
+    return 'Browser'
 
+
+def _normalize_os_name(os_family: str, ua: str) -> str:
+    family = (os_family or '').lower()
+    if (
+        'iphone' in ua
+        or 'ipad' in ua
+        or 'ipod' in ua
+        or ('macintosh' in ua and 'mobile/' in ua)
+        or family == 'ios'
+    ):
+        return 'iOS'
+    if family == 'android' or 'android' in ua:
+        return 'Android'
+    if family in {'windows', 'windows nt'} or 'windows' in ua:
+        return 'Windows'
+    if family in {'mac os x', 'macos', 'mac os'} or (
+        ('macintosh' in ua or 'mac os x' in ua) and 'like mac os x' not in ua
+    ):
+        return 'macOS'
+    if family == 'linux' or 'linux' in ua:
+        return 'Linux'
+    return ''
+
+
+def _summarize_user_agent_fallback(ua: str) -> str:
     browser = 'Browser'
     if 'edgios' in ua or 'edga/' in ua or 'edg/' in ua or 'edge/' in ua:
         browser = 'Edge'
@@ -58,25 +96,31 @@ def _summarize_user_agent(user_agent: str) -> str:
     elif 'safari' in ua and 'chrome' not in ua and 'crios' not in ua:
         browser = 'Safari'
 
-    is_ios = (
-        'iphone' in ua
-        or 'ipad' in ua
-        or 'ipod' in ua
-        or ('macintosh' in ua and 'mobile/' in ua)
-    )
-    os_name = ''
-    if is_ios:
-        os_name = 'iOS'
-    elif 'android' in ua:
-        os_name = 'Android'
-    elif 'windows' in ua:
-        os_name = 'Windows'
-    elif 'macintosh' in ua or ('mac os x' in ua and 'like mac os x' not in ua):
-        os_name = 'macOS'
-    elif 'linux' in ua:
-        os_name = 'Linux'
-
+    os_name = _normalize_os_name('', ua)
     return f"{browser} on {os_name}" if os_name else browser
+
+
+def _summarize_user_agent_with_parser(user_agent: str) -> str:
+    if not user_agent_parser:
+        return ''
+    try:
+        parsed = user_agent_parser.Parse(user_agent)
+    except Exception:
+        return ''
+    ua = user_agent.lower()
+    browser = _normalize_browser_name(parsed.get('user_agent', {}).get('family', ''), ua)
+    os_name = _normalize_os_name(parsed.get('os', {}).get('family', ''), ua)
+    return f"{browser} on {os_name}" if os_name else browser
+
+
+def _summarize_user_agent(user_agent: str) -> str:
+    ua = (user_agent or '').lower()
+    if not ua:
+        return ''
+    summary = _summarize_user_agent_with_parser(user_agent)
+    if summary:
+        return summary
+    return _summarize_user_agent_fallback(ua)
 
 
 def _get_device_label(request) -> str:

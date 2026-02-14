@@ -2,6 +2,7 @@
  * Base API client for making requests to the backend
  */
 import { toast } from 'sonner';
+import { getClientDeviceLabel } from './device-label';
 
 // Base URL for API requests
 // In production, use the backend URL. In development, use Vite's proxy.
@@ -130,6 +131,10 @@ export async function performTokenRefresh() {
       const facilityCode = getFacilityCode();
       if (facilityCode) {
         refreshHeaders['X-Facility-Code'] = facilityCode;
+      }
+      const deviceLabel = getClientDeviceLabel();
+      if (deviceLabel) {
+        refreshHeaders['X-Device-Label'] = deviceLabel;
       }
 
       const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
