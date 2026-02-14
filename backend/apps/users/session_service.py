@@ -47,26 +47,32 @@ def _summarize_user_agent(user_agent: str) -> str:
         return ''
 
     browser = 'Browser'
-    if 'chrome' in ua and 'edge' not in ua and 'edg' not in ua:
-        browser = 'Chrome'
-    elif 'firefox' in ua:
-        browser = 'Firefox'
-    elif 'safari' in ua and 'chrome' not in ua:
-        browser = 'Safari'
-    elif 'edg' in ua or 'edge' in ua:
+    if 'edgios' in ua or 'edga/' in ua or 'edg/' in ua or 'edge/' in ua:
         browser = 'Edge'
-    elif 'opera' in ua or 'opr' in ua:
+    elif 'crios' in ua or ('chrome' in ua and 'edge' not in ua and 'edg' not in ua and 'opr/' not in ua):
+        browser = 'Chrome'
+    elif 'fxios' in ua or 'firefox' in ua:
+        browser = 'Firefox'
+    elif 'opera' in ua or 'opr/' in ua or 'opios' in ua:
         browser = 'Opera'
+    elif 'safari' in ua and 'chrome' not in ua and 'crios' not in ua:
+        browser = 'Safari'
 
+    is_ios = (
+        'iphone' in ua
+        or 'ipad' in ua
+        or 'ipod' in ua
+        or ('macintosh' in ua and 'mobile/' in ua)
+    )
     os_name = ''
-    if 'windows' in ua:
-        os_name = 'Windows'
-    elif 'mac os x' in ua or 'macintosh' in ua:
-        os_name = 'macOS'
+    if is_ios:
+        os_name = 'iOS'
     elif 'android' in ua:
         os_name = 'Android'
-    elif 'iphone' in ua or 'ipad' in ua:
-        os_name = 'iOS'
+    elif 'windows' in ua:
+        os_name = 'Windows'
+    elif 'macintosh' in ua or ('mac os x' in ua and 'like mac os x' not in ua):
+        os_name = 'macOS'
     elif 'linux' in ua:
         os_name = 'Linux'
 
