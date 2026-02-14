@@ -264,14 +264,21 @@ const AuditLogRow = ({ log, isExpanded, onToggle, gridClassName }) => {
               <p className="text-sm text-foreground mt-1">{log.description}</p>
             </div>
 
-            {log.user_agent && (
+            {(log.user_agent_summary || log.user_agent) && (
               <div>
                 <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  User Agent
+                  Client
                 </span>
-                <p className="font-mono text-xs text-muted-foreground mt-1 truncate">
-                  {log.user_agent}
-                </p>
+                {log.user_agent_summary && (
+                  <p className="font-mono text-xs text-foreground mt-1">
+                    {log.user_agent_summary}
+                  </p>
+                )}
+                {log.user_agent && (
+                  <p className="font-mono text-xs text-muted-foreground mt-1 truncate">
+                    {log.user_agent}
+                  </p>
+                )}
               </div>
             )}
 
