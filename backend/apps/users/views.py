@@ -26,7 +26,12 @@ from .serializers import (
     UserSessionListSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
-from .session_service import get_current_session_from_request, revoke_session, revoke_sessions_for_user
+from .session_service import (
+    get_current_session_from_request,
+    get_session_idle_cutoff,
+    revoke_session,
+    revoke_sessions_for_user,
+)
 from .rbac import (
     IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsLabTechnician,
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
@@ -159,7 +164,12 @@ class UserSessionViewSet(viewsets.GenericViewSet):
 
         # Filter out revoked/expired sessions unless explicitly requested
         if not include_revoked:
-            base_qs = base_qs.filter(revoked_at__isnull=True, expires_at__gt=timezone.now())
+            now = timezone.now()
+            base_qs = base_qs.filter(
+                revoked_at__isnull=True,
+                expires_at__gt=now,
+                last_seen_at__gt=get_session_idle_cutoff(now),
+            )
 
         return base_qs
 

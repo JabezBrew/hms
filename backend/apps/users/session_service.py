@@ -34,6 +34,20 @@ class RefreshClaims:
     expires_at: timezone.datetime
 
 
+def get_session_idle_timeout_minutes() -> int:
+    configured = getattr(settings, 'USER_SESSION_IDLE_TIMEOUT_MINUTES', 30)
+    try:
+        value = int(configured)
+    except (TypeError, ValueError):
+        value = 30
+    return max(value, 1)
+
+
+def get_session_idle_cutoff(now: Optional[timezone.datetime] = None) -> timezone.datetime:
+    reference = now or timezone.now()
+    return reference - timezone.timedelta(minutes=get_session_idle_timeout_minutes())
+
+
 def _hash_value(value: Optional[str]) -> str:
     if not value:
         return ''
@@ -322,6 +336,8 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
     if not request or not hasattr(request, 'user') or not request.user.is_authenticated:
         return None
 
+    now = timezone.now()
+    idle_cutoff = get_session_idle_cutoff(now)
     refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
     claims = _extract_refresh_claims(refresh_token)
 
@@ -329,7 +345,9 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
         # Try to find session by JTI first (preferred)
         session = UserSession.objects.filter(
             refresh_jti=claims.jti,
-            revoked_at__isnull=True
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+            last_seen_at__gt=idle_cutoff,
         ).first()
         if session:
             return session
@@ -343,7 +361,9 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
         user=request.user,
         ip_hash=ip_hash,
         user_agent_hash=user_agent_hash,
-        revoked_at__isnull=True
+        revoked_at__isnull=True,
+        expires_at__gt=now,
+        last_seen_at__gt=idle_cutoff,
     ).order_by('-last_seen_at').first()
 
 

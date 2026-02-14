@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
@@ -524,7 +525,10 @@ class UserSession(models.Model):
 
     @property
     def is_active(self):
-        return self.revoked_at is None and self.expires_at > timezone.now()
+        now = timezone.now()
+        idle_timeout_minutes = max(getattr(settings, 'USER_SESSION_IDLE_TIMEOUT_MINUTES', 30), 1)
+        idle_cutoff = now - timedelta(minutes=idle_timeout_minutes)
+        return self.revoked_at is None and self.expires_at > now and self.last_seen_at > idle_cutoff
 
     def __str__(self):
         return f"Session for {self.user.email}"

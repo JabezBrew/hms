@@ -12,6 +12,7 @@ from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import get_user_facility
 from apps.users.models import UserSession
+from apps.users.session_service import get_session_idle_cutoff
 from .models import AuditLog
 from .serializers import AuditLogSerializer, AuditLogStatsSerializer
 from django.conf import settings
@@ -150,7 +151,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by('-count')[:5]
         )
 
-        session_queryset = UserSession.objects.filter(revoked_at__isnull=True, expires_at__gt=now)
+        session_queryset = UserSession.objects.filter(
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+            last_seen_at__gt=get_session_idle_cutoff(now),
+        )
         if getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False) and request.user.user_type == 'admin':
             active_sessions = session_queryset.exclude(facility_code='').values('user_id').distinct().count()
         else:

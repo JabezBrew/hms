@@ -589,6 +589,7 @@ JWT_AUTH_SAMESITE = env('JWT_AUTH_SAMESITE', default='None' if not DEBUG else 'L
 # Session tracking hash salt (defaults to SECRET_KEY)
 SESSION_HASH_SALT = env('SESSION_HASH_SALT', default=SECRET_KEY)
 USER_SESSION_RETENTION_DAYS = env.int('USER_SESSION_RETENTION_DAYS', default=90)
+USER_SESSION_IDLE_TIMEOUT_MINUTES = env.int('USER_SESSION_IDLE_TIMEOUT_MINUTES', default=30)
 
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
