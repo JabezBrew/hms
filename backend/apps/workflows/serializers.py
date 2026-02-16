@@ -245,6 +245,7 @@ class ClinicalNoteWorkflowCreateSerializer(serializers.Serializer):
         required=True
     )
     template_id = serializers.UUIDField(required=False, allow_null=True)
+    template_revision_id = serializers.UUIDField(required=False, allow_null=True)
     initial_data = serializers.JSONField(required=False, default=dict)
 
     def validate_patient_id(self, value):
@@ -312,6 +313,7 @@ class ClinicalNoteWorkflowCompleteSerializer(serializers.Serializer):
     """
     final_data = serializers.JSONField(required=False, default=dict)
     template_id = serializers.UUIDField(required=False, allow_null=True)
+    template_revision_id = serializers.UUIDField(required=False, allow_null=True)
     encounter_type = serializers.ChoiceField(
         choices=['inpatient', 'outpatient', 'emergency'],
         default='outpatient'

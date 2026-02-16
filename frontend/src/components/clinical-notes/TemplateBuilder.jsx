@@ -80,6 +80,12 @@ const OBSERVATION_TYPES = [
   { value: 'fluid_balance', label: 'Fluid Balance' },
 ];
 
+const TEMPLATE_MODE_OPTIONS = [
+  { value: 'structured', label: 'Structured' },
+  { value: 'written', label: 'Written' },
+  { value: 'hybrid', label: 'Hybrid' },
+];
+
 const QUICK_STARTS = [
   {
     value: 'soap',
@@ -151,6 +157,7 @@ const toSectionDraft = (section = {}) => ({
   type: section.type || 'text',
   required: section.required ?? false,
   observation_type: section.observationType || section.observation_type || '',
+  default_text: section.default_text || section.defaultText || '',
 });
 
 const getInitialStructure = (initialTemplate) => {
@@ -191,6 +198,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       category: initialTemplate?.category || 'custom',
       icon: initialTemplate?.icon || 'file-text',
       estimated_steps: initialTemplate?.estimated_steps || 3,
+      template_mode: initialTemplate?.latest_published_revision_mode || 'structured',
       structure: getInitialStructure(initialTemplate),
     },
   });
@@ -289,7 +297,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   };
 
   const addSection = () => {
-    append({ section: '', type: 'text', required: false, observation_type: '' });
+    append({ section: '', type: 'text', required: false, observation_type: '', default_text: '' });
   };
 
   const applyQuickStart = (quickStartValue) => {
@@ -318,11 +326,15 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       ...data,
       title: data.title.trim(),
       department: data.visibility === 'department' ? (data.department || '').trim() : '',
+      template_mode: data.template_mode || 'structured',
       structure: {
         sections: data.structure.map((section) => ({
           name: section.section.trim(),
           type: section.type || 'text',
           required: section.required ?? false,
+          ...(section.default_text?.trim()
+            ? { default_text: section.default_text.trim() }
+            : {}),
           ...(section.type === 'observation' && section.observation_type
             ? { observationType: section.observation_type }
             : {}),
@@ -440,7 +452,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                     Category
@@ -483,6 +495,27 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                       {ICON_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value} className="font-mono">
                           {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Template Mode
+                  </Label>
+                  <Select
+                    value={watch('template_mode')}
+                    onValueChange={(value) => setValue('template_mode', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger className="font-mono">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TEMPLATE_MODE_OPTIONS.map((modeOption) => (
+                        <SelectItem key={modeOption.value} value={modeOption.value} className="font-mono">
+                          {modeOption.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -762,6 +795,22 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                             </div>
                           ) : null}
 
+                          <div className="space-y-2 md:col-span-2">
+                            <Label
+                              htmlFor={`structure.${index}.default_text`}
+                              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                            >
+                              Starter Text
+                            </Label>
+                            <Textarea
+                              id={`structure.${index}.default_text`}
+                              {...register(`structure.${index}.default_text`)}
+                              rows={3}
+                              placeholder="Optional default wording. Supports placeholders like {{patient_name}}, {{age}}, {{today}}."
+                              className="font-mono text-xs resize-none"
+                            />
+                          </div>
+
                           <div className="md:col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
                             <div>
                               <p className="font-mono text-xs text-foreground">Required Section</p>
@@ -807,6 +856,9 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                   <p className="font-mono text-xs text-muted-foreground mt-2">
                     {watch('is_active') ? 'Active and selectable' : 'Inactive after save'}
                   </p>
+                  <p className="font-mono text-xs text-muted-foreground mt-2">
+                    Mode: {watch('template_mode') || 'structured'}
+                  </p>
                 </div>
               </div>
 
@@ -844,11 +896,18 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                               : ''}
                           </p>
                         </div>
-                        {section.required ? (
-                          <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
-                            Required
-                          </span>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          {section.default_text?.trim() ? (
+                            <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
+                              Starter text
+                            </span>
+                          ) : null}
+                          {section.required ? (
+                            <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
+                              Required
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     ))
                   )}

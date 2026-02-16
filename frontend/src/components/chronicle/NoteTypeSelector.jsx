@@ -177,6 +177,13 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                 const VisibilityIcon = VISIBILITY_ICONS[template.visibility] || Globe;
                 const steps = getStepsFromTemplate(template);
                 const isSystemTemplate = !template.created_by;
+                const templateMode = template.latest_published_revision_mode || 'structured';
+                const templateVersion = template.latest_published_revision_version;
+                const modeLabel = templateMode === 'written'
+                  ? 'Written'
+                  : templateMode === 'hybrid'
+                  ? 'Hybrid'
+                  : 'Structured';
 
                 return (
                   <button
@@ -234,7 +241,15 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                     )}
 
                     {/* Steps indicator */}
-                    <div className="flex items-center gap-1.5 mt-auto">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-auto">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-muted text-muted-foreground uppercase">
+                        {modeLabel}
+                      </span>
+                      {templateVersion ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-muted text-muted-foreground">
+                          v{templateVersion}
+                        </span>
+                      ) : null}
                       <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                         {template.estimated_steps || steps.length} steps
                       </span>

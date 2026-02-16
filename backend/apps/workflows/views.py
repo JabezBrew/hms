@@ -355,6 +355,8 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             initial_data = serializer.validated_data.get('initial_data', {})
             if serializer.validated_data.get('template_id'):
                 initial_data['template_id'] = str(serializer.validated_data['template_id'])
+            if serializer.validated_data.get('template_revision_id'):
+                initial_data['template_revision_id'] = str(serializer.validated_data['template_revision_id'])
 
             result = ClinicalNoteEngine.start(
                 user=request.user,
@@ -470,6 +472,9 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             template_id = serializer.validated_data.get('template_id')
             if not template_id:
                 template_id = workflow.context_data.get('template_id')
+            template_revision_id = serializer.validated_data.get('template_revision_id')
+            if not template_revision_id:
+                template_revision_id = workflow.context_data.get('template_revision_id')
 
             result = ClinicalNoteEngine.complete(
                 workflow=workflow,
@@ -477,6 +482,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 encounter_type=serializer.validated_data.get('encounter_type', 'outpatient'),
                 encounter_status=serializer.validated_data.get('encounter_status', 'finished'),
                 template_id=template_id,
+                template_revision_id=template_revision_id,
             )
 
             return Response(result)

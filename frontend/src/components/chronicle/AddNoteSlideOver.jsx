@@ -88,7 +88,10 @@ const AddNoteSlideOver = ({
 
   // Handle template selection
   const handleSelectTemplate = async (selectedTemplate) => {
-    await startWorkflow(selectedTemplate);
+    await startWorkflow(selectedTemplate, null, {
+      applyTemplateText: true,
+      applyMode: 'empty_only',
+    });
   };
 
   // Handle step data update

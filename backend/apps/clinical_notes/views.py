@@ -5,20 +5,28 @@ from rest_framework.decorators import action, api_view, permission_classes as ap
 from apps.core.pagination import StandardResultsSetPagination
 from datetime import timedelta
 from django.db import transaction, models
-from django.db.models import Q, Exists, OuterRef
+from django.db.models import Q, Exists, OuterRef, Subquery
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
 import copy
 import logging
 
-from .models import NoteTemplate, NoteEntry, NoteEntryVersion, Prescription
+from .models import NoteTemplate, NoteTemplateRevision, NoteEntry, NoteEntryVersion, Prescription
 from .serializers import (
     NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
     NoteEntryCloneSerializer, NoteEntryVersionSerializer, NoteEntryUpdateSerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
     PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer,
-    NoteEntryListSerializer, PrescriptionListSerializer
+    NoteEntryListSerializer, PrescriptionListSerializer,
+    NoteTemplateRevisionSerializer, NoteTemplateRevisionCreateSerializer,
+    NoteTemplateRenderSerializer,
+)
+from .template_utils import (
+    build_template_token_values,
+    infer_template_mode,
+    normalize_template_structure,
+    render_template_defaults,
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
 from ..users.models import PractitionerProfile, PatientProfile
@@ -131,6 +139,11 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         if not facility:
             return NoteTemplate.objects.none()
 
+        latest_published_revision_qs = NoteTemplateRevision.objects.filter(
+            template_id=OuterRef('pk'),
+            status='published',
+        ).order_by('-version')
+
         # Admins can see all templates
         if user.user_type == 'admin':
             queryset = NoteTemplate.objects.filter(facility=facility)
@@ -189,17 +202,46 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         if is_public is not None:
             queryset = queryset.filter(is_public=is_public.lower() == 'true')
 
-        return queryset.order_by('-updated_at')
+        return queryset.annotate(
+            latest_published_revision_id=Subquery(latest_published_revision_qs.values('id')[:1]),
+            latest_published_revision_version=Subquery(latest_published_revision_qs.values('version')[:1]),
+            latest_published_revision_mode=Subquery(latest_published_revision_qs.values('mode')[:1]),
+            latest_published_revision_status=Subquery(latest_published_revision_qs.values('status')[:1]),
+        ).order_by('-updated_at')
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
-        serializer.save(created_by=self.request.user, facility=facility)
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         """Set the updated_by field when updating a template."""
+        template = self.get_object()
+        if not self._can_manage_template(self.request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        if instance.is_system_template:
+            raise PermissionDenied("System templates cannot be deleted.")
+        if not self._can_manage_template(self.request.user, instance):
+            raise PermissionDenied("You do not have permission to delete this template.")
+        instance.delete()
+
+    def _can_manage_template(self, user, template):
+        if user.user_type == 'admin':
+            return True
+        return template.created_by_id == user.id
+
+    def _can_publish_template(self, user):
+        return user.user_type == 'admin'
+
+    def _get_latest_template_revision(self, template, status=None):
+        queryset = template.revisions.all()
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by('-version').first()
 
     @action(detail=False, methods=['get'])
     def available(self, request):
@@ -219,7 +261,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(request)
         if not facility:
             return Response([])
-        queryset = NoteTemplate.objects.filter(created_by=request.user, facility=facility)
+        queryset = self.get_queryset().filter(created_by=request.user, facility=facility)
         serializer = NoteTemplateListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
 
@@ -233,6 +275,150 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             for value, label in NoteTemplate.CATEGORY_CHOICES
         ])
 
+    @action(detail=True, methods=['get', 'post'])
+    def revisions(self, request, pk=None):
+        """
+        GET: List revisions for a template.
+        POST: Create a new draft revision.
+        """
+        template = self.get_object()
+
+        if request.method == 'GET':
+            revisions = template.revisions.order_by('-version')
+            serializer = NoteTemplateRevisionSerializer(revisions, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        if not self._can_manage_template(request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
+
+        serializer = NoteTemplateRevisionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        content = normalize_template_structure(validated_data.get('content'))
+        if not content.get('sections'):
+            return Response(
+                {'error': 'Template revision content must include at least one section.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        latest_revision = self._get_latest_template_revision(template)
+        next_version = (latest_revision.version + 1) if latest_revision else 1
+        revision_mode = validated_data.get('mode') or infer_template_mode(content)
+
+        revision = NoteTemplateRevision.objects.create(
+            template=template,
+            facility=template.facility,
+            version=next_version,
+            status='draft',
+            mode=revision_mode,
+            content=content,
+            change_summary=validated_data.get('change_summary', ''),
+            created_by=request.user,
+        )
+
+        output = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path=r'revisions/(?P<revision_id>[^/.]+)/submit-review')
+    @transaction.atomic
+    def submit_revision_review(self, request, pk=None, revision_id=None):
+        template = self.get_object()
+        if not self._can_manage_template(request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
+
+        revision = template.revisions.filter(id=revision_id).first()
+        if not revision:
+            return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if revision.status != 'draft':
+            return Response({'error': 'Only draft revisions can be submitted for review.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        revision.status = 'in_review'
+        revision.submitted_by = request.user
+        revision.submitted_at = timezone.now()
+        revision.save(update_fields=['status', 'submitted_by', 'submitted_at', 'updated_at'])
+
+        serializer = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path=r'revisions/(?P<revision_id>[^/.]+)/publish')
+    @transaction.atomic
+    def publish_revision(self, request, pk=None, revision_id=None):
+        template = self.get_object()
+        if not self._can_publish_template(request.user):
+            raise PermissionDenied("Only admins can publish shared template revisions.")
+
+        revision = template.revisions.select_for_update().filter(id=revision_id).first()
+        if not revision:
+            return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if revision.status == 'archived':
+            return Response({'error': 'Archived revisions cannot be published.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        template.revisions.exclude(id=revision.id).filter(status='published').update(status='archived')
+        revision.status = 'published'
+        revision.published_by = request.user
+        revision.published_at = timezone.now()
+        revision.save(update_fields=['status', 'published_by', 'published_at', 'updated_at'])
+
+        template.structure = revision.content
+        template.updated_by = request.user
+        template.save(update_fields=['structure', 'updated_by', 'updated_at'])
+
+        serializer = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def render(self, request, pk=None):
+        """
+        Render template defaults with safe token substitution.
+        """
+        template = self.get_object()
+        serializer = NoteTemplateRenderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+
+        revision = None
+        revision_id = payload.get('revision_id')
+        if revision_id:
+            revision = template.revisions.filter(id=revision_id).first()
+            if not revision:
+                return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not revision:
+            revision = self._get_latest_template_revision(template, status='published')
+        if not revision:
+            revision = self._get_latest_template_revision(template)
+
+        patient = None
+        patient_id = payload.get('patient_id')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return Response({'error': 'Patient not found.'}, status=status.HTTP_404_NOT_FOUND)
+            _require_patient_facility(request, patient)
+            check_clinical_access(request.user, patient)
+
+        content = revision.content if revision else normalize_template_structure(template.structure)
+        token_values = build_template_token_values(
+            patient=patient,
+            today=timezone.localdate(),
+            base_data=payload.get('extra_tokens') or {},
+        )
+        rendered_data = render_template_defaults(
+            content=content,
+            token_values=token_values,
+            base_data=payload.get('base_data') or {},
+            apply_mode=payload.get('apply_mode', 'empty_only'),
+            selected_sections=payload.get('sections') or [],
+        )
+
+        return Response({
+            'template_id': str(template.id),
+            'revision_id': str(revision.id) if revision else None,
+            'revision_version': revision.version if revision else None,
+            'revision_status': revision.status if revision else None,
+            'revision_mode': revision.mode if revision else infer_template_mode(content),
+            'rendered_data': rendered_data,
+        })
+
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         """
@@ -240,12 +426,15 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         The new template will be private by default.
         """
         original = self.get_object()
+        source_revision = self._get_latest_template_revision(original, status='published')
+        source_content = source_revision.content if source_revision else normalize_template_structure(original.structure)
+        source_mode = source_revision.mode if source_revision else infer_template_mode(source_content)
 
         # Create a copy with new title and reset ownership
         new_template = NoteTemplate.objects.create(
             title=f"{original.title} (Copy)",
             description=original.description,
-            structure=original.structure,
+            structure=source_content,
             is_active=True,
             visibility='private',
             category=original.category,
@@ -253,6 +442,19 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             estimated_steps=original.estimated_steps,
             created_by=request.user,
             facility=original.facility,
+            updated_by=request.user,
+        )
+
+        NoteTemplateRevision.objects.create(
+            template=new_template,
+            facility=new_template.facility,
+            version=1,
+            status='published',
+            mode=source_mode,
+            content=source_content,
+            created_by=request.user,
+            published_by=request.user,
+            published_at=timezone.now(),
         )
 
         serializer = NoteTemplateSerializer(new_template, context={'request': request})
@@ -282,7 +484,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             return NoteEntry.objects.none()
 
         queryset = NoteEntry.objects.select_related(
-            'template', 'patient', 'patient__user', 'encounter', 'practitioner'
+            'template', 'template_revision', 'patient', 'patient__user', 'encounter', 'practitioner'
         ).annotate(
             is_signed=Exists(
                 NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
@@ -493,8 +695,14 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         if not facility or target_patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
         check_clinical_access(request.user, target_patient)
+        template_revision = source_note.template_revision or source_note.template.revisions.filter(
+            status='published'
+        ).order_by('-version').first()
+
         new_note = NoteEntry.objects.create(
             template=source_note.template,
+            template_revision=template_revision,
+            template_version=template_revision.version if template_revision else source_note.template_version,
             patient=target_patient,
             encounter=encounter,
             practitioner=practitioner_profile,
@@ -543,6 +751,13 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Add practitioner to the request data
         data = request.data.copy()
         data['practitioner'] = practitioner_profile.id
+        # Backwards-compatible aliases used by some frontend fallback paths.
+        if data.get('patient_id') and not data.get('patient'):
+            data['patient'] = data.get('patient_id')
+        if data.get('template_id') and not data.get('template'):
+            data['template'] = data.get('template_id')
+        if data.get('template_revision_id') and not data.get('template_revision'):
+            data['template_revision'] = data.get('template_revision_id')
 
         # Get patient for auto-encounter logic
         patient_id = data.get('patient')

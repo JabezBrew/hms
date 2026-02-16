@@ -189,6 +189,33 @@ export const clinicalNotesApi = {
   },
 
   /**
+   * Get template revisions
+   * @param {string} id - Template ID
+   * @returns {Promise<Array>} Template revisions
+   */
+  getTemplateRevisions: async (id) => {
+    try {
+      return await apiClient.getAll(`/clinical-notes/templates/${id}/revisions/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch template revisions'));
+    }
+  },
+
+  /**
+   * Render template defaults for note prefill
+   * @param {string} id - Template ID
+   * @param {Object} data - Render payload
+   * @returns {Promise<Object>} Rendered defaults with revision metadata
+   */
+  renderTemplate: async (id, data = {}) => {
+    try {
+      return await apiClient.post(`/clinical-notes/templates/${id}/render/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to render template defaults'));
+    }
+  },
+
+  /**
    * Get available sections for copying from a note entry
    * @param {string} id - Note entry ID
    * @returns {Promise<Array>} List of sections with preview info

@@ -1711,7 +1711,8 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         final_data: Dict[str, Any],
         encounter_type: str = 'outpatient',
         encounter_status: str = 'finished',
-        template_id: Optional[str] = None
+        template_id: Optional[str] = None,
+        template_revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Complete clinical note workflow and generate artifacts
@@ -1722,11 +1723,12 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             encounter_type: Type of encounter to create
             encounter_status: Status of encounter
             template_id: UUID of the template to use for the note
+            template_revision_id: UUID of the template revision used to initialize note data
 
         Returns:
             Dictionary with encounter_id and generated artifacts
         """
-        from apps.clinical_notes.models import NoteTemplate
+        from apps.clinical_notes.models import NoteTemplate, NoteTemplateRevision
         from apps.users.models import PractitionerProfile
         from apps.encounters.services import get_or_create_active_encounter
 
@@ -1740,18 +1742,37 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
                     setattr(clinical_note_data, field, value)
             clinical_note_data.save()
 
-        # Get template_id from parameter or context
+        # Get template identifiers from parameter or context
         if not template_id:
             template_id = context.get('template_id')
+        if not template_revision_id:
+            template_revision_id = context.get('template_revision_id')
 
-        # Get template
+        # Resolve revision and template
+        template_revision = None
+        if template_revision_id:
+            template_revision = NoteTemplateRevision.objects.select_related('template').filter(
+                id=template_revision_id
+            ).first()
+
         template = None
         if template_id:
             template = NoteTemplate.objects.filter(id=template_id).first()
+        elif template_revision:
+            template = template_revision.template
+
+        if template_revision and template and template_revision.template_id != template.id:
+            raise ValueError("Template revision does not belong to the selected template")
 
         if not template:
             logger.error(f"No template found for workflow {workflow.id}, template_id={template_id}")
             raise ValueError("Template is required to create a clinical note")
+
+        if not template_revision:
+            template_revision = NoteTemplateRevision.objects.filter(
+                template=template,
+                status='published',
+            ).order_by('-version').first()
 
         # Get practitioner profile
         practitioner = None
@@ -1787,6 +1808,8 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         try:
             note = NoteEntry.objects.create(
                 template=template,
+                template_revision=template_revision,
+                template_version=template_revision.version if template_revision else None,
                 patient=workflow.patient,
                 encounter=encounter,
                 practitioner=practitioner,
