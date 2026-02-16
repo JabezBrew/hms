@@ -2,10 +2,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError, TokenBackendError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.state import token_backend
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, SimpleRateThrottle
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
@@ -23,6 +25,22 @@ from apps.users.mfa_service import (
     get_mfa_enrollment_status,
     is_mfa_required,
 )
+
+
+def _decode_refresh_claims(refresh_token):
+    if not refresh_token:
+        return {}
+    try:
+        payload = token_backend.decode(refresh_token, verify=True)
+    except TokenBackendError:
+        return {}
+    if payload.get(api_settings.TOKEN_TYPE_CLAIM) != 'refresh':
+        return {}
+    return {
+        'user_id': payload.get(api_settings.USER_ID_CLAIM),
+        'facility_code': normalize_facility_code(payload.get('facility_code')),
+        'email': payload.get('email'),
+    }
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -188,6 +206,14 @@ class LogoutView(APIView):
                     user = User.objects.filter(id=token_user_id).first()
             except (InvalidToken, TokenError):
                 refresh = None
+                # If the refresh token was already blacklisted by another logout call,
+                # we can still verify/decode claims for audit attribution.
+                decoded_claims = _decode_refresh_claims(refresh_token)
+                decoded_user_id = decoded_claims.get('user_id')
+                token_facility_code = token_facility_code or decoded_claims.get('facility_code')
+                email = email or decoded_claims.get('email')
+                if decoded_user_id and not user:
+                    user = User.objects.filter(id=decoded_user_id).first()
 
         if not getattr(request, 'facility_code', None) and token_facility_code:
             set_current_facility_code(token_facility_code)

@@ -32,6 +32,7 @@ export function SessionTimeoutWarning() {
   // Activity tracking
   const [lastActivity, setLastActivity] = useState(Date.now());
   const lastActivityUpdateRef = useRef(Date.now());
+  const timeoutHandledRef = useRef(false);
 
   // Get session start time from local storage
   const getSessionStartTime = () => {
@@ -59,10 +60,14 @@ export function SessionTimeoutWarning() {
 
   // Handle session timeout - notify backend to revoke the session
   const handleTimeout = useCallback(() => {
+    if (timeoutHandledRef.current) {
+      return;
+    }
+    timeoutHandledRef.current = true;
     setShowWarning(false);
     // Try to notify backend even if token may be expired - backend logout
     // endpoint allows unauthenticated calls and will use the refresh cookie
-    logout(false);
+    void logout(false);
   }, [logout]);
 
   // Setup activity listeners
@@ -124,11 +129,13 @@ export function SessionTimeoutWarning() {
       // Logout if inactivity timeout exceeded
       if (timeSinceActivity >= INACTIVITY_TIMEOUT) {
         handleTimeout();
+        return;
       }
 
       // Also periodically check if session is still valid (token expiration)
       if (!isSessionValid()) {
         handleTimeout();
+        return;
       }
     };
 

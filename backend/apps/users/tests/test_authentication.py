@@ -19,6 +19,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.audit.models import AuditAction
 from apps.users.models import PasswordResetToken
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -284,6 +285,60 @@ class TestLogout:
             status.HTTP_204_NO_CONTENT,
             status.HTTP_401_UNAUTHORIZED
         ]
+
+    @patch('apps.audit.services.log_audit_async.delay')
+    def test_logout_without_identity_logs_anonymous_session(
+        self,
+        mock_audit_delay,
+        api_client,
+        db,
+    ):
+        """Unauthenticated logout should be tracked as anonymous session activity."""
+        response = api_client.post('/api/auth/logout/', format='json')
+
+        assert response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+        mock_audit_delay.assert_called_once()
+        kwargs = mock_audit_delay.call_args.kwargs
+        assert kwargs['action'] == AuditAction.LOGOUT
+        assert kwargs['user_id'] is None
+        assert kwargs['user_email'] == 'anonymous'
+        assert kwargs['user_type'] == 'anonymous'
+        assert kwargs['resource_type'] == 'Session'
+        assert kwargs['resource_name'] == 'anonymous session'
+        assert kwargs['description'] == 'Anonymous session logout request'
+
+    @patch('apps.audit.services.log_audit_async.delay')
+    def test_logout_after_blacklist_keeps_user_audit_attribution(
+        self,
+        mock_audit_delay,
+        db,
+    ):
+        """Repeated logout with a now-blacklisted refresh token should still resolve user identity."""
+        from django.conf import settings
+
+        user = UserFactory(email='logout-audit@test.com')
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+        client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = str(refresh)
+
+        first_response = client.post('/api/auth/logout/', format='json')
+        assert first_response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+
+        client.credentials()
+        client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = str(refresh)
+        mock_audit_delay.reset_mock()
+
+        second_response = client.post('/api/auth/logout/', format='json')
+        assert second_response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+
+        mock_audit_delay.assert_called_once()
+        kwargs = mock_audit_delay.call_args.kwargs
+        assert kwargs['action'] == AuditAction.LOGOUT
+        assert kwargs['user_id'] == str(user.id)
+        assert kwargs['user_email'] == user.email
+        assert kwargs['resource_type'] == 'User'
+        assert kwargs['resource_name'] == user.email
 
 
 # =============================================================================

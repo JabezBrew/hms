@@ -507,6 +507,41 @@ describe('AuthProvider', () => {
         expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
       })
     })
+
+    it('deduplicates concurrent backend logout requests', async () => {
+      const storedUser = {
+        id: 'user-123',
+        email: 'test@test.com',
+        role: 'doctor',
+      }
+
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      mockPerformTokenRefresh.mockResolvedValue('access-token-123')
+
+      authApi.logout.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({}), 50))
+      )
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+        expect(result.current.isAuthenticated).toBe(true)
+      })
+
+      await act(async () => {
+        const p1 = result.current.logout(false)
+        const p2 = result.current.logout(false)
+        vi.advanceTimersByTime(60)
+        await Promise.all([p1, p2])
+      })
+
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(notifications.success).toHaveBeenCalledTimes(1)
+      expect(result.current.isAuthenticated).toBe(false)
+    })
   })
 
   // =============================================================================

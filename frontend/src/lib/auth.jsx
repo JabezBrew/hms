@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
   const defaultFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || null
   // Store access token in memory (not in localStorage)
   const accessTokenRef = useRef(null)
+  const logoutPromiseRef = useRef(null)
 
   // Function to get the current access token
   const getAccessToken = useCallback(() => {
@@ -81,14 +82,27 @@ export function AuthProvider({ children }) {
 
   // Logout function - defined early to avoid circular dependency
   const logout = useCallback(async (localOnly = false) => {
-    if (!localOnly) {
-      await notifyBackendLogout()
+    if (logoutPromiseRef.current) {
+      return logoutPromiseRef.current
     }
 
-    clearLocalAuthState()
+    const logoutPromise = (async () => {
+      if (!localOnly) {
+        await notifyBackendLogout()
+      }
 
-    if (!localOnly) {
-      notifications.success("Logged out successfully")
+      clearLocalAuthState()
+
+      if (!localOnly) {
+        notifications.success("Logged out successfully")
+      }
+    })()
+
+    logoutPromiseRef.current = logoutPromise
+    try {
+      await logoutPromise
+    } finally {
+      logoutPromiseRef.current = null
     }
   }, [clearLocalAuthState, notifyBackendLogout])
 

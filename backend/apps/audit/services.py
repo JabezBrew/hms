@@ -87,6 +87,7 @@ class AuditService:
         """
         normalized_email = email.strip() if isinstance(email, str) else email
         email = normalized_email
+        has_identity = bool(user or email)
 
         resolved_user = user
         if not resolved_user and email:
@@ -99,8 +100,11 @@ class AuditService:
             user_identifier = user.email if user else email or 'unknown'
             description = f"User {user_identifier} logged in successfully"
         elif action == AuditAction.LOGOUT:
-            user_identifier = user.email if user else email or 'unknown'
-            description = f"User {user_identifier} logged out"
+            if has_identity:
+                user_identifier = user.email if user else email
+                description = f"User {user_identifier} logged out"
+            else:
+                description = "Anonymous session logout request"
         elif action == AuditAction.LOGIN_FAILED:
             user_identifier = email or (user.email if user else 'unknown')
             description = f"Failed login attempt for {user_identifier}"
@@ -129,8 +133,28 @@ class AuditService:
 
         # Get user details
         user_id = str(user.id) if user else None
-        user_email = user.email if user else email
-        user_type = getattr(user, 'user_type', 'unknown') if user else 'unknown'
+        if user:
+            user_email = user.email
+            user_type = getattr(user, 'user_type', 'unknown')
+        elif email:
+            user_email = email
+            user_type = 'unknown'
+        elif action == AuditAction.LOGOUT:
+            # Avoid attributing anonymous logout calls to "system".
+            user_email = 'anonymous'
+            user_type = 'anonymous'
+        else:
+            user_email = email
+            user_type = 'unknown'
+
+        if action == AuditAction.LOGOUT and not has_identity:
+            resource_type = 'Session'
+            resource_id = None
+            resource_name = 'anonymous session'
+        else:
+            resource_type = 'User'
+            resource_id = user_id
+            resource_name = user_email
 
         if facility_id is None:
             if facility is not None:
@@ -147,14 +171,14 @@ class AuditService:
             user_id=user_id,
             action=action,
             category=AuditCategory.AUTHENTICATION,
-            resource_type='User',
-            resource_id=user_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
             description=description,
             ip_address=ip_address,
             user_agent=user_agent,
             user_email=user_email,
             user_type=user_type,
-            resource_name=user_email,
+            resource_name=resource_name,
             facility_id=str(facility_id) if facility_id else None,
         )
 
