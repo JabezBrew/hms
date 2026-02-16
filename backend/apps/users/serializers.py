@@ -271,7 +271,10 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
     gender = serializers.CharField(source='user.gender', read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     current_ward = serializers.SerializerMethodField()
+    patient_location = serializers.SerializerMethodField()
+    active_clinic_names = serializers.SerializerMethodField()
     admission_status = serializers.SerializerMethodField()
+    registry_status = serializers.SerializerMethodField()
     admission_date = serializers.SerializerMethodField()
 
     class Meta:
@@ -284,7 +287,10 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             'gender',
             'created_at',
             'current_ward',
+            'patient_location',
+            'active_clinic_names',
             'admission_status',
+            'registry_status',
             'admission_date',
         ]
 
@@ -292,10 +298,51 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
         """Get full name directly from prefetched user."""
         return obj.user.get_full_name()
 
+    def _get_active_admission(self, obj):
+        if hasattr(obj, 'active_admissions_list'):
+            return obj.active_admissions_list[0] if obj.active_admissions_list else None
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            return next(
+                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                None
+            )
+        return obj.admissions.filter(status__in=['admitted', 'waiting']).select_related('bed', 'bed__ward').first()
+
+    def _get_active_encounters(self, obj):
+        if hasattr(obj, 'active_encounters_list'):
+            return obj.active_encounters_list
+
+        if hasattr(obj, '_prefetched_objects_cache') and 'encounters' in obj._prefetched_objects_cache:
+            return [e for e in obj.encounters.all() if e.status in ['planned', 'in-progress']]
+
+        from apps.encounters.models import Encounter
+        return list(
+            Encounter.objects.filter(
+                patient=obj,
+                status__in=['planned', 'in-progress'],
+            ).select_related('clinic').order_by('-start_time', '-id')
+        )
+
+    def _get_active_clinic_names(self, obj):
+        names = []
+        seen = set()
+        for encounter in self._get_active_encounters(obj):
+            if encounter.encounter_type != 'outpatient':
+                continue
+            clinic_name = None
+            if getattr(encounter, 'clinic', None):
+                clinic_name = encounter.clinic.name
+            elif encounter.location:
+                clinic_name = encounter.location
+            if clinic_name and clinic_name not in seen:
+                seen.add(clinic_name)
+                names.append(clinic_name)
+        return names
+
     def get_current_ward(self, obj):
         """Get ward name from prefetched active_admissions_list."""
-        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
-            admission = obj.active_admissions_list[0]
+        admission = self._get_active_admission(obj)
+        if admission:
             if admission.status == 'waiting':
                 return "Waiting List"
             if admission.bed:
@@ -303,18 +350,89 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return "Admitted (No Bed)"
         return None
 
+    def get_patient_location(self, obj):
+        """
+        Unified location for registry:
+        active ward/waiting list first, then active outpatient clinic/location.
+        """
+        admission = self._get_active_admission(obj)
+        if admission:
+            if admission.status == 'waiting':
+                return "Waiting List"
+            if admission.bed:
+                return admission.bed.ward.name
+            return "Admitted (No Bed)"
+
+        clinic_names = self._get_active_clinic_names(obj)
+        if clinic_names:
+            return clinic_names[0]
+
+        for encounter in self._get_active_encounters(obj):
+            if encounter.location:
+                return encounter.location
+        return None
+
+    def get_active_clinic_names(self, obj):
+        return self._get_active_clinic_names(obj)
+
     def get_admission_date(self, obj):
         """Get admission date from prefetched active_admissions_list."""
-        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
-            admission = obj.active_admissions_list[0]
+        admission = self._get_active_admission(obj)
+        if admission:
             if admission.admission_date:
                 return admission.admission_date.isoformat()
         return None
 
     def get_admission_status(self, obj):
         """Get status from prefetched active_admissions_list."""
-        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
-            return obj.active_admissions_list[0].status
+        admission = self._get_active_admission(obj)
+        if admission:
+            return admission.status
+        return None
+
+    def get_registry_status(self, obj):
+        """
+        Registry status precedence:
+        active admission > active encounter > latest terminal admission > latest completed outpatient.
+        """
+        admission = self._get_active_admission(obj)
+        if admission:
+            return admission.status
+
+        active_encounters = self._get_active_encounters(obj)
+        if active_encounters:
+            return active_encounters[0].status
+
+        has_terminal_annotation = hasattr(obj, 'latest_terminal_admission_status')
+        latest_terminal_admission_status = getattr(obj, 'latest_terminal_admission_status', None)
+        if latest_terminal_admission_status:
+            return latest_terminal_admission_status
+
+        has_completed_annotation = hasattr(obj, 'latest_completed_outpatient_status')
+        latest_completed_outpatient_status = getattr(obj, 'latest_completed_outpatient_status', None)
+        if latest_completed_outpatient_status:
+            return latest_completed_outpatient_status
+
+        # Avoid per-row fallback queries when list-query annotations are present.
+        if has_terminal_annotation or has_completed_annotation:
+            return None
+
+        # Fallback if annotation is unavailable.
+        latest_terminal_admission_status = obj.admissions.filter(
+            status__in=['discharged', 'transferred', 'deceased']
+        ).order_by('-admission_date').values_list('status', flat=True).first()
+        if latest_terminal_admission_status:
+            return latest_terminal_admission_status
+
+        from apps.encounters.models import Encounter
+        latest_completed_outpatient_status = Encounter.objects.filter(
+            patient=obj,
+            encounter_type='outpatient',
+            status__in=['finished', 'cancelled'],
+        ).order_by('-end_time', '-start_time', '-id').values_list('status', flat=True).first()
+        if latest_completed_outpatient_status:
+            return latest_completed_outpatient_status
+
         return None
 
 

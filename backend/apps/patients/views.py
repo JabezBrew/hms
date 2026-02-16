@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Prefetch, Exists, OuterRef, Subquery
+from django.db.models import Prefetch, Exists, OuterRef, Subquery, Q, Value, CharField
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from django.conf import settings
@@ -397,6 +398,7 @@ class PatientViewSet(viewsets.ViewSet):
         requested_page_size = request.query_params.get('page_size', '').strip()
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+        registry_scope = request.query_params.get('registry_scope', 'all').strip().lower() or 'all'
 
         ordering_field_map = {
             'created_at': ('created_at',),
@@ -404,8 +406,10 @@ class PatientViewSet(viewsets.ViewSet):
             'medical_record_number': ('medical_record_number',),
             'date_of_birth': ('user__date_of_birth', 'user__last_name', 'user__first_name'),
             'gender': ('user__gender', 'user__last_name', 'user__first_name'),
-            'current_ward': ('sort_current_ward', 'user__last_name', 'user__first_name'),
+            'current_ward': ('sort_patient_location', 'user__last_name', 'user__first_name'),
+            'patient_location': ('sort_patient_location', 'user__last_name', 'user__first_name'),
             'admission_status': ('sort_admission_status', 'user__last_name', 'user__first_name'),
+            'registry_status': ('sort_registry_status', 'user__last_name', 'user__first_name'),
             'admission_date': ('sort_admission_date', 'user__last_name', 'user__first_name'),
         }
         ordering_desc = ordering.startswith('-')
@@ -426,6 +430,13 @@ class PatientViewSet(viewsets.ViewSet):
         allowed_admission_statuses = {'admitted', 'waiting', 'discharged', 'transferred', 'deceased'}
         allowed_admission_types = {'emergency', 'elective', 'maternity', 'newborn'}
         allowed_encounter_types = {'inpatient', 'outpatient', 'emergency'}
+        allowed_registry_scopes = {'active', 'discharged', 'deceased', 'all'}
+
+        if registry_scope not in allowed_registry_scopes:
+            return Response(
+                {"error": "Invalid registry_scope value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if admission_status and admission_status not in allowed_admission_statuses:
             return Response(
@@ -463,7 +474,7 @@ class PatientViewSet(viewsets.ViewSet):
         has_other_filters = bool(
             ward_id or admission_start or admission_end or department_id or admission_status or
             admission_type or encounter_type or attending_id or age_min_value is not None or
-            age_max_value is not None or my_patients
+            age_max_value is not None or my_patients or registry_scope != 'all'
         )
 
         if include_fhir and (not query or has_other_filters):
@@ -503,6 +514,7 @@ class PatientViewSet(viewsets.ViewSet):
             "page": requested_page,
             "page_size": requested_page_size,
             "my_patients": my_patients,
+            "registry_scope": registry_scope,
             "user_id": str(request.user.id),
         }
         cache_key = facility_cache_key(
@@ -537,6 +549,8 @@ class PatientViewSet(viewsets.ViewSet):
                     search_parts.append(f"Age Max: {age_max_value}")
                 if my_patients:
                     search_parts.append("My Patients: true")
+                if registry_scope != 'all':
+                    search_parts.append(f"Registry Scope: {registry_scope}")
                 search_parts.append(f"Ordering: {ordering}")
                 search_parts.append(f"Page: {requested_page}")
                 if requested_page_size:
@@ -574,6 +588,8 @@ class PatientViewSet(viewsets.ViewSet):
             search_parts.append(f"Age Max: {age_max_value}")
         if my_patients:
             search_parts.append("My Patients: true")
+        if registry_scope != 'all':
+            search_parts.append(f"Registry Scope: {registry_scope}")
         search_parts.append(f"Ordering: {ordering}")
         search_parts.append(f"Page: {requested_page}")
         if requested_page_size:
@@ -587,7 +603,6 @@ class PatientViewSet(viewsets.ViewSet):
         )
 
         try:
-            from django.db.models import Q
             from apps.wards.models import Admission
             from apps.encounters.models import Encounter
             from apps.users.models import UserPatientList
@@ -599,7 +614,7 @@ class PatientViewSet(viewsets.ViewSet):
             if not facility:
                 raise PermissionDenied("Facility context is required.")
 
-            # OPTIMIZED: Base query with Prefetch for active admissions only
+            # Base query with bounded prefetches for active admission/encounter context.
             local_patients_qs = PatientProfile.objects.select_related('user').prefetch_related(
                 Prefetch(
                     'admissions',
@@ -607,6 +622,13 @@ class PatientViewSet(viewsets.ViewSet):
                         status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
+                ),
+                Prefetch(
+                    'encounters',
+                    queryset=Encounter.objects.filter(
+                        status__in=ACTIVE_ENCOUNTER_STATUSES
+                    ).select_related('clinic').order_by('-start_time', '-id'),
+                    to_attr='active_encounters_list'
                 )
             ).filter(facility=facility)
 
@@ -671,6 +693,57 @@ class PatientViewSet(viewsets.ViewSet):
                     patient=OuterRef('pk')
                 )
                 local_patients_qs = local_patients_qs.filter(Exists(my_patients_exists))
+
+            if registry_scope != 'all':
+                active_admission_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=ACTIVE_ADMISSION_STATUSES,
+                )
+                active_encounter_exists_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=ACTIVE_ENCOUNTER_STATUSES,
+                )
+                deceased_admission_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status='deceased',
+                )
+                discharged_or_transferred_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=['discharged', 'transferred'],
+                )
+                completed_outpatient_exists_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    encounter_type='outpatient',
+                    status__in=['finished', 'cancelled'],
+                )
+
+                local_patients_qs = local_patients_qs.annotate(
+                    has_active_admission=Exists(active_admission_exists_qs),
+                    has_active_encounter=Exists(active_encounter_exists_qs),
+                    has_deceased_admission=Exists(deceased_admission_exists_qs),
+                    has_discharged_or_transferred_admission=Exists(discharged_or_transferred_exists_qs),
+                    has_completed_outpatient=Exists(completed_outpatient_exists_qs),
+                )
+
+                if registry_scope == 'active':
+                    local_patients_qs = local_patients_qs.filter(
+                        Q(has_active_admission=True) | Q(has_active_encounter=True)
+                    )
+                elif registry_scope == 'deceased':
+                    local_patients_qs = local_patients_qs.filter(has_deceased_admission=True)
+                elif registry_scope == 'discharged':
+                    local_patients_qs = local_patients_qs.filter(
+                        has_active_admission=False,
+                        has_active_encounter=False,
+                        has_deceased_admission=False,
+                    ).filter(
+                        Q(has_discharged_or_transferred_admission=True) | Q(has_completed_outpatient=True)
+                    )
 
             admission_filters_active = bool(
                 ward_id or admission_start_date or admission_end_date or admission_status or admission_type
@@ -766,16 +839,47 @@ class PatientViewSet(viewsets.ViewSet):
                     earliest_dob = years_ago(age_max_value)
                     local_patients_qs = local_patients_qs.filter(user__date_of_birth__gte=earliest_dob)
 
-            # Annotate active-admission fields once for ordering without N+1 lookups.
+            # Annotate sortable and serializer fields once to avoid per-row queries.
             active_admission_sort_qs = Admission.objects.filter(
                 patient=OuterRef('pk'),
                 facility=facility,
                 status__in=ACTIVE_ADMISSION_STATUSES,
             ).order_by('-admission_date')
+            active_encounter_sort_qs = Encounter.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                status__in=ACTIVE_ENCOUNTER_STATUSES,
+            ).order_by('-start_time', '-id')
+            terminal_admission_sort_qs = Admission.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                status__in=['discharged', 'transferred', 'deceased'],
+            ).order_by('-admission_date', '-id')
+            completed_outpatient_sort_qs = Encounter.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                encounter_type='outpatient',
+                status__in=['finished', 'cancelled'],
+            ).order_by('-end_time', '-start_time', '-id')
             local_patients_qs = local_patients_qs.annotate(
                 sort_admission_date=Subquery(active_admission_sort_qs.values('admission_date')[:1]),
                 sort_admission_status=Subquery(active_admission_sort_qs.values('status')[:1]),
                 sort_current_ward=Subquery(active_admission_sort_qs.values('bed__ward__name')[:1]),
+                sort_patient_location=Coalesce(
+                    Subquery(active_admission_sort_qs.values('bed__ward__name')[:1]),
+                    Subquery(active_encounter_sort_qs.values('clinic__name')[:1]),
+                    Subquery(active_encounter_sort_qs.values('location')[:1]),
+                    Value('', output_field=CharField()),
+                ),
+                sort_registry_status=Coalesce(
+                    Subquery(active_admission_sort_qs.values('status')[:1]),
+                    Subquery(active_encounter_sort_qs.values('status')[:1]),
+                    Subquery(terminal_admission_sort_qs.values('status')[:1]),
+                    Subquery(completed_outpatient_sort_qs.values('status')[:1]),
+                    Value('', output_field=CharField()),
+                ),
+                latest_terminal_admission_status=Subquery(terminal_admission_sort_qs.values('status')[:1]),
+                latest_completed_outpatient_status=Subquery(completed_outpatient_sort_qs.values('status')[:1]),
             )
 
             order_fields = [
@@ -809,6 +913,7 @@ class PatientViewSet(viewsets.ViewSet):
 
             response_data = {
                 "query": query,
+                "registry_scope": registry_scope,
                 "ordering": ordering,
                 "total": total_results,
                 "count": total_results,

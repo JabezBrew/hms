@@ -26,6 +26,11 @@ import { Switch } from "@/components/ui/switch";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Combobox } from "@/components/ui/combobox";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -84,6 +89,21 @@ const ENCOUNTER_TYPE_OPTIONS = [
 
 const DEFAULT_SEARCH_ORDERING = '-created_at';
 const SEARCH_TABLE_PAGE_SIZE = 25;
+const DEFAULT_REGISTRY_SCOPE = 'active';
+
+const REGISTRY_SCOPE_TABS = [
+  { value: 'active', label: 'Active' },
+  { value: 'discharged', label: 'Discharged' },
+  { value: 'deceased', label: 'Deceased' },
+  { value: 'all', label: 'All Registered' },
+];
+
+const REGISTRY_SCOPE_LABELS = {
+  active: 'Active patients',
+  discharged: 'Discharged patients',
+  deceased: 'Deceased patients',
+  all: 'All registered patients',
+};
 
 const TABLE_COLUMNS = [
   { key: 'created_at', label: 'Registered' },
@@ -91,8 +111,8 @@ const TABLE_COLUMNS = [
   { key: 'name', label: 'Name' },
   { key: 'date_of_birth', label: 'DOB / Age' },
   { key: 'gender', label: 'Sex' },
-  { key: 'current_ward', label: 'Ward' },
-  { key: 'admission_status', label: 'Status' },
+  { key: 'patient_location', label: 'Patient Location' },
+  { key: 'registry_status', label: 'Status' },
 ];
 
 const createEmptyFilters = () => ({
@@ -123,11 +143,12 @@ const countActiveFilters = (filters) => {
   return count;
 };
 
-const buildSearchParams = (query, filters) => {
+const buildSearchParams = (query, filters, registryScope) => {
   const params = {};
   if (query && query.trim().length >= 2) {
     params.query = query.trim();
   }
+  params.registry_scope = registryScope;
 
   if (filters.admissionStart) {
     params.admission_start = format(filters.admissionStart, 'yyyy-MM-dd');
@@ -208,6 +229,31 @@ const formatAdmissionStatus = (status) => {
     .join(' ');
 };
 
+const getPatientLocationDisplay = (patient) => {
+  const activeClinicNames = Array.isArray(patient?.active_clinic_names)
+    ? patient.active_clinic_names.filter(Boolean)
+    : [];
+
+  if (activeClinicNames.length > 1) {
+    return {
+      label: `${activeClinicNames[0]} +${activeClinicNames.length - 1}`,
+      tooltip: activeClinicNames.join(', '),
+    };
+  }
+
+  if (activeClinicNames.length === 1) {
+    return {
+      label: activeClinicNames[0],
+      tooltip: null,
+    };
+  }
+
+  return {
+    label: patient?.patient_location || patient?.current_ward || '—',
+    tooltip: null,
+  };
+};
+
 /**
  * PatientChronicleListPage - Table-first patient registry
  *
@@ -224,6 +270,7 @@ const PatientChronicleListPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOrdering, setSearchOrdering] = useState(DEFAULT_SEARCH_ORDERING);
   const [searchPage, setSearchPage] = useState(1);
+  const [registryScope, setRegistryScope] = useState(DEFAULT_REGISTRY_SCOPE);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
@@ -241,12 +288,14 @@ const PatientChronicleListPage = () => {
   }, [queryClient]);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
+  const effectiveRegistryScope = effectiveSearchQuery ? 'all' : registryScope;
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
   const hasSearchSignal = debouncedSearchQuery.length >= 2 || hasActiveFilters;
   const baseSearchParams = useMemo(
-    () => buildSearchParams(debouncedSearchQuery, appliedFilters),
-    [debouncedSearchQuery, appliedFilters]
+    () => buildSearchParams(debouncedSearchQuery, appliedFilters, effectiveRegistryScope),
+    [debouncedSearchQuery, appliedFilters, effectiveRegistryScope]
   );
   const searchParams = useMemo(
     () => ({
@@ -266,7 +315,7 @@ const PatientChronicleListPage = () => {
 
   useEffect(() => {
     setSearchPage(1);
-  }, [debouncedSearchQuery, appliedFilters]);
+  }, [debouncedSearchQuery, appliedFilters, registryScope]);
 
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
     unit_type_code: 'department',
@@ -315,7 +364,6 @@ const PatientChronicleListPage = () => {
   const searchHasNext = Boolean(searchResults?.next) || searchCurrentPage < searchTotalPages;
   const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
 
-  const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
   const searchSummary = hasSearchSignal
     ? (effectiveSearchQuery
       ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
@@ -440,6 +488,12 @@ const PatientChronicleListPage = () => {
     setSearchPage(boundedPage);
   };
 
+  const handleRegistryScopeChange = (nextScope) => {
+    if (!nextScope || nextScope === registryScope) return;
+    setRegistryScope(nextScope);
+    setSearchPage(1);
+  };
+
   const listControls = (
     <div className="flex items-center justify-end gap-2">
       {/* Refresh */}
@@ -462,9 +516,9 @@ const PatientChronicleListPage = () => {
     </Button>
   ) : null;
 
-  const listHeaderLabel = hasSearchSignal
-    ? (effectiveSearchQuery ? 'Search results' : 'Filtered results')
-    : 'All patients';
+  const listHeaderLabel = effectiveSearchQuery
+    ? 'Search results'
+    : (REGISTRY_SCOPE_LABELS[registryScope] || REGISTRY_SCOPE_LABELS[DEFAULT_REGISTRY_SCOPE]);
 
   return (
     <PageShell>
@@ -510,6 +564,26 @@ const PatientChronicleListPage = () => {
             </NavLink>
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          {REGISTRY_SCOPE_TABS.map((scopeTab) => (
+            <Button
+              key={scopeTab.value}
+              type="button"
+              variant={registryScope === scopeTab.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => handleRegistryScopeChange(scopeTab.value)}
+              className={cn(
+                "font-mono text-xs",
+                registryScope === scopeTab.value
+                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {scopeTab.label}
+            </Button>
+          ))}
+        </div>
 
         {/* Search Bar */}
         <div className="flex flex-col gap-3 mt-4">
@@ -1028,6 +1102,7 @@ const SearchResultsTable = ({
               const age = getPatientAge(patient?.date_of_birth);
               const dobLabel = formatDateLabel(patient?.date_of_birth);
               const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
+              const locationDisplay = getPatientLocationDisplay(patient);
             return (
               <TableRow
                 key={rowKey}
@@ -1061,11 +1136,33 @@ const SearchResultsTable = ({
                   {formatGender(patient?.gender)}
                 </TableCell>
                 <TableCell className="text-xs">
-                  {patient?.current_ward || '—'}
+                  {!locationDisplay.tooltip ? (
+                    locationDisplay.label
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="cursor-help underline decoration-dotted underline-offset-2"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                        >
+                          {locationDisplay.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[320px] font-mono text-[10px]">
+                        {locationDisplay.tooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="font-mono text-[10px]">
-                    {formatAdmissionStatus(patient?.admission_status)}
+                    {formatAdmissionStatus(patient?.registry_status || patient?.admission_status)}
                   </Badge>
                 </TableCell>
               </TableRow>

@@ -844,6 +844,170 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_search_registry_scope_active(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_inpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='ActiveInpatient', primary_facility=facility),
+        )
+        active_outpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='ActiveOutpatient', primary_facility=facility),
+        )
+        discharged = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Discharged', primary_facility=facility),
+        )
+        deceased = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Deceased', primary_facility=facility),
+        )
+        completed_outpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Completed', primary_facility=facility),
+        )
+
+        AdmissionFactory(patient=active_inpatient, facility=facility, status='admitted')
+        EncounterFactory(
+            patient=active_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='in-progress',
+        )
+        AdmissionFactory(patient=discharged, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='finished',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'active'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(active_inpatient.id) in ids
+        assert str(active_outpatient.id) in ids
+        assert str(discharged.id) not in ids
+        assert str(deceased.id) not in ids
+        assert str(completed_outpatient.id) not in ids
+
+    def test_search_registry_scope_discharged(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_inpatient = PatientProfileFactory(facility=facility)
+        active_outpatient = PatientProfileFactory(facility=facility)
+        discharged = PatientProfileFactory(facility=facility)
+        transferred = PatientProfileFactory(facility=facility)
+        deceased = PatientProfileFactory(facility=facility)
+        completed_outpatient = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=active_inpatient, facility=facility, status='admitted')
+        EncounterFactory(
+            patient=active_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='planned',
+        )
+        AdmissionFactory(patient=discharged, facility=facility, status='discharged')
+        AdmissionFactory(patient=transferred, facility=facility, status='transferred')
+        AdmissionFactory(patient=deceased, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='cancelled',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'discharged'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(discharged.id) in ids
+        assert str(transferred.id) in ids
+        assert str(completed_outpatient.id) in ids
+        assert str(active_inpatient.id) not in ids
+        assert str(active_outpatient.id) not in ids
+        assert str(deceased.id) not in ids
+
+    def test_search_registry_scope_deceased(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_patient = PatientProfileFactory(facility=facility)
+        discharged_patient = PatientProfileFactory(facility=facility)
+        deceased_patient = PatientProfileFactory(facility=facility)
+        completed_outpatient = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=active_patient, facility=facility, status='admitted')
+        AdmissionFactory(patient=discharged_patient, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased_patient, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='finished',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'deceased'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(deceased_patient.id) in ids
+        assert str(active_patient.id) not in ids
+        assert str(discharged_patient.id) not in ids
+        assert str(completed_outpatient.id) not in ids
+
+    def test_search_registry_scope_rejects_invalid_value(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        client = get_authenticated_client(admin, facility=facility)
+
+        response = client.get('/api/patients/search/', {'registry_scope': 'invalid'})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data.get('error') == 'Invalid registry_scope value.'
+
+    def test_search_registry_scope_all_with_query_includes_all_statuses(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Active', primary_facility=facility),
+        )
+        discharged_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Discharged', primary_facility=facility),
+        )
+        deceased_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Deceased', primary_facility=facility),
+        )
+
+        AdmissionFactory(patient=active_patient, facility=facility, status='admitted')
+        AdmissionFactory(patient=discharged_patient, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased_patient, facility=facility, status='deceased')
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'ScopeAll',
+            'registry_scope': 'all',
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(active_patient.id) in ids
+        assert str(discharged_patient.id) in ids
+        assert str(deceased_patient.id) in ids
+
     def test_search_include_fhir_with_filters_returns_400(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility
@@ -916,7 +1080,8 @@ class TestPatientViewSet:
             response = client.get('/api/patients/search/', {'query': 'Pat'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(ctx) <= 8
+        # One additional prefetch query is expected for active encounter context.
+        assert len(ctx) <= 9
 
     def test_search_include_fhir_forbidden_for_receptionist(self, db):
         """Test that FHIR search is restricted to clinical staff."""
