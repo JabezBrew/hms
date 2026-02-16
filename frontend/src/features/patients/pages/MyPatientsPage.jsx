@@ -15,7 +15,6 @@ import {
   useRemoveFromMyPatients,
   useToggleMyPatientPin,
 } from "@/features/patients/hooks/useMyPatientsQueries";
-import { useAuth } from "@/lib/auth";
 import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +44,6 @@ import {
 const MyPatientsPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid");
   const pageMeta = usePageMeta({
@@ -56,9 +54,9 @@ const MyPatientsPage = () => {
     ],
   });
 
-  const prefetchPatientById = useCallback((patientId) => {
+  const prefetchPatientById = useCallback((patientId, mode = 'hover') => {
     if (!patientId) return;
-    prefetchPatientChronicleData(queryClient, patientId);
+    prefetchPatientChronicleData(queryClient, patientId, { mode });
   }, [queryClient]);
 
   useEffect(() => {
@@ -115,7 +113,7 @@ const MyPatientsPage = () => {
     const topPatientId = patients[0]?.id || patients[0]?.patient_profile || patients[0]?.local_data?.id;
     if (!topPatientId) return;
 
-    const prefetch = () => prefetchPatientById(topPatientId);
+    const prefetch = () => prefetchPatientById(topPatientId, 'navigation');
 
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
       const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });

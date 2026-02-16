@@ -10,7 +10,7 @@ import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
 import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -90,6 +90,7 @@ const ENCOUNTER_TYPE_OPTIONS = [
 const DEFAULT_SEARCH_ORDERING = '-created_at';
 const SEARCH_TABLE_PAGE_SIZE = 25;
 const DEFAULT_REGISTRY_SCOPE = 'active';
+const HOVER_PREFETCH_INTENT_MS = 150;
 
 const REGISTRY_SCOPE_TABS = [
   { value: 'active', label: 'Active' },
@@ -284,7 +285,7 @@ const PatientChronicleListPage = () => {
 
   const prefetchPatientById = useCallback((patientId) => {
     if (!patientId) return;
-    prefetchPatientChronicleData(queryClient, patientId);
+    prefetchPatientChronicleData(queryClient, patientId, { mode: 'hover' });
   }, [queryClient]);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -467,6 +468,7 @@ const PatientChronicleListPage = () => {
   const handleOpenPatient = (patient) => {
     const patientId = getPatientId(patient);
     if (patientId) {
+      prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
       navigate(`/patients/${patientId}`);
     }
   };
@@ -1055,6 +1057,40 @@ const SearchResultsTable = ({
   searchQuery,
   hasActiveFilters,
 }) => {
+  const hoverPrefetchTimersRef = useRef(new Map());
+
+  const scheduleHoverPrefetch = useCallback((patientId) => {
+    if (!patientId) return;
+    if (hoverPrefetchTimersRef.current.has(patientId)) return;
+
+    const timerId = window.setTimeout(() => {
+      hoverPrefetchTimersRef.current.delete(patientId);
+      onPrefetchPatient(patientId);
+    }, HOVER_PREFETCH_INTENT_MS);
+
+    hoverPrefetchTimersRef.current.set(patientId, timerId);
+  }, [onPrefetchPatient]);
+
+  const cancelHoverPrefetch = useCallback((patientId) => {
+    if (!patientId) return;
+
+    const timerId = hoverPrefetchTimersRef.current.get(patientId);
+    if (timerId) {
+      window.clearTimeout(timerId);
+      hoverPrefetchTimersRef.current.delete(patientId);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timers = hoverPrefetchTimersRef.current;
+    return () => {
+      for (const timerId of timers.values()) {
+        window.clearTimeout(timerId);
+      }
+      timers.clear();
+    };
+  }, []);
+
   const emptyDescription = searchQuery
     ? `No patients match "${searchQuery}". Try a different search term.`
     : hasActiveFilters
@@ -1108,8 +1144,10 @@ const SearchResultsTable = ({
                 key={rowKey}
                 className="cursor-pointer"
                 data-onboarding={index === 0 ? 'patient-list-row' : undefined}
-                onMouseEnter={() => onPrefetchPatient(patientId)}
-                onFocus={() => onPrefetchPatient(patientId)}
+                onMouseEnter={() => scheduleHoverPrefetch(patientId)}
+                onMouseLeave={() => cancelHoverPrefetch(patientId)}
+                onFocus={() => scheduleHoverPrefetch(patientId)}
+                onBlur={() => cancelHoverPrefetch(patientId)}
                 onClick={() => onOpenPatient(patient)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {

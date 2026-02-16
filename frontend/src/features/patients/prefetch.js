@@ -7,11 +7,57 @@ import { timelineKeys } from '@/hooks/useTimelineQueries'
 import { chartKeys } from '@/hooks/useChartQueries'
 import { apiClient } from '@/lib/api-client'
 
-const prefetchedPatientIds = new Set()
+const PREFETCH_MODE = {
+  HOVER: 'hover',
+  NAVIGATION: 'navigation',
+}
+
+const PREFETCH_CACHE_TTL_MS = 10 * 60 * 1000
+const PREFETCH_CACHE_MAX_ITEMS = 50
+
+// Bounded LRU cache of patient prefetch state to prevent unbounded growth.
+const prefetchedPatients = new Map()
 
 let patientDetailRoutePromise = null
 let patientRegistryRoutePromise = null
 let myPatientsRoutePromise = null
+
+function prunePrefetchCache(now = Date.now()) {
+  for (const [patientId, state] of prefetchedPatients) {
+    if (now - state.lastTouchedAt > PREFETCH_CACHE_TTL_MS) {
+      prefetchedPatients.delete(patientId)
+    }
+  }
+
+  while (prefetchedPatients.size > PREFETCH_CACHE_MAX_ITEMS) {
+    const oldestPatientId = prefetchedPatients.keys().next().value
+    if (oldestPatientId === undefined) {
+      break
+    }
+    prefetchedPatients.delete(oldestPatientId)
+  }
+}
+
+function getPrefetchState(patientId, now = Date.now()) {
+  prunePrefetchCache(now)
+
+  const existingState = prefetchedPatients.get(patientId)
+  if (existingState) {
+    prefetchedPatients.delete(patientId)
+    const updatedState = { ...existingState, lastTouchedAt: now }
+    prefetchedPatients.set(patientId, updatedState)
+    return updatedState
+  }
+
+  const newState = {
+    hoverPrefetched: false,
+    navigationPrefetched: false,
+    lastTouchedAt: now,
+  }
+  prefetchedPatients.set(patientId, newState)
+  prunePrefetchCache(now)
+  return newState
+}
 
 function loadPatientPageRoute() {
   return import('@/features/patients/pages/PatientPage')
@@ -89,14 +135,30 @@ function prefetchChartAssignments(queryClient, patientId) {
   })
 }
 
-export function prefetchPatientChronicleData(queryClient, patientId) {
-  if (!queryClient || !patientId || prefetchedPatientIds.has(patientId)) {
+export function prefetchPatientChronicleData(queryClient, patientId, options = {}) {
+  if (!queryClient || !patientId) {
     return
   }
 
-  prefetchedPatientIds.add(patientId)
+  const mode = options.mode === PREFETCH_MODE.NAVIGATION
+    ? PREFETCH_MODE.NAVIGATION
+    : PREFETCH_MODE.HOVER
+  const prefetchState = getPrefetchState(patientId)
 
-  // Warm route chunks and the first set of chronicle queries to reduce time-to-interaction.
+  if (mode === PREFETCH_MODE.HOVER) {
+    if (prefetchState.hoverPrefetched || prefetchState.navigationPrefetched) {
+      return
+    }
+    prefetchState.hoverPrefetched = true
+  } else {
+    if (prefetchState.navigationPrefetched) {
+      return
+    }
+    prefetchState.hoverPrefetched = true
+    prefetchState.navigationPrefetched = true
+  }
+
+  // Warm route chunks and tier-1 chronicle data to reduce time-to-interaction.
   prefetchPatientDetailRoute()
 
   void queryClient.prefetchQuery({
@@ -106,6 +168,14 @@ export function prefetchPatientChronicleData(queryClient, patientId) {
   })
 
   void prefetchChronicleContext(queryClient, patientId)
+
+  // Hover prefetch intentionally excludes heavy timeline/charts/encounters to avoid
+  // accidental request storms while cursoring through table rows.
+  if (mode === PREFETCH_MODE.HOVER) {
+    return
+  }
+
+  // Navigation-intent prefetch warms tier-2 data for faster chart open.
   void prefetchTimelineFirstPage(queryClient, patientId)
   void prefetchChartAssignments(queryClient, patientId)
 
