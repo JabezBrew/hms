@@ -4,6 +4,7 @@ Celery tasks for dashboard caching.
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
@@ -18,6 +19,7 @@ from .appointment_cache import (
 )
 
 logger = logging.getLogger(__name__)
+ADMIN_DASHBOARD_PREWARM_LOCK_KEY = "dashboards:admin:appointments:prewarm:lock"
 
 
 def _filter_appointments_by_facility(appointments, facility):
@@ -81,6 +83,24 @@ def refresh_admin_dashboard_appointments(self, facility_id: str, facility_code: 
 
 @shared_task(bind=True, ignore_result=True)
 def refresh_admin_dashboard_appointments_for_all_facilities(self) -> None:
+    lock_timeout = max(
+        30,
+        int(getattr(settings, "ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS", 60)) - 5,
+    )
+    try:
+        lock_acquired = cache.add(
+            ADMIN_DASHBOARD_PREWARM_LOCK_KEY,
+            timezone.now().isoformat(),
+            timeout=lock_timeout,
+        )
+    except Exception as exc:
+        logger.warning("Failed to acquire admin dashboard prewarm lock: %s", exc)
+        lock_acquired = True
+
+    if not lock_acquired:
+        logger.debug("Skipped admin dashboard prewarm because lock is already held.")
+        return
+
     today = timezone.now().date().isoformat()
     facilities = Facility.objects.filter(is_active=True).only('id', 'code')
     for facility in facilities.iterator():

@@ -687,10 +687,12 @@ LOGGING = {
 
 # Celery Configuration
 CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=CELERY_BROKER_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_IGNORE_RESULT = env.bool('CELERY_TASK_IGNORE_RESULT', default=True)
+CELERY_RESULT_EXPIRES = env.int('CELERY_RESULT_EXPIRES', default=3600)
 CELERY_TIMEZONE = TIME_ZONE
 if "pytest" in sys.modules:
     CELERY_TASK_ALWAYS_EAGER = True
@@ -715,11 +717,17 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
     },
-    'refresh-admin-dashboard-appointments': {
-        'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
-        'schedule': 60.0,  # Every 60 seconds
-        'options': {
-            'expires': 50,
-        },
-    },
 }
+
+ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS = env.int(
+    'ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS',
+    default=0,
+)
+if ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS > 0:
+    CELERY_BEAT_SCHEDULE['refresh-admin-dashboard-appointments'] = {
+        'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
+        'schedule': float(ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS),
+        'options': {
+            'expires': max(10, ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS - 10),
+        },
+    }
