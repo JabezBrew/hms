@@ -9,5 +9,3 @@ dockerfilePath = "Dockerfile"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
-healthcheckPath = "/api/health/"
-healthcheckTimeout = 30
