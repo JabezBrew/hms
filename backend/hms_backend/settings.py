@@ -8,6 +8,7 @@ from pathlib import Path
 import environ
 import logging.config
 from urllib.parse import urlparse, parse_qs
+from kombu import Queue
 
 
 
@@ -130,6 +131,7 @@ INSTALLED_APPS = [
     'apps.organization.apps.OrganizationConfig',  # Flexible organizational hierarchy
     'apps.interop.apps.InteropConfig',  # Cross-facility record exchange
     'apps.notifications.apps.NotificationsConfig',
+    'apps.ai.apps.AIConfig',
 ]
 
 MIDDLEWARE = [
@@ -393,6 +395,74 @@ BILLING_POST_INSURANCE_PAYMENTS_ON_CLAIM_APPROVAL = env.bool(
     default=False,
 )
 
+# AI Platform configuration
+AI_ENABLED = env.bool('AI_ENABLED', default=False)
+AI_HOSTING_MODE = env('AI_HOSTING_MODE', default='hybrid').strip().lower()
+if AI_HOSTING_MODE not in {'managed', 'self_hosted', 'hybrid'}:
+    AI_HOSTING_MODE = 'hybrid'
+
+AI_PROVIDER = env('AI_PROVIDER', default='')
+AI_PROVIDER_SECONDARY = env('AI_PROVIDER_SECONDARY', default='')
+AI_PROVIDER_BASE_URL = env('AI_PROVIDER_BASE_URL', default='')
+AI_PROVIDER_API_KEY = env('AI_PROVIDER_API_KEY', default='')
+AI_PROVIDER_REGION = env('AI_PROVIDER_REGION', default='')
+AI_PROVIDER_ZERO_RETENTION = env.bool('AI_PROVIDER_ZERO_RETENTION', default=True)
+AI_PROVIDER_PRIVATE_NETWORK_ENABLED = env.bool('AI_PROVIDER_PRIVATE_NETWORK_ENABLED', default=False)
+
+AI_MODEL_REASONER_PRIMARY = env('AI_MODEL_REASONER_PRIMARY', default='reasoner-primary')
+AI_MODEL_REASONER_FALLBACK = env('AI_MODEL_REASONER_FALLBACK', default='reasoner-fallback')
+AI_MODEL_WRITER_PRIMARY = env('AI_MODEL_WRITER_PRIMARY', default='writer-primary')
+AI_MODEL_WRITER_FALLBACK = env('AI_MODEL_WRITER_FALLBACK', default='writer-fallback')
+AI_MODEL_VALIDATOR = env('AI_MODEL_VALIDATOR', default='validator-small')
+AI_MODEL_INTENT = env('AI_MODEL_INTENT', default='intent-small')
+AI_MODEL_ASR_PRIMARY = env('AI_MODEL_ASR_PRIMARY', default='asr-primary')
+AI_MODEL_ASR_FALLBACK = env('AI_MODEL_ASR_FALLBACK', default='asr-fallback')
+AI_MODEL_EMBEDDING = env('AI_MODEL_EMBEDDING', default='embedding-model')
+AI_MODEL_RERANKER = env('AI_MODEL_RERANKER', default='reranker-model')
+
+AI_VECTOR_BACKEND = env('AI_VECTOR_BACKEND', default='pgvector').strip().lower()
+if AI_VECTOR_BACKEND not in {'pgvector', 'external'}:
+    AI_VECTOR_BACKEND = 'pgvector'
+AI_VECTOR_INDEX_URL = env('AI_VECTOR_INDEX_URL', default='')
+
+AI_OBJECT_STORAGE_BUCKET_AUDIO = env('AI_OBJECT_STORAGE_BUCKET_AUDIO', default='')
+AI_OBJECT_STORAGE_BUCKET_TRANSCRIPTS = env('AI_OBJECT_STORAGE_BUCKET_TRANSCRIPTS', default='')
+AI_OBJECT_STORAGE_KMS_KEY_ID = env('AI_OBJECT_STORAGE_KMS_KEY_ID', default='')
+
+AI_REQUEST_TIMEOUT_MS = env.int('AI_REQUEST_TIMEOUT_MS', default=8000)
+AI_REQUEST_TIMEOUT_ASR_MS = env.int('AI_REQUEST_TIMEOUT_ASR_MS', default=20000)
+AI_MAX_CONTEXT_TOKENS = env.int('AI_MAX_CONTEXT_TOKENS', default=12000)
+AI_MAX_OUTPUT_TOKENS = env.int('AI_MAX_OUTPUT_TOKENS', default=1600)
+AI_MAX_AUDIO_CHUNK_SECONDS = env.int('AI_MAX_AUDIO_CHUNK_SECONDS', default=20)
+
+AI_SCRIBE_REALTIME_QUEUE = env('AI_SCRIBE_REALTIME_QUEUE', default='ai_realtime')
+AI_BATCH_QUEUE = env('AI_BATCH_QUEUE', default='ai_batch')
+AI_MAINTENANCE_QUEUE = env('AI_MAINTENANCE_QUEUE', default='ai_maintenance')
+
+AI_AUDIO_RETENTION_DAYS = env.int('AI_AUDIO_RETENTION_DAYS', default=3)
+AI_TRANSCRIPT_RETENTION_DAYS = env.int('AI_TRANSCRIPT_RETENTION_DAYS', default=30)
+AI_NO_TRAINING_ENFORCED = env.bool('AI_NO_TRAINING_ENFORCED', default=True)
+AI_MESSAGE_ENCRYPTION_KEY = env('AI_MESSAGE_ENCRYPTION_KEY', default='')
+AI_DAILY_SPEND_CAP_USD = env.float('AI_DAILY_SPEND_CAP_USD', default=200.0)
+
+AI_CHRONICLE_COPILOT_ENABLED = env.bool('AI_CHRONICLE_COPILOT_ENABLED', default=False)
+AI_NOTE_DRAFT_ENABLED = env.bool('AI_NOTE_DRAFT_ENABLED', default=False)
+AI_NOTE_LINT_ENABLED = env.bool('AI_NOTE_LINT_ENABLED', default=False)
+AI_AMBIENT_SCRIBE_ENABLED = env.bool('AI_AMBIENT_SCRIBE_ENABLED', default=False)
+AI_LAB_INTERPRET_ENABLED = env.bool('AI_LAB_INTERPRET_ENABLED', default=False)
+AI_OMNI_NL_ENABLED = env.bool('AI_OMNI_NL_ENABLED', default=False)
+AI_PATIENT_ASSIST_ENABLED = env.bool('AI_PATIENT_ASSIST_ENABLED', default=False)
+
+AI_FEATURE_FLAGS = {
+    'chronicle_copilot': AI_CHRONICLE_COPILOT_ENABLED,
+    'note_draft': AI_NOTE_DRAFT_ENABLED,
+    'note_lint': AI_NOTE_LINT_ENABLED,
+    'ambient_scribe': AI_AMBIENT_SCRIBE_ENABLED,
+    'lab_interpretation': AI_LAB_INTERPRET_ENABLED,
+    'omni_nl': AI_OMNI_NL_ENABLED,
+    'patient_assist': AI_PATIENT_ASSIST_ENABLED,
+}
+
 # PSP (Hubtel) configuration
 HUBTEL_API_BASE_URL = env('HUBTEL_API_BASE_URL', default='')
 HUBTEL_CLIENT_ID = env('HUBTEL_CLIENT_ID', default='')
@@ -620,6 +690,9 @@ LOGGING = {
         'require_debug_false': {
             '()': 'django.utils.log.RequireDebugFalse',
         },
+        'ai_privacy_redaction': {
+            '()': 'apps.ai.logging_utils.AIPrivacyLogFilter',
+        },
     },
     'handlers': {
         'console': {
@@ -649,6 +722,15 @@ LOGGING = {
             'maxBytes': 1024 * 1024 * 5,  # 5 MB
             'backupCount': 5,
             'formatter': 'standard',
+        },
+        'ai_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOGS_DIR, 'ai.log'),
+            'maxBytes': 1024 * 1024 * 5,  # 5 MB
+            'backupCount': 5,
+            'formatter': 'standard',
+            'filters': ['ai_privacy_redaction'],
         },
     },
     'loggers': {
@@ -680,6 +762,11 @@ LOGGING = {
         'apps.fhir_client': {
             'handlers': ['console', 'fhir_client_file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'apps.ai': {
+            'handlers': ['console', 'ai_file'],
+            'level': 'INFO',
             'propagate': False,
         },
     },
@@ -725,6 +812,18 @@ CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = env.bool(
     default=True,
 )
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_DEFAULT_QUEUE = env('CELERY_TASK_DEFAULT_QUEUE', default='default')
+CELERY_TASK_QUEUES = (
+    Queue(CELERY_TASK_DEFAULT_QUEUE),
+    Queue(AI_SCRIBE_REALTIME_QUEUE),
+    Queue(AI_BATCH_QUEUE),
+    Queue(AI_MAINTENANCE_QUEUE),
+)
+CELERY_TASK_ROUTES = {
+    'apps.ai.tasks.realtime_generate_placeholder_artifact': {'queue': AI_SCRIBE_REALTIME_QUEUE},
+    'apps.ai.tasks.batch_mark_stale_sessions_failed': {'queue': AI_BATCH_QUEUE},
+    'apps.ai.tasks.maintenance_redact_expired_encrypted_messages': {'queue': AI_MAINTENANCE_QUEUE},
+}
 if "pytest" in sys.modules:
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
@@ -749,6 +848,16 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': timedelta(days=1),  # Run once a day
     },
 }
+
+if AI_ENABLED:
+    CELERY_BEAT_SCHEDULE['ai-mark-stale-sessions'] = {
+        'task': 'apps.ai.tasks.batch_mark_stale_sessions_failed',
+        'schedule': timedelta(minutes=5),
+    }
+    CELERY_BEAT_SCHEDULE['ai-redact-expired-ai-messages'] = {
+        'task': 'apps.ai.tasks.maintenance_redact_expired_encrypted_messages',
+        'schedule': timedelta(hours=6),
+    }
 
 ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS = env.int(
     'ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS',

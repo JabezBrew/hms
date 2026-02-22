@@ -101,6 +101,7 @@ urlpatterns = [
     path('api/interop/', include('apps.interop.urls')),
     path('api/consent/', include('apps.consent.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
+    path('api/ai/', include('apps.ai.urls')),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),
     path('api/admin/', include('apps.audit.urls')),
