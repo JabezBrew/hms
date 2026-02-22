@@ -28,7 +28,7 @@ from apps.ai.serializers import (
 from apps.ai.services.lab_interpretation import interpret_order, interpret_result
 from apps.ai.services.omni import normalize_omni_text, parse_omni_intent, preview_omni_intent
 from apps.ai.services.orchestrator import AIOrchestrator
-from apps.ai.services.policy import build_response_envelope, ensure_feature_enabled
+from apps.ai.services.policy import build_response_envelope, confidence_band, ensure_feature_enabled
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import check_lab_access, get_user_facility
 from apps.laboratory.models import LabOrder, LabResult
@@ -36,6 +36,14 @@ from apps.laboratory.models import LabOrder, LabResult
 
 logger_name = 'apps.ai'
 logger = logging.getLogger(logger_name)
+
+
+LAB_REVIEW_MESSAGE_BY_BAND = {
+    'needs_review': 'Needs review. Use full chart context and consider repeat confirmation before acting.',
+    'advisory': 'Advisory output. Correlate with symptoms, exam findings, and current treatment plan.',
+    'normal': 'Advisory output. Clinical sign-off is still required before treatment decisions.',
+    'fallback': 'Needs review. Confidence is low, so rely on standard clinical workflow.',
+}
 
 
 def _percentile(values: list[int], percentile: float) -> int | None:
@@ -459,13 +467,22 @@ class AILabInterpretView(APIView):
             source_id = str(lab_order.id)
 
         result_payload = interpretation['result']
+        interpreted_confidence = interpretation['confidence']
+        review_band = confidence_band(interpreted_confidence, feature=constants.FEATURE_LAB_INTERPRETATION)
+
+        result_payload['advisory_only'] = True
+        result_payload['review_label'] = review_band
+        result_payload['review_message'] = LAB_REVIEW_MESSAGE_BY_BAND.get(
+            review_band,
+            LAB_REVIEW_MESSAGE_BY_BAND['needs_review'],
+        )
         result_payload['safety_notice'] = (
             'Advisory only. Clinical review is required before treatment or ordering decisions.'
         )
 
         envelope = build_response_envelope(
             feature=constants.FEATURE_LAB_INTERPRETATION,
-            confidence=interpretation['confidence'],
+            confidence=interpreted_confidence,
             result=result_payload,
             citations=interpretation['citations'],
             requires_human_review=True,

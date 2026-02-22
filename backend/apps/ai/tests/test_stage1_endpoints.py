@@ -186,8 +186,124 @@ def test_lab_interpret_result_returns_envelope_and_citations_for_doctor():
     assert response.data['requires_human_review'] is True
     assert response.data['result']['mode'] == 'result'
     assert response.data['result']['result']['advisory_only'] is True
+    assert response.data['result']['review_label'] in {'advisory', 'normal'}
+    assert response.data['result']['review_message']
     assert response.data['result']['safety_notice']
     assert response.data['citations']
+
+
+@pytest.mark.django_db
+@override_settings(
+    AI_ENABLED=True,
+    AI_LAB_INTERPRET_ENABLED=True,
+    TEAM_ACCESS_STRICT=False,
+)
+def test_lab_interpret_result_marks_needs_review_for_low_confidence_abnormal_fixture():
+    facility = DefaultFacilityFactory()
+    doctor = DoctorUserFactory(primary_facility=facility)
+    doctor.facilities.add(facility)
+    patient = PatientProfileFactory(facility=facility, user__primary_facility=facility)
+
+    result, _, _ = _create_lab_result(
+        facility=facility,
+        patient=patient,
+        value='positive',
+        unit='qualitative',
+        flag='abnormal',
+        reference_low=None,
+        reference_high=None,
+    )
+
+    client = _auth_client(doctor, facility)
+    response = client.post(
+        '/api/ai/labs/interpret/',
+        {'result_id': str(result.id), 'audience': 'clinician'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['confidence_band'] == 'needs_review'
+    assert response.data['result']['review_label'] == 'needs_review'
+    assert 'Needs review' in response.data['result']['review_message']
+
+
+@pytest.mark.django_db
+@override_settings(
+    AI_ENABLED=True,
+    AI_LAB_INTERPRET_ENABLED=True,
+    TEAM_ACCESS_STRICT=False,
+)
+def test_lab_interpret_result_marks_advisory_for_critical_fixture_with_sparse_reference_data():
+    facility = DefaultFacilityFactory()
+    doctor = DoctorUserFactory(primary_facility=facility)
+    doctor.facilities.add(facility)
+    patient = PatientProfileFactory(facility=facility, user__primary_facility=facility)
+
+    result, _, _ = _create_lab_result(
+        facility=facility,
+        patient=patient,
+        value='185',
+        flag='critical_high',
+        reference_low=None,
+        reference_high=None,
+    )
+
+    client = _auth_client(doctor, facility)
+    response = client.post(
+        '/api/ai/labs/interpret/',
+        {'result_id': str(result.id), 'audience': 'clinician'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['confidence_band'] == 'advisory'
+    assert response.data['result']['review_label'] == 'advisory'
+    assert 'Advisory output' in response.data['result']['review_message']
+
+
+@pytest.mark.django_db
+@override_settings(
+    AI_ENABLED=True,
+    AI_LAB_INTERPRET_ENABLED=True,
+    TEAM_ACCESS_STRICT=False,
+)
+def test_lab_interpret_result_marks_normal_for_trended_normal_fixture():
+    facility = DefaultFacilityFactory()
+    doctor = DoctorUserFactory(primary_facility=facility)
+    doctor.facilities.add(facility)
+    patient = PatientProfileFactory(facility=facility, user__primary_facility=facility)
+
+    current_result, _, test = _create_lab_result(
+        facility=facility,
+        patient=patient,
+        value='95',
+        flag='normal',
+        reference_low=Decimal('70'),
+        reference_high=Decimal('100'),
+        performed_at=timezone.now(),
+    )
+    _create_lab_result(
+        facility=facility,
+        patient=patient,
+        test=test,
+        value='96',
+        flag='normal',
+        reference_low=Decimal('70'),
+        reference_high=Decimal('100'),
+        performed_at=timezone.now() - timedelta(days=1),
+    )
+
+    client = _auth_client(doctor, facility)
+    response = client.post(
+        '/api/ai/labs/interpret/',
+        {'result_id': str(current_result.id), 'audience': 'clinician'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['confidence_band'] == 'normal'
+    assert response.data['result']['review_label'] == 'normal'
+    assert 'Clinical sign-off' in response.data['result']['review_message']
 
 
 @pytest.mark.django_db
