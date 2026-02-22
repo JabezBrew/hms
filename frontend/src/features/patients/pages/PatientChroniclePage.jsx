@@ -39,6 +39,7 @@ import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
 import { chartKeys, useChartAssignments } from "@/features/charts/hooks";
 import { laboratoryApi } from "@/features/laboratory/api";
 import { labKeys } from "@/features/laboratory/hooks";
+import ChronicleCopilotPanel from "@/features/patients/components/ChronicleCopilotPanel";
 import { drugSafetyApi } from "@/shared/api/drugSafety";
 import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
 import { keyWith } from "@/shared/lib/queryKeys";
@@ -236,6 +237,18 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // The URL id is the patient UUID which works for all clinical endpoints
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const copilotPatientName = useMemo(() => {
+    const details = patient?.local_data || patient;
+    if (!details) return 'Patient';
+
+    const userDetails = details.user_details;
+    if (!userDetails) {
+      return details.name || 'Patient';
+    }
+
+    const fullName = `${userDetails.first_name || ''} ${userDetails.last_name || ''}`.trim();
+    return fullName || details.name || 'Patient';
+  }, [patient]);
 
   useEffect(() => {
     if (!hasClinicalAccess || !patientLocalId) {
@@ -1147,372 +1160,386 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
         {/* Timeline Chronicle */}
         <main className="flex-1 p-6 transition-all duration-300">
-          {/* Active Charts Section - Show if patient has assigned charts */}
-          {chartAssignments?.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-amber-600" />
-                  <h3 className="font-mono text-sm font-medium text-foreground">
-                    Active Charts
-                  </h3>
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {chartAssignments.length}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAssignChart}
-                  className="font-mono text-xs"
-                >
-                  + Assign Chart
-                </Button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {chartAssignments.slice(0, 6).map((assignment, index) => (
-                  <ChartAssignmentCard
-                    key={assignment.id}
-                    assignment={assignment}
-                    index={index}
-                    onRecordEntry={handleRecordChartEntry}
-                    compact
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Timeline Header with Search and Filters */}
-          <div className="space-y-4 mb-6">
-            {/* Title and count */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-muted-foreground" />
-                <h2 className="font-display text-2xl text-foreground">
-                  Clinical Chronicle
-                </h2>
-                {totalCount > 0 && (
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
-                  </span>
-                )}
-                {/* Show encounter count hint when some encounters have no documentation */}
-                {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
-                  <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
-                    • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
-                  </span>
-                )}
-              </div>
-
-              {/* Refresh button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => refetchTimeline()}
-                className="font-mono text-xs"
-              >
-                <RefreshCw className={cn(
-                  "h-3.5 w-3.5 mr-1.5",
-                  isTimelineLoading && "animate-spin"
-                )} />
-                Refresh
-              </Button>
-            </div>
-
-            {/* Search and Filter row */}
-            <div className="flex items-center gap-4">
-              {/* Search Input */}
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search notes, prescriptions..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-9 font-mono text-sm"
-                />
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <div className="flex bg-muted rounded-lg p-1" data-onboarding="chronicle-filter-group">
-                  {[
-                    { key: 'all', label: 'All', icon: null },
-                    { key: 'progress_note', label: 'Notes', icon: FileText },
-                    { key: 'vitals', label: 'Vitals', icon: Activity },
-                    { key: 'medication', label: 'Meds', icon: Pill },
-                    { key: 'lab_result', label: 'Labs', icon: TestTube }
-                  ].map(filter => (
-                    <button
-                      key={filter.key}
-                      onClick={() => setActiveFilter(filter.key)}
-                      data-onboarding={
-                        filter.key === 'all'
-                          ? 'chronicle-filter-all'
-                          : filter.key === 'progress_note'
-                            ? 'chronicle-filter-notes'
-                            : undefined
-                      }
-                      className={cn(
-                        "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
-                        "flex items-center gap-1.5",
-                        activeFilter === filter.key
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {filter.icon && <filter.icon className="h-3 w-3" />}
-                      {filter.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Expand/Collapse All */}
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={expandAll}
-                  className="font-mono text-xs h-8 px-2"
-                >
-                  Expand All
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={collapseAll}
-                  className="font-mono text-xs h-8 px-2"
-                >
-                  Collapse
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Timeline Entries Grouped by Encounter */}
-          <div className="relative space-y-4">
-            {/* Loading state for initial load */}
-            {isTimelineLoading && filteredEntries.length === 0 && (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="pl-8 pb-6">
-                    <Skeleton className="h-32 w-full rounded-xl" />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Encounter Groups */}
-            {groupedByEncounter.encounters.map(({ encounter, entries }) => {
-              const isExpanded = expandedEncounters.has(encounter.id);
-              const encounterDate = encounter.start_time
-                ? new Date(encounter.start_time).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })
-                : 'Unknown date';
-
-              const encounterEndDate = encounter.end_time
-                ? new Date(encounter.end_time).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                  })
-                : null;
-
-              const dateRange = encounterEndDate && encounterEndDate !== encounterDate
-                ? `${encounterDate} - ${encounterEndDate}`
-                : encounterDate;
-
-              const typeIcon = encounter.type === 'inpatient' ? Building2 : Calendar;
-              const TypeIcon = typeIcon;
-
-              return (
-                <div key={encounter.id} className="border border-border rounded-lg overflow-hidden bg-card">
-                  {/* Encounter Header */}
-                  <button
-                    onClick={() => toggleEncounter(encounter.id)}
-                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    )}
-
-                    <div className={cn(
-                      "p-2 rounded-lg",
-                      encounter.type === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
-                    )}>
-                      <TypeIcon className={cn(
-                        "h-4 w-4",
-                        encounter.type === 'inpatient' ? "text-blue-500" : "text-amber-500"
-                      )} />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm capitalize">
-                          {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
-                           encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
-                        </span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-full text-xs font-mono",
-                          encounter.status === 'finished' && "bg-muted text-muted-foreground",
-                          encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
-                          encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
-                        )}>
-                          {encounter.status}
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                        <span>{dateRange}</span>
-                        {encounter.practitioner_name && (
-                          <>
-                            <span>•</span>
-                            <span>{encounter.practitioner_name}</span>
-                          </>
-                        )}
-                        {encounter.location && (
-                          <>
-                            <span>•</span>
-                            <span>{encounter.location}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                    </span>
-                  </button>
-
-                  {/* Encounter Entries */}
-                  {isExpanded && (
-                    <div className="border-t border-border px-4 py-3 space-y-3">
-                      {entries.map((entry, index) => (
-                        <TimelineEntry
-                          key={entry.id}
-                          entry={entry}
-                          index={index}
-                          currentUserId={user?.id}
-                          onCopyNote={handleCopyNote}
-                          onEditNote={handleEditNote}
-                          onNoteUpdated={refetchTimeline}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Unlinked Entries */}
-            {groupedByEncounter.unlinked.length > 0 && (
-              <div className="border border-dashed border-border rounded-lg overflow-hidden bg-card/50">
-                {/* Unlinked Header */}
-                <button
-                  onClick={() => toggleEncounter('unlinked')}
-                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
-                >
-                  {expandedEncounters.has('unlinked') ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  )}
-
-                  <div className="p-2 rounded-lg bg-muted">
-                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="order-2 min-w-0 xl:order-1">
+              {/* Active Charts Section - Show if patient has assigned charts */}
+              {chartAssignments?.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-muted-foreground">
-                        Unlinked Entries
+                      <ClipboardList className="h-4 w-4 text-amber-600" />
+                      <h3 className="font-mono text-sm font-medium text-foreground">
+                        Active Charts
+                      </h3>
+                      <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        {chartAssignments.length}
                       </span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      Legacy data without encounter context
-                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleAssignChart}
+                      className="font-mono text-xs"
+                    >
+                      + Assign Chart
+                    </Button>
                   </div>
-
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
-                  </span>
-                </button>
-
-                {/* Unlinked Entries List */}
-                {expandedEncounters.has('unlinked') && (
-                  <div className="border-t border-dashed border-border px-4 py-3 space-y-3">
-                    {groupedByEncounter.unlinked.map((entry, index) => (
-                      <TimelineEntry
-                        key={entry.id}
-                        entry={entry}
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {chartAssignments.slice(0, 6).map((assignment, index) => (
+                      <ChartAssignmentCard
+                        key={assignment.id}
+                        assignment={assignment}
                         index={index}
-                        currentUserId={user?.id}
-                        onCopyNote={handleCopyNote}
-                        onEditNote={handleEditNote}
-                        onNoteUpdated={refetchTimeline}
+                        onRecordEntry={handleRecordChartEntry}
+                        compact
                       />
                     ))}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* Empty state */}
-            {!isTimelineLoading && filteredEntries.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="font-mono text-sm">
-                  {searchInput ? 'No entries match your search' : 'No entries found'}
-                </p>
-                {searchInput && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchInput('')}
-                    className="mt-2 font-mono text-xs"
-                  >
-                    Clear search
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {/* Infinite scroll trigger */}
-            {hasNextPage && (
-              <div
-                ref={loadMoreRef}
-                className="flex items-center justify-center py-8"
-              >
-                {isFetchingNextPage ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="font-mono text-xs">Loading more...</span>
+              {/* Timeline Header with Search and Filters */}
+              <div className="space-y-4 mb-6">
+                {/* Title and count */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-display text-2xl text-foreground">
+                      Clinical Chronicle
+                    </h2>
+                    {totalCount > 0 && (
+                      <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                        {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                      </span>
+                    )}
+                    {/* Show encounter count hint when some encounters have no documentation */}
+                    {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                      <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                        • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
+                      </span>
+                    )}
                   </div>
-                ) : (
+
+                  {/* Refresh button */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => fetchNextPage()}
+                    onClick={() => refetchTimeline()}
                     className="font-mono text-xs"
                   >
-                    Load more
+                    <RefreshCw className={cn(
+                      "h-3.5 w-3.5 mr-1.5",
+                      isTimelineLoading && "animate-spin"
+                    )} />
+                    Refresh
                   </Button>
+                </div>
+
+                {/* Search and Filter row */}
+                <div className="flex items-center gap-4">
+                  {/* Search Input */}
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="Search notes, prescriptions..."
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      className="pl-9 font-mono text-sm"
+                    />
+                  </div>
+
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex bg-muted rounded-lg p-1" data-onboarding="chronicle-filter-group">
+                      {[
+                        { key: 'all', label: 'All', icon: null },
+                        { key: 'progress_note', label: 'Notes', icon: FileText },
+                        { key: 'vitals', label: 'Vitals', icon: Activity },
+                        { key: 'medication', label: 'Meds', icon: Pill },
+                        { key: 'lab_result', label: 'Labs', icon: TestTube }
+                      ].map(filter => (
+                        <button
+                          key={filter.key}
+                          onClick={() => setActiveFilter(filter.key)}
+                          data-onboarding={
+                            filter.key === 'all'
+                              ? 'chronicle-filter-all'
+                              : filter.key === 'progress_note'
+                                ? 'chronicle-filter-notes'
+                                : undefined
+                          }
+                          className={cn(
+                            "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
+                            "flex items-center gap-1.5",
+                            activeFilter === filter.key
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          {filter.icon && <filter.icon className="h-3 w-3" />}
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Expand/Collapse All */}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={expandAll}
+                      className="font-mono text-xs h-8 px-2"
+                    >
+                      Expand All
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={collapseAll}
+                      className="font-mono text-xs h-8 px-2"
+                    >
+                      Collapse
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline Entries Grouped by Encounter */}
+              <div className="relative space-y-4">
+                {/* Loading state for initial load */}
+                {isTimelineLoading && filteredEntries.length === 0 && (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="pl-8 pb-6">
+                        <Skeleton className="h-32 w-full rounded-xl" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Encounter Groups */}
+                {groupedByEncounter.encounters.map(({ encounter, entries }) => {
+                  const isExpanded = expandedEncounters.has(encounter.id);
+                  const encounterDate = encounter.start_time
+                    ? new Date(encounter.start_time).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })
+                    : 'Unknown date';
+
+                  const encounterEndDate = encounter.end_time
+                    ? new Date(encounter.end_time).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric'
+                      })
+                    : null;
+
+                  const dateRange = encounterEndDate && encounterEndDate !== encounterDate
+                    ? `${encounterDate} - ${encounterEndDate}`
+                    : encounterDate;
+
+                  const typeIcon = encounter.type === 'inpatient' ? Building2 : Calendar;
+                  const TypeIcon = typeIcon;
+
+                  return (
+                    <div key={encounter.id} className="border border-border rounded-lg overflow-hidden bg-card">
+                      {/* Encounter Header */}
+                      <button
+                        onClick={() => toggleEncounter(encounter.id)}
+                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        )}
+
+                        <div className={cn(
+                          "p-2 rounded-lg",
+                          encounter.type === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
+                        )}>
+                          <TypeIcon className={cn(
+                            "h-4 w-4",
+                            encounter.type === 'inpatient' ? "text-blue-500" : "text-amber-500"
+                          )} />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm capitalize">
+                              {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
+                               encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
+                            </span>
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full text-xs font-mono",
+                              encounter.status === 'finished' && "bg-muted text-muted-foreground",
+                              encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
+                              encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
+                            )}>
+                              {encounter.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                            <span>{dateRange}</span>
+                            {encounter.practitioner_name && (
+                              <>
+                                <span>•</span>
+                                <span>{encounter.practitioner_name}</span>
+                              </>
+                            )}
+                            {encounter.location && (
+                              <>
+                                <span>•</span>
+                                <span>{encounter.location}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                        </span>
+                      </button>
+
+                      {/* Encounter Entries */}
+                      {isExpanded && (
+                        <div className="border-t border-border px-4 py-3 space-y-3">
+                          {entries.map((entry, index) => (
+                            <TimelineEntry
+                              key={entry.id}
+                              entry={entry}
+                              index={index}
+                              currentUserId={user?.id}
+                              onCopyNote={handleCopyNote}
+                              onEditNote={handleEditNote}
+                              onNoteUpdated={refetchTimeline}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Unlinked Entries */}
+                {groupedByEncounter.unlinked.length > 0 && (
+                  <div className="border border-dashed border-border rounded-lg overflow-hidden bg-card/50">
+                    {/* Unlinked Header */}
+                    <button
+                      onClick={() => toggleEncounter('unlinked')}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
+                    >
+                      {expandedEncounters.has('unlinked') ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      )}
+
+                      <div className="p-2 rounded-lg bg-muted">
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-muted-foreground">
+                            Unlinked Entries
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Legacy data without encounter context
+                        </div>
+                      </div>
+
+                      <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                        {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
+                      </span>
+                    </button>
+
+                    {/* Unlinked Entries List */}
+                    {expandedEncounters.has('unlinked') && (
+                      <div className="border-t border-dashed border-border px-4 py-3 space-y-3">
+                        {groupedByEncounter.unlinked.map((entry, index) => (
+                          <TimelineEntry
+                            key={entry.id}
+                            entry={entry}
+                            index={index}
+                            currentUserId={user?.id}
+                            onCopyNote={handleCopyNote}
+                            onEditNote={handleEditNote}
+                            onNoteUpdated={refetchTimeline}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!isTimelineLoading && filteredEntries.length === 0 && (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p className="font-mono text-sm">
+                      {searchInput ? 'No entries match your search' : 'No entries found'}
+                    </p>
+                    {searchInput && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSearchInput('')}
+                        className="mt-2 font-mono text-xs"
+                      >
+                        Clear search
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Infinite scroll trigger */}
+                {hasNextPage && (
+                  <div
+                    ref={loadMoreRef}
+                    className="flex items-center justify-center py-8"
+                  >
+                    {isFetchingNextPage ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="font-mono text-xs">Loading more...</span>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => fetchNextPage()}
+                        className="font-mono text-xs"
+                      >
+                        Load more
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* End of timeline indicator */}
+                {!hasNextPage && filteredEntries.length > 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <div className="w-12 h-px bg-border mx-auto mb-2" />
+                    <p className="font-mono text-xs">End of timeline</p>
+                  </div>
                 )}
               </div>
-            )}
+            </div>
 
-            {/* End of timeline indicator */}
-            {!hasNextPage && filteredEntries.length > 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <div className="w-12 h-px bg-border mx-auto mb-2" />
-                <p className="font-mono text-xs">End of timeline</p>
+            <aside className="order-1 xl:order-2">
+              <div className="xl:sticky xl:top-6">
+                <ChronicleCopilotPanel
+                  patientId={id}
+                  encounterId={activeEncounter?.id || null}
+                  patientName={copilotPatientName}
+                />
               </div>
-            )}
+            </aside>
           </div>
         </main>
 
