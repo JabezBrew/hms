@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
+import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js'
+import ShieldX from 'lucide-react/dist/esm/icons/shield-x.js'
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js'
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
@@ -18,10 +21,27 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { ROLE_GROUPS, ROLES } from '@/shared/constants/roles'
+import {
+  buildOmniTargetHref,
+  formatIntentLabel,
+  useOmniExecutePreview,
+  useOmniIntentPreview,
+} from '@/shared/hooks/useOmniIntentPreview'
 import { useOmniSearchResults } from '@/shared/hooks/useOmniSearchResults'
+import { toast } from 'sonner'
 
 import { useOmniSearch } from './OmniSearchProvider'
 import { getOmniActionsForRole } from './omniActions'
@@ -221,6 +241,24 @@ function buildSuggestedCommands({ isAdmin, isClinical }) {
   return base
 }
 
+const CONFIDENCE_STYLES = Object.freeze({
+  normal: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  advisory: "border-amber-200 bg-amber-50 text-amber-700",
+  needs_review: "border-rose-200 bg-rose-50 text-rose-700",
+  fallback: "border-rose-200 bg-rose-50 text-rose-700",
+})
+
+function confidenceClass(band) {
+  return CONFIDENCE_STYLES[band] || CONFIDENCE_STYLES.needs_review
+}
+
+function confidenceLabel(band) {
+  if (band === 'normal') return 'Normal'
+  if (band === 'advisory') return 'Advisory'
+  if (band === 'fallback') return 'Fallback'
+  return 'Needs Review'
+}
+
 export function OmniSearchDialog() {
   const inputRef = React.useRef(null)
   const navigate = useNavigate()
@@ -232,6 +270,8 @@ export function OmniSearchDialog() {
 
   const { open, setOpen, recentPages } = useOmniSearch()
   const [rawQuery, setRawQuery] = React.useState('')
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
+  const [pendingExecution, setPendingExecution] = React.useState(null)
 
   const parsed = React.useMemo(
     () => parseQuery(rawQuery, { isAdmin, isClinical }),
@@ -290,6 +330,26 @@ export function OmniSearchDialog() {
   })
 
   const groups = data?.groups || EMPTY_GROUPS
+  const aiIntentEnabled = serverEnabled && !isDebouncing && mode === 'all'
+  const {
+    data: aiIntentData,
+    isLoading: isAiIntentLoading,
+    isError: isAiIntentError,
+  } = useOmniIntentPreview({
+    open,
+    query: serverQuery,
+    mode,
+    enabled: aiIntentEnabled,
+  })
+  const executePreviewMutation = useOmniExecutePreview()
+
+  const aiIntentResult = aiIntentData?.result || null
+  const aiIntentPreview = aiIntentResult?.preview || null
+  const aiIntentHref = buildOmniTargetHref(aiIntentResult?.target_route)
+  const aiIntentBand = aiIntentData?.confidence_band || 'needs_review'
+  const aiIntentFallback = Boolean(aiIntentResult?.fallback_to_legacy)
+  const aiIntentBlocked = aiIntentPreview?.allowed === false
+  const aiIntentConfirmationRequired = Boolean(aiIntentResult?.requires_confirmation)
 
   const actions = React.useMemo(() => {
     if (!effectiveQuery) return []
@@ -330,6 +390,87 @@ export function OmniSearchDialog() {
     },
     [navigate, setOpen]
   )
+
+  const closeConfirmation = React.useCallback(() => {
+    setConfirmOpen(false)
+    setPendingExecution(null)
+  }, [])
+
+  const handleConfirmExecution = React.useCallback(() => {
+    const target = pendingExecution?.href
+    closeConfirmation()
+    if (target) {
+      navigate(target)
+    }
+  }, [closeConfirmation, navigate, pendingExecution?.href])
+
+  const handleRunAiPreview = React.useCallback(async () => {
+    if (!serverQuery || serverQuery.length < 2) return
+    if (aiIntentFallback) {
+      toast.info('Low-confidence intent. Use standard results below.')
+      return
+    }
+    if (aiIntentBlocked) {
+      const reason = aiIntentPreview?.denial_reasons?.[0] || 'Action is not permitted.'
+      toast.error(reason)
+      return
+    }
+
+    const intentPayload = aiIntentResult
+      ? {
+          intent_type: aiIntentResult.intent_type,
+          entities: aiIntentResult.entities || {},
+          target_route: aiIntentResult.target_route || {},
+          normalized_query: aiIntentResult.normalized_query || serverQuery,
+          requires_confirmation: aiIntentResult.requires_confirmation,
+          fallback_to_legacy: aiIntentResult.fallback_to_legacy,
+          confidence: aiIntentData?.confidence,
+        }
+      : undefined
+
+    try {
+      const previewEnvelope = await executePreviewMutation.mutateAsync({
+        text: serverQuery,
+        intent: intentPayload,
+      })
+      const previewIntent = previewEnvelope?.result?.intent || {}
+      const previewDecision = previewEnvelope?.result?.preview || {}
+      const href = buildOmniTargetHref(previewIntent.target_route)
+
+      if (!previewDecision.allowed) {
+        const reason = previewDecision?.denial_reasons?.[0] || 'Action is not permitted.'
+        toast.error(reason)
+        return
+      }
+
+      if (previewDecision.requires_confirmation || previewIntent.requires_confirmation) {
+        setOpen(false)
+        setPendingExecution({
+          href,
+          intent: previewIntent,
+          preview: previewDecision,
+          confidenceBand: previewEnvelope?.confidence_band || aiIntentBand,
+        })
+        setConfirmOpen(true)
+        return
+      }
+
+      onSelectAndClose(href)
+    } catch (error) {
+      toast.error(error?.message || 'Unable to preview AI command.')
+    }
+  }, [
+    aiIntentBand,
+    aiIntentBlocked,
+    aiIntentData?.confidence,
+    aiIntentFallback,
+    aiIntentPreview?.denial_reasons,
+    aiIntentResult,
+    executePreviewMutation,
+    onSelectAndClose,
+    serverQuery,
+    setOpen,
+  ])
 
   const renderPageItem = React.useCallback(
     (page) => {
@@ -406,6 +547,19 @@ export function OmniSearchDialog() {
   const hasQuery = rawQuery.trim().length > 0
   const serverQueryReady = effectiveQuery.length === 0 || effectiveQuery.length >= 2
   const isSearching = isLoading || isDebouncing
+  const showAiIntentPreview = hasQuery && mode === 'all' && serverEnabled && serverQueryReady && serverQuery.length >= 2
+  const aiIntentDisabled = aiIntentFallback || aiIntentBlocked || executePreviewMutation.isPending
+  const hasAiIntentContent =
+    showAiIntentPreview && (isAiIntentLoading || isAiIntentError || Boolean(aiIntentResult))
+
+  let aiIntentNote = null
+  if (aiIntentFallback) {
+    aiIntentNote = 'Low confidence. Falling back to standard results.'
+  } else if (aiIntentBlocked) {
+    aiIntentNote = aiIntentPreview?.denial_reasons?.[0] || 'Not allowed for this role or scope.'
+  } else if (aiIntentConfirmationRequired) {
+    aiIntentNote = 'Confirmation required before navigation.'
+  }
 
   const patientPickerItems =
     (mode === 'patients' || mode === 'patient_action') && effectiveQuery.length < 2
@@ -414,6 +568,7 @@ export function OmniSearchDialog() {
 
   const showEmpty =
     hasQuery &&
+    !hasAiIntentContent &&
     !isSearching &&
     !isError &&
     mode !== 'pages' &&
@@ -431,7 +586,8 @@ export function OmniSearchDialog() {
           (groups.staff || []).length === 0)
 
   return (
-    <CommandDialog
+    <>
+      <CommandDialog
       open={open}
       onOpenChange={setOpen}
       title="Omni Search"
@@ -461,6 +617,78 @@ export function OmniSearchDialog() {
 
       <CommandList className="chronicle-scrollbar max-h-[420px]">
         {showEmpty && <CommandEmpty>No results found.</CommandEmpty>}
+
+        {showAiIntentPreview && (
+          <>
+            <CommandGroup heading="AI Intent Preview">
+              {isAiIntentLoading && (
+                <CommandItem disabled value="AI intent loading" className={COMMAND_ITEM_CLASSNAME}>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <LeadingIcon Icon={Sparkles} tone="amber" />
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      Parsing intent...
+                    </span>
+                  </div>
+                </CommandItem>
+              )}
+
+              {!isAiIntentLoading && isAiIntentError && (
+                <CommandItem disabled value="AI intent error" className={COMMAND_ITEM_CLASSNAME}>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    AI intent unavailable. Use standard search results below.
+                  </span>
+                </CommandItem>
+              )}
+
+              {!isAiIntentLoading && !isAiIntentError && aiIntentResult && (
+                <CommandItem
+                  key={`ai-intent:${serverQuery}`}
+                  value={`AI ${aiIntentResult.intent_type || ''} ${aiIntentHref}`}
+                  onSelect={handleRunAiPreview}
+                  disabled={aiIntentDisabled}
+                  className={COMMAND_ITEM_CLASSNAME}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <LeadingIcon
+                      Icon={
+                        aiIntentBlocked || aiIntentFallback
+                          ? ShieldX
+                          : aiIntentConfirmationRequired
+                            ? ShieldAlert
+                            : ShieldCheck
+                      }
+                      tone={aiIntentBlocked || aiIntentFallback ? 'rose' : aiIntentConfirmationRequired ? 'amber' : 'emerald'}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-heading text-sm font-semibold text-foreground">
+                          {formatIntentLabel(aiIntentResult.intent_type)}
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                            confidenceClass(aiIntentBand)
+                          )}
+                        >
+                          {confidenceLabel(aiIntentBand)}
+                        </span>
+                      </div>
+                      <div className="truncate font-mono text-[10px] text-muted-foreground">
+                        {aiIntentHref}
+                      </div>
+                      {aiIntentNote && (
+                        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                          {aiIntentNote}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CommandItem>
+              )}
+            </CommandGroup>
+            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+          </>
+        )}
 
         {!hasQuery && (
           <>
@@ -816,30 +1044,75 @@ export function OmniSearchDialog() {
             <span className="font-mono text-[10px] text-muted-foreground">Search failed. Try again.</span>
           </CommandItem>
         )}
-      </CommandList>
+        </CommandList>
 
-      <div className="border-t bg-muted/20 px-4 py-2 text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-tight">
-          <span>Enter to open</span>
-          <span className="opacity-50">·</span>
-          <span>Esc to close</span>
-          <span className="opacity-50">·</span>
-          <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.70_0.15_230)]">
-            &gt; pages
-          </span>
-          <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.75_0.18_55)]">
-            # patients
-          </span>
-          <span
-            className={cn(
-              "rounded-full border bg-card px-2 py-0.5 text-[oklch(0.65_0.22_15)]",
-              !isAdmin && "opacity-50"
-            )}
-          >
-            @ staff
-          </span>
+        <div className="border-t bg-muted/20 px-4 py-2 text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-tight">
+            <span>Enter to open</span>
+            <span className="opacity-50">·</span>
+            <span>Esc to close</span>
+            <span className="opacity-50">·</span>
+            <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.70_0.15_230)]">
+              &gt; pages
+            </span>
+            <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.75_0.18_55)]">
+              # patients
+            </span>
+            <span
+              className={cn(
+                "rounded-full border bg-card px-2 py-0.5 text-[oklch(0.65_0.22_15)]",
+                !isAdmin && "opacity-50"
+              )}
+            >
+              @ staff
+            </span>
+          </div>
         </div>
-      </div>
-    </CommandDialog>
+      </CommandDialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={(nextOpen) => (!nextOpen ? closeConfirmation() : setConfirmOpen(nextOpen))}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-xl">
+              Confirm Sensitive Action
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              AI command preview indicates this navigation requires confirmation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                  confidenceClass(pendingExecution?.confidenceBand)
+                )}
+              >
+                {confidenceLabel(pendingExecution?.confidenceBand)}
+              </span>
+              <span className="font-heading font-semibold text-foreground">
+                {formatIntentLabel(pendingExecution?.intent?.intent_type)}
+              </span>
+            </div>
+            <div className="mt-2 font-mono text-xs text-muted-foreground">
+              {pendingExecution?.href}
+            </div>
+            {(pendingExecution?.preview?.denial_reasons || []).length > 0 && (
+              <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 p-2 font-mono text-xs text-rose-700">
+                {(pendingExecution?.preview?.denial_reasons || [])[0]}
+              </div>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={closeConfirmation}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmExecution}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

@@ -13,6 +13,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,14 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -50,6 +59,7 @@ import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
 import {
   useLabResults,
+  useLabInterpretation,
   useVerifyLabResult,
   useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
@@ -88,6 +98,11 @@ export default function LabResultsPage() {
   const [selectedResultIds, setSelectedResultIds] = useState([]);
   const [verificationNotes, setVerificationNotes] = useState("");
 
+  // AI interpretation dialog state
+  const [interpretDialogOpen, setInterpretDialogOpen] = useState(false);
+  const [interpretAudience, setInterpretAudience] = useState("clinician");
+  const [interpretContext, setInterpretContext] = useState(null);
+
   // Build query filters
   const queryFilters = useMemo(() => {
     const filters = {};
@@ -109,6 +124,25 @@ export default function LabResultsPage() {
   // Mutations
   const verifyMutation = useVerifyLabResult();
   const bulkVerifyMutation = useBulkVerifyLabResults();
+
+  const interpretationResultId =
+    interpretContext?.mode === "result" ? interpretContext.sourceId : null;
+  const interpretationOrderId =
+    interpretContext?.mode === "order" ? interpretContext.sourceId : null;
+
+  const clinicianInterpretation = useLabInterpretation({
+    resultId: interpretationResultId,
+    orderId: interpretationOrderId,
+    audience: "clinician",
+    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "clinician",
+  });
+
+  const patientInterpretation = useLabInterpretation({
+    resultId: interpretationResultId,
+    orderId: interpretationOrderId,
+    audience: "patient",
+    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "patient",
+  });
 
   // Process results data
   const results = useMemo(() => {
@@ -190,6 +224,39 @@ export default function LabResultsPage() {
     return { total, verified, pending, critical, orders };
   }, [results, groupedResults]);
 
+  const activeInterpretation =
+    interpretAudience === "patient" ? patientInterpretation : clinicianInterpretation;
+
+  const interpretationPayload = activeInterpretation.data?.result || null;
+  const interpretationConfidenceBand =
+    activeInterpretation.data?.confidence_band || "needs_review";
+  const interpretationConfidence =
+    typeof activeInterpretation.data?.confidence === "number"
+      ? Math.round(activeInterpretation.data.confidence * 100)
+      : null;
+
+  const interpretationResultItems = useMemo(() => {
+    if (!interpretationPayload) return [];
+    if (interpretationPayload.mode === "order") {
+      return interpretationPayload.results || [];
+    }
+    if (interpretationPayload.result) {
+      return [interpretationPayload.result];
+    }
+    return [];
+  }, [interpretationPayload]);
+
+  const interpretationSuggestedChecks = useMemo(() => {
+    if (!interpretationPayload) return [];
+    if (Array.isArray(interpretationPayload.suggested_next_checks)) {
+      return interpretationPayload.suggested_next_checks;
+    }
+    if (Array.isArray(interpretationPayload.result?.suggested_next_checks)) {
+      return interpretationPayload.result.suggested_next_checks;
+    }
+    return [];
+  }, [interpretationPayload]);
+
   // Format date
   const formatDate = (dateString) => {
     if (!dateString) return "-";
@@ -225,6 +292,28 @@ export default function LabResultsPage() {
     return configs[flag] || configs.normal;
   };
 
+  const getConfidenceConfig = (band) => {
+    const configs = {
+      normal: {
+        label: "Normal",
+        className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      },
+      advisory: {
+        label: "Advisory",
+        className: "bg-amber-50 text-amber-700 border-amber-200",
+      },
+      needs_review: {
+        label: "Needs Review",
+        className: "bg-rose-50 text-rose-700 border-rose-200",
+      },
+      fallback: {
+        label: "Fallback",
+        className: "bg-rose-50 text-rose-700 border-rose-200",
+      },
+    };
+    return configs[band] || configs.needs_review;
+  };
+
   // Toggle order expansion
   const toggleOrderExpansion = (orderId) => {
     setExpandedOrders((prev) => {
@@ -236,6 +325,35 @@ export default function LabResultsPage() {
       }
       return next;
     });
+  };
+
+  const openResultInterpretation = (result, group) => {
+    setInterpretAudience("clinician");
+    setInterpretContext({
+      mode: "result",
+      sourceId: result.id,
+      testName: result.test_name,
+      orderNumber: group.order_number,
+      patientName: group.patient_name,
+    });
+    setInterpretDialogOpen(true);
+  };
+
+  const openOrderInterpretation = (group) => {
+    if (!group.order_id) {
+      toast.error("Order interpretation requires an order ID.");
+      return;
+    }
+
+    setInterpretAudience("clinician");
+    setInterpretContext({
+      mode: "order",
+      sourceId: group.order_id,
+      orderNumber: group.order_number,
+      patientName: group.patient_name,
+      resultCount: group.results.length,
+    });
+    setInterpretDialogOpen(true);
   };
 
   // Handle single result verify click
@@ -575,6 +693,16 @@ export default function LabResultsPage() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openOrderInterpretation(group)}
+                          disabled={!group.order_id}
+                          className="text-xs"
+                        >
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          Interpret Order
+                        </Button>
                         {canVerify && unverifiedCount > 0 && (
                           <Button
                             size="sm"
@@ -616,9 +744,7 @@ export default function LabResultsPage() {
                               <th className="text-left px-4 py-2">Reference</th>
                               <th className="text-left px-4 py-2">Flag</th>
                               <th className="text-left px-4 py-2">Status</th>
-                              {canVerify && (
-                                <th className="text-right px-4 py-2">Action</th>
-                              )}
+                              <th className="text-right px-4 py-2">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border">
@@ -703,23 +829,30 @@ export default function LabResultsPage() {
                                       </Badge>
                                     )}
                                   </td>
-                                  {canVerify && (
-                                    <td className="px-4 py-2.5 text-right">
-                                      {!result.is_verified && (
+                                  <td className="px-4 py-2.5 text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openResultInterpretation(result, group)}
+                                        className="text-xs h-7"
+                                      >
+                                        <Sparkles className="h-3 w-3 mr-1" />
+                                        Interpret
+                                      </Button>
+                                      {canVerify && !result.is_verified && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          onClick={() =>
-                                            handleVerifyClick(result)
-                                          }
+                                          onClick={() => handleVerifyClick(result)}
                                           className="text-xs h-7"
                                         >
                                           <CheckCircle2 className="h-3 w-3 mr-1" />
                                           Verify
                                         </Button>
                                       )}
-                                    </td>
-                                  )}
+                                    </div>
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -737,7 +870,6 @@ export default function LabResultsPage() {
                     <CardContent className="pt-0">
                       <div className="flex flex-wrap gap-2">
                         {group.results.slice(0, 6).map((result) => {
-                          const flagConfig = getFlagConfig(result.flag);
                           return (
                             <Badge
                               key={result.id}
@@ -775,6 +907,185 @@ export default function LabResultsPage() {
           />
         )}
       </main>
+
+      <Dialog
+        open={interpretDialogOpen}
+        onOpenChange={(nextOpen) => {
+          setInterpretDialogOpen(nextOpen);
+          if (!nextOpen) {
+            setInterpretAudience("clinician");
+            setInterpretContext(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-amber-600" />
+              AI Lab Interpretation
+            </DialogTitle>
+            <DialogDescription>
+              Advisory output only. Clinical review is required before treatment
+              or ordering decisions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {interpretContext?.patientName && (
+                <Badge variant="outline" className="text-xs">
+                  {interpretContext.patientName}
+                </Badge>
+              )}
+              {interpretContext?.orderNumber && (
+                <Badge variant="outline" className="text-xs font-mono">
+                  {interpretContext.orderNumber}
+                </Badge>
+              )}
+              {interpretContext?.testName && (
+                <Badge variant="outline" className="text-xs">
+                  {interpretContext.testName}
+                </Badge>
+              )}
+            </div>
+
+            <Tabs value={interpretAudience} onValueChange={setInterpretAudience}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="clinician">Clinician View</TabsTrigger>
+                <TabsTrigger value="patient">Patient View</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {activeInterpretation.isLoading && (
+              <div className="space-y-2 pt-2">
+                <Skeleton className="h-5 w-56" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            )}
+
+            {activeInterpretation.isError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                <p className="text-sm text-rose-700">
+                  {activeInterpretation.error?.message || "Failed to load interpretation."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => activeInterpretation.refetch()}
+                  className="mt-2"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+
+            {!activeInterpretation.isLoading &&
+              !activeInterpretation.isError &&
+              interpretationPayload && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs", getConfidenceConfig(interpretationConfidenceBand).className)}
+                    >
+                      {getConfidenceConfig(interpretationConfidenceBand).label}
+                    </Badge>
+                    {interpretationConfidence !== null && (
+                      <Badge variant="outline" className="text-xs font-mono">
+                        Confidence {interpretationConfidence}%
+                      </Badge>
+                    )}
+                    {activeInterpretation.data?.requires_human_review && (
+                      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                        Human Review Required
+                      </Badge>
+                    )}
+                  </div>
+
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {interpretationPayload.summary || "No summary available."}
+                  </p>
+
+                  {interpretationSuggestedChecks.length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Suggested Next Checks
+                      </h4>
+                      <ul className="space-y-1">
+                        {interpretationSuggestedChecks.slice(0, 4).map((item) => (
+                          <li key={item} className="text-sm text-foreground">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {interpretationResultItems.length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Result Breakdown
+                      </h4>
+                      <div className="space-y-2">
+                        {interpretationResultItems.slice(0, 6).map((item) => (
+                          <div
+                            key={item.result_id || `${item.test_code}:${item.performed_at}`}
+                            className="rounded-md border border-border/70 p-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium text-foreground">
+                                {item.test_name}
+                              </span>
+                              <Badge variant="outline" className="text-xs">
+                                {item.flag}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.summary}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(activeInterpretation.data?.citations || []).length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Evidence
+                      </h4>
+                      <div className="space-y-1">
+                        {(activeInterpretation.data?.citations || []).slice(0, 3).map((citation) => (
+                          <div
+                            key={`${citation.source}:${citation.result_id}:${citation.field}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            {citation.test_name}: {citation.value}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setInterpretDialogOpen(false);
+                setInterpretAudience("clinician");
+                setInterpretContext(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Verify Dialog */}
       <AlertDialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>

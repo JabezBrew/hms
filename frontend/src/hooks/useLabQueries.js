@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { laboratoryApi } from '@/features/laboratory/api';
+import { aiAssistantApi } from '@/shared/api/aiAssistant';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -22,6 +23,11 @@ export const labKeys = {
   results: () => keyWith('laboratory', 'results'),
   resultsList: (filters) => keyWith('laboratory', 'results', 'list', { filters }),
   result: (id) => keyWith('laboratory', 'results', id),
+};
+
+export const labAiKeys = {
+  interpretation: ({ resultId = null, orderId = null, audience = 'clinician' } = {}) =>
+    keyWith('ai', 'laboratory', 'interpretation', { resultId, orderId, audience }),
 };
 
 // ========== Lab Tests ==========
@@ -447,5 +453,32 @@ export function useBulkVerifyLabResults() {
       // Invalidate orders list
       queryClient.invalidateQueries({ queryKey: labKeys.orders() });
     },
+  });
+}
+
+/**
+ * Fetch AI interpretation for a single result or an order.
+ * Exactly one of resultId or orderId is required.
+ */
+export function useLabInterpretation({
+  resultId = null,
+  orderId = null,
+  audience = 'clinician',
+  enabled = true,
+} = {}) {
+  const hasResult = Boolean(resultId);
+  const hasOrder = Boolean(orderId);
+  const shouldFetch = Boolean(enabled) && hasResult !== hasOrder;
+
+  return useQuery({
+    queryKey: labAiKeys.interpretation({ resultId, orderId, audience }),
+    queryFn: () => {
+      if (hasResult) {
+        return aiAssistantApi.interpretLabResult({ resultId, audience });
+      }
+      return aiAssistantApi.interpretLabOrder({ orderId, audience });
+    },
+    enabled: shouldFetch,
+    staleTime: 60 * 1000,
   });
 }
