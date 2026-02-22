@@ -3,6 +3,8 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AIArtifactViewSet,
+    AIChronicleAskView,
+    AIChronicleSummarizeView,
     AIFeedbackViewSet,
     AILabInterpretView,
     AIObservabilitySummaryView,
@@ -18,6 +20,16 @@ router.register(r'feedback', AIFeedbackViewSet, basename='ai-feedback')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path(
+        'chronicle/<uuid:patient_id>/summarize/',
+        AIChronicleSummarizeView.as_view(),
+        name='ai-chronicle-summarize',
+    ),
+    path(
+        'chronicle/<uuid:patient_id>/ask/',
+        AIChronicleAskView.as_view(),
+        name='ai-chronicle-ask',
+    ),
     path('omni/parse/', AIOmniParseView.as_view(), name='ai-omni-parse'),
     path('omni/execute-preview/', AIOmniExecutePreviewView.as_view(), name='ai-omni-execute-preview'),
     path('labs/interpret/', AILabInterpretView.as_view(), name='ai-labs-interpret'),

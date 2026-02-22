@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -10,6 +11,18 @@ from apps.ai.services import policy
 from apps.core.security import check_clinical_access, check_lab_access, get_user_facility
 from apps.encounters.models import Encounter
 from apps.users.models import PatientProfile
+
+
+TIME_WINDOW_PATTERN = re.compile(r'^\d{1,3}[hdw]$')
+
+
+def validate_time_window(value: str) -> str:
+    normalized = str(value or '').strip().lower()
+    if not normalized:
+        return '24h'
+    if not TIME_WINDOW_PATTERN.match(normalized):
+        raise serializers.ValidationError("time_window must match '<number><h|d|w>', for example '24h' or '7d'.")
+    return normalized
 
 
 class AISessionCreateSerializer(serializers.Serializer):
@@ -224,3 +237,22 @@ class AILabInterpretRequestSerializer(serializers.Serializer):
         if has_result == has_order:
             raise serializers.ValidationError('Exactly one of result_id or order_id is required.')
         return attrs
+
+
+class AIChronicleSummarizeRequestSerializer(serializers.Serializer):
+    time_window = serializers.CharField(required=False, default='24h')
+    focus = serializers.ChoiceField(choices=['handoff', 'rounds', 'changes'], default='handoff')
+    encounter_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_time_window(self, value):
+        return validate_time_window(value)
+
+
+class AIChronicleAskRequestSerializer(serializers.Serializer):
+    question = serializers.CharField(max_length=2000)
+    time_window = serializers.CharField(required=False, default='24h')
+    encounter_id = serializers.UUIDField(required=False, allow_null=True)
+    constraints = serializers.JSONField(required=False, default=dict)
+
+    def validate_time_window(self, value):
+        return validate_time_window(value)

@@ -17,6 +17,8 @@ from apps.ai.models import AIArtifact, AIFeedback, AIMessage, AISession
 from apps.ai.serializers import (
     AIArtifactRejectSerializer,
     AIArtifactSerializer,
+    AIChronicleAskRequestSerializer,
+    AIChronicleSummarizeRequestSerializer,
     AILabInterpretRequestSerializer,
     AIOmniExecutePreviewRequestSerializer,
     AIOmniParseRequestSerializer,
@@ -25,13 +27,16 @@ from apps.ai.serializers import (
     AISessionCreateSerializer,
     AISessionSerializer,
 )
+from apps.ai.services.chronicle_copilot import ask_chronicle, summarize_chronicle
 from apps.ai.services.lab_interpretation import interpret_order, interpret_result
 from apps.ai.services.omni import normalize_omni_text, parse_omni_intent, preview_omni_intent
 from apps.ai.services.orchestrator import AIOrchestrator
 from apps.ai.services.policy import build_response_envelope, confidence_band, ensure_feature_enabled
+from apps.ai.services.retrieval import build_minimal_context_bundle, resolve_time_window
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import check_lab_access, get_user_facility
+from apps.core.security import check_clinical_access, check_lab_access, get_user_facility
 from apps.laboratory.models import LabOrder, LabResult
+from apps.users.models import PatientProfile
 
 
 logger_name = 'apps.ai'
@@ -72,6 +77,19 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _resolve_clinical_patient(*, patient_id, facility, user):
+    patient = (
+        PatientProfile.objects.select_related('user')
+        .filter(id=patient_id, facility_id=facility.id)
+        .first()
+    )
+    if not patient:
+        return None
+
+    check_clinical_access(user, patient)
+    return patient
 
 
 class AISessionViewSet(
@@ -412,6 +430,132 @@ class AIOmniExecutePreviewView(APIView):
                 'intent_type': intent_payload['intent_type'],
                 'allowed': preview['allowed'],
                 'requires_confirmation': preview['requires_confirmation'],
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AIChronicleSummarizeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, patient_id, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        patient = _resolve_clinical_patient(
+            patient_id=patient_id,
+            facility=facility,
+            user=request.user,
+        )
+        if not patient:
+            return Response({'detail': 'Patient not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AIChronicleSummarizeRequestSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+
+        time_window = serializer.validated_data['time_window']
+        normalized_window, start_at, end_at = resolve_time_window(time_window)
+        encounter_id = serializer.validated_data.get('encounter_id')
+
+        context_bundle = build_minimal_context_bundle(
+            patient=patient,
+            start_at=start_at,
+            end_at=end_at,
+            encounter_id=encounter_id,
+            timeline_limit=24,
+        )
+
+        summary_payload = summarize_chronicle(
+            context_bundle=context_bundle,
+            focus=serializer.validated_data['focus'],
+            time_window=normalized_window,
+        )
+
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_CHRONICLE_COPILOT,
+            confidence=summary_payload['confidence'],
+            result=summary_payload['result'],
+            citations=summary_payload['citations'],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_chronicle_summarize',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'patient_id': str(patient.id),
+                'time_window': normalized_window,
+                'focus': serializer.validated_data['focus'],
+                'encounter_id': str(encounter_id) if encounter_id else None,
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AIChronicleAskView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, patient_id, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        patient = _resolve_clinical_patient(
+            patient_id=patient_id,
+            facility=facility,
+            user=request.user,
+        )
+        if not patient:
+            return Response({'detail': 'Patient not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AIChronicleAskRequestSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+
+        normalized_window, start_at, end_at = resolve_time_window(serializer.validated_data['time_window'])
+        encounter_id = serializer.validated_data.get('encounter_id')
+
+        context_bundle = build_minimal_context_bundle(
+            patient=patient,
+            start_at=start_at,
+            end_at=end_at,
+            encounter_id=encounter_id,
+            timeline_limit=24,
+        )
+        ask_payload = ask_chronicle(
+            context_bundle=context_bundle,
+            question=serializer.validated_data['question'],
+            time_window=normalized_window,
+        )
+
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_CHRONICLE_COPILOT,
+            confidence=ask_payload['confidence'],
+            result=ask_payload['result'],
+            citations=ask_payload['citations'],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_chronicle_ask',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'patient_id': str(patient.id),
+                'time_window': normalized_window,
+                'question_len': len(serializer.validated_data['question'].strip()),
+                'encounter_id': str(encounter_id) if encounter_id else None,
             },
         )
 
