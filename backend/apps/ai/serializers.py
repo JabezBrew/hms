@@ -193,3 +193,34 @@ class AIObservabilitySummarySerializer(serializers.Serializer):
     tokens = serializers.DictField()
     cost = serializers.DictField()
     latency_ms = serializers.DictField()
+
+
+class AIOmniParseRequestSerializer(serializers.Serializer):
+    text = serializers.CharField(max_length=1000)
+    context = serializers.JSONField(required=False, default=dict)
+
+
+class AIOmniExecutePreviewRequestSerializer(serializers.Serializer):
+    text = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    intent = serializers.JSONField(required=False)
+    context = serializers.JSONField(required=False, default=dict)
+
+    def validate(self, attrs):
+        text = (attrs.get('text') or '').strip()
+        intent = attrs.get('intent')
+        if not text and not intent:
+            raise serializers.ValidationError('Either text or intent is required.')
+        return attrs
+
+
+class AILabInterpretRequestSerializer(serializers.Serializer):
+    result_id = serializers.UUIDField(required=False)
+    order_id = serializers.UUIDField(required=False)
+    audience = serializers.ChoiceField(choices=['clinician', 'patient'], default='clinician')
+
+    def validate(self, attrs):
+        has_result = bool(attrs.get('result_id'))
+        has_order = bool(attrs.get('order_id'))
+        if has_result == has_order:
+            raise serializers.ValidationError('Exactly one of result_id or order_id is required.')
+        return attrs

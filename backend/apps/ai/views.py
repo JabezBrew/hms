@@ -11,20 +11,27 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.ai.crypto import encrypt_ai_text
+from apps.ai import constants
 from apps.ai.logging_utils import redact_text, safe_ai_log
 from apps.ai.models import AIArtifact, AIFeedback, AIMessage, AISession
 from apps.ai.serializers import (
     AIArtifactRejectSerializer,
     AIArtifactSerializer,
+    AILabInterpretRequestSerializer,
+    AIOmniExecutePreviewRequestSerializer,
+    AIOmniParseRequestSerializer,
     AIFeedbackSerializer,
     AIObservabilitySummarySerializer,
     AISessionCreateSerializer,
     AISessionSerializer,
 )
+from apps.ai.services.lab_interpretation import interpret_order, interpret_result
+from apps.ai.services.omni import normalize_omni_text, parse_omni_intent, preview_omni_intent
 from apps.ai.services.orchestrator import AIOrchestrator
 from apps.ai.services.policy import build_response_envelope, ensure_feature_enabled
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import get_user_facility
+from apps.core.security import check_lab_access, get_user_facility
+from apps.laboratory.models import LabOrder, LabResult
 
 
 logger_name = 'apps.ai'
@@ -50,6 +57,13 @@ def _safe_encrypt_text(raw_text: str | None) -> str:
         return encrypt_ai_text(raw_text)
     except Exception:
         return ''
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 class AISessionViewSet(
@@ -263,6 +277,214 @@ class AIFeedbackViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewsets
         if self.request.user.user_type != 'admin':
             queryset = queryset.filter(user=self.request.user)
         return queryset
+
+
+class AIOmniParseView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_OMNI_NL)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        serializer = AIOmniParseRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        parsed_intent = parse_omni_intent(serializer.validated_data['text'])
+        preview = preview_omni_intent(parsed_intent, user=request.user, facility=facility)
+
+        result_payload = {
+            'intent_type': parsed_intent['intent_type'],
+            'entities': parsed_intent['entities'],
+            'target_route': parsed_intent['target_route'],
+            'normalized_query': parsed_intent['normalized_query'],
+            'requires_confirmation': parsed_intent['requires_confirmation'],
+            'fallback_to_legacy': parsed_intent['fallback_to_legacy'],
+            'preview': preview,
+        }
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_OMNI_NL,
+            confidence=parsed_intent['confidence'],
+            result=result_payload,
+            citations=[],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_omni_parse',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'intent_type': parsed_intent['intent_type'],
+                'requires_confirmation': parsed_intent['requires_confirmation'],
+                'fallback_to_legacy': parsed_intent['fallback_to_legacy'],
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AIOmniExecutePreviewView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _normalize_intent_payload(self, *, payload: dict[str, Any], raw_text: str) -> dict[str, Any]:
+        intent_type = str(payload.get('intent_type') or '').strip().lower() or 'search.global'
+
+        entities = payload.get('entities') if isinstance(payload.get('entities'), dict) else {}
+        route_payload = payload.get('target_route') if isinstance(payload.get('target_route'), dict) else {}
+        route_path = str(route_payload.get('path') or '').strip() or '/patients'
+        route_query = route_payload.get('query') if isinstance(route_payload.get('query'), dict) else {}
+
+        normalized_query = str(payload.get('normalized_query') or '').strip() or normalize_omni_text(raw_text)
+        confidence = _safe_float(payload.get('confidence'), default=0.55)
+        confidence = round(max(0.0, min(1.0, confidence)), 3)
+
+        fallback_to_legacy = bool(payload.get('fallback_to_legacy')) or confidence < 0.65
+
+        return {
+            'intent_type': intent_type,
+            'entities': entities,
+            'target_route': {'path': route_path, 'query': route_query},
+            'normalized_query': normalized_query,
+            'requires_confirmation': bool(payload.get('requires_confirmation')) or confidence < 0.85,
+            'fallback_to_legacy': fallback_to_legacy,
+            'confidence': confidence,
+        }
+
+    def post(self, request, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_OMNI_NL)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        serializer = AIOmniExecutePreviewRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        raw_text = (serializer.validated_data.get('text') or '').strip()
+        provided_intent = serializer.validated_data.get('intent')
+        if provided_intent:
+            intent_payload = self._normalize_intent_payload(payload=provided_intent, raw_text=raw_text)
+        else:
+            intent_payload = parse_omni_intent(raw_text)
+
+        preview = preview_omni_intent(intent_payload, user=request.user, facility=facility)
+        intent_payload['requires_confirmation'] = preview['requires_confirmation']
+
+        result_payload = {
+            'intent': {
+                'intent_type': intent_payload['intent_type'],
+                'entities': intent_payload['entities'],
+                'target_route': intent_payload['target_route'],
+                'normalized_query': intent_payload['normalized_query'],
+                'requires_confirmation': intent_payload['requires_confirmation'],
+                'fallback_to_legacy': intent_payload['fallback_to_legacy'],
+            },
+            'preview': preview,
+        }
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_OMNI_NL,
+            confidence=intent_payload['confidence'],
+            result=result_payload,
+            citations=[],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_omni_execute_preview',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'intent_type': intent_payload['intent_type'],
+                'allowed': preview['allowed'],
+                'requires_confirmation': preview['requires_confirmation'],
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AILabInterpretView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_LAB_INTERPRETATION)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        serializer = AILabInterpretRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        audience = serializer.validated_data['audience']
+        result_id = serializer.validated_data.get('result_id')
+        order_id = serializer.validated_data.get('order_id')
+
+        if result_id:
+            lab_result = (
+                LabResult.objects.select_related(
+                    'order_test__test',
+                    'order_test__order',
+                    'order_test__order__patient',
+                )
+                .filter(id=result_id, facility_id=facility.id)
+                .first()
+            )
+            if not lab_result:
+                return Response({'detail': 'Lab result not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            check_lab_access(request.user, lab_result.order_test.order.patient)
+            interpretation = interpret_result(lab_result, audience=audience)
+            source_kind = 'result'
+            source_id = str(lab_result.id)
+        else:
+            lab_order = (
+                LabOrder.objects.select_related('patient')
+                .filter(id=order_id, facility_id=facility.id)
+                .first()
+            )
+            if not lab_order:
+                return Response({'detail': 'Lab order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            check_lab_access(request.user, lab_order.patient)
+            interpretation = interpret_order(lab_order, audience=audience)
+            source_kind = 'order'
+            source_id = str(lab_order.id)
+
+        result_payload = interpretation['result']
+        result_payload['safety_notice'] = (
+            'Advisory only. Clinical review is required before treatment or ordering decisions.'
+        )
+
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_LAB_INTERPRETATION,
+            confidence=interpretation['confidence'],
+            result=result_payload,
+            citations=interpretation['citations'],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_lab_interpret',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'source_kind': source_kind,
+                'source_id': source_id,
+                'audience': audience,
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
 
 
 class AIObservabilitySummaryView(APIView):

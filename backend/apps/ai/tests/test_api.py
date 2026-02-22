@@ -40,7 +40,7 @@ def test_create_ai_session_with_patient_context():
 
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data['feature'] == 'note_draft'
-    assert response.data['patient'] == str(patient.id)
+    assert str(response.data['patient']) == str(patient.id)
 
 
 @pytest.mark.django_db
