@@ -2,12 +2,14 @@ import hashlib
 import json
 import re
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.ai import constants
 from apps.ai.models import AIArtifact, AIFeedback, AIMessage, AISession
 from apps.ai.services import policy
+from apps.clinical_notes.models import NoteTemplate, NoteTemplateRevision
 from apps.core.security import check_clinical_access, check_lab_access, get_user_facility
 from apps.encounters.models import Encounter
 from apps.users.models import PatientProfile
@@ -256,3 +258,104 @@ class AIChronicleAskRequestSerializer(serializers.Serializer):
 
     def validate_time_window(self, value):
         return validate_time_window(value)
+
+
+class AIBaseNoteRequestSerializer(serializers.Serializer):
+    patient_id = serializers.UUIDField()
+    template_id = serializers.UUIDField()
+    template_revision_id = serializers.UUIDField()
+    encounter_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def _resolve_template_queryset(self, *, user, facility):
+        queryset = NoteTemplate.objects.filter(facility_id=facility.id, is_active=True)
+        if user.user_type == 'admin':
+            return queryset
+
+        user_department = getattr(getattr(user, 'staff', None), 'department', None)
+        visibility_filters = (
+            Q(visibility='public')
+            | Q(created_by__isnull=True)
+            | Q(visibility='private', created_by=user)
+            | Q(visibility='role', created_by__user_type=user.user_type)
+        )
+        if user_department:
+            visibility_filters |= Q(visibility='department', department=user_department)
+        return queryset.filter(visibility_filters).distinct()
+
+    def validate(self, attrs):
+        request = self.context['request']
+        user = request.user
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise serializers.ValidationError({'detail': 'Facility context is required.'})
+
+        patient = (
+            PatientProfile.objects.select_related('facility', 'user')
+            .filter(id=attrs['patient_id'], facility_id=facility.id)
+            .first()
+        )
+        if not patient:
+            raise serializers.ValidationError({'patient_id': 'Patient not found.'})
+        check_clinical_access(user, patient)
+
+        template = self._resolve_template_queryset(user=user, facility=facility).filter(id=attrs['template_id']).first()
+        if not template:
+            raise serializers.ValidationError({'template_id': 'Template not found or not accessible.'})
+
+        revision_queryset = NoteTemplateRevision.objects.select_related('template').filter(
+            id=attrs['template_revision_id'],
+            facility_id=facility.id,
+        )
+        if user.user_type != 'admin':
+            revision_queryset = revision_queryset.filter(status='published')
+        template_revision = revision_queryset.first()
+        if not template_revision:
+            raise serializers.ValidationError(
+                {'template_revision_id': 'Template revision not found or not accessible.'}
+            )
+        if template_revision.template_id != template.id:
+            raise serializers.ValidationError(
+                {'template_revision_id': 'Template revision does not belong to the selected template.'}
+            )
+
+        encounter = None
+        encounter_id = attrs.get('encounter_id')
+        if encounter_id:
+            encounter = (
+                Encounter.objects.filter(id=encounter_id, facility_id=facility.id)
+                .only('id', 'patient_id')
+                .first()
+            )
+            if not encounter:
+                raise serializers.ValidationError({'encounter_id': 'Encounter not found.'})
+            if encounter.patient_id != patient.id:
+                raise serializers.ValidationError(
+                    {'encounter_id': 'Encounter does not belong to the selected patient.'}
+                )
+
+        attrs['facility'] = facility
+        attrs['patient'] = patient
+        attrs['template'] = template
+        attrs['template_revision'] = template_revision
+        attrs['encounter'] = encounter
+        return attrs
+
+
+class AINoteDraftRequestSerializer(AIBaseNoteRequestSerializer):
+    prompt = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+
+
+class AINoteLintRequestSerializer(AIBaseNoteRequestSerializer):
+    note_data = serializers.JSONField(required=False, default=dict)
+    draft = serializers.JSONField(required=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        note_data = attrs.get('note_data') if isinstance(attrs.get('note_data'), dict) else None
+        draft_payload = attrs.get('draft') if isinstance(attrs.get('draft'), dict) else None
+
+        if note_data is None and draft_payload is None:
+            raise serializers.ValidationError({'note_data': 'note_data (or draft) must be a JSON object.'})
+        attrs['note_data'] = note_data if note_data is not None else draft_payload
+        return attrs

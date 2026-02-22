@@ -20,6 +20,8 @@ from apps.ai.serializers import (
     AIChronicleAskRequestSerializer,
     AIChronicleSummarizeRequestSerializer,
     AILabInterpretRequestSerializer,
+    AINoteDraftRequestSerializer,
+    AINoteLintRequestSerializer,
     AIOmniExecutePreviewRequestSerializer,
     AIOmniParseRequestSerializer,
     AIFeedbackSerializer,
@@ -29,6 +31,7 @@ from apps.ai.serializers import (
 )
 from apps.ai.services.chronicle_copilot import ask_chronicle, summarize_chronicle
 from apps.ai.services.lab_interpretation import interpret_order, interpret_result
+from apps.ai.services.note_assistant import build_note_draft, lint_note_draft
 from apps.ai.services.omni import normalize_omni_text, parse_omni_intent, preview_omni_intent
 from apps.ai.services.orchestrator import AIOrchestrator
 from apps.ai.services.policy import build_response_envelope, confidence_band, ensure_feature_enabled
@@ -556,6 +559,108 @@ class AIChronicleAskView(APIView):
                 'time_window': normalized_window,
                 'question_len': len(serializer.validated_data['question'].strip()),
                 'encounter_id': str(encounter_id) if encounter_id else None,
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AINoteDraftView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_NOTE_DRAFT)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        serializer = AINoteDraftRequestSerializer(data=request.data or {}, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        draft_payload = build_note_draft(
+            patient=serializer.validated_data['patient'],
+            template=serializer.validated_data['template'],
+            template_revision=serializer.validated_data['template_revision'],
+            encounter=serializer.validated_data.get('encounter'),
+            prompt=serializer.validated_data.get('prompt', ''),
+        )
+
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_NOTE_DRAFT,
+            confidence=draft_payload['confidence'],
+            result=draft_payload['result'],
+            citations=draft_payload['citations'],
+            requires_human_review=True,
+        )
+
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_note_draft',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'patient_id': str(serializer.validated_data['patient'].id),
+                'template_id': str(serializer.validated_data['template'].id),
+                'template_revision_id': str(serializer.validated_data['template_revision'].id),
+                'encounter_id': (
+                    str(serializer.validated_data['encounter'].id)
+                    if serializer.validated_data.get('encounter')
+                    else None
+                ),
+                'section_count': len(draft_payload['result'].get('sections') or []),
+                'prompt_len': len(str(serializer.validated_data.get('prompt') or '').strip()),
+            },
+        )
+
+        return Response(envelope, status=status.HTTP_200_OK)
+
+
+class AINoteLintView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        ensure_feature_enabled(constants.FEATURE_NOTE_LINT)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied('Facility context is required.')
+
+        serializer = AINoteLintRequestSerializer(data=request.data or {}, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        lint_payload = lint_note_draft(
+            template_revision=serializer.validated_data['template_revision'],
+            note_data=serializer.validated_data['note_data'],
+        )
+
+        envelope = build_response_envelope(
+            feature=constants.FEATURE_NOTE_LINT,
+            confidence=lint_payload['confidence'],
+            result=lint_payload['result'],
+            citations=lint_payload['citations'],
+            requires_human_review=True,
+        )
+
+        issue_counts = lint_payload['result'].get('issue_counts') or {}
+        safe_ai_log(
+            logger,
+            logging.INFO,
+            'ai_note_lint',
+            {
+                'facility_id': str(facility.id),
+                'user_id': str(request.user.id),
+                'patient_id': str(serializer.validated_data['patient'].id),
+                'template_id': str(serializer.validated_data['template'].id),
+                'template_revision_id': str(serializer.validated_data['template_revision'].id),
+                'critical_count': int(issue_counts.get('critical', 0)),
+                'major_count': int(issue_counts.get('major', 0)),
+                'minor_count': int(issue_counts.get('minor', 0)),
+                'can_finalize': bool(lint_payload['result'].get('can_finalize')),
+                'requires_major_acknowledgement': bool(
+                    lint_payload['result'].get('requires_major_acknowledgement')
+                ),
             },
         )
 
