@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import timedelta
 from urllib.parse import urlparse
 
@@ -206,6 +207,29 @@ def _configured_origins():
     return _dedupe(normalized)
 
 
+def _configured_origin_patterns():
+    candidates = []
+    candidates.extend(getattr(settings, 'WEBAUTHN_ALLOWED_ORIGIN_REGEXES', []) or [])
+    candidates.extend(getattr(settings, 'CORS_ALLOWED_ORIGIN_REGEXES', []) or [])
+
+    compiled = []
+    for pattern in _dedupe(candidates):
+        value = str(pattern or '').strip()
+        if not value:
+            continue
+        try:
+            compiled.append(re.compile(value))
+        except re.error:
+            continue
+    return compiled
+
+
+def _origin_matches_patterns(origin, compiled_patterns):
+    if not origin:
+        return False
+    return any(pattern.fullmatch(origin) for pattern in compiled_patterns)
+
+
 def _is_rp_id_compatible(rp_id, origin):
     host = _origin_host(origin).lower()
     value = str(rp_id or '').strip().lower().strip('.')
@@ -231,15 +255,23 @@ def _rp_id_for_origin(origin):
 def _webauthn_context(request):
     request_origin = _normalize_origin(request.headers.get('Origin'))
     configured_origins = _configured_origins()
+    configured_origin_patterns = _configured_origin_patterns()
 
-    if request_origin and configured_origins and request_origin not in configured_origins:
-        raise RuntimeError("WebAuthn origin is not allowed.")
+    if request_origin and (configured_origins or configured_origin_patterns):
+        origin_allowed = request_origin in configured_origins
+        if not origin_allowed:
+            origin_allowed = _origin_matches_patterns(request_origin, configured_origin_patterns)
+        if not origin_allowed:
+            raise RuntimeError("WebAuthn origin is not allowed.")
 
     if request_origin and not configured_origins:
         configured_origins = [request_origin]
 
-    if not configured_origins:
+    if not configured_origins and not configured_origin_patterns:
         raise RuntimeError("No allowed WebAuthn origins configured.")
+
+    if not request_origin and not configured_origins:
+        raise RuntimeError("WebAuthn origin header is required.")
 
     primary_origin = request_origin or configured_origins[0]
     ordered_origins = _dedupe([primary_origin, *configured_origins])

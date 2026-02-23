@@ -3,6 +3,7 @@ Django settings for hms_backend project.
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 import environ
@@ -70,6 +71,20 @@ def _parse_database_url(db_url):
         'PORT': parsed.port or '',
         'OPTIONS': options,
     }
+
+
+def _validated_origin_regexes(candidates):
+    patterns = []
+    for candidate in candidates:
+        value = str(candidate or '').strip()
+        if not value:
+            continue
+        try:
+            re.compile(value)
+        except re.error:
+            continue
+        patterns.append(value)
+    return patterns
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
@@ -349,6 +364,9 @@ WEBAUTHN_ALLOWED_ORIGINS = env.list(
     'WEBAUTHN_ALLOWED_ORIGINS',
     default=['http://localhost:5173'],
 )
+WEBAUTHN_ALLOWED_ORIGIN_REGEXES = _validated_origin_regexes(
+    env.list('WEBAUTHN_ALLOWED_ORIGIN_REGEXES', default=[]),
+)
 WEBAUTHN_TIMEOUT_MS = env.int('WEBAUTHN_TIMEOUT_MS', default=60000)
 FACILITY_CONTEXT_REQUIRED = env.bool('FACILITY_CONTEXT_REQUIRED', default=True)
 MULTI_FACILITY_MODE = env.bool('MULTI_FACILITY_MODE', default=False)
@@ -537,6 +555,9 @@ for origin in _railway_origins:
 CORS_ALLOWED_ORIGINS = [origin for origin in _cors_origins if origin and '://' in origin and len(origin) > 8]
 if not CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
+CORS_ALLOWED_ORIGIN_REGEXES = _validated_origin_regexes(
+    env.list('CORS_ALLOWED_ORIGIN_REGEXES', default=[]),
+)
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',

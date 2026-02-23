@@ -182,6 +182,82 @@ def test_webauthn_registration_rejects_untrusted_origin(monkeypatch):
     assert response.data['detail'] == 'WebAuthn origin is not allowed.'
 
 
+@pytest.mark.django_db
+@override_settings(
+    WEBAUTHN_RP_ID='thehms.systems',
+    WEBAUTHN_ALLOWED_ORIGINS=['https://thehms.systems'],
+    WEBAUTHN_ALLOWED_ORIGIN_REGEXES=[
+        r'^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.thehms\.systems$',
+    ],
+    CORS_ALLOWED_ORIGINS=['https://thehms.systems'],
+    CORS_ALLOWED_ORIGIN_REGEXES=[
+        r'^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.thehms\.systems$',
+    ],
+)
+def test_webauthn_registration_allows_tenant_subdomain_when_regex_matches(monkeypatch):
+    client, session_token = _create_admin_with_mfa_session()
+    captured = {}
+
+    monkeypatch.setattr(mfa_views, '_ensure_webauthn_available', lambda: None)
+
+    def fake_generate_registration_options(**kwargs):
+        captured['rp_id'] = kwargs['rp_id']
+        return {
+            'challenge': 'test-challenge',
+            'rp': {
+                'id': kwargs['rp_id'],
+                'name': kwargs['rp_name'],
+            },
+            'user': {
+                'id': 'dGVzdA',
+                'name': kwargs['user_name'],
+                'displayName': kwargs['user_display_name'],
+            },
+            'excludeCredentials': [],
+        }
+
+    monkeypatch.setattr(mfa_views, 'generate_registration_options', fake_generate_registration_options)
+    monkeypatch.setattr(mfa_views, 'options_to_json', lambda options: json.dumps(options))
+
+    response = client.post(
+        '/api/auth/mfa/webauthn/registration/options/',
+        {'mfa_session': session_token},
+        format='json',
+        HTTP_ORIGIN='https://agakhan.thehms.systems',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert captured['rp_id'] == 'thehms.systems'
+    assert response.data['rp']['id'] == 'thehms.systems'
+
+
+@pytest.mark.django_db
+@override_settings(
+    WEBAUTHN_RP_ID='thehms.systems',
+    WEBAUTHN_ALLOWED_ORIGINS=['https://thehms.systems'],
+    WEBAUTHN_ALLOWED_ORIGIN_REGEXES=[
+        r'^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.thehms\.systems$',
+    ],
+    CORS_ALLOWED_ORIGINS=['https://thehms.systems'],
+    CORS_ALLOWED_ORIGIN_REGEXES=[
+        r'^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.thehms\.systems$',
+    ],
+)
+def test_webauthn_registration_rejects_origin_outside_tenant_regex(monkeypatch):
+    client, session_token = _create_admin_with_mfa_session()
+    monkeypatch.setattr(mfa_views, '_ensure_webauthn_available', lambda: None)
+
+    response = client.post(
+        '/api/auth/mfa/webauthn/registration/options/',
+        {'mfa_session': session_token},
+        format='json',
+        HTTP_ORIGIN='https://agakhan.thehms.systems.evil.com',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data['detail'] == 'WebAuthn origin is not allowed.'
+
+
 @override_settings(
     CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
     CORS_ALLOW_HEADERS=[
@@ -243,3 +319,36 @@ def test_login_preflight_allows_device_label_header():
     allowed_headers = response.get('Access-Control-Allow-Headers', '').lower()
     assert 'x-device-label' in allowed_headers
     assert 'x-facility-code' in allowed_headers
+
+
+@override_settings(
+    CORS_ALLOWED_ORIGINS=['https://thehms.systems'],
+    CORS_ALLOWED_ORIGIN_REGEXES=[
+        r'^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.thehms\.systems$',
+    ],
+    CORS_ALLOW_HEADERS=[
+        'accept',
+        'accept-encoding',
+        'authorization',
+        'content-type',
+        'dnt',
+        'origin',
+        'user-agent',
+        'x-csrftoken',
+        'x-device-label',
+        'x-facility-code',
+        'x-mfa-session',
+        'x-requested-with',
+    ],
+)
+def test_login_preflight_allows_tenant_origin_matching_regex():
+    client = APIClient()
+    response = client.options(
+        '/api/auth/login/',
+        HTTP_ORIGIN='https://agakhan.thehms.systems',
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST',
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-device-label,x-facility-code,content-type',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.get('Access-Control-Allow-Origin') == 'https://agakhan.thehms.systems'
