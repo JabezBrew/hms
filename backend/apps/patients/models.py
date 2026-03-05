@@ -53,7 +53,8 @@ class PatientSearch(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.user.email} - {self.search_query}"
+        timestamp = self.search_date.isoformat() if self.search_date else "pending"
+        return f"{self.user.email} - patient search [{timestamp}]"
 
 
 class RecentPatient(models.Model):

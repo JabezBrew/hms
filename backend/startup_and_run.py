@@ -206,17 +206,15 @@ if run_migrations_only:
 secret_key = os.environ.get('SECRET_KEY')
 if not secret_key:
     log("ERROR: SECRET_KEY environment variable is not set!")
-    log("Available env vars: " + ", ".join(sorted(os.environ.keys())))
     sys.exit(1)
 else:
-    log(f"SECRET_KEY: {'*' * 8}... (set, length={len(secret_key)})")
+    log("SECRET_KEY is configured.")
 
 database_url = os.environ.get('DATABASE_URL')
 if not database_url:
     log("WARNING: DATABASE_URL is not set")
 else:
-    # Mask password in URL for logging
-    log(f"DATABASE_URL: {database_url[:30]}...")
+    log("DATABASE_URL is configured.")
 
 # Setup Django
 log("Setting up Django...")

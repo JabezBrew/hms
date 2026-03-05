@@ -69,7 +69,7 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
     - Ward-specific alerts (/ws/alerts/ward/<ward_id>/) - receives ward alerts only
 
     Authentication:
-    - Requires valid JWT token in query string
+    - Requires valid JWT token in WebSocket subprotocols
     - User must be a practitioner (nurse, doctor, etc.)
 
     Message types sent to client:
@@ -78,7 +78,7 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
     - alert.escalated: Alert severity increased
 
     Example client connection:
-        const ws = new WebSocket('ws://host/ws/alerts/?token=<jwt>');
+        const ws = new WebSocket('ws://host/ws/alerts/', ['hms.jwt', '<jwt>']);
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'alert.new') {
@@ -240,7 +240,7 @@ class VitalSignsConsumer(AsyncJsonWebsocketConsumer):
     - vitals.critical: Critical vital signs detected
 
     Example client connection:
-        const ws = new WebSocket('ws://host/ws/vitals/<patient_id>/?token=<jwt>');
+        const ws = new WebSocket('ws://host/ws/vitals/<patient_id>/', ['hms.jwt', '<jwt>']);
     """
 
     async def connect(self):

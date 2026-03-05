@@ -1,18 +1,15 @@
 """
 JWT Authentication middleware for WebSocket connections.
 
-Authenticates WebSocket connections using JWT access tokens passed via query
-parameters or WebSocket subprotocols.
+Authenticates WebSocket connections using JWT access tokens passed via
+WebSocket subprotocols.
 
 Why subprotocols?
 - WebSocket clients cannot set arbitrary HTTP headers in browsers.
 - Query-string tokens can be logged by proxies and tooling.
 
 Usage:
-    Query param:
-        ws://host/ws/alerts/?token=<jwt_access_token>
-
-    Subprotocols (preferred):
+    Subprotocols:
         new WebSocket('ws://host/ws/alerts/', ['hms.jwt', '<jwt_access_token>'])
 """
 
@@ -120,32 +117,36 @@ def _extract_token_from_subprotocols(subprotocols: Optional[List[str]]) -> Optio
     return None
 
 
+def _query_string_contains_token(query_string: str | bytes | None) -> bool:
+    if not query_string:
+        return False
+    raw_query = query_string.decode('utf-8') if isinstance(query_string, bytes) else str(query_string)
+    query_params = parse_qs(raw_query, keep_blank_values=True)
+    token_values = query_params.get('token', [])
+    return any(str(value).strip() for value in token_values)
+
+
+def _extract_token_from_scope(scope) -> Optional[str]:
+    token = _extract_token_from_subprotocols(scope.get('subprotocols', []) or [])
+    if token:
+        return token
+
+    if _query_string_contains_token(scope.get('query_string', b'')):
+        logger.warning("Rejected WebSocket query-string token; use subprotocol auth")
+
+    return None
+
+
 class JWTAuthMiddleware(BaseMiddleware):
     """
     Middleware to authenticate WebSocket connections using JWT.
 
-    Extracts the token from the query string and attaches the user to the scope.
-    If authentication fails, an AnonymousUser is attached instead.
-
-    Query parameters:
-        token: JWT access token
-
-    Example connection URL:
-        ws://localhost:8001/ws/alerts/?token=eyJhbGciOiJIUzI1NiIs...
+    Extracts the token from WebSocket subprotocols and attaches the user to the
+    scope. Query-string tokens are ignored and rejected.
     """
 
     async def __call__(self, scope, receive, send):
-        # Parse query string
-        query_string = scope.get('query_string', b'').decode('utf-8')
-        query_params = parse_qs(query_string)
-
-        # Extract token
-        token_list = query_params.get('token', [])
-        token = token_list[0] if token_list else None
-
-        # Fallback to subprotocols for safer token transport
-        if not token:
-            token = _extract_token_from_subprotocols(scope.get('subprotocols', []) or [])
+        token = _extract_token_from_scope(scope)
 
         if token:
             # Authenticate with JWT

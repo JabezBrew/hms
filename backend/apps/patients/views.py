@@ -54,6 +54,67 @@ from .tasks import (
 logger = logging.getLogger(__name__)
 
 
+def _build_safe_patient_search_summary(
+    *,
+    query=None,
+    ward_id=None,
+    admission_start=None,
+    admission_end=None,
+    department_id=None,
+    admission_status=None,
+    admission_type=None,
+    encounter_type=None,
+    attending_id=None,
+    age_min_value=None,
+    age_max_value=None,
+    my_patients=False,
+    registry_scope='all',
+    ordering='-created_at',
+    requested_page=1,
+    requested_page_size=None,
+):
+    """Build a non-PHI search-history summary for analytics and audits."""
+    active_filters = []
+    if query:
+        active_filters.append('query')
+    if ward_id:
+        active_filters.append('ward')
+    if admission_start:
+        active_filters.append('admission_start')
+    if admission_end:
+        active_filters.append('admission_end')
+    if department_id:
+        active_filters.append('department')
+    if admission_status:
+        active_filters.append('admission_status')
+    if admission_type:
+        active_filters.append('admission_type')
+    if encounter_type:
+        active_filters.append('encounter_type')
+    if attending_id:
+        active_filters.append('attending')
+    if age_min_value is not None:
+        active_filters.append('age_min')
+    if age_max_value is not None:
+        active_filters.append('age_max')
+
+    summary_parts = [f"patient-search filters={'+'.join(active_filters) if active_filters else 'none'}"]
+    if my_patients:
+        summary_parts.append('my_patients=true')
+    if registry_scope and registry_scope != 'all':
+        summary_parts.append(f"registry_scope={registry_scope}")
+    summary_parts.append(f"ordering={ordering}")
+    summary_parts.append(f"page={requested_page}")
+    if requested_page_size:
+        summary_parts.append(f"page_size={requested_page_size}")
+    return " ".join(summary_parts)[:255]
+
+
+def _patient_registration_history_entry():
+    """Return the non-PHI patient-search history marker for registrations."""
+    return "patient-registration action=create"
+
+
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     API endpoint for patient FHIR mappings.
@@ -342,7 +403,7 @@ class PatientViewSet(viewsets.ViewSet):
                     PatientSearch.objects.create(
                         user=request.user,
                         facility=patient_profile.facility,
-                        search_query=f"Registration: {patient_profile.user.get_full_name()}"
+                        search_query=_patient_registration_history_entry(),
                     )
 
                     # Add to recent patients
@@ -520,85 +581,43 @@ class PatientViewSet(viewsets.ViewSet):
         cache_key = facility_cache_key(
             f"patient_search_{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
         )
+        search_summary = _build_safe_patient_search_summary(
+            query=query,
+            ward_id=ward_id,
+            admission_start=admission_start,
+            admission_end=admission_end,
+            department_id=department_id,
+            admission_status=admission_status,
+            admission_type=admission_type,
+            encounter_type=encounter_type,
+            attending_id=attending_id,
+            age_min_value=age_min_value,
+            age_max_value=age_max_value,
+            my_patients=my_patients,
+            registry_scope=registry_scope,
+            ordering=ordering,
+            requested_page=requested_page,
+            requested_page_size=requested_page_size,
+        )
 
         # Try to get from cache first (skip cache if include_fhir is requested)
         if not include_fhir:
             cached_result = cache.get(cache_key)
             if cached_result is not None:
                 logger.info("Search cache hit for user %s", request.user.id)
-                search_parts = [f"Query: {query}" if query else "Query: (none)"]
-                if ward_id:
-                    search_parts.append(f"Ward: {ward_id}")
-                if admission_start:
-                    search_parts.append(f"Admission Start: {admission_start}")
-                if admission_end:
-                    search_parts.append(f"Admission End: {admission_end}")
-                if department_id:
-                    search_parts.append(f"Department: {department_id}")
-                if admission_status:
-                    search_parts.append(f"Admission Status: {admission_status}")
-                if admission_type:
-                    search_parts.append(f"Admission Type: {admission_type}")
-                if encounter_type:
-                    search_parts.append(f"Encounter Type: {encounter_type}")
-                if attending_id:
-                    search_parts.append(f"Attending: {attending_id}")
-                if age_min_value is not None:
-                    search_parts.append(f"Age Min: {age_min_value}")
-                if age_max_value is not None:
-                    search_parts.append(f"Age Max: {age_max_value}")
-                if my_patients:
-                    search_parts.append("My Patients: true")
-                if registry_scope != 'all':
-                    search_parts.append(f"Registry Scope: {registry_scope}")
-                search_parts.append(f"Ordering: {ordering}")
-                search_parts.append(f"Page: {requested_page}")
-                if requested_page_size:
-                    search_parts.append(f"Page Size: {requested_page_size}")
-                search_desc = ", ".join(search_parts)
                 facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
                 log_patient_search.delay(
                     str(request.user.id),
-                    search_desc,
+                    search_summary,
                     facility_code=facility.code if facility else None
                 )
                 return Response(cached_result)
 
         # Log search for auditing/history
-        search_parts = [f"Query: {query}" if query else "Query: (none)"]
-        if ward_id:
-            search_parts.append(f"Ward: {ward_id}")
-        if admission_start:
-            search_parts.append(f"Admission Start: {admission_start}")
-        if admission_end:
-            search_parts.append(f"Admission End: {admission_end}")
-        if department_id:
-            search_parts.append(f"Department: {department_id}")
-        if admission_status:
-            search_parts.append(f"Admission Status: {admission_status}")
-        if admission_type:
-            search_parts.append(f"Admission Type: {admission_type}")
-        if encounter_type:
-            search_parts.append(f"Encounter Type: {encounter_type}")
-        if attending_id:
-            search_parts.append(f"Attending: {attending_id}")
-        if age_min_value is not None:
-            search_parts.append(f"Age Min: {age_min_value}")
-        if age_max_value is not None:
-            search_parts.append(f"Age Max: {age_max_value}")
-        if my_patients:
-            search_parts.append("My Patients: true")
-        if registry_scope != 'all':
-            search_parts.append(f"Registry Scope: {registry_scope}")
-        search_parts.append(f"Ordering: {ordering}")
-        search_parts.append(f"Page: {requested_page}")
-        if requested_page_size:
-            search_parts.append(f"Page Size: {requested_page_size}")
-        search_desc = ", ".join(search_parts)
         facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
         log_patient_search.delay(
             str(request.user.id),
-            search_desc,
+            search_summary,
             facility_code=facility.code if facility else None
         )
 

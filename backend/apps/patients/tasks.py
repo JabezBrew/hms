@@ -266,6 +266,12 @@ def log_patient_search(user_id, search_query, facility_code=None):
     from apps.users.models import User
     from apps.core.models import Facility
 
+    normalized_search_query = " ".join(str(search_query or "").split())[:255]
+    if not normalized_search_query:
+        normalized_search_query = "patient-search filters=none"
+    if not normalized_search_query.startswith(("patient-search ", "patient-registration ")):
+        normalized_search_query = "patient-search filters=legacy-input"
+
     try:
         user = User.objects.get(id=user_id)
         facility = None
@@ -276,8 +282,12 @@ def log_patient_search(user_id, search_query, facility_code=None):
         if not facility:
             logger.warning(f"Facility {facility_code} not found when logging search")
             return
-        PatientSearch.objects.create(user=user, search_query=search_query, facility=facility)
-        logger.debug(f"Search logged for user {user_id}: {search_query[:50]}")
+        PatientSearch.objects.create(
+            user=user,
+            search_query=normalized_search_query,
+            facility=facility,
+        )
+        logger.debug("Search history logged for user %s", user_id)
     except User.DoesNotExist:
         logger.warning(f"User {user_id} not found when logging search")
     except Exception as e:

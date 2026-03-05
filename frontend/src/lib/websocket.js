@@ -70,15 +70,7 @@ class BaseWebSocket {
    * Build the WebSocket URL.
    */
   getUrl() {
-    const url = `${WS_BASE_URL}${this.path}`;
-
-    // Optional legacy fallback for backends that still require query param token auth.
-    if (this.options.useQueryTokenFallback && this.token) {
-      const params = new URLSearchParams({ token: this.token });
-      return `${url}?${params.toString()}`;
-    }
-
-    return url;
+    return `${WS_BASE_URL}${this.path}`;
   }
 
   /**

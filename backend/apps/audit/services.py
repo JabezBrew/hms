@@ -1,10 +1,103 @@
+from typing import Any
+
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+
 from .models import AuditLog, AuditAction, AuditCategory
 from .tasks import log_audit_async
 from apps.core.security import get_user_facility, resolve_object_facility
 
 User = get_user_model()
+
+
+MINIMAL_AUDIT_CATEGORIES = {
+    AuditCategory.PATIENT,
+    AuditCategory.CLINICAL,
+    AuditCategory.ENCOUNTER,
+    AuditCategory.WARD,
+    AuditCategory.APPOINTMENT,
+    AuditCategory.LABORATORY,
+    AuditCategory.DRUG_SAFETY,
+    AuditCategory.REFERRAL,
+    AuditCategory.PRESCRIPTION,
+    AuditCategory.VITALS,
+    AuditCategory.NURSING,
+    AuditCategory.PHARMACY,
+    AuditCategory.BILLING,
+}
+
+SENSITIVE_CHANGE_KEY_FRAGMENTS = {
+    'address',
+    'allerg',
+    'body',
+    'contact',
+    'content',
+    'diagn',
+    'dosage',
+    'email',
+    'instruction',
+    'medication',
+    'message',
+    'name',
+    'note',
+    'password',
+    'phone',
+    'prompt',
+    'query',
+    'reason',
+    'reaction',
+    'response',
+    'result',
+    'search',
+    'secret',
+    'ssn',
+    'symptom',
+    'text',
+    'token',
+}
+
+
+def _truncate(value: str | None, max_length: int) -> str | None:
+    if value is None:
+        return None
+    value = str(value)
+    return value[:max_length]
+
+
+def _sanitize_changes(changes: Any) -> Any:
+    if changes is None:
+        return None
+    if isinstance(changes, dict):
+        sanitized = {}
+        for key, value in changes.items():
+            key_str = str(key).strip().lower()
+            if any(fragment in key_str for fragment in SENSITIVE_CHANGE_KEY_FRAGMENTS):
+                sanitized[key] = '<redacted>'
+            else:
+                sanitized[key] = _sanitize_changes(value)
+        return sanitized
+    if isinstance(changes, list):
+        return [_sanitize_changes(item) for item in changes]
+    if isinstance(changes, tuple):
+        return [_sanitize_changes(item) for item in changes]
+    if isinstance(changes, str):
+        return _truncate(changes, 255)
+    return changes
+
+
+def _build_minimal_audit_entry(action, category, resource_type, resource_id):
+    action_label = str(action or 'UNKNOWN').strip().upper()
+    category_label = str(category or 'GENERAL').strip().upper()
+    resource_type_label = str(resource_type or 'Resource').strip()
+    description = (
+        f"{category_label} {action_label} recorded for {resource_type_label}. "
+        "Sensitive details redacted."
+    )
+    if resource_id:
+        resource_name = f"{resource_type_label}:{resource_id}"
+    else:
+        resource_name = resource_type_label
+    return description, _truncate(resource_name, 255)
 
 
 class AuditService:
@@ -54,6 +147,19 @@ class AuditService:
                 request_facility = get_user_facility(request)
                 facility_id = getattr(request_facility, 'id', None)
 
+        sanitized_changes = _sanitize_changes(changes)
+        sanitized_resource_name = _truncate(resource_name, 255)
+        sanitized_description = description
+
+        if category in MINIMAL_AUDIT_CATEGORIES:
+            sanitized_description, sanitized_resource_name = _build_minimal_audit_entry(
+                action=action,
+                category=category,
+                resource_type=resource_type,
+                resource_id=resource_id,
+            )
+            sanitized_changes = None
+
         # Dispatch async task
         log_audit_async.delay(
             user_id=user_id,
@@ -61,13 +167,13 @@ class AuditService:
             category=category,
             resource_type=resource_type,
             resource_id=str(resource_id) if resource_id else None,
-            description=description,
+            description=sanitized_description,
             ip_address=ip_address,
             user_agent=user_agent,
             user_email=user_email,
             user_type=user_type,
-            resource_name=resource_name,
-            changes=changes,
+            resource_name=sanitized_resource_name,
+            changes=sanitized_changes,
             facility_id=str(facility_id) if facility_id else None,
         )
 

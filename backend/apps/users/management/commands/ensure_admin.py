@@ -58,7 +58,7 @@ class Command(BaseCommand):
         if User.objects.filter(is_superuser=True).exists():
             superuser = User.objects.filter(is_superuser=True).first()
             self.stdout.write(
-                self.style.SUCCESS(f'Superuser already exists: {superuser.email}')
+                self.style.SUCCESS('Superuser already exists.')
             )
 
             # Ensure user_type is admin
@@ -77,7 +77,7 @@ class Command(BaseCommand):
                 superuser.last_name = last_name
                 superuser.save(update_fields=['first_name', 'last_name'])
                 self.stdout.write(
-                    self.style.SUCCESS(f'Updated admin name to {first_name} {last_name}')
+                    self.style.SUCCESS('Updated admin display name from legacy defaults.')
                 )
             if default_facility and superuser.primary_facility_id is None:
                 superuser.primary_facility = default_facility
@@ -86,7 +86,7 @@ class Command(BaseCommand):
             return
 
         # Create admin user
-        self.stdout.write(f'Creating admin user: {email}')
+        self.stdout.write('Creating initial admin user.')
 
         # Username is required by AbstractUser - use email prefix
         username = email.split('@')[0]
@@ -106,5 +106,5 @@ class Command(BaseCommand):
             user.facilities.add(default_facility)
 
         self.stdout.write(
-            self.style.SUCCESS(f'Admin user created successfully: {user.email}')
+            self.style.SUCCESS('Admin user created successfully.')
         )

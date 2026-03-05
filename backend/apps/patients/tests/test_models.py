@@ -111,13 +111,14 @@ class TestPatientSearchModel:
         assert search.search_date is not None
 
     def test_patient_search_string_representation(self, db):
-        """Test __str__ returns user email and query."""
+        """Test __str__ avoids echoing the stored query content."""
         user = UserFactory(email='searcher@test.com')
         search = PatientSearchFactory(user=user, search_query='Patient Name')
 
         str_repr = str(search)
         assert 'searcher@test.com' in str_repr
-        assert 'Patient Name' in str_repr
+        assert 'patient search' in str_repr
+        assert 'Patient Name' not in str_repr
 
     def test_patient_search_ordering(self, db):
         """Test searches are ordered by date descending."""

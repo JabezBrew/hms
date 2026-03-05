@@ -451,6 +451,9 @@ class TestPatientViewSet:
         assert PatientProfile.objects.filter(
             user__email='newpatient@test.com'
         ).exists()
+        search_record = PatientSearch.objects.get(user=admin, facility=facility)
+        assert search_record.search_query == 'patient-registration action=create'
+        assert 'New Patient' not in search_record.search_query
         mock_create_task.assert_called_once()
 
     def test_register_patient_duplicate_email(self, db):
@@ -1102,10 +1105,9 @@ class TestPatientViewSet:
         response = client.get('/api/patients/search/', {'query': 'TestQuery'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert PatientSearch.objects.filter(
-            user=doctor,
-            search_query__icontains='TestQuery'
-        ).exists()
+        search_record = PatientSearch.objects.filter(user=doctor).latest('search_date')
+        assert search_record.search_query == 'patient-search filters=query ordering=-created_at page=1'
+        assert 'TestQuery' not in search_record.search_query
 
     @patch('apps.patients.tasks.sync_patient_with_fhir.delay')
     def test_get_patient(self, mock_sync_task, db):

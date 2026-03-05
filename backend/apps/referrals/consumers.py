@@ -15,7 +15,7 @@ class ReferralNotificationConsumer(AsyncJsonWebsocketConsumer):
     WebSocket consumer for in-app referral notifications.
 
     Client connection example:
-        const ws = new WebSocket('ws://host/ws/notifications/?token=<jwt>');
+        const ws = new WebSocket('ws://host/ws/notifications/', ['hms.jwt', '<jwt>']);
     """
 
     async def connect(self):
