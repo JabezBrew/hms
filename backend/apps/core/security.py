@@ -498,10 +498,16 @@ def check_lab_access(user, patient_or_id):
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'lab_technician':
-        from apps.laboratory.models import LabOrder
+        from apps.laboratory.models import LabOrder, LabOrderStatus
         if LabOrder.objects.filter(
             patient=patient_profile,
-            status__in=['pending', 'in_progress', 'collected', 'completed']
+            status__in=[
+                LabOrderStatus.ORDERED,
+                LabOrderStatus.COLLECTED,
+                LabOrderStatus.RECEIVED,
+                LabOrderStatus.PROCESSING,
+                LabOrderStatus.COMPLETED,
+            ]
         ).exists():
             return True
         raise PermissionDenied("No lab orders found for this patient.")
@@ -662,10 +668,16 @@ def get_access_flags(user, patient_or_id):
 
     # Lab technician - check for lab orders
     if user.user_type == 'lab_technician':
-        from apps.laboratory.models import LabOrder
+        from apps.laboratory.models import LabOrder, LabOrderStatus
         has_orders = LabOrder.objects.filter(
             patient=patient_profile,
-            status__in=['pending', 'in_progress', 'collected', 'completed']
+            status__in=[
+                LabOrderStatus.ORDERED,
+                LabOrderStatus.COLLECTED,
+                LabOrderStatus.RECEIVED,
+                LabOrderStatus.PROCESSING,
+                LabOrderStatus.COMPLETED,
+            ]
         ).exists()
         flags['lab'] = has_orders
         flags['demographics'] = LabOrder.objects.filter(patient=patient_profile).exists()

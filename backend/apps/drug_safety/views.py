@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -19,10 +20,34 @@ from .services.allergy_checker import AllergyChecker
 from .services.rxnorm_service import RxNormService
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse, IsDoctorOnly
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from apps.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _scope_clinical_queryset_for_user(queryset, *, user, patient_lookup):
+    """Apply clinical-data authorization at the queryset level."""
+    user_type = getattr(user, 'user_type', None)
+
+    if user_type == 'admin':
+        return queryset
+
+    if user_type == 'patient':
+        return queryset.filter(**{f'{patient_lookup}__user': user})
+
+    if user_type in ['doctor', 'nurse']:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+            return queryset
+        accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+        return queryset.filter(**{f'{patient_lookup}__in': accessible_patients})
+
+    return queryset.none()
 
 
 class PatientAllergyViewSet(viewsets.ModelViewSet):
@@ -39,12 +64,26 @@ class PatientAllergyViewSet(viewsets.ModelViewSet):
             return PatientAllergyCreateSerializer
         return PatientAllergySerializer
 
+    def get_permissions(self):
+        if self.action == 'verify':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy', 'deactivate']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor | IsAdminOrNurse]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_queryset(self):
         """Filter allergies by patient if patient_id is provided."""
         facility = get_user_facility(self.request)
         if not facility:
             return PatientAllergy.objects.none()
         queryset = PatientAllergy.objects.filter(facility=facility)
+        queryset = _scope_clinical_queryset_for_user(
+            queryset,
+            user=self.request.user,
+            patient_lookup='patient',
+        )
         patient_id = self.request.query_params.get('patient')
 
         if patient_id:
@@ -62,6 +101,11 @@ class PatientAllergyViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
         return queryset.select_related('patient__user', 'verified_by__staff__user', 'created_by').order_by('-severity', 'allergen_name')
+
+    def get_object(self):
+        allergy = super().get_object()
+        check_clinical_access(self.request.user, allergy.patient)
+        return allergy
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -124,6 +168,11 @@ class DrugSafetyAlertViewSet(viewsets.ReadOnlyModelViewSet):
         if not facility:
             return DrugSafetyAlert.objects.none()
         queryset = DrugSafetyAlert.objects.filter(patient__facility=facility)
+        queryset = _scope_clinical_queryset_for_user(
+            queryset,
+            user=self.request.user,
+            patient_lookup='patient',
+        )
 
         patient_id = self.request.query_params.get('patient')
         if patient_id:
@@ -150,6 +199,11 @@ class DrugSafetyAlertViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(severity=severity)
 
         return queryset.select_related('patient__user', 'overridden_by__staff__user').order_by('-severity', '-created_at')
+
+    def get_object(self):
+        alert = super().get_object()
+        check_clinical_access(self.request.user, alert.patient)
+        return alert
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic

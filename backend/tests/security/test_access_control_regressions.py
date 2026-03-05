@@ -1,10 +1,4 @@
-"""
-Security regression coverage for confirmed broken-access-control issues.
-
-These tests encode the expected secure behavior and are intentionally marked
-xfail(strict=True) until the underlying vulnerabilities are remediated. Once a
-fix lands, the xfail markers should be removed so the tests become hard gates.
-"""
+"""Security regression coverage for broken-access-control fixes."""
 
 import pytest
 from rest_framework.test import APIClient
@@ -43,11 +37,6 @@ def get_authenticated_client(user, facility=None):
     return client
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known vulnerability: billing users can retrieve full patient profile detail.",
-)
 def test_billing_user_cannot_retrieve_unrelated_patient_profile_detail():
     facility = DefaultFacilityFactory()
     billing_user = UserFactory(user_type="billing", primary_facility=facility)
@@ -59,11 +48,6 @@ def test_billing_user_cannot_retrieve_unrelated_patient_profile_detail():
     assert response.status_code in {403, 404}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known vulnerability: receptionist users can modify prescriptions.",
-)
 def test_receptionist_cannot_modify_prescription():
     facility = DefaultFacilityFactory()
     receptionist = ReceptionistUserFactory(primary_facility=facility)
@@ -100,11 +84,6 @@ def test_receptionist_cannot_modify_prescription():
     assert prescription.status == "active"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known vulnerability: billing users can advance lab order workflow.",
-)
 def test_billing_user_cannot_collect_lab_order():
     facility = DefaultFacilityFactory()
     billing_user = UserFactory(user_type="billing", primary_facility=facility)
@@ -140,11 +119,6 @@ def test_billing_user_cannot_collect_lab_order():
     assert order.status == "ordered"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known vulnerability: receptionist users can deactivate allergy records.",
-)
 def test_receptionist_cannot_deactivate_patient_allergy():
     facility = DefaultFacilityFactory()
     receptionist = ReceptionistUserFactory(primary_facility=facility)

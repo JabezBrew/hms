@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
 from apps.core.pagination import StandardResultsSetPagination
 from datetime import timedelta
+from django.conf import settings
 from django.db import transaction, models
 from django.db.models import Q, Exists, OuterRef, Subquery
 from django.utils import timezone
@@ -29,6 +30,7 @@ from .template_utils import (
     render_template_defaults,
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
+from ..users.rbac import IsDoctor
 from ..users.models import PractitionerProfile, PatientProfile
 from ..nursing.models import VitalSigns
 from ..fhir_client.client import fhir_client
@@ -40,7 +42,13 @@ from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
-from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from ..core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    check_prescription_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1637,6 +1645,13 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             return PrescriptionDiscontinueSerializer
         return PrescriptionSerializer
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'discontinue', 'hold', 'resume', 'renew']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsDoctor]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_queryset(self):
         """
         Filter prescriptions based on query parameters.
@@ -1647,6 +1662,20 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 
         queryset = Prescription.objects.filter(facility=facility)
 
+        user = self.request.user
+        if user.user_type == 'patient':
+            queryset = queryset.filter(patient__user=user)
+        elif user.user_type == 'admin':
+            pass
+        elif user.user_type in ['doctor', 'nurse']:
+            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+                queryset = queryset.filter(patient__in=accessible_patients)
+        elif user.user_type == 'pharmacist':
+            queryset = queryset.filter(status='active')
+        else:
+            return Prescription.objects.none()
+
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
@@ -1654,7 +1683,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             if not patient:
                 return queryset.none()
             _require_patient_facility(self.request, patient)
-            check_clinical_access(self.request.user, patient)
+            check_prescription_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by status
@@ -1678,7 +1707,12 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         if prescribed_by:
             queryset = queryset.filter(prescribed_by_id=prescribed_by)
 
-        return queryset.select_related('patient', 'prescribed_by', 'discontinued_by')
+        return queryset.select_related('patient', 'prescribed_by', 'discontinued_by').order_by('-created_at')
+
+    def get_object(self):
+        prescription = super().get_object()
+        check_prescription_access(self.request.user, prescription.patient)
+        return prescription
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

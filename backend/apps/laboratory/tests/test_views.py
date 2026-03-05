@@ -21,7 +21,7 @@ from .factories import (
     LabOrderTestFactory, LabSpecimenFactory, LabResultFactory
 )
 from apps.users.tests.factories import (
-    PatientProfileFactory, PractitionerProfileFactory, StaffFactory
+    LabTechnicianUserFactory, PatientProfileFactory, PractitionerProfileFactory, StaffFactory
 )
 
 
@@ -230,16 +230,18 @@ class TestLabSpecimenViewSet:
     def test_receive_specimen(self, api_client, db):
         """Test receiving a specimen in the lab."""
         from rest_framework_simplejwt.tokens import AccessToken
-        # Create a practitioner with full profile chain
-        practitioner = PractitionerProfileFactory()
-        user = practitioner.staff.user
+        specimen = LabSpecimenFactory(status='in_transit')
+        lab_tech_staff = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=specimen.facility),
+            primary_facility=specimen.facility,
+        )
+        user = lab_tech_staff.user
         token = AccessToken.for_user(user)
         api_client.credentials(
             HTTP_AUTHORIZATION=f'Bearer {token}',
-            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+            HTTP_X_FACILITY_CODE=specimen.facility.code
         )
 
-        specimen = LabSpecimenFactory(status='in_transit')
         data = {
             'storage_location': 'Rack B-5',
             'is_rejected': False
@@ -256,16 +258,18 @@ class TestLabSpecimenViewSet:
     def test_reject_specimen(self, api_client, db):
         """Test rejecting a specimen via receive action."""
         from rest_framework_simplejwt.tokens import AccessToken
-        # Create a practitioner with full profile chain
-        practitioner = PractitionerProfileFactory()
-        user = practitioner.staff.user
+        specimen = LabSpecimenFactory(status='in_transit')
+        lab_tech_staff = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=specimen.facility),
+            primary_facility=specimen.facility,
+        )
+        user = lab_tech_staff.user
         token = AccessToken.for_user(user)
         api_client.credentials(
             HTTP_AUTHORIZATION=f'Bearer {token}',
-            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+            HTTP_X_FACILITY_CODE=specimen.facility.code
         )
 
-        specimen = LabSpecimenFactory(status='in_transit')
         data = {
             'is_rejected': True,
             'rejection_reason': 'Insufficient volume'
@@ -317,16 +321,18 @@ class TestLabResultViewSet:
     def test_verify_result(self, api_client, db):
         """Test verifying a result."""
         from rest_framework_simplejwt.tokens import AccessToken
-        # Create a practitioner with full profile chain
-        practitioner = PractitionerProfileFactory()
-        user = practitioner.staff.user
+        result = LabResultFactory(is_verified=False, verified_by=None, verified_at=None)
+        lab_tech_staff = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=result.facility),
+            primary_facility=result.facility,
+        )
+        user = lab_tech_staff.user
         token = AccessToken.for_user(user)
         api_client.credentials(
             HTTP_AUTHORIZATION=f'Bearer {token}',
-            HTTP_X_FACILITY_CODE=practitioner.staff.primary_facility.code
+            HTTP_X_FACILITY_CODE=result.facility.code
         )
 
-        result = LabResultFactory(is_verified=False, verified_by=None, verified_at=None)
         # Verify action uses current user as verifier
         response = api_client.post(
             f'{BASE_URL}/results/{result.id}/verify/',

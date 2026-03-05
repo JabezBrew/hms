@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -32,13 +33,50 @@ from .serializers import (
     LabOrderSearchSerializer
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
-from ..users.rbac import IsLabTechnician
+from ..users.rbac import IsAdmin, IsLabTechnician
 from ..users.models import PatientProfile
-from ..core.security import FacilityScopedPermission, check_lab_access, get_user_facility
+from ..core.security import (
+    FacilityScopedPermission,
+    check_lab_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 
 logger = logging.getLogger(__name__)
+
+LAB_TECH_VISIBLE_ORDER_STATUSES = [
+    LabOrderStatus.ORDERED,
+    LabOrderStatus.COLLECTED,
+    LabOrderStatus.RECEIVED,
+    LabOrderStatus.PROCESSING,
+    LabOrderStatus.COMPLETED,
+]
+
+
+def _scope_lab_queryset_for_user(queryset, *, user, patient_lookup, order_status_lookup=None):
+    """Apply lab-domain authorization at the queryset level."""
+    user_type = getattr(user, 'user_type', None)
+
+    if user_type == 'admin':
+        return queryset
+
+    if user_type == 'patient':
+        return queryset.filter(**{f'{patient_lookup}__user': user})
+
+    if user_type in ['doctor', 'nurse']:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+            return queryset
+        accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+        return queryset.filter(**{f'{patient_lookup}__in': accessible_patients})
+
+    if user_type == 'lab_technician':
+        if order_status_lookup:
+            return queryset.filter(**{f'{order_status_lookup}__in': LAB_TECH_VISIBLE_ORDER_STATUSES})
+        return queryset
+
+    return queryset.none()
 
 
 class LabTestCatalogViewSet(viewsets.ModelViewSet):
@@ -377,6 +415,15 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             return LabOrderListSerializer
         return LabOrderSerializer
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'submit', 'cancel']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor]
+        elif self.action in ['collect', 'receive', 'start_processing', 'complete']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsLabTechnician]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_serializer_context(self):
         """
         Add expand flags to serializer context based on query parameters.
@@ -432,16 +479,22 @@ class LabOrderViewSet(viewsets.ModelViewSet):
                 has_critical_results=Exists(critical_tests)
             )
 
+        queryset = _scope_lab_queryset_for_user(
+            queryset,
+            user=self.request.user,
+            patient_lookup='patient',
+            order_status_lookup='status',
+        )
+
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
             patient = PatientProfile.objects.filter(id=patient_id).first()
             if not patient:
                 return queryset.none()
-            # SECURITY: Check if user has permission to access this patient's data
-            check_lab_access(self.request.user, patient)
             if patient.facility_id != facility.id:
                 raise PermissionDenied("Patient does not belong to the active facility.")
+            check_lab_access(self.request.user, patient)
             queryset = queryset.filter(patient=patient)
 
         # Filter by status
@@ -492,6 +545,11 @@ class LabOrderViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-created_at')
 
+    def get_object(self):
+        order = super().get_object()
+        check_lab_access(self.request.user, order.patient)
+        return order
+
     @transaction.atomic
     def perform_create(self, serializer):
         """Create order with ordering provider set to current user."""
@@ -501,6 +559,8 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data.get('patient')
         if patient and patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_lab_access(self.request.user, patient)
 
         # If ordering_provider not specified, use current user
         if not serializer.validated_data.get('ordering_provider'):
@@ -774,6 +834,15 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
             return LabSpecimenListSerializer
         return LabSpecimenSerializer
 
+    def get_permissions(self):
+        if self.action == 'create':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrNurse | IsLabTechnician]
+        elif self.action in ['receive', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsLabTechnician]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_queryset(self):
         """Filter specimens with optimized queries."""
         facility = get_user_facility(self.request)
@@ -785,6 +854,13 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
             'collected_by__user',
             'received_by__user'
         ).filter(facility=facility)
+
+        queryset = _scope_lab_queryset_for_user(
+            queryset,
+            user=self.request.user,
+            patient_lookup='order__patient',
+            order_status_lookup='order__status',
+        )
 
         # Filter by order
         order_id = self.request.query_params.get('order')
@@ -803,6 +879,11 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-collected_at')
 
+    def get_object(self):
+        specimen = super().get_object()
+        check_lab_access(self.request.user, specimen.order.patient)
+        return specimen
+
     @transaction.atomic
     def perform_create(self, serializer):
         """
@@ -815,6 +896,8 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
         order = serializer.validated_data.get('order')
         if order and order.patient and order.patient.facility_id != facility.id:
             raise PermissionDenied("Order does not belong to the active facility.")
+        if order and order.patient:
+            check_lab_access(self.request.user, order.patient)
         # Generate barcode if not provided
         if not serializer.validated_data.get('barcode'):
             # Simple barcode generation: SPEC-YYYYMMDD-UUID
@@ -922,6 +1005,15 @@ class LabResultViewSet(viewsets.ModelViewSet):
             return LabResultListSerializer
         return LabResultSerializer
 
+    def get_permissions(self):
+        if self.action in ['create', 'bulk_create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsLabTechnician]
+        elif self.action in ['verify', 'bulk_verify']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor | IsLabTechnician]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_queryset(self):
         """Filter results with optimized queries."""
         facility = get_user_facility(self.request)
@@ -939,6 +1031,13 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'order_test__order__panels'  # M2M field
         ).filter(facility=facility)
 
+        queryset = _scope_lab_queryset_for_user(
+            queryset,
+            user=self.request.user,
+            patient_lookup='order_test__order__patient',
+            order_status_lookup='order_test__order__status',
+        )
+
         # Filter by order
         order_id = self.request.query_params.get('order')
         if order_id:
@@ -950,10 +1049,9 @@ class LabResultViewSet(viewsets.ModelViewSet):
             patient = PatientProfile.objects.filter(id=patient_id).first()
             if not patient:
                 return queryset.none()
-            # SECURITY: Check if user has permission to access this patient's data
-            check_lab_access(self.request.user, patient)
             if patient.facility_id != facility.id:
                 raise PermissionDenied("Patient does not belong to the active facility.")
+            check_lab_access(self.request.user, patient)
             queryset = queryset.filter(order_test__order__patient=patient)
 
         # Filter by verification status
@@ -973,6 +1071,11 @@ class LabResultViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-performed_at')
 
+    def get_object(self):
+        result = super().get_object()
+        check_lab_access(self.request.user, result.order_test.order.patient)
+        return result
+
     @transaction.atomic
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
@@ -983,6 +1086,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
         order = getattr(order_test, 'order', None)
         if order and order.patient and order.patient.facility_id != facility.id:
             raise PermissionDenied("Order does not belong to the active facility.")
+        if order and order.patient:
+            check_lab_access(self.request.user, order.patient)
         try:
             staff = self.request.user.staff_profile
             serializer.save(performed_by=staff, facility=facility)
@@ -1088,6 +1193,13 @@ class LabResultViewSet(viewsets.ModelViewSet):
         specimen = validated_data['_specimen']
         performed_at = validated_data.get('performed_at', timezone.now())
 
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        if order.facility_id != facility.id or specimen.facility_id != facility.id:
+            raise PermissionDenied("Lab data does not belong to the active facility.")
+        check_lab_access(request.user, order.patient)
+
         # Get staff profile for performed_by
         staff = None
         try:
@@ -1192,15 +1304,16 @@ class LabResultViewSet(viewsets.ModelViewSet):
             )
 
         # Get results to verify
+        queryset = self.get_queryset()
         if order_id:
             # Verify all unverified results for an order
-            results = LabResult.objects.filter(
+            results = queryset.filter(
                 order_test__order_id=order_id,
                 is_verified=False
             )
         elif result_ids:
             # Verify specific results
-            results = LabResult.objects.filter(
+            results = queryset.filter(
                 id__in=result_ids,
                 is_verified=False
             )

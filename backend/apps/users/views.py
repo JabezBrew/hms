@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.apps import apps
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.core.cache import cache
 import hashlib
 import logging
@@ -38,7 +38,12 @@ from .rbac import (
     setup_groups_and_permissions
 )
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_demographics_access, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_demographics_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from apps.core.cache_utils import facility_cache_key
 from .tasks import fetch_practitioner_fhir_snapshot, search_practitioners_in_fhir
 
@@ -832,6 +837,11 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return PatientProfileListSerializer
+        if (
+            self.action == 'retrieve'
+            and self.request.user.user_type in ['receptionist', 'lab_technician', 'pharmacist', 'billing']
+        ):
+            return PatientProfileListSerializer
         return PatientProfileSerializer
 
     def get_permissions(self):
@@ -854,7 +864,7 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             if self.request.method in permissions.SAFE_METHODS:
-                # All roles can view patient details
+                # Object-level access is enforced in get_queryset/get_object.
                 permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
             else:
                 # Only admins, doctors, and nurses can edit patients
@@ -887,27 +897,48 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             facility=facility
         ).order_by('-created_at')
 
-        # Patients can only see their own profile
         if user.user_type == 'patient':
-            try:
-                patient_profile = PatientProfile.objects.get(user=user)
-                return base_qs.filter(id=patient_profile.id)
-            except PatientProfile.DoesNotExist:
-                return PatientProfile.objects.none()
+            return base_qs.filter(user=user)
 
-        # Doctors can see their patients
-        elif user.user_type == 'doctor':
-            # In a real implementation, this would filter based on doctor-patient relationships
-            # For simplicity, we're allowing doctors to see all patients
+        if user.user_type == 'admin':
             return base_qs
 
-        # Admin, nurse, receptionist, lab tech, pharmacist, billing can see all patients
-        elif user.user_type in ['admin', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']:
+        if user.user_type in ['doctor', 'nurse']:
+            if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                return base_qs
+            accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+            return base_qs.filter(id__in=accessible_patients.values('id'))
+
+        if user.user_type == 'receptionist':
             return base_qs
 
-        # Other roles can't see patients
-        else:
-            return PatientProfile.objects.none()
+        if user.user_type == 'lab_technician':
+            from apps.laboratory.models import LabOrder
+
+            return base_qs.annotate(
+                has_lab_orders=Exists(LabOrder.objects.filter(patient_id=OuterRef('pk')))
+            ).filter(has_lab_orders=True)
+
+        if user.user_type == 'pharmacist':
+            from apps.clinical_notes.models import Prescription
+
+            return base_qs.annotate(
+                has_prescriptions=Exists(Prescription.objects.filter(patient_id=OuterRef('pk')))
+            ).filter(has_prescriptions=True)
+
+        if user.user_type == 'billing':
+            from apps.billing.models import Invoice
+
+            return base_qs.annotate(
+                has_invoices=Exists(Invoice.objects.filter(patient_id=OuterRef('pk')))
+            ).filter(has_invoices=True)
+
+        return PatientProfile.objects.none()
+
+    def get_object(self):
+        patient = super().get_object()
+        check_demographics_access(self.request.user, patient)
+        return patient
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
