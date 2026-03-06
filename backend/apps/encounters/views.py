@@ -291,12 +291,18 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Queue a background task to sync the encounter to FHIR.
         """
+        def enqueue():
+            try:
+                from .tasks import sync_encounter_to_fhir
+                sync_encounter_to_fhir.delay(str(encounter_id))
+            except Exception:
+                # If Celery is not available, sync will happen later
+                pass
+
         try:
-            from .tasks import sync_encounter_to_fhir
-            sync_encounter_to_fhir.delay(str(encounter_id))
+            transaction.on_commit(enqueue)
         except Exception:
-            # If Celery is not available, sync will happen later
-            pass
+            enqueue()
 
     @action(detail=True, methods=['post'])
     def finish(self, request, pk=None):

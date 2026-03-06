@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { keyWith } from '@/shared/lib/queryKeys';
 
+const MAX_MONITORING_PAGE_SIZE = 50;
+
 export const nursingKeys = {
   patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
   patientMonitoringAll: () => keyWith('patient-monitoring'),
@@ -56,13 +58,15 @@ export const nursingKeys = {
 // ========== Patient Monitoring ==========
 
 export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => {
+  const normalizedPageSize = Math.max(1, Math.min(pageSize, MAX_MONITORING_PAGE_SIZE));
+
   return useQuery({
-    queryKey: nursingKeys.patientMonitoring(wardId, page, pageSize),
+    queryKey: nursingKeys.patientMonitoring(wardId, page, normalizedPageSize),
     queryFn: async () => {
       const params = new URLSearchParams();
       if (wardId) params.append('ward', wardId);
       params.append('page', page.toString());
-      params.append('page_size', pageSize.toString());
+      params.append('page_size', normalizedPageSize.toString());
 
       // Use getWithPagination to get the full paginated response, not just results
       const data = await apiClient.getWithPagination(`/nursing/monitoring/dashboard/?${params.toString()}`);
@@ -72,7 +76,7 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
         return {
           count: 0,
           page: 1,
-          page_size: pageSize,
+          page_size: normalizedPageSize,
           total_pages: 0,
           results: []
         };
@@ -83,8 +87,8 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
         return {
           count: data.length,
           page: page,
-          page_size: pageSize,
-          total_pages: Math.ceil(data.length / pageSize),
+          page_size: normalizedPageSize,
+          total_pages: Math.ceil(data.length / normalizedPageSize),
           results: data
         };
       }
@@ -96,7 +100,7 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
     placeholderData: {
       count: 0,
       page: 1,
-      page_size: pageSize,
+      page_size: normalizedPageSize,
       total_pages: 0,
       results: []
     },

@@ -20,6 +20,126 @@ class AppointmentProxy:
     Proxy for FHIR Appointment resource.
     """
     @staticmethod
+    def _extract_reference_id(reference: str, resource_type: str) -> Optional[str]:
+        prefix = f"{resource_type}/"
+        if reference.startswith(prefix):
+            return reference.split("/", 1)[1]
+        return None
+
+    @staticmethod
+    def _collect_search_reference_ids(appointments: List[Dict[str, Any]]) -> tuple[set[str], set[str]]:
+        patient_ids: set[str] = set()
+        practitioner_ids: set[str] = set()
+
+        for appointment in appointments:
+            for participant in appointment.get("participant", []) or []:
+                reference = (participant.get("actor") or {}).get("reference", "")
+                patient_id = AppointmentProxy._extract_reference_id(reference, "Patient")
+                if patient_id:
+                    patient_ids.add(patient_id)
+                    continue
+
+                practitioner_id = AppointmentProxy._extract_reference_id(reference, "Practitioner")
+                if practitioner_id:
+                    practitioner_ids.add(practitioner_id)
+
+        return patient_ids, practitioner_ids
+
+    @staticmethod
+    def _build_search_enrichment_maps(
+        appointments: List[Dict[str, Any]]
+    ) -> tuple[Dict[str, str], Dict[str, str], Dict[str, Dict[str, Any]]]:
+        patient_ids, practitioner_ids = AppointmentProxy._collect_search_reference_ids(appointments)
+        patient_display_map: Dict[str, str] = {}
+        patient_context_map: Dict[str, Dict[str, Any]] = {}
+        practitioner_display_map: Dict[str, str] = {}
+
+        if patient_ids:
+            mapped_ids = set()
+            mappings = PatientFHIRMapping.objects.select_related(
+                'patient_profile', 'patient_profile__user'
+            ).filter(fhir_patient_id__in=patient_ids)
+
+            for mapping in mappings:
+                profile = getattr(mapping, 'patient_profile', None)
+                user = getattr(profile, 'user', None)
+                if not profile or not user:
+                    continue
+                fhir_id = mapping.fhir_patient_id
+                patient_display_map[fhir_id] = user.get_full_name()
+                patient_context_map[fhir_id] = {
+                    "id": str(profile.id),
+                    "mrn": profile.medical_record_number,
+                    "dob": user.date_of_birth.isoformat() if user.date_of_birth else None,
+                    "gender": user.gender,
+                    "gender_display": user.get_gender_display() if user.gender else None,
+                    "name": user.get_full_name(),
+                }
+                mapped_ids.add(fhir_id)
+
+            remaining_patient_ids = patient_ids - mapped_ids
+            if remaining_patient_ids:
+                patient_profiles = PatientProfile.objects.select_related('user').filter(
+                    fhir_patient_id__in=remaining_patient_ids
+                )
+                for profile in patient_profiles:
+                    if not profile.user:
+                        continue
+                    patient_display_map[profile.fhir_patient_id] = profile.user.get_full_name()
+
+        if practitioner_ids:
+            practitioner_profiles = PractitionerProfile.objects.select_related('staff__user').filter(
+                fhir_practitioner_id__in=practitioner_ids
+            )
+            for practitioner_profile in practitioner_profiles:
+                staff = getattr(practitioner_profile, 'staff', None)
+                user = getattr(staff, 'user', None)
+                if not user:
+                    continue
+                practitioner_display_map[practitioner_profile.fhir_practitioner_id] = (
+                    f"Dr. {user.first_name} {user.last_name}".strip()
+                )
+
+        return patient_display_map, practitioner_display_map, patient_context_map
+
+    @staticmethod
+    def _enrich_appointment_from_maps(
+        appointment: Dict[str, Any],
+        patient_display_map: Dict[str, str],
+        practitioner_display_map: Dict[str, str],
+        patient_context_map: Dict[str, Dict[str, Any]],
+    ) -> None:
+        if not appointment or "participant" not in appointment:
+            return
+
+        patient_id = None
+        for participant in appointment.get("participant", []) or []:
+            actor = participant.get("actor") or {}
+            reference = actor.get("reference", "")
+
+            if not actor.get("display"):
+                local_patient_id = AppointmentProxy._extract_reference_id(reference, "Patient")
+                if local_patient_id:
+                    actor["display"] = patient_display_map.get(local_patient_id) or actor.get("display")
+                    patient_id = local_patient_id
+                    continue
+
+                local_practitioner_id = AppointmentProxy._extract_reference_id(reference, "Practitioner")
+                if local_practitioner_id:
+                    actor["display"] = (
+                        practitioner_display_map.get(local_practitioner_id) or actor.get("display")
+                    )
+                    continue
+
+            if patient_id is None:
+                patient_id = AppointmentProxy._extract_reference_id(reference, "Patient")
+
+        if patient_id:
+            context = patient_context_map.get(patient_id)
+            if context:
+                appointment["hms_patient_context"] = context
+
+    @staticmethod
     def _build_patient_context(patient_id: str) -> Optional[Dict[str, Any]]:
         """
         Build local patient context from a FHIR patient ID, if mapped.
@@ -372,47 +492,24 @@ class AppointmentProxy:
 
         # Add display names to participants in search results
         if "entry" in results:
+            appointments = [
+                entry.get("resource")
+                for entry in results.get("entry", [])
+                if entry.get("resource", {}).get("resourceType") == "Appointment"
+            ]
+            patient_display_map, practitioner_display_map, patient_context_map = (
+                AppointmentProxy._build_search_enrichment_maps(appointments)
+            )
+
             for entry in results["entry"]:
                 if "resource" in entry and entry["resource"]["resourceType"] == "Appointment":
                     appointment = entry["resource"]
-
-                    if "participant" in appointment:
-                        for participant in appointment["participant"]:
-                            if "actor" in participant and "reference" in participant["actor"]:
-                                reference = participant["actor"]["reference"]
-
-                                # Skip if display is already present
-                                if "display" in participant["actor"]:
-                                    continue
-
-                                # Add display name for Patient
-                                if reference.startswith("Patient/"):
-                                    patient_id = reference.split("/")[1]
-                                    try:
-                                        # First try to find the patient using PatientFHIRMapping
-                                        mapping = PatientFHIRMapping.objects.filter(fhir_patient_id=patient_id).first()
-                                        if mapping and mapping.patient_profile and mapping.patient_profile.user:
-                                            participant["actor"]["display"] = f"{mapping.patient_profile.user.first_name} {mapping.patient_profile.user.last_name}"
-                                        else:
-                                            # Fallback to direct lookup in PatientProfile
-                                            patient_profile = PatientProfile.objects.filter(fhir_patient_id=patient_id).first()
-                                            print(f'patient_profile: {patient_profile}')
-                                            if patient_profile and patient_profile.user:
-                                                participant["actor"]["display"] = f"{patient_profile.user.first_name} {patient_profile.user.last_name}"
-                                    except Exception as e:
-                                        logger.warning(f"Failed to get patient name: {str(e)}")
-
-                                # Add display name for Practitioner
-                                elif reference.startswith("Practitioner/"):
-                                    practitioner_id = reference.split("/")[1]
-                                    try:
-                                        practitioner_mapping = PractitionerProfile.objects.filter(fhir_practitioner_id=practitioner_id).first()
-                                        if practitioner_mapping and practitioner_mapping.staff and practitioner_mapping.staff.user:
-                                            participant["actor"]["display"] = f"Dr. {practitioner_mapping.staff.user.first_name} {practitioner_mapping.staff.user.last_name}"
-                                    except Exception as e:
-                                        logger.warning(f"Failed to get practitioner name: {str(e)}")
-
-                    AppointmentProxy._attach_patient_context(appointment)
+                    AppointmentProxy._enrich_appointment_from_maps(
+                        appointment,
+                        patient_display_map,
+                        practitioner_display_map,
+                        patient_context_map,
+                    )
 
         return results
 

@@ -223,7 +223,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     enabled: hasClinicalAccess,
   });
 
-  const canFetchClinical = hasClinicalAccess && !isContextLoading && !contextError;
+  const canFetchClinical = hasClinicalAccess;
 
   // Fetch patient encounters for grouping
   const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {

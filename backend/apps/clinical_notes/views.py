@@ -2674,12 +2674,17 @@ def _get_patient_labs(patient, search_query, start_datetime, end_datetime, encou
 
     # Apply search filter
     if search_query:
+        matching_tests = LabOrderTest.objects.filter(
+            order_id=OuterRef('pk')
+        ).filter(
+            DQ(test__name__icontains=search_query) |
+            DQ(test__short_name__icontains=search_query)
+        )
         labs_queryset = labs_queryset.filter(
             DQ(order_number__icontains=search_query) |
-            DQ(order_tests__test__name__icontains=search_query) |
-            DQ(order_tests__test__short_name__icontains=search_query) |
-            DQ(clinical_notes__icontains=search_query)
-        ).distinct()
+            DQ(clinical_notes__icontains=search_query) |
+            Exists(matching_tests)
+        )
 
     entries = []
     for order in labs_queryset[:100]:
@@ -2991,7 +2996,7 @@ def timeline_stats(request, patient_id):
     _require_patient_facility(request, patient)
 
     # Count entries by type
-    notes_count = NoteEntry.objects.count()  # TODO: Filter by patient when we have proper linking
+    notes_count = NoteEntry.objects.filter(patient=patient).count()
     prescriptions_count = Prescription.objects.filter(patient=patient).count()
     vitals_count = VitalSigns.objects.filter(patient=patient).count()
 
@@ -3556,7 +3561,9 @@ def _format_prescription_entry_v2(rx, event):
         'instructions': rx.instructions,
         'reason': rx.reason,
         'status': rx.status,
+        'status_display': rx.get_status_display(),
         'is_critical': event.is_critical,
+        'discontinue_reason': rx.discontinue_reason,
         'encounter': _format_encounter_details(rx.encounter),
         'encounter_id': str(rx.encounter_id) if rx.encounter_id else None,
         'created_at': rx.created_at.isoformat(),
@@ -3595,6 +3602,8 @@ def _format_lab_entry_v2(lab, event):
     """Format LabOrder for timeline (full details like v1)."""
     # Format tests
     tests = []
+    flat_results = []
+    summary = {'total': 0, 'normal': 0, 'abnormal': 0, 'critical': 0}
     for order_test in lab.order_tests.all():
         test_data = {
             'id': str(order_test.id),
@@ -3607,14 +3616,37 @@ def _format_lab_entry_v2(lab, event):
         }
         # Include results if any
         for result in order_test.results.all():
+            is_critical = bool(result.is_critical())
+            is_abnormal = bool(result.is_abnormal)
+            summary['total'] += 1
+            if is_critical:
+                summary['critical'] += 1
+            elif is_abnormal:
+                summary['abnormal'] += 1
+            else:
+                summary['normal'] += 1
+
             test_data['results'].append({
                 'id': str(result.id),
                 'value': result.value,
                 'unit': result.unit,
                 'reference_range': result.reference_range,
                 'interpretation': result.interpretation,
-                'is_abnormal': result.is_abnormal,
+                'flag': result.flag,
+                'is_abnormal': is_abnormal,
+                'is_critical': is_critical,
                 'verified_at': result.verified_at.isoformat() if result.verified_at else None,
+            })
+            flat_results.append({
+                'test_name': order_test.test.short_name,
+                'test_full_name': order_test.test.name,
+                'value': result.value,
+                'unit': result.unit,
+                'reference_range': result.reference_range,
+                'flag': result.flag,
+                'is_abnormal': is_abnormal,
+                'is_critical': is_critical,
+                'interpretation': result.interpretation,
             })
         tests.append(test_data)
 
@@ -3629,8 +3661,14 @@ def _format_lab_entry_v2(lab, event):
         'order_number': lab.order_number,
         'status': lab.status,
         'priority': lab.priority,
+        'priority_display': lab.get_priority_display(),
         'is_critical': event.is_critical,
         'clinical_notes': getattr(lab, 'clinical_notes', ''),
+        'ordered_at': lab.ordered_at.isoformat() if lab.ordered_at else None,
+        'completed_at': lab.completed_at.isoformat() if lab.completed_at else None,
+        'tests_ordered': [order_test.test.short_name for order_test in lab.order_tests.all()],
+        'results_summary': summary,
+        'results': flat_results,
         'tests': tests,
         'encounter': _format_encounter_details(lab.encounter),
         'encounter_id': str(lab.encounter_id) if lab.encounter_id else None,
@@ -3651,19 +3689,26 @@ def _format_referral_entry_v2(ref, event):
         'referral_number': ref.referral_number,
         'referred_to_specialty': ref.referred_to_specialty,
         'referred_to_department': ref.referred_to_department,
+        'referring_department': ref.referring_department,
         'referred_to_provider_name': (
             ref.referred_to_provider.staff.user.get_full_name()
             if ref.referred_to_provider and ref.referred_to_provider.staff and ref.referred_to_provider.staff.user
             else None
         ),
         'urgency': ref.urgency,
+        'urgency_display': ref.get_urgency_display(),
         'status': ref.status,
+        'status_display': ref.get_status_display(),
+        'is_urgent': ref.is_urgent,
         'is_critical': event.is_critical,
         'reason': ref.reason,
         'clinical_summary': ref.clinical_summary,
         'questions_for_specialist': ref.questions_for_specialist,
         'specialist_notes': ref.specialist_notes,
         'recommendations': ref.recommendations,
+        'submitted_at': ref.submitted_at.isoformat() if ref.submitted_at else None,
+        'accepted_at': ref.accepted_at.isoformat() if ref.accepted_at else None,
+        'completed_at': ref.completed_at.isoformat() if ref.completed_at else None,
         'encounter': _format_encounter_details(ref.encounter),
         'encounter_id': str(ref.encounter_id) if ref.encounter_id else None,
         'created_at': ref.created_at.isoformat(),

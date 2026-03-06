@@ -8,6 +8,8 @@ Tests the EncounterViewSet endpoints including:
 - Statistics endpoint
 """
 import pytest
+from unittest.mock import patch
+from django.db import transaction
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -16,6 +18,7 @@ from datetime import timedelta
 
 from apps.encounters.models import Encounter
 from apps.encounters.tests.factories import EncounterFactory
+from apps.encounters.views import EncounterViewSet
 from apps.users.tests.factories import (
     UserFactory,
     PatientProfileFactory,
@@ -523,6 +526,20 @@ class TestEncounterStatsAction:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['total'] == 2
+
+
+@pytest.mark.django_db
+def test_queue_fhir_sync_defers_until_commit(django_capture_on_commit_callbacks):
+    calls = []
+    view = EncounterViewSet()
+
+    with patch('apps.encounters.tasks.sync_encounter_to_fhir.delay', side_effect=lambda encounter_id: calls.append(encounter_id)):
+        with django_capture_on_commit_callbacks(execute=True):
+            with transaction.atomic():
+                view._queue_fhir_sync('encounter-123')
+                assert calls == []
+
+        assert calls == ['encounter-123']
 
 
 @pytest.mark.django_db

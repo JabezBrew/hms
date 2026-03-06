@@ -3,7 +3,7 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries'
 import { encountersApi } from '@/features/encounters/api'
 import { chronicleKeys } from '@/hooks/useChronicleContext'
-import { timelineKeys } from '@/hooks/useTimelineQueries'
+import { fetchTimelinePage, timelineKeys } from '@/hooks/useTimelineQueries'
 import { chartKeys } from '@/hooks/useChartQueries'
 import { apiClient } from '@/lib/api-client'
 
@@ -120,7 +120,7 @@ function prefetchTimelineFirstPage(queryClient, patientId) {
   return queryClient.prefetchInfiniteQuery({
     queryKey: timelineKeys.listParams(patientId, 'all', '', 20, undefined, undefined, undefined),
     queryFn: ({ pageParam = 1 }) =>
-      apiClient.getWithPagination(`/clinical-notes/timeline/${patientId}/?page=${pageParam}&page_size=20`),
+      fetchTimelinePage(patientId, { page: pageParam, page_size: 20 }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => (lastPage?.has_next ? lastPage.page + 1 : undefined),
     staleTime: 30 * 1000,

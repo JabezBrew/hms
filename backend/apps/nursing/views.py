@@ -1005,7 +1005,7 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
 class MonitoringPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = 50
 
 
 class PatientMonitoringViewSet(viewsets.ViewSet):
@@ -1046,16 +1046,19 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 raise PermissionDenied("Facility context is required.")
 
             try:
-                page = int(request.query_params.get('page', 1))
-                page_size = int(request.query_params.get('page_size', 20))
+                page = max(int(request.query_params.get('page', 1)), 1)
+                requested_page_size = int(request.query_params.get('page_size', 20))
             except (ValueError, TypeError):
                 page = 1
-                page_size = 20
+                requested_page_size = 20
+
+            page_size = max(1, min(requested_page_size, self.pagination_class.max_page_size))
 
             # Build cache key based on query params
             cache_key = facility_cache_key(
                 f'nursing_dashboard_{ward_id or "all"}_u{request.user.id}_p{page}_ps{page_size}'
             )
+            stale_cache_key = f'{cache_key}_stale'
             lock_key = f'{cache_key}_lock'
             
             # Try to get from cache first
@@ -1065,6 +1068,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             
             # Cache miss - try to acquire lock for single-flight
             # Using cache.add() as a distributed lock (returns True if set, False if exists)
+            stale_result = cache.get(stale_cache_key)
             lock_acquired = cache.add(lock_key, '1', timeout=30)  # 30s lock timeout
             
             # If we didn't get the lock, another request is building the cache.
@@ -1076,8 +1080,9 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 cached_result = cache.get(cache_key)
                 if cached_result is not None:
                     return Response(cached_result)
-                # Still no cache - proceed with query rather than blocking threads
-                # This allows some duplicate queries but prevents thread starvation
+                if stale_result is not None:
+                    return Response(stale_result)
+                # Cold-cache fallback: recompute locally rather than blocking request threads.
             
 
             try:
@@ -1195,6 +1200,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 
                 # Cache the result for 60 seconds
                 cache.set(cache_key, result, 60)
+                cache.set(stale_cache_key, result, 300)
                 
                 return Response(result)
             
@@ -1203,16 +1209,11 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 if lock_acquired:
                     cache.delete(lock_key)
 
-        except Exception as e:
-            # Log the error and return a proper error response
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"Error in patient monitoring dashboard: {str(e)}")
-            print(error_details)
+        except Exception:
+            logger.exception("Error in patient monitoring dashboard")
 
             return Response({
                 'error': 'Failed to fetch patient monitoring data',
-                'detail': str(e),
                 'count': 0,
                 'page': 1,
                 'page_size': 20,
@@ -1342,13 +1343,13 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get nurses from completed tasks
         task_nurses = NursingTask.objects.filter(
             patient_id__in=ward_patients,
-            completed_at__gte=recent_cutoff
+            completed_time__gte=recent_cutoff
         ).values_list('completed_by_id', flat=True).distinct()
 
         # Get nurses from medication administrations
         med_nurses = MedicationAdministration.objects.filter(
             patient_id__in=ward_patients,
-            administered_at__gte=recent_cutoff
+            administered_time__gte=recent_cutoff
         ).values_list('administered_by_id', flat=True).distinct()
 
         # Combine all nurse IDs

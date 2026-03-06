@@ -1,5 +1,5 @@
 import uuid
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -144,14 +144,19 @@ class VitalSigns(models.Model):
 
         # Create alert if critical
         if self.is_critical:
-            NursingAlert.objects.create(
-                patient=self.patient,
-                facility=self.facility,
-                alert_type='vital_signs',
-                severity='high',
-                message=f"Critical vital signs recorded: {self.get_critical_values_message()}",
-                related_vital_signs=self
-            )
+            critical_message = self.get_critical_values_message()
+
+            def create_alert():
+                NursingAlert.objects.create(
+                    patient=self.patient,
+                    facility=self.facility,
+                    alert_type='vital_signs',
+                    severity='high',
+                    message=f"Critical vital signs recorded: {critical_message}",
+                    related_vital_signs=self
+                )
+
+            transaction.on_commit(create_alert)
 
     def get_critical_values_message(self):
         """Get message describing critical values."""

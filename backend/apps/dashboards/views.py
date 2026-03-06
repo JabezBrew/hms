@@ -1048,8 +1048,7 @@ def get_nurse_dashboard_data(user, request):
         'medications_schedule': meds_due_data,
         'tasks': tasks_data,
     }
-    # Avoid keeping async-refresh stale snapshots warm for too long.
-    cache.set(projection_cache_key, projection, timeout=300 if not is_stale else 15)
+    cache.set(projection_cache_key, projection, timeout=300)
     return {
         'role': 'nurse',
         'user_name': user.get_full_name(),
