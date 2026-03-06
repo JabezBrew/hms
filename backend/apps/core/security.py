@@ -445,6 +445,35 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     ).distinct()
 
 
+def scope_queryset_to_clinical_access(queryset, user, *, patient_lookup='patient', scope='clinical'):
+    """
+    Restrict a queryset to patients the caller may access for clinical workflows.
+
+    Args:
+        queryset: Base queryset already scoped to the active facility.
+        user: Authenticated user.
+        patient_lookup: Django ORM path from queryset model to PatientProfile.
+        scope: Break-glass scope to apply when TEAM_ACCESS_STRICT is enabled.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return queryset.none()
+
+    user_type = getattr(user, 'user_type', None)
+    if user_type == 'admin':
+        return queryset
+
+    if user_type == 'patient':
+        return queryset.filter(**{f'{patient_lookup}__user': user})
+
+    if user_type in ['doctor', 'nurse']:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+            return queryset
+        accessible_patients = get_accessible_patients_for_clinician(user, scope=scope)
+        return queryset.filter(**{f'{patient_lookup}__in': accessible_patients})
+
+    return queryset.none()
+
+
 def check_clinical_access(user, patient_or_id):
     """
     SECURITY: Check access to CLINICAL data (vitals, notes, encounters, diagnoses).

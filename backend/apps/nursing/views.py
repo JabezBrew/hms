@@ -46,9 +46,41 @@ from ..core.security import (
     check_clinical_access,
     get_user_facility,
     get_accessible_patients_for_clinician,
+    scope_queryset_to_clinical_access,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _scope_nursing_patient_queryset(request, queryset, *, patient_lookup='patient'):
+    """Apply facility and clinical patient access scoping for nursing querysets."""
+    facility = get_user_facility(request)
+    if not facility:
+        return queryset.none()
+
+    queryset = queryset.filter(facility=facility)
+    queryset = scope_queryset_to_clinical_access(
+        queryset,
+        request.user,
+        patient_lookup=patient_lookup,
+    )
+
+    patient_id = request.query_params.get('patient') or request.query_params.get('patient_id')
+    if patient_id:
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return queryset.none()
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+        queryset = queryset.filter(**{f'{patient_lookup}_id': patient_id})
+
+    return queryset
+
+
+def _get_request_practitioner(user):
+    """Resolve the caller's practitioner profile through the staff relation."""
+    return PractitionerProfile.objects.filter(staff__user=user).first()
 
 
 class VitalSignsViewSet(viewsets.ModelViewSet):
@@ -69,21 +101,7 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return VitalSigns.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by date range
         start_date = self.request.query_params.get('start_date')
@@ -241,21 +259,7 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering and nurse-specific tasks."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return NursingTask.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by scheduled date range
         start_date = self.request.query_params.get('start_date')
@@ -269,8 +273,9 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
         # Filter for current user's tasks
         my_tasks = self.request.query_params.get('my_tasks')
         if my_tasks and my_tasks.lower() == 'true':
-            if hasattr(self.request.user, 'practitioner_profile'):
-                queryset = queryset.filter(assigned_to=self.request.user.practitioner_profile)
+            practitioner = _get_request_practitioner(self.request.user)
+            if practitioner:
+                queryset = queryset.filter(assigned_to=practitioner)
 
         return queryset
 
@@ -347,21 +352,7 @@ class NursingAlertViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to show unacknowledged alerts by default."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return NursingAlert.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Show only unacknowledged alerts by default
         show_all = self.request.query_params.get('show_all')
@@ -436,21 +427,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return MedicationAdministration.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by scheduled date range
         start_date = self.request.query_params.get('start_date')
@@ -1002,10 +979,7 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
         return ShiftHandoffSerializer
 
     def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return ShiftHandoff.objects.none()
-        return super().get_queryset().filter(facility=facility)
+        return _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -1014,6 +988,8 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data.get('patient')
         if patient and patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_clinical_access(self.request.user, patient)
         serializer.save(created_by=self.request.user, facility=facility)
 
     @action(detail=False, methods=['get'])
@@ -1811,7 +1787,7 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         'treatment_entry__admission__bed__ward',
         'requested_by', 'requested_by__staff', 'requested_by__staff__user'
     ).all()
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsNurseOrAdmin]
     filterset_fields = ['status', 'treatment_entry', 'requested_by']
     pagination_class = StandardResultsSetPagination
 
@@ -1829,17 +1805,21 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         if not facility:
             return SupplyRequest.objects.none()
 
-        queryset = super().get_queryset().filter(facility=facility)
+        queryset = _scope_nursing_patient_queryset(
+            self.request,
+            super().get_queryset(),
+            patient_lookup='treatment_entry__patient',
+        )
+
+        if getattr(self.request.user, 'user_type', None) == 'nurse':
+            practitioner = _get_request_practitioner(self.request.user)
+            if not practitioner:
+                return queryset.none()
+            queryset = queryset.filter(requested_by=practitioner)
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(treatment_entry__patient_id=patient_id)
 
         # Filter by admission
@@ -1860,7 +1840,7 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         if patient:
             check_clinical_access(self.request.user, patient)
         serializer.save(
-            requested_by=getattr(self.request.user, 'practitioner_profile', None),
+            requested_by=_get_request_practitioner(self.request.user),
             facility=facility
         )
 
@@ -1895,6 +1875,12 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
             admission_id=admission_id,
             facility=facility,
         )
+
+        if getattr(request.user, 'user_type', None) == 'nurse':
+            practitioner = _get_request_practitioner(request.user)
+            if not practitioner:
+                return Response([])
+            requests = requests.filter(requested_by=practitioner)
 
         serializer = SupplyRequestListSerializer(requests, many=True)
         return Response(serializer.data)
@@ -1933,21 +1919,7 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering and exclude soft-deleted entries."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return FluidBalance.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Exclude soft-deleted entries by default
         include_deleted = self.request.query_params.get('include_deleted', 'false').lower() == 'true'

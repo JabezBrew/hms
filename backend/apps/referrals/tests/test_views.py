@@ -174,7 +174,10 @@ class TestReferralInbox:
         """Test inbox-count returns only matching referrals."""
         from rest_framework_simplejwt.tokens import AccessToken
 
-        practitioner = PractitionerProfileFactory()
+        practitioner = PractitionerProfileFactory(
+            specialization='Cardiology',
+            staff__department='Cardiology',
+        )
         user = practitioner.staff.user
         facility = user.primary_facility
         token = AccessToken.for_user(user)
@@ -186,13 +189,40 @@ class TestReferralInbox:
         )
 
         patient = PatientProfileFactory(facility=facility)
-        ReferralFactory(status='pending', patient=patient, referred_to_provider=practitioner)
-        ReferralFactory(status='accepted', patient=patient, referred_to_provider=practitioner)
-        ReferralFactory(status='pending', patient=patient, referred_to_provider=None)
-        ReferralFactory(status='completed', patient=patient, referred_to_provider=practitioner)
+        ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
+        ReferralFactory(
+            status='accepted',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
+        ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=None,
+            referred_to_department='Cardiology',
+            referred_to_specialty='Cardiology',
+        )
+        ReferralFactory(
+            status='completed',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
 
         other_practitioner = PractitionerProfileFactory(staff__primary_facility=facility)
-        ReferralFactory(status='pending', patient=patient, referred_to_provider=other_practitioner)
+        ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=other_practitioner,
+        )
 
         response = api_client.get(f'{BASE_URL}/inbox-count/')
 
@@ -211,9 +241,19 @@ class TestReferralWorkflowActions:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = user.primary_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
 
-        referral = ReferralFactory(status='draft')
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            status='draft',
+            patient=patient,
+            facility=facility,
+            referring_provider=practitioner,
+        )
         response = api_client.post(
             f'{BASE_URL}/{referral.id}/submit/',
             {},
@@ -230,9 +270,19 @@ class TestReferralWorkflowActions:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = user.primary_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
 
-        referral = ReferralFactory(status='pending')
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referring_provider=practitioner,
+        )
         response = api_client.post(
             f'{BASE_URL}/{referral.id}/submit/',
             {},
@@ -247,9 +297,19 @@ class TestReferralWorkflowActions:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = user.primary_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
 
-        referral = ReferralFactory(status='pending')
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
         response = api_client.post(
             f'{BASE_URL}/{referral.id}/accept/',
             {'acceptance_notes': 'Will see patient next week'},
@@ -267,9 +327,19 @@ class TestReferralWorkflowActions:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = user.primary_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
 
-        referral = ReferralFactory(status='draft')
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            status='draft',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
         response = api_client.post(
             f'{BASE_URL}/{referral.id}/accept/',
             {},
@@ -283,9 +353,19 @@ class TestReferralWorkflowActions:
         practitioner = PractitionerProfileFactory()
         user = practitioner.staff.user
         token = AccessToken.for_user(user)
-        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        facility = user.primary_facility
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
 
-        referral = ReferralFactory(status='pending')
+        patient = PatientProfileFactory(facility=facility)
+        referral = ReferralFactory(
+            status='pending',
+            patient=patient,
+            facility=facility,
+            referred_to_provider=practitioner,
+        )
         response = api_client.post(
             f'{BASE_URL}/{referral.id}/decline/',
             {'decline_reason': 'Patient already seen'},

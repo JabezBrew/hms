@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -37,7 +38,12 @@ from ..encounters.models import Encounter
 from ..appointments.models import AppointmentType
 from apps.organization.models import Clinic
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 from rest_framework.exceptions import PermissionDenied
@@ -69,10 +75,36 @@ class ReferralViewSet(viewsets.ModelViewSet):
             return ReferralListSerializer
         return ReferralSerializer
 
+    def _get_practitioner(self):
+        return PractitionerProfile.objects.filter(staff__user=self.request.user).first()
+
+    def _get_inbox_unassigned_filters(self, practitioner):
+        if not practitioner:
+            return Q(pk__in=[])
+
+        match_filters = Q(pk__in=[])
+        has_route_match = False
+        department = getattr(practitioner.staff, 'department', '')
+        if department:
+            match_filters |= Q(referred_to_department__iexact=department)
+            has_route_match = True
+        specialization = getattr(practitioner, 'specialization', '')
+        if specialization:
+            match_filters |= Q(referred_to_specialty__iexact=specialization)
+            has_route_match = True
+
+        if not has_route_match:
+            return Q(pk__in=[])
+
+        return Q(
+            referred_to_provider__isnull=True,
+            status=ReferralStatus.PENDING,
+        ) & match_filters
+
     def _get_inbox_queryset(self, practitioner):
         return self.get_queryset().filter(
             Q(referred_to_provider=practitioner) |
-            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
+            self._get_inbox_unassigned_filters(practitioner)
         ).exclude(
             status__in=[
                 ReferralStatus.DRAFT,
@@ -96,6 +128,24 @@ class ReferralViewSet(viewsets.ModelViewSet):
             'referred_to_provider__staff__user',
             'encounter'
         ).filter(facility=facility)
+        user = self.request.user
+
+        if getattr(user, 'user_type', None) != 'admin':
+            practitioner = self._get_practitioner()
+            access_filters = Q(pk__in=[])
+
+            if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                access_filters = Q()
+            else:
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                access_filters |= Q(patient__in=accessible_patients)
+
+            if practitioner:
+                access_filters |= Q(referring_provider=practitioner)
+                access_filters |= Q(referred_to_provider=practitioner)
+                access_filters |= self._get_inbox_unassigned_filters(practitioner)
+
+            queryset = queryset.filter(access_filters).distinct()
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
