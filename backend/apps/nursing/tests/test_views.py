@@ -6,6 +6,7 @@ from apps.core.cache_utils import facility_cache_key_for_code
 from apps.nursing.tests.factories import (
     AdmissionFactory,
     BedFactory,
+    EncounterFactory,
     CompletedNursingTaskFactory,
     WardFactory,
 )
@@ -65,3 +66,45 @@ def test_monitoring_dashboard_clamps_page_size_and_serves_stale_cache(
 
     assert response.status_code == 200
     assert response.data == stale_payload
+
+
+@pytest.mark.django_db
+def test_vital_signs_create_query_budget(
+    monkeypatch,
+    nurse_client,
+    nurse_user,
+    nurse_practitioner,
+    patient_profile_factory,
+    default_facility,
+    django_assert_max_num_queries,
+    django_capture_on_commit_callbacks,
+):
+    patient = patient_profile_factory(facility=default_facility)
+    encounter = EncounterFactory(
+        patient=patient,
+        facility=default_facility,
+        practitioner=nurse_practitioner,
+        created_by=nurse_user,
+        status='in-progress',
+    )
+    monkeypatch.setattr('apps.audit.services.log_audit_async.delay', lambda *args, **kwargs: None)
+    monkeypatch.setattr('apps.nursing.signals.get_channel_layer', lambda: None)
+
+    payload = {
+        'patient': str(patient.id),
+        'encounter': str(encounter.id),
+        'temperature': '37.2',
+        'heart_rate': 84,
+        'blood_pressure_systolic': 118,
+        'blood_pressure_diastolic': 76,
+        'respiratory_rate': 16,
+        'oxygen_saturation': 98,
+        'notes': 'Routine round',
+    }
+
+    with django_assert_max_num_queries(34):
+        with django_capture_on_commit_callbacks(execute=True):
+            response = nurse_client.post('/api/nursing/vital-signs/', payload, format='json')
+
+    assert response.status_code == 201
+    assert response.data['encounter_created'] is False

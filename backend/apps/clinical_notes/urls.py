@@ -22,4 +22,5 @@ urlpatterns = [
     # Chronicle V2 endpoints (optimized)
     path('chronicle/<uuid:patient_id>/context/', chronicle_context, name='chronicle-context'),
     path('chronicle/<uuid:patient_id>/timeline/', patient_timeline_v2, name='patient-timeline-v2'),
+    path('chronicle/<uuid:patient_id>/stats/', timeline_stats, name='patient-timeline-stats-v2'),
 ]

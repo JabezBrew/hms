@@ -197,9 +197,17 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
             description=f"Recorded vital signs for {patient.user.get_full_name()}: {', '.join(vitals_summary)}" if vitals_summary else f"Recorded vital signs for {patient.user.get_full_name()}",
         )
 
-        # Return full serializer data with encounter_created flag
-        output_serializer = VitalSignsSerializer(vital_signs)
-        response_data = output_serializer.data
+        # Re-fetch with only the relations needed for the lightweight create payload.
+        response_vital_signs = VitalSigns.objects.select_related(
+            'patient__user',
+            'recorded_by__staff__user',
+        ).get(pk=vital_signs.pk)
+        response_data = VitalSignsListSerializer(response_vital_signs).data
+        response_data['encounter'] = str(response_vital_signs.encounter_id)
+        response_data['recorded_by'] = (
+            str(response_vital_signs.recorded_by_id) if response_vital_signs.recorded_by_id else None
+        )
+        response_data['notes'] = response_vital_signs.notes
         response_data['encounter_created'] = encounter_created
 
         return Response(response_data, status=status.HTTP_201_CREATED)

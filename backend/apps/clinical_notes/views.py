@@ -1,5 +1,5 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
 from apps.core.pagination import StandardResultsSetPagination
@@ -2148,108 +2148,191 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 @api_permission_classes([permissions.IsAuthenticated])
 def patient_timeline(request, patient_id):
     """
-    Get a unified timeline of clinical events for a patient.
+    Compatibility shim for the legacy timeline endpoint.
 
-    Aggregates:
-    - Clinical notes (NoteEntry)
-    - Prescriptions
-    - Vital signs
-    - Referrals (sent and received)
-
-    Query Parameters:
-    - type: Filter by type (notes, vitals, prescriptions, referrals, all)
-    - search: Text search across entries
-    - page: Page number (default: 1)
-    - page_size: Items per page (default: 20, max: 100)
-    - start_date: Filter entries from this date (ISO format)
-    - end_date: Filter entries until this date (ISO format)
-    - encounter_id: Filter entries by specific encounter (UUID)
-
-    Returns paginated timeline entries sorted by timestamp (newest first).
+    The legacy response shape is preserved for older clients, but the
+    runtime work is delegated to the TimelineEvent-backed v2 query path.
     """
-    # Validate patient exists
-    try:
-        patient = PatientProfile.objects.get(id=patient_id)
-    except PatientProfile.DoesNotExist:
-        return Response(
-            {'error': 'Patient not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # SECURITY: Check clinical data access
-    _require_patient_facility(request, patient)
-    check_clinical_access(request.user, patient)
-
-    # Parse query parameters
-    entry_type = request.query_params.get('type', 'all')
-    search_query = request.query_params.get('search', '').strip()
-    page = int(request.query_params.get('page', 1))
-    page_size = min(int(request.query_params.get('page_size', 20)), 100)
-    start_date = request.query_params.get('start_date')
-    end_date = request.query_params.get('end_date')
-    encounter_id = request.query_params.get('encounter_id')
-
-    # Parse dates
-    start_datetime = None
-    end_datetime = None
-    if start_date:
-        try:
-            start_datetime = timezone.datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        except ValueError:
-            pass
-    if end_date:
-        try:
-            end_datetime = timezone.datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-        except ValueError:
-            pass
-
-    timeline_entries = []
-
-    # Fetch notes
-    if entry_type in ['all', 'notes']:
-        notes = _get_patient_notes(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(notes)
-
-    # Fetch prescriptions
-    if entry_type in ['all', 'prescriptions']:
-        prescriptions = _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(prescriptions)
-
-    # Fetch vitals
-    if entry_type in ['all', 'vitals']:
-        vitals = _get_patient_vitals(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(vitals)
-
-    # Fetch referrals
-    if entry_type in ['all', 'referrals']:
-        referrals = _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(referrals)
-
-    # Fetch lab results (bundled by order)
-    if entry_type in ['all', 'labs']:
-        labs = _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(labs)
-
-    # Sort all entries by timestamp (newest first)
-    timeline_entries.sort(key=lambda x: x['timestamp'], reverse=True)
-
-    # Calculate pagination
-    total_count = len(timeline_entries)
-    total_pages = (total_count + page_size - 1) // page_size
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-
-    paginated_entries = timeline_entries[start_idx:end_idx]
-
-    return Response({
-        'count': total_count,
-        'page': page,
-        'page_size': page_size,
-        'total_pages': total_pages,
-        'has_next': page < total_pages,
-        'has_previous': page > 1,
-        'results': paginated_entries
+    logger.warning("Deprecated clinical timeline endpoint accessed")
+    payload = _get_patient_timeline_payload_v2(request, patient_id)
+    response = Response({
+        **payload,
+        'results': [_format_legacy_timeline_entry(entry) for entry in payload['results']],
     })
+    response['X-Deprecated-Endpoint'] = '/api/clinical-notes/chronicle/<patient_id>/timeline/'
+    return response
+
+
+def _format_legacy_timeline_entry(entry):
+    """Translate v2 timeline entries back into the legacy client shape."""
+    entry_type = entry.get('type')
+    author = entry.get('author_name') or entry.get('author') or 'Unknown'
+    content = entry.get('content_summary') or entry.get('content') or ''
+
+    if entry_type == 'note':
+        template = entry.get('template') or {}
+        return {
+            'id': entry['id'],
+            'type': entry.get('note_type') or 'progress_note',
+            'entry_type': 'note',
+            'timestamp': entry['timestamp'],
+            'updated_at': entry.get('updated_at'),
+            'title': entry.get('title') or 'Clinical Note',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': entry.get('data') or {},
+            'template_id': template.get('id'),
+            'template_title': template.get('title'),
+            'template': template or None,
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+            'version_count': entry.get('version_count', 0),
+            'has_edits': entry.get('has_edits', False),
+        }
+
+    if entry_type == 'prescription':
+        duration_days = entry.get('duration_days')
+        return {
+            'id': entry['id'],
+            'type': 'prescription',
+            'entry_type': 'prescription',
+            'timestamp': entry['timestamp'],
+            'title': f"{entry.get('medication_name', '')} {entry.get('dosage', '')}".strip(),
+            'content': ' - '.join(
+                part for part in [
+                    entry.get('route_display'),
+                    entry.get('frequency_display'),
+                    f"for {duration_days} days" if duration_days else None,
+                ] if part
+            ),
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'id': entry['id'],
+                'medication_name': entry.get('medication_name'),
+                'name': entry.get('medication_name'),
+                'dosage': entry.get('dosage'),
+                'dose': entry.get('dosage'),
+                'route': entry.get('route'),
+                'route_display': entry.get('route_display'),
+                'frequency': entry.get('frequency'),
+                'frequency_display': entry.get('frequency_display'),
+                'duration_days': duration_days,
+                'start_date': entry.get('start_date'),
+                'end_date': entry.get('end_date'),
+                'instructions': entry.get('instructions'),
+                'reason': entry.get('reason'),
+                'status': entry.get('status'),
+                'status_display': entry.get('status_display'),
+                'discontinue_reason': entry.get('discontinue_reason'),
+            },
+            'status': entry.get('status'),
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'vitals':
+        return {
+            'id': entry['id'],
+            'type': 'vitals',
+            'entry_type': 'vitals',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or 'Vital Signs',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'temperature': entry.get('temperature'),
+                'heart_rate': entry.get('heart_rate'),
+                'blood_pressure': entry.get('blood_pressure'),
+                'blood_pressure_systolic': entry.get('blood_pressure_systolic'),
+                'blood_pressure_diastolic': entry.get('blood_pressure_diastolic'),
+                'respiratory_rate': entry.get('respiratory_rate'),
+                'oxygen_saturation': entry.get('oxygen_saturation'),
+                'pain_level': entry.get('pain_level'),
+                'notes': entry.get('notes'),
+            },
+            'is_critical': entry.get('is_critical', False),
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'lab':
+        return {
+            'id': entry['id'],
+            'type': 'lab_result',
+            'entry_type': 'lab_result',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or f"Lab Order #{entry.get('order_number')}",
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'order_id': entry['id'],
+                'order_number': entry.get('order_number'),
+                'status': entry.get('status'),
+                'priority': entry.get('priority'),
+                'priority_display': entry.get('priority_display'),
+                'clinical_notes': entry.get('clinical_notes'),
+                'ordered_at': entry.get('ordered_at'),
+                'completed_at': entry.get('completed_at'),
+                'tests_ordered': entry.get('tests_ordered') or [],
+                'results_summary': entry.get('results_summary'),
+                'results': entry.get('results') or [],
+                'tests': entry.get('tests') or [],
+            },
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'referral':
+        return {
+            'id': entry['id'],
+            'type': 'referral',
+            'entry_type': 'referral',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or 'Referral',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'referral_number': entry.get('referral_number'),
+                'status': entry.get('status'),
+                'status_display': entry.get('status_display'),
+                'urgency': entry.get('urgency'),
+                'urgency_display': entry.get('urgency_display'),
+                'is_urgent': entry.get('is_urgent'),
+                'referring_department': entry.get('referring_department'),
+                'referred_to_provider': entry.get('referred_to_provider_name'),
+                'referred_to_department': entry.get('referred_to_department'),
+                'referred_to_specialty': entry.get('referred_to_specialty'),
+                'reason': entry.get('reason'),
+                'clinical_summary': entry.get('clinical_summary'),
+                'questions_for_specialist': entry.get('questions_for_specialist'),
+                'specialist_notes': entry.get('specialist_notes'),
+                'recommendations': entry.get('recommendations'),
+                'submitted_at': entry.get('submitted_at'),
+                'accepted_at': entry.get('accepted_at'),
+                'completed_at': entry.get('completed_at'),
+            },
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    return {
+        'id': entry['id'],
+        'type': entry_type,
+        'entry_type': entry_type,
+        'timestamp': entry['timestamp'],
+        'title': entry.get('title') or '',
+        'content': content,
+        'author': author,
+        'author_id': entry.get('author_id'),
+        'data': {},
+        'encounter_id': entry.get('encounter_id'),
+        'encounter': entry.get('encounter'),
+    }
 
 
 def _format_encounter_details(encounter):
@@ -3293,17 +3376,18 @@ def patient_timeline_v2(request, patient_id):
 
     Returns paginated timeline entries with full source model details.
     """
+    return Response(_get_patient_timeline_payload_v2(request, patient_id))
+
+
+def _get_patient_timeline_payload_v2(request, patient_id):
+    """Build the chronicle timeline payload using TimelineEvent-backed pagination."""
     from .models import TimelineEvent
-    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:
         patient = PatientProfile.objects.get(id=patient_id)
     except PatientProfile.DoesNotExist:
-        return Response(
-            {'error': 'Patient not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        raise NotFound('Patient not found')
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
@@ -3415,7 +3499,7 @@ def patient_timeline_v2(request, patient_id):
             id__in=events_by_model['LabOrder']
         ).select_related(
             'ordering_provider__staff__user', 'encounter'
-        ).prefetch_related('order_tests__test', 'order_tests__results')
+        ).prefetch_related('order_tests__test', 'order_tests__result')
         for lab in labs:
             source_data[('LabOrder', str(lab.id))] = lab
 
@@ -3439,7 +3523,7 @@ def patient_timeline_v2(request, patient_id):
         if entry:
             results.append(entry)
 
-    return Response({
+    return {
         'count': total_count,
         'page': page,
         'page_size': page_size,
@@ -3447,7 +3531,7 @@ def patient_timeline_v2(request, patient_id):
         'has_next': page < total_pages,
         'has_previous': page > 1,
         'results': results,
-    })
+    }
 
 
 def _build_timeline_entry_v2(event, source_obj):
@@ -3614,10 +3698,11 @@ def _format_lab_entry_v2(lab, event):
             'status': order_test.status,
             'results': [],
         }
-        # Include results if any
-        for result in order_test.results.all():
+
+        result = getattr(order_test, 'result', None)
+        if result:
             is_critical = bool(result.is_critical())
-            is_abnormal = bool(result.is_abnormal)
+            is_abnormal = result.flag not in ['normal', None]
             summary['total'] += 1
             if is_critical:
                 summary['critical'] += 1
@@ -3626,23 +3711,32 @@ def _format_lab_entry_v2(lab, event):
             else:
                 summary['normal'] += 1
 
-            test_data['results'].append({
+            reference_range = None
+            if result.reference_low is not None and result.reference_high is not None:
+                reference_range = f"{result.reference_low} - {result.reference_high}"
+            elif result.reference_low is not None:
+                reference_range = f"> {result.reference_low}"
+            elif result.reference_high is not None:
+                reference_range = f"< {result.reference_high}"
+
+            result_payload = {
                 'id': str(result.id),
                 'value': result.value,
                 'unit': result.unit,
-                'reference_range': result.reference_range,
+                'reference_range': reference_range,
                 'interpretation': result.interpretation,
                 'flag': result.flag,
                 'is_abnormal': is_abnormal,
                 'is_critical': is_critical,
                 'verified_at': result.verified_at.isoformat() if result.verified_at else None,
-            })
+            }
+            test_data['results'].append(result_payload)
             flat_results.append({
                 'test_name': order_test.test.short_name,
                 'test_full_name': order_test.test.name,
                 'value': result.value,
                 'unit': result.unit,
-                'reference_range': result.reference_range,
+                'reference_range': reference_range,
                 'flag': result.flag,
                 'is_abnormal': is_abnormal,
                 'is_critical': is_critical,

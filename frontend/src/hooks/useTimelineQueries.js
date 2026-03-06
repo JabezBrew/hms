@@ -192,7 +192,7 @@ export async function fetchTimelinePage(patientId, options = {}) {
  * @returns {Promise} - Timeline statistics
  */
 async function fetchTimelineStats(patientId) {
-  return apiClient.get(`/clinical-notes/timeline/${patientId}/stats/`);
+  return apiClient.get(`/clinical-notes/chronicle/${patientId}/stats/`);
 }
 
 /**
