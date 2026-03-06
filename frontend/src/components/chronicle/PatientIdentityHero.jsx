@@ -15,6 +15,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -41,6 +42,7 @@ const PatientIdentityHero = ({
   onAddNote,
   onRecordVitals,
   onPrescribe,
+  onAskChronicle,
   onOrderLabs,
   onRequestConsult,
   onShareRecord,
@@ -256,7 +258,7 @@ const PatientIdentityHero = ({
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent" />
 
-      <div className="relative flex items-start justify-between">
+      <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
         {/* Left: Patient Identity */}
         <div className="space-y-4">
           {/* Status + Name */}
@@ -363,7 +365,7 @@ const PatientIdentityHero = ({
         </div>
 
         {/* Right: Quick Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 xl:max-w-[32rem] xl:justify-end">
           <Button
             variant="outline"
             size="sm"
@@ -401,6 +403,24 @@ const PatientIdentityHero = ({
             <Pill className="h-3.5 w-3.5 mr-1.5" />
             Prescribe
           </Button>
+
+          {onAskChronicle && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "font-mono text-xs",
+                "border-amber-200 bg-amber-50/80 text-amber-900 hover:bg-amber-100",
+                "dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
+              )}
+              onClick={onAskChronicle}
+              onPointerEnter={() => prefetchAction('copilot')}
+              onFocus={() => prefetchAction('copilot')}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5 text-amber-600 dark:text-amber-300" />
+              Ask Chronicle
+            </Button>
+          )}
 
           {activeAdmission && onViewTreatmentSheet && (
             <Button
