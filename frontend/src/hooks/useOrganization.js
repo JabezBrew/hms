@@ -654,7 +654,8 @@ export function useUpdateClinicalUnit() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => clinicalUnitsApi.update(id, data),
+    // Unit edits submit only changed fields, so this must remain a PATCH.
+    mutationFn: ({ id, data }) => clinicalUnitsApi.patch(id, data),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.unit(id) });
       queryClient.invalidateQueries({ queryKey: organizationKeys.units() });
