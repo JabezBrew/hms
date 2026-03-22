@@ -14,6 +14,7 @@ const NhisClaimsArPage = lazy(() => import('./pages/NhisClaimsArPage'))
 const NhisServiceMappingsPage = lazy(() => import('./pages/NhisServiceMappingsPage'))
 const InsuranceManagementPage = lazy(() => import('./pages/InsuranceManagementPage'))
 const CashSessionsPage = lazy(() => import('./pages/CashSessionsPage'))
+const BillingDischargesPage = lazy(() => import('@/features/discharge/pages/BillingDischargesPage'))
 
 const BILLING_BREADCRUMB = { label: 'Billing', path: '/billing' }
 
@@ -125,5 +126,13 @@ export const billingRoutes = [
     layout: ROUTE_LAYOUTS.APP,
     title: 'Insurance Management | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Insurance', path: '/billing/insurance' }],
+  },
+  {
+    path: '/billing/discharges',
+    component: BillingDischargesPage,
+    roles: ROLE_GROUPS.BILLING,
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'Billing Discharges | Hospital Management System',
+    breadcrumbs: [BILLING_BREADCRUMB, { label: 'Discharges', path: '/billing/discharges' }],
   },
 ]

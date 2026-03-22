@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { dischargeKeys } from '@/features/discharge/hooks/useDischargeCaseQueries';
 import { toast } from 'sonner';
 
 // Query keys
@@ -155,10 +156,10 @@ export function useDischargeWorkflow() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(workflowKeys.detail(data.workflow.id), data);
-      toast.success('Discharge workflow started');
+      toast.success('Medical discharge started');
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to start discharge');
+      toast.error(error.message || 'Failed to start medical discharge');
     },
   });
 
@@ -186,11 +187,12 @@ export function useDischargeWorkflow() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all });
       queryClient.invalidateQueries(workflowKeys.all);
-      toast.success('Discharge completed');
+      toast.success('Medical discharge submitted for clearance');
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to complete discharge');
+      toast.error(error.message || 'Failed to submit medical discharge');
     },
   });
 

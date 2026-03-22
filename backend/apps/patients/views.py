@@ -32,6 +32,7 @@ from apps.users.permissions import IsAdminOrOwner
 from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
+    ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
     check_demographics_access,
     check_clinical_access,
@@ -228,7 +229,7 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             Prefetch(
                 'patient_profile__admissions',
                 queryset=Admission.objects.filter(
-                    status__in=['admitted', 'waiting']
+                    status__in=ACTIVE_ADMISSION_STATUSES
                 ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                 to_attr='active_admissions_list'
             )
@@ -291,7 +292,7 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
                 Prefetch(
                     'patient_profile__admissions',
                     queryset=Admission.objects.filter(
-                        status__in=['admitted', 'waiting']
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
                 )
@@ -488,7 +489,7 @@ class PatientViewSet(viewsets.ViewSet):
             if not admission_end:
                 admission_end = admission_date
 
-        allowed_admission_statuses = {'admitted', 'waiting', 'discharged', 'transferred', 'deceased'}
+        allowed_admission_statuses = {'admitted', 'pending_discharge', 'waiting', 'discharged', 'transferred', 'deceased'}
         allowed_admission_types = {'emergency', 'elective', 'maternity', 'newborn'}
         allowed_encounter_types = {'inpatient', 'outpatient', 'emergency'}
         allowed_registry_scopes = {'active', 'discharged', 'deceased', 'all'}

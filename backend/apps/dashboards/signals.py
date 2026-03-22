@@ -10,7 +10,7 @@ from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from apps.core.security import normalize_facility_code
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, normalize_facility_code
 from apps.users.models import PractitionerProfile
 from apps.wards.models import Admission
 
@@ -65,7 +65,7 @@ def _resolve_active_ward_scope(facility_id, patient_id) -> Optional[str]:
     ward_id = Admission.objects.filter(
         facility_id=facility_id,
         patient_id=patient_id,
-        status="admitted",
+        status__in=ACTIVE_ADMISSION_STATUSES,
     ).values_list("bed__ward_id", flat=True).first()
     return str(ward_id) if ward_id else None
 

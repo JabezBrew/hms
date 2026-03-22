@@ -56,9 +56,10 @@ def get_patient_ward_id(patient):
     try:
         # Check for active admission
         from apps.wards.models import Admission
+        from apps.core.security import ACTIVE_ADMISSION_STATUSES
         active_admission = Admission.objects.filter(
             patient=patient,
-            status__in=['admitted', 'waiting']
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('bed__ward').first()
 
         if active_admission and active_admission.bed:

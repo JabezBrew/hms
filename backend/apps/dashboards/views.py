@@ -16,7 +16,7 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.clinical_notes.models import NoteEntry
 from apps.core.cache_utils import facility_cache_key_for_code
 from apps.core.models import BreakGlassEvent
-from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, FacilityScopedPermission, get_user_facility
 from apps.dashboards.tasks import (
     refresh_admin_dashboard_appointments,
     refresh_doctor_dashboard_appointments,
@@ -544,7 +544,7 @@ def _build_admin_v2_root_payload(facility, now, window, expand_sections=None):
         planned_discharges=Count(
             'id',
             filter=Q(
-                status='admitted',
+                status__in=ACTIVE_ADMISSION_STATUSES,
                 expected_discharge_date__gte=today_start,
                 expected_discharge_date__lt=tomorrow_start,
             ),
@@ -1336,7 +1336,7 @@ def inpatient_dashboard(request):
     # New admissions (last 24 hours)
     new_admissions = Admission.objects.filter(
         facility=facility,
-        status='admitted',
+        status__in=ACTIVE_ADMISSION_STATUSES,
         admission_date__gte=yesterday,
         admitting_doctor=practitioner
     ).select_related('patient', 'patient__user', 'bed', 'bed__ward')
@@ -1344,14 +1344,14 @@ def inpatient_dashboard(request):
     # All my patients
     my_patients = Admission.objects.filter(
         facility=facility,
-        status='admitted',
+        status__in=ACTIVE_ADMISSION_STATUSES,
         admitting_doctor=practitioner
     ).select_related('patient', 'patient__user', 'bed', 'bed__ward')
 
     # Planned discharges today
     planned_discharges = Admission.objects.filter(
         facility=facility,
-        status='admitted',
+        status__in=ACTIVE_ADMISSION_STATUSES,
         expected_discharge_date__gte=today_start,
         expected_discharge_date__lt=today_start + timedelta(days=1),
         admitting_doctor=practitioner
@@ -1477,7 +1477,7 @@ def admin_dashboard(request):
     # Current admissions
     current_admissions = Admission.objects.filter(
         facility=facility,
-        status='admitted'
+        status__in=ACTIVE_ADMISSION_STATUSES
     ).count()
 
     # Today's appointments - cached + refreshed async to avoid blocking on FHIR
@@ -1839,7 +1839,7 @@ def _get_doctor_context_patients(user, request):
     if practitioner:
         my_admissions = Admission.objects.filter(
             facility=facility,
-            status='admitted',
+            status__in=ACTIVE_ADMISSION_STATUSES,
             admitting_doctor=practitioner
         ).select_related('patient', 'patient__user', 'bed', 'bed__ward')[:30]
 

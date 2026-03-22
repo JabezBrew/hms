@@ -10,14 +10,29 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import format from 'date-fns/format';
 import { admissionsApi } from '@/features/admissions/api';
+import { DischargeCasePanel } from '@/features/discharge/components/DischargeCasePanel';
+import { useAuth } from '@/lib/auth';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
+const DISCHARGE_CASE_ROLES = new Set([
+  'admin',
+  'doctor',
+  'nurse',
+  'head_nurse',
+  'nurse_practitioner',
+  'inpatient_doctor',
+  'practitioner',
+  'physician',
+  'billing',
+]);
+
 export default function AdmissionDetailPage() {
   const { admissionId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [admission, setAdmission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,6 +68,8 @@ export default function AdmissionDetailPage() {
     switch (status) {
       case 'admitted':
         return <Badge className="bg-green-100 text-green-800">Admitted</Badge>;
+      case 'pending_discharge':
+        return <Badge className="bg-amber-100 text-amber-900">Pending Discharge</Badge>;
       case 'discharged':
         return <Badge className="bg-blue-100 text-blue-800">Discharged</Badge>;
       case 'transferred':
@@ -66,6 +83,7 @@ export default function AdmissionDetailPage() {
 
   const ward = admission?.bed?.ward;
   const patientName = admission?.patient?.user?.full_name;
+  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
   const backToWardPath = ward ? `/wards/${ward.id}` : '/wards';
   const backLabel = ward ? 'Back to Ward' : 'Back to Wards';
   const pageMeta = usePageMeta({
@@ -135,7 +153,7 @@ export default function AdmissionDetailPage() {
               <ChevronLeft className="h-4 w-4 mr-2" />
               {backLabel}
             </Button>
-            {admission.status === 'admitted' && (
+            {['admitted', 'pending_discharge'].includes(admission.status) && (
               <Button
                 size="sm"
                 disabled={!admission?.patient?.id}
@@ -143,7 +161,7 @@ export default function AdmissionDetailPage() {
                   `/patients/${admission.patient.id}?action=discharge&admission=${admission.id}&source=admission-detail`
                 )}
               >
-                Discharge Patient
+                {admission.status === 'pending_discharge' ? 'Review Medical Discharge' : 'Medical Discharge'}
               </Button>
             )}
           </div>
@@ -208,6 +226,13 @@ export default function AdmissionDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {canViewDischargeCase && (
+        <DischargeCasePanel
+          admissionId={admission.id}
+          title="Discharge Clearance"
+        />
+      )}
 
       {/* Clinical details */}
       <Tabs defaultValue="notes">

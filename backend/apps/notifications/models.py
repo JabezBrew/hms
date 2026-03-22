@@ -15,6 +15,7 @@ class InboxItem(models.Model):
         NURSING_TASK = 'nursing_task', 'Nursing Task'
         DRUG_SAFETY = 'drug_safety', 'Drug Safety'
         LAB_RESULT = 'lab_result', 'Lab Result'
+        DISCHARGE = 'discharge', 'Discharge'
 
     class PriorityLevel(models.TextChoices):
         ROUTINE = 'routine', 'Routine'

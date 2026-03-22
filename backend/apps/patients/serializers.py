@@ -11,7 +11,7 @@ from ..users.identifiers import generate_unique_mrn
 from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
 from hms_backend.tenancy import get_current_facility_code
-from apps.core.security import get_user_facility, resolve_object_facility
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility, resolve_object_facility
 from apps.core.models import Facility
 from django.conf import settings
 from django.utils import timezone
@@ -89,10 +89,10 @@ class PatientRecentListSerializer(serializers.ModelSerializer):
             return active_list[0] if active_list else None
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             return next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
-        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
     def get_name(self, obj):
         if obj.user:

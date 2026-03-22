@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
-from apps.core.security import get_user_facility
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
 from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
 from .unit_assignment import auto_assign_staff_to_department_unit
@@ -195,12 +195,12 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         # Second, check for legacy prefetched admissions cache
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             return next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
 
         # Fallback to DB query if not prefetched
-        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
     def get_current_ward(self, obj):
         """
@@ -303,10 +303,10 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return obj.active_admissions_list[0] if obj.active_admissions_list else None
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             return next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
-        return obj.admissions.filter(status__in=['admitted', 'waiting']).select_related('bed', 'bed__ward').first()
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).select_related('bed', 'bed__ward').first()
 
     def _get_active_encounters(self, obj):
         if hasattr(obj, 'active_encounters_list'):
@@ -1054,11 +1054,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         # Use prefetched admissions if available
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if not admission:
             return None
@@ -1075,11 +1075,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         """Get the ward ID where patient is admitted."""
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if admission and admission.bed:
             return str(admission.bed.ward.id)
@@ -1089,11 +1089,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         """Get the admission date if patient is currently admitted."""
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if admission:
             return admission.admission_date

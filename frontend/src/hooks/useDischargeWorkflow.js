@@ -5,12 +5,13 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
 import { timelineKeys } from '@/hooks/useTimelineQueries';
 import { wardKeys } from '@/features/wards/hooks/useWardQueries';
+import { dischargeKeys } from '@/features/discharge/hooks/useDischargeCaseQueries';
 
 const DISCHARGE_STEPS = [
   {
     id: 'discharge_planning',
-    title: 'Discharge Planning',
-    description: 'Confirm readiness, destination, and timing.',
+    title: 'Medical Discharge Planning',
+    description: 'Confirm readiness, destination, and the effective discharge time.',
     required: ['discharge_disposition', 'discharge_date'],
     requiredTrue: [],
   },
@@ -30,8 +31,8 @@ const DISCHARGE_STEPS = [
   },
   {
     id: 'documentation',
-    title: 'Complete Discharge',
-    description: 'Finalize summary and patient education confirmations.',
+    title: 'Submit for Clearance',
+    description: 'Finalize the medical discharge summary and hand off for clearance.',
     required: ['discharge_summary'],
     requiredTrue: ['patient_education_complete', 'discharge_instructions_given'],
   },
@@ -61,7 +62,6 @@ const STEP_FIELD_MAP = {
     'discharge_summary',
     'patient_education_complete',
     'discharge_instructions_given',
-    'prescriptions_sent',
   ],
 };
 
@@ -70,7 +70,6 @@ const BOOLEAN_DEFAULTS = {
   medication_education_completed: false,
   patient_education_complete: false,
   discharge_instructions_given: false,
-  prescriptions_sent: false,
 };
 
 function hasValue(value) {
@@ -87,7 +86,7 @@ function normalizeDateTimeValue(value) {
   return String(value);
 }
 
-function validateStep(stepId, stepData, allFormData = {}) {
+function validateStep(stepId, stepData) {
   const step = DISCHARGE_STEPS.find((item) => item.id === stepId);
   if (!step) return { valid: true, errors: {} };
 
@@ -102,13 +101,6 @@ function validateStep(stepId, stepData, allFormData = {}) {
   for (const field of step.requiredTrue || []) {
     if (stepData?.[field] !== true) {
       errors[field] = `${field.replace(/_/g, ' ')} must be confirmed`;
-    }
-  }
-
-  if (stepId === 'documentation') {
-    const prescriptions = allFormData?.medications?.discharge_prescriptions || [];
-    if (prescriptions.length > 0 && stepData?.prescriptions_sent !== true) {
-      errors.prescriptions_sent = 'Confirm prescriptions have been sent to pharmacy';
     }
   }
 
@@ -190,7 +182,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
       setValidationErrors({});
     },
     onError: (err) => {
-      setError(err.message || 'Failed to start discharge workflow');
+      setError(err.message || 'Failed to start medical discharge workflow');
     },
   });
 
@@ -218,13 +210,14 @@ export function useDischargeWorkflow(patientId, admissionId) {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all });
       queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
       queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
       queryClient.invalidateQueries({ queryKey: wardKeys.admissions() });
     },
     onError: (err) => {
-      setError(err.message || 'Failed to complete discharge workflow');
+      setError(err.message || 'Failed to submit medical discharge');
     },
   });
 
@@ -279,7 +272,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
     if (!stepId) return false;
 
     const stepPayload = formData[stepId] || {};
-    const validation = validateStep(stepId, stepPayload, formData);
+    const validation = validateStep(stepId, stepPayload);
     if (!validation.valid) {
       setValidationErrors(validation.errors);
       return false;
@@ -325,7 +318,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
 
   const completeWorkflow = useCallback(async () => {
     for (const step of steps) {
-      const validation = validateStep(step.id, formData[step.id] || {}, formData);
+      const validation = validateStep(step.id, formData[step.id] || {});
       if (!validation.valid) {
         setCurrentStep(steps.findIndex((item) => item.id === step.id) + 1);
         setValidationErrors(validation.errors);

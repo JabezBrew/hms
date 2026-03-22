@@ -17,6 +17,7 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import status
 
+from apps.discharge.models import DischargeCase
 from apps.wards.models import Ward, Bed, Admission, WardSection, BedAmenity
 from .factories import (
     WardFactory, BedFactory, AdmissionFactory, WardSectionFactory,
@@ -303,7 +304,7 @@ class TestAdmissionViewSet:
         assert response.data['admission_notes'] == 'Test notes'
 
     def test_discharge_action(self, admin_client, db):
-        """Test discharging a patient."""
+        """Test submitting medical discharge for downstream clearance."""
         admission = AdmissionFactory(status='admitted')
         data = {'discharge_notes': 'Patient recovered fully'}
 
@@ -315,11 +316,13 @@ class TestAdmissionViewSet:
         assert response.status_code == status.HTTP_200_OK
 
         admission.refresh_from_db()
-        assert admission.status == 'discharged'
+        case = DischargeCase.objects.get(admission=admission)
+        assert admission.status == 'pending_discharge'
         assert admission.discharge_notes == 'Patient recovered fully'
+        assert response.data['discharge_case_id'] == str(case.id)
 
     def test_discharge_releases_bed(self, admin_client, db):
-        """Test that discharging releases the bed."""
+        """Test that medical discharge submission keeps the bed occupied."""
         bed = BedFactory(status='available')
         admission = AdmissionFactory(bed=bed)
         bed.refresh_from_db()
@@ -333,7 +336,9 @@ class TestAdmissionViewSet:
         assert response.status_code == status.HTTP_200_OK
 
         bed.refresh_from_db()
-        assert bed.status == 'available'
+        admission.refresh_from_db()
+        assert admission.status == 'pending_discharge'
+        assert bed.status == 'occupied'
 
 
 @pytest.mark.tier2

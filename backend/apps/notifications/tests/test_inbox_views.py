@@ -1,11 +1,14 @@
 import pytest
-import pytest
+from django.utils import timezone
+from rest_framework_simplejwt.tokens import AccessToken
 
+from apps.discharge.services import submit_medical_discharge
+from apps.encounters.tests.factories import EncounterFactory
 from apps.nursing.tests.factories import NursingAlertFactory
 from apps.notifications.models import InboxItem
 from apps.notifications.tasks import ingest_nursing_alert_async, ingest_referral_notification_async
 from apps.referrals.tests.factories import ReferralNotificationFactory
-from apps.users.tests.factories import PractitionerProfileFactory
+from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
 from apps.wards.tests.factories import AdmissionFactory, WardStaffAssignmentFactory
 from apps.core.tests.factories import BreakGlassEventFactory
 
@@ -88,3 +91,61 @@ class TestInboxViews:
         assert response.data['results']
         source_types = {item['source_type'] for item in response.data['results']}
         assert source_types == {'lab_result'}
+
+    def test_billing_role_sees_generated_discharge_inbox_item(
+        self,
+        api_client,
+        user_factory,
+        doctor_user,
+        default_facility,
+    ):
+        doctor_user.primary_facility = default_facility
+        doctor_user.save(update_fields=['primary_facility'])
+        practitioner = PractitionerProfileFactory(
+            staff__user=doctor_user,
+            staff__primary_facility=default_facility,
+            staff__user__primary_facility=default_facility,
+        )
+        patient = PatientProfileFactory(facility=default_facility)
+
+        admission = AdmissionFactory(
+            patient=patient,
+            facility=default_facility,
+            bed__ward__department__facility=default_facility,
+            admitting_doctor=practitioner,
+        )
+        EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=practitioner,
+            encounter_type='inpatient',
+            admission=admission,
+            status='in-progress',
+            created_by=doctor_user,
+        )
+        submit_medical_discharge(
+            admission=admission,
+            workflow=None,
+            actor=doctor_user,
+            medical_ready_at=timezone.now(),
+            discharge_disposition='home',
+            discharge_summary='Billing clearance pending.',
+            follow_up_appointments='Clinic review in one week.',
+            discharge_prescriptions=[],
+            notes_snapshot={},
+        )
+
+        billing_user = user_factory(user_type='billing', first_name='Bill', last_name='User')
+        billing_user.primary_facility = default_facility
+        billing_user.save(update_fields=['primary_facility'])
+        token = AccessToken.for_user(billing_user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=default_facility.code,
+        )
+
+        response = api_client.get('/api/notifications/inbox/')
+
+        assert response.status_code == 200
+        source_types = {item['source_type'] for item in response.data['results']}
+        assert InboxItem.SourceType.DISCHARGE in source_types

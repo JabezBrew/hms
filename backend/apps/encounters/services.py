@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Max
 
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from .models import Encounter, OutpatientVisit, TriageQueue
 from apps.organization.services import UnitHierarchyService
 
@@ -57,7 +58,7 @@ def get_or_create_active_encounter(
         # Order by admission_date desc to get the most recent if multiple exist
         active_admission = Admission.objects.filter(
             patient=patient,
-            status='admitted'
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('encounter').order_by('-admission_date').first()
 
         if active_admission:
@@ -197,7 +198,7 @@ def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     # Order by admission_date desc to get most recent
     active_admission = Admission.objects.filter(
         patient=patient,
-        status='admitted'
+        status__in=ACTIVE_ADMISSION_STATUSES
     ).select_related('encounter').order_by('-admission_date').first()
 
     if active_admission and hasattr(active_admission, 'encounter') and active_admission.encounter:

@@ -23,6 +23,7 @@ from django.utils import timezone
 from datetime import datetime, time, timedelta
 
 from apps.clinical_notes.models import NoteEntry, Prescription
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from apps.nursing.models import VitalSigns
 from apps.encounters.models import Encounter
 from apps.wards.models import Admission
@@ -93,7 +94,7 @@ class Command(BaseCommand):
             admission_date__lte=entry_datetime,
         ).filter(
             # Either still admitted or discharged after the entry was created
-            Q(status='admitted') |
+            Q(status__in=ACTIVE_ADMISSION_STATUSES) |
             Q(actual_discharge_date__gte=entry_datetime)
         ).select_related('encounter').first()
 

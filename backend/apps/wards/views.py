@@ -31,6 +31,7 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrOwner
 from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.discharge.services import submit_legacy_discharge
 from apps.organization.services import UnitHierarchyService
 from ..users.models import PatientProfile
 
@@ -871,38 +872,16 @@ class AdmissionViewSet(viewsets.ModelViewSet):
 
         if serializer.is_valid():
             with transaction.atomic():
-                # Discharge the patient
                 discharge_notes = serializer.validated_data.get('discharge_notes', '')
-                admission.discharge_patient(discharge_notes)
-
-                # Update local Encounter if linked
-                if hasattr(admission, 'encounter') and admission.encounter:
-                    try:
-                        admission.encounter.finish(end_time=admission.actual_discharge_date)
-                        # Queue FHIR sync in background
-                        try:
-                            from .tasks import sync_encounter_to_fhir
-                            sync_encounter_to_fhir.delay(str(admission.encounter.id))
-                        except Exception:
-                            pass
-                    except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.error(f"Failed to update Encounter: {str(e)}")
-
-                # Create a bed allocation log
-                BedAllocationLog.objects.create(
-                    bed=admission.bed,
-                    facility=admission.facility,
-                    previous_status='occupied',
-                    new_status='available',
+                discharge_case = submit_legacy_discharge(
                     admission=admission,
-                    notes=f"Patient discharged: {discharge_notes}",
-                    created_by=request.user
+                    actor=request.user,
+                    discharge_notes=discharge_notes,
                 )
 
                 return Response({
-                    "message": "Patient discharged successfully.",
+                    "message": "Medical discharge submitted for clearance.",
+                    "discharge_case_id": str(discharge_case.id),
                     "admission": AdmissionSerializer(admission).data
                 })
 

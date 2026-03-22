@@ -465,8 +465,8 @@ WORKFLOW_DEFINITIONS = {
             WorkflowStepDefinition(
                 step_number=4,
                 name='documentation',
-                title='Complete Discharge',
-                description='Finalize discharge documentation',
+                title='Submit for Clearance',
+                description='Finalize medical discharge documentation and send for operational clearance',
                 fields=[
                     FieldDefinition(
                         name='discharge_summary',

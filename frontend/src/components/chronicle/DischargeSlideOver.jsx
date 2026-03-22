@@ -91,7 +91,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
   const handleComplete = async () => {
     const result = await completeWorkflow();
     if (result?.success) {
-      toast.success('Discharge completed successfully');
+      toast.success('Medical discharge submitted for clearance');
       resetWorkflow();
       onComplete?.(result);
       onClose();
@@ -136,7 +136,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
         )}
       >
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-          <h2 className="font-display text-xl text-foreground">Discharge</h2>
+          <h2 className="font-display text-xl text-foreground">Medical Discharge</h2>
           <Button
             variant="destructive"
             size="sm"
@@ -153,7 +153,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
             <AlertDescription>
               <strong>Active admission required</strong>
               <p className="mt-1 text-sm">
-                Discharge can only be started for patients with an active admission.
+                Medical discharge can only be started for patients with an active inpatient stay.
               </p>
             </AlertDescription>
           </Alert>
@@ -175,10 +175,10 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-              Discharge
+              Medical Discharge
             </span>
             <h2 className="font-display text-xl text-foreground">
-              {currentStepConfig?.title || 'Discharge'}
+              {currentStepConfig?.title || 'Medical Discharge'}
             </h2>
           </div>
           <p className="font-mono text-xs text-muted-foreground mt-0.5">
@@ -241,7 +241,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-              <p className="text-sm text-muted-foreground">Starting discharge workflow...</p>
+              <p className="text-sm text-muted-foreground">Starting medical discharge workflow...</p>
             </div>
           </div>
         ) : CurrentStepComponent ? (
@@ -298,7 +298,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
                   className="font-mono text-xs"
                 >
                   <Check className="h-3.5 w-3.5 mr-1.5" />
-                  {isCompleting ? 'Completing...' : 'Complete Discharge'}
+                  {isCompleting ? 'Submitting...' : 'Submit for Clearance'}
                 </Button>
               ) : (
                 <Button

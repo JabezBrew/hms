@@ -503,7 +503,7 @@ const PatientIdentityHero = ({
                       onFocus={() => prefetchAction('discharge')}
                     >
                       <LogOut className="h-4 w-4 mr-2" />
-                      Start Discharge
+                      Medical Discharge
                     </DropdownMenuItem>
                   )}
                   {onRecordFluids && (

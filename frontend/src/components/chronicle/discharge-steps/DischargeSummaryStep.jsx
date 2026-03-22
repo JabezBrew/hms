@@ -1,7 +1,6 @@
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
@@ -48,6 +47,9 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
             <CheckCircle className="h-4 w-4" />
             Completion Checklist
           </CardTitle>
+          <CardDescription>
+            Billing and nursing clearance continue after medical discharge submission.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <label className="flex items-start gap-2">
@@ -76,18 +78,10 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
             <p className="text-xs text-destructive">{validationErrors.discharge_instructions_given}</p>
           )}
 
-          <label className="flex items-start gap-2">
-            <Checkbox
-              checked={formData.prescriptions_sent === true}
-              onCheckedChange={(checked) => setField('prescriptions_sent', checked === true)}
-            />
-            <span>
-              Prescriptions sent to pharmacy
-              {prescriptionCount > 0 && <span className="text-destructive"> *</span>}
-            </span>
-          </label>
-          {validationErrors.prescriptions_sent && (
-            <p className="text-xs text-destructive">{validationErrors.prescriptions_sent}</p>
+          {prescriptionCount > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-950">
+              {prescriptionCount} discharge prescription{prescriptionCount === 1 ? '' : 's'} will create an advisory pharmacy follow-up task automatically.
+            </div>
           )}
         </CardContent>
       </Card>

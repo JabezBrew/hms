@@ -24,9 +24,13 @@ from apps.workflows.engines import (
     BaseWorkflowEngine, ConsultationEngine, WardRoundEngine,
     AdmissionEngine, DischargeEngine, ClinicalNoteEngine
 )
+from apps.discharge.models import DischargeCase
+from apps.clinical_notes.models import Prescription
 from apps.users.tests.factories import (
     PatientProfileFactory, DoctorUserFactory, PractitionerProfileFactory
 )
+from apps.wards.tests.factories import AdmissionFactory
+from apps.encounters.tests.factories import EncounterFactory
 from .factories import (
     ClinicalWorkflowFactory, ConsultationWorkflowFactory,
     WardRoundWorkflowFactory, AdmissionWorkflowFactory,
@@ -426,6 +430,71 @@ class TestDischargeEngine:
         discharge.refresh_from_db()
         assert discharge.discharge_disposition == 'Home'
         assert len(discharge.discharge_criteria_met) == 2
+
+    def test_complete_submits_medical_discharge_for_clearance(self, db):
+        """Test completing the workflow creates a discharge case and keeps the stay active."""
+        doctor = DoctorUserFactory()
+        practitioner = PractitionerProfileFactory(staff__user=doctor)
+        patient = PatientProfileFactory(facility=doctor.primary_facility)
+        admission = AdmissionFactory(
+            patient=patient,
+            facility=doctor.primary_facility,
+            bed__ward__department__facility=doctor.primary_facility,
+            admitting_doctor=practitioner,
+            status='admitted',
+        )
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=doctor.primary_facility,
+            practitioner=practitioner,
+            encounter_type='inpatient',
+            admission=admission,
+            status='in-progress',
+            created_by=doctor,
+        )
+
+        result = DischargeEngine.start(
+            user=doctor,
+            patient_id=patient.id,
+            admission_id=admission.id,
+        )
+        workflow = result['workflow']
+
+        completion = DischargeEngine.complete(
+            workflow=workflow,
+            final_data={
+                'discharge_disposition': 'home',
+                'discharge_date': timezone.now().isoformat(),
+                'medications_reconciled': True,
+                'discharge_prescriptions': [
+                    {
+                        'medication_name': 'Paracetamol',
+                        'dosage': '500mg',
+                        'frequency': 'daily',
+                        'instructions': 'Take after meals',
+                    }
+                ],
+                'warning_signs': 'Return for worsening pain.',
+                'follow_up_appointments': 'Orthopedic review in 1 week.',
+                'discharge_summary': 'Patient improved and is medically fit for discharge.',
+                'patient_education_complete': True,
+                'discharge_instructions_given': True,
+            },
+            idempotency_key='engine-clearance-test',
+        )
+
+        admission.refresh_from_db()
+        encounter.refresh_from_db()
+        case = DischargeCase.objects.get(admission=admission)
+
+        assert completion['success'] is True
+        assert completion['discharge_case_id'] == str(case.id)
+        assert completion['admission_status'] == 'pending_discharge'
+        assert admission.status == 'pending_discharge'
+        assert admission.actual_discharge_date is None
+        assert admission.bed.status == 'occupied'
+        assert encounter.status == 'in-progress'
+        assert Prescription.objects.filter(discharge_case=case).count() == 1
 
 
 # =============================================================================

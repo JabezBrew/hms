@@ -3,7 +3,8 @@ Billing signals for the financial layer.
 
 Draft invoice auto-sync:
 - Encounter status transitions drive draft sync (in-progress) and finalization (finished).
-- Admission status transitions drive draft sync (admitted) and finalization (discharged).
+- Admission status transitions drive draft sync while the stay is active (`admitted`).
+- Pending discharge invoice freezing is handled explicitly by the discharge workflow.
 - LabOrderTest updates trigger draft invoice resync for the linked encounter.
 
 Signals respect facility billing settings:
@@ -84,16 +85,16 @@ def handle_encounter_completion(sender, instance, **kwargs):
 
 def handle_discharge(sender, instance, **kwargs):
     """
-    Maintain a draft invoice during admission, then finalize on discharge.
+    Maintain a draft invoice while the admission is actively admitted.
+
+    Billing freeze/finalization for pending discharge is explicit in the discharge
+    workflow and should not be retriggered by the final ward discharge transition.
     """
     from apps.billing.models import FacilityBillingSettings
-    from apps.billing.tasks import (
-        sync_draft_invoice_for_admission,
-        finalize_draft_invoice_for_admission,
-    )
+    from apps.billing.tasks import sync_draft_invoice_for_admission
 
     status = getattr(instance, 'status', None)
-    if status not in ('admitted', 'discharged'):
+    if status != 'admitted':
         return
 
     try:
@@ -121,10 +122,7 @@ def handle_discharge(sender, instance, **kwargs):
             pass
 
         def _enqueue():
-            if status == 'admitted':
-                sync_draft_invoice_for_admission.delay(str(instance.id))
-            elif status == 'discharged':
-                finalize_draft_invoice_for_admission.delay(str(instance.id))
+            sync_draft_invoice_for_admission.delay(str(instance.id))
 
         try:
             transaction.on_commit(_enqueue)

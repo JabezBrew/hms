@@ -480,6 +480,14 @@ class Prescription(models.Model):
         related_name='prescriptions',
         help_text="The clinical encounter/visit during which this was prescribed"
     )
+    discharge_case = models.ForeignKey(
+        'discharge.DischargeCase',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='prescriptions',
+        help_text="Optional discharge case for take-home discharge medications."
+    )
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -499,6 +507,7 @@ class Prescription(models.Model):
         db_table = 'clinical_prescriptions'
         indexes = [
             models.Index(fields=['facility', 'status', '-created_at']),
+            models.Index(fields=['discharge_case', 'status']),
         ]
 
     def __str__(self):

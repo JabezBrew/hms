@@ -43,6 +43,7 @@ from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
 from ..core.security import (
+    ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
     check_clinical_access,
     check_prescription_access,
@@ -1806,7 +1807,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             from ..wards.models import Admission
             is_admitted = Admission.objects.filter(
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             ).exists()
 
             # Generate MAR if explicitly requested OR if auto and patient is admitted
@@ -3268,7 +3269,7 @@ def chronicle_context(request, patient_id):
         from apps.wards.models import Admission
         active_admission = Admission.objects.filter(
             patient=patient,
-            status__in=['admitted', 'waiting']
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('bed__ward').first()
 
         if active_admission:

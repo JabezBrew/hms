@@ -1408,7 +1408,7 @@ def finalize_draft_invoice_for_encounter(self, encounter_id: str) -> None:
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def finalize_draft_invoice_for_admission(self, admission_id: str) -> None:
     """
-    Finalize an admission-linked draft invoice when the patient is discharged.
+    Finalize or freeze an admission-linked draft invoice.
     """
     from apps.wards.models import Admission
     from apps.billing.services import DraftInvoiceSyncService
@@ -1418,11 +1418,19 @@ def finalize_draft_invoice_for_admission(self, admission_id: str) -> None:
         return
 
     service = DraftInvoiceSyncService()
-    invoice = service.ensure_and_sync_for_admission(
-        admission=admission,
-        actor=getattr(admission, 'updated_by', None) or getattr(admission, 'created_by', None),
-    )
-    service.finalize_invoice(
-        invoice=invoice,
-        actor=getattr(admission, 'updated_by', None) or getattr(admission, 'created_by', None),
-    )
+    actor = getattr(admission, 'updated_by', None) or getattr(admission, 'created_by', None)
+    try:
+        discharge_case = admission.discharge_case
+    except Exception:
+        discharge_case = None
+
+    if discharge_case and discharge_case.billing_cutoff_at:
+        service.freeze_admission_invoice(
+            admission=admission,
+            cutoff_at=discharge_case.billing_cutoff_at,
+            actor=actor,
+        )
+        return
+
+    invoice = service.ensure_and_sync_for_admission(admission=admission, actor=actor)
+    service.finalize_invoice(invoice=invoice, actor=actor)

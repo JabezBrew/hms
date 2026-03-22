@@ -190,6 +190,7 @@ class NursingTask(models.Model):
         ('nutrition', 'Nutrition/Feeding'),
         ('mobility', 'Mobility Assistance'),
         ('documentation', 'Documentation'),
+        ('discharge', 'Discharge Finalization'),
         ('other', 'Other'),
     )
 

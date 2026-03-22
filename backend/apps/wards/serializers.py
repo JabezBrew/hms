@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, StaffRole, WardStaffAssignment
 from ..users.serializers import PatientProfileSerializer, StaffSerializer, UserSerializer, PractitionerProfileSerializer
 
@@ -352,7 +353,7 @@ class DischargeSerializer(serializers.Serializer):
         if not admission:
             raise serializers.ValidationError("Admission not found.")
 
-        if admission.status != 'admitted':
+        if admission.status not in ACTIVE_ADMISSION_STATUSES:
             raise serializers.ValidationError(f"Patient is not currently admitted. Status: {admission.get_status_display()}")
 
         return data

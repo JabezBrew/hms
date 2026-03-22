@@ -18,6 +18,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
 
+from apps.discharge.services import submit_legacy_discharge
 from .models import Encounter, OutpatientVisit, TriageQueue
 from .serializers import (
     EncounterSerializer,
@@ -397,20 +398,24 @@ class EncounterViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # Discharge the admission if linked
                 if encounter.admission:
                     discharge_notes = request.data.get('discharge_notes', '')
-                    encounter.admission.discharge_patient(discharge_notes)
+                    discharge_case = submit_legacy_discharge(
+                        admission=encounter.admission,
+                        actor=request.user,
+                        discharge_notes=discharge_notes,
+                    )
+                    serializer = EncounterSerializer(encounter)
+                    return Response({
+                        'encounter': serializer.data,
+                        'discharge_case_id': str(discharge_case.id),
+                        'admission_status': encounter.admission.status,
+                    })
 
-                # Finish the encounter
-                encounter.finish(
-                    discharge_disposition=request.data.get('discharge_disposition'),
-                    destination=request.data.get('destination')
+                return Response(
+                    {"error": "Inpatient encounter has no linked admission."},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-
-                self._queue_fhir_sync(encounter.id)
-                serializer = EncounterSerializer(encounter)
-                return Response(serializer.data)
 
         except Exception as e:
             logger.error(f"Failed to discharge patient: {str(e)}")

@@ -42,6 +42,7 @@ from ..users.models import PatientProfile, PractitionerProfile
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..core.security import (
+    ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
     check_clinical_access,
     get_user_facility,
@@ -728,7 +729,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 elif encounter.patient:
                     admission = Admission.objects.filter(
                         patient=encounter.patient,
-                        status='admitted'
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('patient', 'patient__user').first()
             except Encounter.DoesNotExist:
                 pass
@@ -1104,7 +1105,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 # OPTIMIZED: Get currently admitted patients with all related data prefetched
                 # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
                 admissions = Admission.objects.filter(
-                    status='admitted',
+                    status__in=ACTIVE_ADMISSION_STATUSES,
                     facility=facility
                 ).select_related(
                     'patient__user',
@@ -1256,7 +1257,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get current admission
         admission = Admission.objects.filter(
             patient=patient,
-            status='admitted'
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('bed', 'bed__ward').first()
 
         # Get recent vital signs (last 24 hours)
@@ -1336,7 +1337,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get patients currently admitted to this ward
         ward_patients = PatientProfile.objects.filter(
             admissions__bed__ward_id=ward_id,
-            admissions__status='admitted'
+            admissions__status__in=ACTIVE_ADMISSION_STATUSES
         ).values_list('id', flat=True)
 
         # Find nurses who have recorded activities for these patients in last 7 days
@@ -1520,7 +1521,7 @@ class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
                 encounter = Encounter.objects.select_related('patient').get(id=admission_id)
                 admission = Admission.objects.filter(
                     patient=encounter.patient,
-                    status='admitted'
+                    status__in=ACTIVE_ADMISSION_STATUSES
                 ).select_related('patient', 'patient__user', 'bed', 'bed__ward').first()
             except Encounter.DoesNotExist:
                 pass

@@ -33,14 +33,14 @@ export default function DischargeWorkflowPage() {
   const { startDischarge, updateDischargeStep, completeDischarge } = useDischargeWorkflow();
 
   const workflowDef = {
-    name: 'Patient Discharge',
+    name: 'Medical Discharge',
     total_steps: 4,
     steps: [
       {
         step_number: 1,
         name: 'discharge_planning',
-        title: 'Discharge Planning',
-        description: 'Review discharge readiness and plan',
+        title: 'Medical Discharge Planning',
+        description: 'Review discharge readiness and effective timing',
       },
       {
         step_number: 2,
@@ -57,8 +57,8 @@ export default function DischargeWorkflowPage() {
       {
         step_number: 4,
         name: 'summary',
-        title: 'Discharge Summary',
-        description: 'Complete discharge summary and finalize',
+        title: 'Submit for Clearance',
+        description: 'Complete the discharge summary and submit for billing and nursing clearance',
       },
     ],
   };
@@ -77,9 +77,9 @@ export default function DischargeWorkflowPage() {
         initialData: {},
       });
       setWorkflowData(result);
-      toast.success('Discharge workflow started');
+      toast.success('Medical discharge started');
     } catch (error) {
-      toast.error('Failed to start discharge');
+      toast.error('Failed to start medical discharge');
       console.error(error);
     }
   };
@@ -128,10 +128,10 @@ export default function DischargeWorkflowPage() {
         workflowId: workflowData.workflow.id,
         finalData: formData,
       });
-      toast.success('Discharge completed successfully');
+      toast.success('Medical discharge submitted for clearance');
       navigate(`/patients/${patientId}`);
     } catch (error) {
-      toast.error('Failed to complete discharge');
+      toast.error('Failed to submit medical discharge');
       console.error(error);
     }
   };
@@ -147,11 +147,11 @@ export default function DischargeWorkflowPage() {
     ...(patientId
       ? [{ label: patient?.full_name || 'Patient', href: `/patients/${patientId}` }]
       : []),
-    { label: 'Discharge' },
+    { label: 'Medical Discharge' },
   ];
 
   const pageMeta = usePageMeta({
-    title: 'Discharge Workflow | HMS',
+    title: 'Medical Discharge Workflow | HMS',
     breadcrumbs,
   });
 
@@ -161,13 +161,13 @@ export default function DischargeWorkflowPage() {
         <PageShell>
           {pageMeta}
           <PageHeader
-            title="Discharge Workflow"
-            description="Guided steps to complete discharge safely."
+            title="Medical Discharge Workflow"
+            description="Guided steps to submit a medical discharge for operational clearance."
           />
           <PageState
             variant="error"
             title="Missing parameters"
-            description="Patient ID and Admission ID are required to start a discharge."
+            description="Patient ID and Admission ID are required to start a medical discharge."
             action={(
               <Button
                 variant="outline"
@@ -189,8 +189,8 @@ export default function DischargeWorkflowPage() {
         <PageShell>
           {pageMeta}
           <PageHeader
-            title="Discharge Workflow"
-            description="Guided steps to complete discharge safely."
+            title="Medical Discharge Workflow"
+            description="Guided steps to submit a medical discharge for operational clearance."
           />
           <PageState variant="loading" fullHeight={false} />
         </PageShell>
@@ -207,15 +207,15 @@ export default function DischargeWorkflowPage() {
       <PageShell>
         {pageMeta}
         <PageHeader
-          title="Discharge Workflow"
-          description="Guided steps to complete discharge safely."
+          title="Medical Discharge Workflow"
+          description="Guided steps to submit a medical discharge for operational clearance."
         />
 
         <div className="p-4 sm:p-6 space-y-6">
         {patient && <PatientIdentityHero patient={patient} hideActions={true} />}
 
         <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-          <h2 className="font-heading text-lg font-semibold mb-4">Discharge Progress</h2>
+          <h2 className="font-heading text-lg font-semibold mb-4">Medical Discharge Progress</h2>
           <WorkflowProgress
             steps={workflowDef.steps.map((s) => ({
               id: s.step_number,
@@ -272,7 +272,7 @@ export default function DischargeWorkflowPage() {
                 onClick={handleComplete}
                 disabled={completeDischarge.isPending}
               >
-                {completeDischarge.isPending ? 'Completing...' : 'Complete Discharge'}
+                {completeDischarge.isPending ? 'Submitting...' : 'Submit for Clearance'}
                 <CheckCircle className="h-4 w-4 ml-2" />
               </Button>
             )}

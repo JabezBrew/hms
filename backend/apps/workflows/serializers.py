@@ -4,6 +4,7 @@ from .models import (
     WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
     WorkflowTemplate, ClinicalNoteType
 )
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from apps.users.models import PatientProfile
 from apps.wards.models import Admission
 
@@ -371,7 +372,7 @@ class WardRoundWorkflowCreateSerializer(serializers.Serializer):
     def validate_admission_id(self, value):
         """Validate admission exists and is active"""
         try:
-            admission = Admission.objects.get(id=value, status='admitted')
+            admission = Admission.objects.get(id=value, status__in=ACTIVE_ADMISSION_STATUSES)
         except Admission.DoesNotExist:
             raise serializers.ValidationError("Active admission not found")
         return value
@@ -551,7 +552,7 @@ class DischargeWorkflowCreateSerializer(serializers.Serializer):
     def validate_admission_id(self, value):
         """Validate admission exists and is active"""
         try:
-            Admission.objects.get(id=value, status='admitted')
+            Admission.objects.get(id=value, status__in=ACTIVE_ADMISSION_STATUSES)
         except Admission.DoesNotExist:
             raise serializers.ValidationError("Active admission not found")
         return value
@@ -565,7 +566,7 @@ class DischargeWorkflowCreateSerializer(serializers.Serializer):
         admission = Admission.objects.filter(
             id=admission_id,
             patient_id=patient_id,
-            status='admitted',
+            status__in=ACTIVE_ADMISSION_STATUSES,
         ).first()
         if not admission:
             raise serializers.ValidationError(

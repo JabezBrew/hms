@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-ACTIVE_ADMISSION_STATUSES = ['admitted', 'waiting']
+ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge', 'waiting']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
 
 
@@ -465,7 +465,7 @@ def scope_queryset_to_clinical_access(queryset, user, *, patient_lookup='patient
     if user_type == 'patient':
         return queryset.filter(**{f'{patient_lookup}__user': user})
 
-    if user_type in ['doctor', 'nurse']:
+    if user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return queryset
         accessible_patients = get_accessible_patients_for_clinician(user, scope=scope)
@@ -491,7 +491,7 @@ def check_clinical_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return True
 
@@ -523,7 +523,7 @@ def check_lab_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'lab_technician':
@@ -561,7 +561,7 @@ def check_prescription_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'pharmacist':
@@ -616,7 +616,7 @@ def check_demographics_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'receptionist']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor', 'receptionist']:
         return True
 
     # Support staff can see demographics only if they have relevant records
@@ -673,7 +673,7 @@ def get_access_flags(user, patient_or_id):
         return flags
 
     # Clinical staff (doctor, nurse)
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         flags['demographics'] = True
 
         # Check team access or break-glass for clinical data

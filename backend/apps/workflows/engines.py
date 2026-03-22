@@ -52,6 +52,8 @@ from .models import (
 )
 from .definitions import WorkflowDefinition, WorkflowStepDefinition, FieldType
 from .registry import get_workflow_definition, WORKFLOW_DEFINITIONS
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
+from apps.discharge.services import submit_medical_discharge
 from apps.users.models import PatientProfile
 from apps.wards.models import Admission, Ward, Bed
 from apps.encounters.proxies import EncounterProxy
@@ -571,7 +573,7 @@ class WardRoundEngine(BaseWorkflowEngine):
             admission = Admission.objects.select_related('bed__ward').get(
                 id=admission_id,
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             )
         except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
             raise ValueError(str(e))
@@ -1188,7 +1190,7 @@ class DischargeEngine(BaseWorkflowEngine):
             admission = Admission.objects.select_related('bed__ward').get(
                 id=admission_id,
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             )
         except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
             raise ValueError(str(e))
@@ -1303,16 +1305,6 @@ class DischargeEngine(BaseWorkflowEngine):
         if step_number == 2 and step_payload.get('medications_reconciled') is not True:
             errors.append("Medication Reconciliation Completed must be confirmed.")
 
-        if step_number == 4:
-            prescriptions = normalized_payload.get(
-                'discharge_prescriptions',
-                getattr(discharge_data, 'discharge_prescriptions', []) or [],
-            )
-            if prescriptions and step_payload.get('prescriptions_sent') is not True:
-                errors.append(
-                    "Prescriptions Sent to Pharmacy must be confirmed when discharge prescriptions exist."
-                )
-
         return errors
 
     @staticmethod
@@ -1355,10 +1347,7 @@ class DischargeEngine(BaseWorkflowEngine):
     @staticmethod
     @transaction.atomic
     def complete(workflow, final_data, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        """Complete discharge and update admission record"""
-        from apps.clinical_notes.models import NoteTemplate
-        from apps.users.models import PractitionerProfile
-        from apps.encounters.services import get_or_create_active_encounter
+        """Submit medical discharge for downstream billing and nursing clearance."""
 
         if workflow.status == WorkflowStatus.COMPLETED:
             stored_key = workflow.context_data.get('completion_idempotency_key')
@@ -1400,7 +1389,7 @@ class DischargeEngine(BaseWorkflowEngine):
         except Admission.DoesNotExist as exc:
             raise ValueError("Admission not found for discharge workflow.") from exc
 
-        if admission.status != 'admitted':
+        if admission.status not in ACTIVE_ADMISSION_STATUSES:
             raise ValueError(f"Admission is not active. Current status: {admission.status}.")
 
         # Update final data
@@ -1410,110 +1399,59 @@ class DischargeEngine(BaseWorkflowEngine):
                 setattr(discharge_data, field, coerced_value)
         discharge_data.save()
 
-        # Get practitioner profile
-        practitioner = None
-        if hasattr(workflow.user, 'practitionerprofile'):
-            practitioner = workflow.user.practitionerprofile
-        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
-            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
-
-        if not practitioner:
-            try:
-                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
-            except PractitionerProfile.DoesNotExist:
-                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
-                practitioner = None
-
-        # Update Admission record
-        admission.discharge_patient(discharge_notes=discharge_data.discharge_summary)
-        if discharge_data.discharge_date:
-            admission.actual_discharge_date = discharge_data.discharge_date
-            admission.save(update_fields=['actual_discharge_date', 'updated_at'])
-
-        logger.info(f"Updated admission {admission_id} to discharged status")
-
-        # Get or create encounter
-        encounter = getattr(admission, 'encounter', None)
-        if encounter is None:
-            encounter, _ = get_or_create_active_encounter(
-                patient=workflow.patient,
-                practitioner=practitioner,
-                encounter_type='inpatient',
-                reason='Discharge'
-            )
-        encounter.finish(
-            end_time=admission.actual_discharge_date or timezone.now(),
+        medical_ready_at = discharge_data.discharge_date or timezone.now()
+        case = submit_medical_discharge(
+            admission=admission,
+            workflow=workflow,
+            actor=workflow.user,
+            medical_ready_at=medical_ready_at,
             discharge_disposition=discharge_data.discharge_disposition,
+            discharge_summary=discharge_data.discharge_summary,
+            follow_up_appointments=discharge_data.follow_up_appointments,
+            discharge_prescriptions=discharge_data.discharge_prescriptions,
+            notes_snapshot={
+                'transportation': discharge_data.transportation,
+                'warning_signs': discharge_data.warning_signs,
+                'medication_changes': discharge_data.medication_changes,
+            },
         )
 
-        # Create discharge note with proper model fields
-        note = None
-        if practitioner:
-            try:
-                # Get or create a discharge template
-                template = NoteTemplate.objects.filter(
-                    category='discharge',
-                    is_active=True
-                ).first()
-
-                if not template:
-                    template = NoteTemplate.objects.create(
-                        title='Discharge Summary',
-                        category='discharge',
-                        visibility='public',
-                        is_active=True,
-                        structure={
-                            'sections': [
-                                {'name': 'Hospital Course', 'type': 'text'},
-                                {'name': 'Discharge Diagnosis', 'type': 'text'},
-                                {'name': 'Discharge Medications', 'type': 'text'},
-                                {'name': 'Follow-up Instructions', 'type': 'text'},
-                            ]
-                        }
-                    )
-                    logger.info(f"Created default discharge template {template.id}")
-
-                # Build note data
-                note_data = {
-                    'Discharge Summary': discharge_data.discharge_summary or '',
-                    'Follow-up Instructions': discharge_data.follow_up_appointments or '',
-                    '_metadata': {
-                        'discharge_date': (
-                            discharge_data.discharge_date or admission.actual_discharge_date or timezone.now()
-                        ).isoformat(),
-                        'admission_id': str(admission_id) if admission_id else None,
-                    }
-                }
-
-                note = NoteEntry.objects.create(
-                    template=template,
-                    patient=workflow.patient,
-                    encounter=encounter,
-                    practitioner=practitioner,
-                    data=note_data,
-                )
-
-                logger.info(f"Created discharge note {note.id} for workflow {workflow.id}")
-
-            except Exception as e:
-                logger.error(f"Failed to create discharge note for workflow {workflow.id}: {str(e)}")
+        blockers = []
+        advisory_tasks = []
+        for task in case.tasks.all().order_by('blocking', 'task_type'):
+            task_summary = {
+                'id': str(task.id),
+                'task_type': task.task_type,
+                'status': task.status,
+                'assigned_role': task.assigned_role,
+            }
+            if task.blocking:
+                blockers.append(task_summary)
+            else:
+                advisory_tasks.append(task_summary)
 
         artifacts = [
-            {'type': 'encounter_update', 'id': str(encounter.id)},
+            {'type': 'discharge_case', 'id': str(case.id)},
+            {'type': 'encounter_update', 'id': str(case.encounter_id)},
             {'type': 'discharge_record', 'id': str(admission_id)},
         ]
-        if note:
-            artifacts.append({'type': 'note', 'id': str(note.id)})
+        if case.discharge_note_id:
+            artifacts.append({'type': 'note', 'id': str(case.discharge_note_id)})
 
         completion_result = {
             'success': True,
             'workflow_id': str(workflow.id),
+            'discharge_case_id': str(case.id),
             'admission_id': str(admission_id),
-            'encounter_id': str(encounter.id),
+            'admission_status': admission.status,
+            'case_status': case.status,
+            'encounter_id': str(case.encounter_id) if case.encounter_id else None,
+            'blockers': blockers,
+            'advisory_tasks': advisory_tasks,
             'artifacts': artifacts,
         }
 
-        workflow.encounter_id = str(encounter.id)
+        workflow.encounter_id = str(case.encounter_id) if case.encounter_id else workflow.encounter_id
         workflow.context_data['completion_result'] = completion_result
         if idempotency_key:
             workflow.context_data['completion_idempotency_key'] = idempotency_key

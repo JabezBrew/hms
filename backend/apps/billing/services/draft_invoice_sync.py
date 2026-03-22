@@ -132,6 +132,22 @@ class DraftInvoiceSyncService:
         due_days = getattr(billing_settings, "invoice_due_days", None) or 30
         return timezone.now().date() + timedelta(days=int(due_days))
 
+    def _resolve_admission_end_dt(self, admission, end_dt=None):
+        if end_dt is not None:
+            return end_dt
+
+        if getattr(admission, 'actual_discharge_date', None):
+            return admission.actual_discharge_date
+
+        try:
+            discharge_case = admission.discharge_case
+        except Exception:
+            discharge_case = None
+        if discharge_case and getattr(discharge_case, 'billing_cutoff_at', None):
+            return discharge_case.billing_cutoff_at
+
+        return timezone.now()
+
     def _build_patient_context(self, patient, insurance: PatientInsurance | None) -> PatientContext:
         """
         PatientContext is intentionally small; use only non-PHI identifiers and coarse attributes.
@@ -366,7 +382,7 @@ class DraftInvoiceSyncService:
         return invoice
 
     @transaction.atomic
-    def ensure_and_sync_for_admission(self, *, admission, actor=None) -> Invoice:
+    def ensure_and_sync_for_admission(self, *, admission, actor=None, allow_reopen=False, end_dt=None) -> Invoice:
         facility = admission.facility
         billing_settings = self._get_billing_settings(facility)
 
@@ -376,7 +392,7 @@ class DraftInvoiceSyncService:
             .order_by("-created_at")
             .first()
         )
-        if invoice and not invoice.auto_update_enabled:
+        if invoice and not invoice.auto_update_enabled and not allow_reopen:
             return invoice
 
         if not invoice:
@@ -404,8 +420,8 @@ class DraftInvoiceSyncService:
         # Ward stay line (facility-configured service; unit price from Admission.daily_rate snapshot).
         ward_service = getattr(billing_settings, "ward_stay_service", None) if billing_settings else None
         if ward_service:
-            end_dt = admission.actual_discharge_date or timezone.now()
-            qty = _safe_days_inclusive(admission.admission_date, end_dt)
+            resolved_end_dt = self._resolve_admission_end_dt(admission, end_dt=end_dt)
+            qty = _safe_days_inclusive(admission.admission_date, resolved_end_dt)
             if qty <= 0:
                 qty = 1
             key = self._upsert_auto_item(
@@ -437,6 +453,24 @@ class DraftInvoiceSyncService:
             "updated_at",
         ])
         return invoice
+
+    @transaction.atomic
+    def freeze_admission_invoice(self, *, admission, cutoff_at, actor=None) -> Invoice:
+        invoice = self.ensure_and_sync_for_admission(
+            admission=admission,
+            actor=actor,
+            allow_reopen=True,
+            end_dt=cutoff_at,
+        )
+        return self.finalize_invoice(invoice=invoice, actor=actor)
+
+    @transaction.atomic
+    def reopen_admission_invoice(self, *, admission, actor=None) -> Invoice:
+        return self.ensure_and_sync_for_admission(
+            admission=admission,
+            actor=actor,
+            allow_reopen=True,
+        )
 
     @transaction.atomic
     def finalize_invoice(self, *, invoice: Invoice, actor=None) -> Invoice:

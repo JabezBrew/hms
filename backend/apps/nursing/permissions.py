@@ -15,7 +15,7 @@ class IsNurseOrAdmin(permissions.BasePermission):
 
         # Check if user has nurse role via user_type
         user_type = getattr(request.user, 'user_type', None)
-        if user_type in ['nurse', 'admin']:
+        if user_type in ['nurse', 'head_nurse', 'nurse_practitioner', 'admin']:
             return True
 
         return False
@@ -35,7 +35,7 @@ class IsNurseOrDoctor(permissions.BasePermission):
 
         # Check if user has clinical role via user_type
         user_type = getattr(request.user, 'user_type', None)
-        if user_type in ['doctor', 'nurse', 'admin']:
+        if user_type in ['doctor', 'physician', 'practitioner', 'inpatient_doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'admin']:
             return True
 
         return False

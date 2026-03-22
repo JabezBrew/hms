@@ -1,4 +1,5 @@
 import uuid
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -407,6 +408,7 @@ class Admission(models.Model):
     # Admission status
     STATUS_CHOICES = (
         ('admitted', 'Admitted'),
+        ('pending_discharge', 'Pending Discharge'),
         ('discharged', 'Discharged'),
         ('transferred', 'Transferred'),
         ('deceased', 'Deceased'),
@@ -484,7 +486,8 @@ class Admission(models.Model):
     # SECURITY: Define valid status transitions to prevent manipulation
     VALID_STATUS_TRANSITIONS = {
         'waiting': ['admitted', 'cancelled'],
-        'admitted': ['discharged', 'transferred', 'deceased'],
+        'admitted': ['pending_discharge', 'discharged', 'transferred', 'deceased'],
+        'pending_discharge': ['admitted', 'discharged'],
         'discharged': [],  # Terminal state
         'transferred': [],  # Terminal state
         'deceased': [],  # Terminal state
@@ -512,7 +515,7 @@ class Admission(models.Model):
                 pass  # New record, no validation needed
 
         # If this is a new admission, set the bed status to occupied
-        if self._state.adding and self.status == 'admitted' and self.bed:
+        if self._state.adding and self.status in {'admitted', 'pending_discharge'} and self.bed:
             self.bed.status = 'occupied'
             self.bed.save()
 
@@ -552,7 +555,7 @@ class Admission(models.Model):
         """
         Calculate the length of stay in days.
         """
-        end_date = self.actual_discharge_date or timezone.now()
+        end_date = self.actual_discharge_date or self.get_billing_end_time() or timezone.now()
         delta = end_date - self.admission_date
         return max(1, delta.days)  # Minimum 1 day
 
@@ -563,12 +566,26 @@ class Admission(models.Model):
         """
         return self.daily_rate * self.length_of_stay
 
-    def discharge_patient(self, discharge_notes=None):
+    def get_billing_end_time(self):
+        if self.actual_discharge_date:
+            return self.actual_discharge_date
+
+        if self.status == 'pending_discharge':
+            try:
+                discharge_case = self.discharge_case
+            except ObjectDoesNotExist:
+                discharge_case = None
+            if discharge_case and discharge_case.billing_cutoff_at:
+                return discharge_case.billing_cutoff_at
+
+        return timezone.now()
+
+    def discharge_patient(self, discharge_notes=None, discharge_at=None):
         """
         Discharge the patient.
         """
         self.status = 'discharged'
-        self.actual_discharge_date = timezone.now()
+        self.actual_discharge_date = discharge_at or timezone.now()
         if discharge_notes:
             self.discharge_notes = discharge_notes
         self.save()

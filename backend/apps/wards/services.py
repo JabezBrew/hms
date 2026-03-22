@@ -8,6 +8,7 @@ from datetime import datetime, time, timedelta
 from django.utils import timezone
 from django.db import transaction
 
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from apps.encounters.models import Encounter
 from apps.organization.services import UnitHierarchyService
 from .models import Admission
@@ -39,7 +40,7 @@ def get_or_create_active_encounter(patient, practitioner=None, encounter_type=No
     # If patient is admitted, ALL entries should go to the admission's encounter
     active_admission = Admission.objects.filter(
         patient=patient,
-        status='admitted'
+        status__in=ACTIVE_ADMISSION_STATUSES
     ).select_related('encounter').first()
 
     if active_admission:
@@ -122,7 +123,7 @@ def get_active_encounter_for_patient(patient):
     # Check for active inpatient admission first
     active_admission = Admission.objects.filter(
         patient=patient,
-        status='admitted'
+        status__in=ACTIVE_ADMISSION_STATUSES
     ).select_related('encounter').first()
 
     if active_admission and hasattr(active_admission, 'encounter') and active_admission.encounter:

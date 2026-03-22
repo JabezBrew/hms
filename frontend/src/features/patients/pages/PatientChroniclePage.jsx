@@ -39,6 +39,7 @@ import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
 import { chartKeys, useChartAssignments } from "@/features/charts/hooks";
 import { laboratoryApi } from "@/features/laboratory/api";
 import { labKeys } from "@/features/laboratory/hooks";
+import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import { drugSafetyApi } from "@/shared/api/drugSafety";
 import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
 import { keyWith } from "@/shared/lib/queryKeys";
@@ -77,6 +78,17 @@ const ReferralForm = lazy(loadReferralForm);
 const CrossFacilitySharePanel = lazy(loadCrossFacilitySharePanel);
 const ReceiveRecordPanel = lazy(loadReceiveRecordPanel);
 const ChronicleCopilotSlideOver = lazy(loadChronicleCopilotSlideOver);
+const DISCHARGE_CASE_ROLES = new Set([
+  'admin',
+  'doctor',
+  'nurse',
+  'head_nurse',
+  'nurse_practitioner',
+  'inpatient_doctor',
+  'practitioner',
+  'physician',
+  'billing',
+]);
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -224,6 +236,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   });
 
   const canFetchClinical = hasClinicalAccess;
+  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
 
   // Fetch patient encounters for grouping
   const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
@@ -534,6 +547,18 @@ const PatientChroniclePage = ({ defaultAction }) => {
     const activeAny = encounters.find(enc => enc.status === 'in-progress');
     return activeAny || null;
   }, [encounters]);
+  const dischargeCaseAdmissionId = useMemo(() => (
+    requestedDischargeAdmissionId
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || activeEncounter?.admission_id
+    || null
+  ), [
+    activeEncounter?.admission_id,
+    patient?.current_admission_id,
+    patient?.local_data?.current_admission_id,
+    requestedDischargeAdmissionId,
+  ]);
 
   // Group entries by encounter
   const groupedByEncounter = useMemo(() => {
@@ -1151,6 +1176,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
         insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
+
+      {canViewDischargeCase && dischargeCaseAdmissionId && (
+        <div className="px-6 pt-6">
+          <DischargeCasePanel
+            admissionId={dischargeCaseAdmissionId}
+            title="Discharge Clearance"
+          />
+        </div>
+      )}
 
       {/* Main Content: Sidebar + Timeline */}
       <div className={cn(

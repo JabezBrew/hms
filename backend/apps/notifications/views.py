@@ -18,7 +18,7 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = StandardResultsSetPagination
 
     def _get_patient_ids_for_user(self, user):
-        if user.user_type in ['doctor', 'nurse']:
+        if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
             return get_accessible_patients_for_clinician(user).values_list('id', flat=True)
         return None
 
@@ -56,8 +56,10 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 queryset = queryset.filter(Q(patient_id__in=patient_ids) | Q(patient__isnull=True))
 
-        if user.user_type not in ['doctor', 'nurse']:
-            queryset = queryset.filter(patient__isnull=True)
+        if user.user_type not in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+            queryset = queryset.filter(
+                Q(patient__isnull=True) | Q(source_type=InboxItem.SourceType.DISCHARGE)
+            )
 
         return queryset.select_related('patient__user')
 
