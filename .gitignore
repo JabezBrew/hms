@@ -17,6 +17,7 @@ eggs/
 .eggs/
 lib/
 !frontend/src/lib/
+!frontend/src/lib/**
 !frontend/src/shared/lib/
 !frontend/src/shared/lib/**
 lib64/
