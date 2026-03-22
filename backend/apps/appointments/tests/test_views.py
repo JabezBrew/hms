@@ -31,7 +31,7 @@ from apps.organization.models import (
     RosterEntry,
 )
 from apps.referrals.models import ClinicWaitlistEntry
-from apps.encounters.models import OutpatientVisit
+from apps.encounters.models import Encounter, OutpatientVisit
 from apps.users.models import Staff
 
 
@@ -596,6 +596,7 @@ class TestAppointmentViewSet:
             active_from=date.today(),
         )
 
+        scheduled_start = (timezone.now() + timedelta(minutes=30)).replace(second=0, microsecond=0)
         appointment = Appointment.objects.create(
             facility=facility,
             patient=patient,
@@ -603,14 +604,40 @@ class TestAppointmentViewSet:
             clinic=clinic,
             appointment_type=apt_type,
             status='booked',
-            start_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 0))),
-            end_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 30))),
+            start_time=scheduled_start,
+            end_time=scheduled_start + timedelta(minutes=30),
         )
 
         response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
         assert response.status_code == status.HTTP_201_CREATED
         appointment.refresh_from_db()
         assert appointment.status == 'arrived'
+        encounter = Encounter.objects.get(appointment=appointment)
+        assert encounter.status == 'planned'
+        assert encounter.start_time == appointment.start_time
+
+    def test_start_visit_rejects_check_in_before_window(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+        start_time = timezone.now() + timedelta(hours=3)
+
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+        )
+
+        response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "cannot be checked in yet" in str(response.data).lower()
 
     def test_create_appointment_missing_fields(self, admin_client, db):
         data = {
@@ -721,9 +748,11 @@ class TestAppointmentViewSet:
         practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory(duration_minutes=30)
 
-        tomorrow = timezone.now().date() + timedelta(days=1)
-        slot_start = time(11, 0)
-        slot_end = time(11, 30)
+        scheduled_start = (timezone.now() + timedelta(minutes=30)).replace(second=0, microsecond=0)
+        scheduled_end = scheduled_start + timedelta(minutes=30)
+        roster_date = timezone.localtime(scheduled_start).date()
+        slot_start = scheduled_start.time().replace(tzinfo=None)
+        slot_end = scheduled_end.time().replace(tzinfo=None)
 
         duty_type = DepartmentDutyType.objects.create(
             department=clinic.department,
@@ -731,10 +760,10 @@ class TestAppointmentViewSet:
             code='POOL-CHECK-IN',
             category='clinic',
             rotation_type='none',
-            applicable_days=[tomorrow.weekday()],
+            applicable_days=[roster_date.weekday()],
             is_24_hour=False,
             start_time=slot_start,
-            end_time=time(14, 0),
+            end_time=slot_end,
             slot_duration_minutes=30,
             max_patients_per_slot=1,
             clinic=clinic,
@@ -743,10 +772,10 @@ class TestAppointmentViewSet:
         RosterEntry.objects.create(
             department=clinic.department,
             duty_type=duty_type,
-            date=tomorrow,
+            date=roster_date,
             practitioner=practitioner,
             start_time=slot_start,
-            end_time=time(14, 0),
+            end_time=slot_end,
             source='manual',
             status='published',
         )
@@ -759,8 +788,8 @@ class TestAppointmentViewSet:
             appointment_type=apt_type,
             status='booked',
             source='scheduled',
-            start_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)),
-            end_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)),
+            start_time=scheduled_start,
+            end_time=scheduled_end,
         )
 
         response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
@@ -1091,7 +1120,7 @@ class TestWalkInArrivals:
         practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory()
 
-        start_time = timezone.now() + timedelta(hours=1)
+        start_time = timezone.now() + timedelta(minutes=30)
         end_time = start_time + timedelta(minutes=30)
         appointment = Appointment.objects.create(
             facility=default_facility,

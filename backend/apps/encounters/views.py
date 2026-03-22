@@ -111,6 +111,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner',
             'practitioner__staff',
             'practitioner__staff__user',
+            'outpatient_visit',
             'admission',
             'clinic',
             'department',
@@ -327,6 +328,11 @@ class EncounterViewSet(viewsets.ModelViewSet):
         if encounter.status == 'finished':
             return Response(
                 {"error": "Encounter is already finished"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if encounter.status == 'cancelled':
+            return Response(
+                {"error": "Cannot finish a cancelled encounter"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -604,6 +610,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
                 "patient_name": visit.encounter.patient_name,
                 "checked_in_at": visit.checked_in_at,
                 "called_at": visit.called_at,
+                "consultation_ended_at": visit.consultation_ended_at,
             }
             for visit in visits
         ]

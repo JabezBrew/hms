@@ -869,6 +869,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
     },
+    'cleanup-encounters-daily': {
+        'task': 'apps.encounters.tasks.cleanup_encounters_daily',
+        'schedule': timedelta(days=1),
+    },
 }
 
 if AI_ENABLED:

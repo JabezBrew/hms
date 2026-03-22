@@ -299,6 +299,27 @@ class TestEncounterCreateView:
         encounter = Encounter.objects.get(patient=patient)
         assert encounter.created_by is not None
 
+    def test_rejects_future_outpatient_in_progress_encounter(self, api_client):
+        patient = PatientProfileFactory()
+        practitioner = PractitionerProfileFactory()
+        department, clinic = create_department_and_clinic(patient.facility)
+
+        data = {
+            'patient_id': str(patient.id),
+            'practitioner_id': str(practitioner.id),
+            'department_id': str(department.id),
+            'clinic_id': str(clinic.id),
+            'encounter_type': 'outpatient',
+            'status': 'in-progress',
+            'start_time': (timezone.now() + timedelta(hours=2)).isoformat(),
+            'reason': 'Future check-up',
+        }
+
+        response = api_client.post('/api/encounters/', data)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'status' in response.data
+
     def test_create_encounter_invalid_patient(self, api_client):
         """Test creating encounter with invalid patient returns error."""
         data = {

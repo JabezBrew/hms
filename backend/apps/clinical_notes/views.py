@@ -3287,9 +3287,33 @@ def chronicle_context(request, patient_id):
     # Get active encounter
     active_encounter = None
     try:
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
         encounter = Encounter.objects.filter(
             patient=patient,
-            status__in=['planned', 'in-progress', 'onleave']
+        ).filter(
+            (
+                Q(encounter_type='outpatient') &
+                Q(start_time__gte=today_start, start_time__lt=today_end) &
+                (
+                    Q(status='in-progress') |
+                    Q(
+                        status='planned',
+                        outpatient_visit__visit_status__in=[
+                            'checked_in',
+                            'waiting',
+                            'called',
+                            'in_progress',
+                            'on_hold',
+                            'ready_checkout',
+                        ],
+                    )
+                )
+            ) |
+            (
+                ~Q(encounter_type='outpatient') &
+                Q(status__in=['planned', 'in-progress', 'onleave'])
+            )
         ).order_by('-start_time').first()
 
         if encounter:

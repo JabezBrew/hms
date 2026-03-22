@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
 from .identifiers import generate_unique_employee_id
@@ -309,19 +310,44 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
         return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).select_related('bed', 'bed__ward').first()
 
     def _get_active_encounters(self, obj):
+        active_visit_statuses = {
+            'checked_in',
+            'waiting',
+            'called',
+            'in_progress',
+            'on_hold',
+            'ready_checkout',
+        }
+
+        def _matches_operational_active_state(encounter):
+            if encounter.encounter_type != 'outpatient':
+                return encounter.status in ['planned', 'in-progress']
+
+            if encounter.status == 'in-progress':
+                return encounter.start_time <= timezone.now()
+
+            if encounter.status != 'planned':
+                return False
+
+            try:
+                visit = encounter.outpatient_visit
+            except Exception:
+                return False
+
+            return visit.visit_status in active_visit_statuses
+
         if hasattr(obj, 'active_encounters_list'):
-            return obj.active_encounters_list
+            return [e for e in obj.active_encounters_list if _matches_operational_active_state(e)]
 
         if hasattr(obj, '_prefetched_objects_cache') and 'encounters' in obj._prefetched_objects_cache:
-            return [e for e in obj.encounters.all() if e.status in ['planned', 'in-progress']]
+            return [e for e in obj.encounters.all() if _matches_operational_active_state(e)]
 
         from apps.encounters.models import Encounter
-        return list(
-            Encounter.objects.filter(
-                patient=obj,
-                status__in=['planned', 'in-progress'],
-            ).select_related('clinic').order_by('-start_time', '-id')
-        )
+        encounters = Encounter.objects.filter(
+            patient=obj,
+            status__in=['planned', 'in-progress'],
+        ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id')
+        return [e for e in encounters if _matches_operational_active_state(e)]
 
     def _get_active_clinic_names(self, obj):
         names = []

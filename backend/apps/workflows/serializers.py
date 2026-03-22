@@ -90,6 +90,7 @@ class ConsultationWorkflowCreateSerializer(serializers.Serializer):
     Serializer for creating a new consultation workflow
     """
     patient_id = serializers.UUIDField(required=True)
+    encounter_id = serializers.UUIDField(required=False, allow_null=True)
     appointment_id = serializers.CharField(required=False, allow_blank=True)
     initial_data = serializers.JSONField(required=False, default=dict)
 
@@ -100,6 +101,22 @@ class ConsultationWorkflowCreateSerializer(serializers.Serializer):
         except PatientProfile.DoesNotExist:
             raise serializers.ValidationError("Patient not found")
         return value
+
+    def validate(self, data):
+        encounter_id = data.get('encounter_id')
+        if not encounter_id:
+            return data
+
+        from apps.encounters.models import Encounter
+
+        encounter = Encounter.objects.filter(id=encounter_id).values('patient_id').first()
+        if not encounter:
+            raise serializers.ValidationError({'encounter_id': 'Encounter not found'})
+        if str(encounter['patient_id']) != str(data['patient_id']):
+            raise serializers.ValidationError({
+                'encounter_id': 'Encounter does not belong to the selected patient'
+            })
+        return data
 
 
 class ConsultationWorkflowUpdateSerializer(serializers.Serializer):

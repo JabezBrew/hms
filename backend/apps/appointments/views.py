@@ -47,6 +47,44 @@ from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 logger = logging.getLogger(__name__)
 
 
+def _format_local_datetime(value):
+    if not value:
+        return None
+    return timezone.localtime(value).strftime('%B %d, %Y %I:%M %p %Z')
+
+
+def _get_visit_check_in_window(appointment):
+    clinic = getattr(appointment, 'clinic', None)
+    early_minutes = getattr(clinic, 'soft_preassignment_minutes', 0) or 0
+    grace_minutes = getattr(clinic, 'no_show_grace_minutes', 30) or 30
+    earliest = appointment.start_time - datetime.timedelta(minutes=early_minutes)
+    latest = appointment.start_time + datetime.timedelta(minutes=grace_minutes)
+    return earliest, latest
+
+
+def _validate_visit_check_in_window(appointment, now=None):
+    now = now or timezone.now()
+    earliest, latest = _get_visit_check_in_window(appointment)
+
+    if now < earliest:
+        raise serializers.ValidationError(
+            (
+                "This visit cannot be checked in yet. "
+                f"Check-in opens at {_format_local_datetime(earliest)} "
+                f"for the appointment scheduled at {_format_local_datetime(appointment.start_time)}."
+            )
+        )
+
+    if now > latest:
+        raise serializers.ValidationError(
+            (
+                "This appointment is outside the allowed check-in window. "
+                f"The latest allowed check-in was {_format_local_datetime(latest)} "
+                f"for the appointment scheduled at {_format_local_datetime(appointment.start_time)}."
+            )
+        )
+
+
 def _flatten_error_messages(detail):
     messages = []
     if isinstance(detail, dict):
@@ -382,15 +420,24 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 {"error": "Cannot start a visit for a terminal appointment."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        encounter = Encounter.objects.filter(appointment=appointment).first()
-        if encounter:
-            return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_200_OK)
 
         # SECURITY: check-in is a front-desk operation; enforce demographics access,
         # not clinical access (receptionists must be allowed to check in).
         check_demographics_access(request.user, appointment.patient)
 
         with transaction.atomic():
+            appointment = (
+                Appointment.objects
+                .select_for_update()
+                .get(pk=appointment.pk)
+            )
+            encounter = Encounter.objects.select_for_update().filter(appointment=appointment).first()
+            encounter_created = encounter is None
+            existing_visit = bool(encounter and hasattr(encounter, 'outpatient_visit'))
+
+            if not existing_visit:
+                _validate_visit_check_in_window(appointment)
+
             if (
                 appointment.clinic
                 and appointment.clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL
@@ -401,38 +448,46 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                     assigned_by=request.user,
                 )
 
-            encounter = Encounter.objects.create(
-                patient=appointment.patient,
-                facility=appointment.facility,
-                practitioner=appointment.practitioner,
-                clinic=appointment.clinic,
-                department=appointment.clinic.department if appointment.clinic else None,
-                appointment=appointment,
-                encounter_type='outpatient',
-                status='in-progress',
-                start_time=timezone.now(),
-                reason=appointment.reason,
-                created_by=request.user,
-                updated_by=request.user,
-            )
+            if not encounter:
+                encounter = Encounter.objects.create(
+                    patient=appointment.patient,
+                    facility=appointment.facility,
+                    practitioner=appointment.practitioner,
+                    clinic=appointment.clinic,
+                    department=appointment.clinic.department if appointment.clinic else None,
+                    appointment=appointment,
+                    encounter_type='outpatient',
+                    status='planned',
+                    start_time=appointment.start_time,
+                    reason=appointment.reason,
+                    created_by=request.user,
+                    updated_by=request.user,
+                )
 
-            from apps.organization.services import TeamAssignmentService
-            TeamAssignmentService.assign_initial_team(
-                encounter=encounter,
-                use_roster=True,
-                context='outpatient'
-            )
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    use_roster=True,
+                    context='outpatient'
+                )
+            elif encounter.encounter_type != 'outpatient':
+                return Response(
+                    {"error": "The linked appointment encounter is not an outpatient encounter."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             from apps.encounters.services import VisitService
             visit = VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
-            # Front desk check-in should place the patient into the waiting room queue by default.
-            VisitService.add_to_waiting(visit)
+            if visit.visit_status == 'checked_in':
+                # Front desk check-in should place the patient into the waiting room queue by default.
+                VisitService.add_to_waiting(visit)
 
             appointment.status = 'arrived'
             appointment.updated_by = request.user
             appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
 
-        return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_201_CREATED)
+        response_status = status.HTTP_201_CREATED if encounter_created or not existing_visit else status.HTTP_200_OK
+        return Response({"encounter_id": str(encounter.id)}, status=response_status)
 
     @action(detail=False, methods=['post'], url_path='walk-in-check-in')
     def walk_in_check_in(self, request):
@@ -591,8 +646,8 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 department=appointment.clinic.department if appointment.clinic else None,
                 appointment=appointment,
                 encounter_type='outpatient',
-                status='in-progress',
-                start_time=timezone.now(),
+                status='planned',
+                start_time=appointment.start_time,
                 reason=appointment.reason,
                 created_by=request.user,
                 updated_by=request.user,

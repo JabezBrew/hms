@@ -3,8 +3,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Layout } from '@/components/layout/layout';
@@ -51,14 +50,16 @@ export default function ClinicWaitingRoomPage() {
 
   // Calculate stats
   const stats = useMemo(() => {
-    if (!queue) return { waiting: 0, called: 0, total: 0 };
+    if (!queue) return { waiting: 0, called: 0, readyCheckout: 0, total: 0 };
 
     const waiting = queue.filter((v) => v.visit_status === 'waiting').length;
     const called = queue.filter((v) => v.visit_status === 'called').length;
+    const readyCheckout = queue.filter((v) => v.visit_status === 'ready_checkout').length;
 
     return {
       waiting,
       called,
+      readyCheckout,
       total: queue.length,
     };
   }, [queue]);
@@ -145,13 +146,13 @@ export default function ClinicWaitingRoomPage() {
         <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
           {/* Statistics */}
           {queueLoading ? (
-            <DashboardGrid columns="3">
-              {[...Array(3)].map((_, i) => (
+            <DashboardGrid columns="4">
+              {[...Array(4)].map((_, i) => (
                 <Skeleton key={i} className="h-32" />
               ))}
             </DashboardGrid>
           ) : (
-            <DashboardGrid columns="3">
+            <DashboardGrid columns="4">
               <StatCard
                 title="Total in Queue"
                 value={stats.total}
@@ -171,6 +172,13 @@ export default function ClinicWaitingRoomPage() {
                 value={stats.called}
                 subtitle="Awaiting consultation"
                 icon={Phone}
+                color="emerald"
+              />
+              <StatCard
+                title="Ready Checkout"
+                value={stats.readyCheckout}
+                subtitle="Awaiting front-desk closeout"
+                icon={Stethoscope}
                 color="emerald"
               />
             </DashboardGrid>

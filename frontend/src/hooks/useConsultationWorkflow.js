@@ -166,7 +166,7 @@ function generateConsultationNote(formData, contextData) {
  */
 export function useConsultationWorkflow(patientId, options = {}) {
   const queryClient = useQueryClient();
-  const { referralId, appointmentId } = options;
+  const { referralId, appointmentId, encounterId } = options;
 
   // Workflow state
   const [workflowId, setWorkflowId] = useState(null);
@@ -190,11 +190,12 @@ export function useConsultationWorkflow(patientId, options = {}) {
 
   // Start workflow mutation
   const startWorkflowMutation = useMutation({
-    mutationFn: async ({ patientId, referralId, appointmentId, initialData }) => {
+    mutationFn: async ({ patientId, referralId, appointmentId, encounterId, initialData }) => {
       const response = await apiClient.post('/workflows/consultation/start/', {
         patient_id: patientId,
         referral_id: referralId || undefined,
         appointment_id: appointmentId || undefined,
+        encounter_id: encounterId || undefined,
         initial_data: initialData || {},
       });
       return response;
@@ -262,13 +263,14 @@ export function useConsultationWorkflow(patientId, options = {}) {
         patientId,
         referralId,
         appointmentId,
+        encounterId,
         initialData,
       });
       return result;
     } catch (err) {
       return null;
     }
-  }, [patientId, referralId, appointmentId, startWorkflowMutation]);
+  }, [patientId, referralId, appointmentId, encounterId, startWorkflowMutation]);
 
   // Update step data locally
   const updateStepData = useCallback((stepId, data) => {

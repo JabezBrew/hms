@@ -534,6 +534,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Find the active encounter (in-progress inpatient admission takes priority)
   const activeEncounter = useMemo(() => {
     if (!encounters || encounters.length === 0) return null;
+    const activeOutpatientVisitStatuses = new Set([
+      'checked_in',
+      'waiting',
+      'called',
+      'in_progress',
+      'on_hold',
+      'ready_checkout',
+    ]);
 
     // First look for an active inpatient admission
     const activeInpatient = encounters.find(enc =>
@@ -545,7 +553,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
     // Otherwise look for any in-progress encounter
     const activeAny = encounters.find(enc => enc.status === 'in-progress');
-    return activeAny || null;
+    if (activeAny) return activeAny;
+
+    return encounters.find(enc =>
+      enc.encounter_type?.toLowerCase() === 'outpatient'
+      && enc.status === 'planned'
+      && activeOutpatientVisitStatuses.has(enc.outpatient_visit_status)
+    ) || null;
   }, [encounters]);
   const dischargeCaseAdmissionId = useMemo(() => (
     requestedDischargeAdmissionId
@@ -1791,6 +1805,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               open
               onClose={handleSlideOverClose}
               patient={patient}
+              encounterId={activeEncounter?.id || null}
               referralId={referralIdParam}
               onComplete={() => {
                 refetchTimeline?.();

@@ -8,11 +8,149 @@ from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q, Max
+from django.db.models import Max
 
 from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from .models import Encounter, OutpatientVisit, TriageQueue
 from apps.organization.services import UnitHierarchyService
+
+
+ACTIVE_OUTPATIENT_VISIT_STATUSES = {
+    OutpatientVisit.VisitStatus.CHECKED_IN,
+    OutpatientVisit.VisitStatus.WAITING,
+    OutpatientVisit.VisitStatus.CALLED,
+    OutpatientVisit.VisitStatus.IN_PROGRESS,
+    OutpatientVisit.VisitStatus.ON_HOLD,
+    OutpatientVisit.VisitStatus.READY_CHECKOUT,
+}
+TERMINAL_OUTPATIENT_VISIT_STATUSES = {
+    OutpatientVisit.VisitStatus.CHECKED_OUT,
+    OutpatientVisit.VisitStatus.NO_SHOW,
+    OutpatientVisit.VisitStatus.CANCELLED,
+}
+STARTED_OUTPATIENT_VISIT_STATUSES = {
+    OutpatientVisit.VisitStatus.IN_PROGRESS,
+    OutpatientVisit.VisitStatus.ON_HOLD,
+    OutpatientVisit.VisitStatus.READY_CHECKOUT,
+}
+
+
+def _get_day_bounds(now=None):
+    now = now or timezone.now()
+    local_date = timezone.localtime(now).date()
+    start_of_day = timezone.make_aware(
+        datetime.combine(local_date, time.min),
+        timezone.get_current_timezone()
+    )
+    return start_of_day, start_of_day + timedelta(days=1)
+
+
+def _get_outpatient_visit(encounter):
+    try:
+        return encounter.outpatient_visit
+    except OutpatientVisit.DoesNotExist:
+        return None
+
+
+def _has_active_outpatient_visit(encounter):
+    visit = _get_outpatient_visit(encounter)
+    return bool(visit and visit.visit_status in ACTIVE_OUTPATIENT_VISIT_STATUSES)
+
+
+def _maybe_add_encounter_reason(encounter, reason):
+    if reason and not encounter.reason:
+        encounter.reason = reason
+        encounter.fhir_synced = False
+        encounter.save(update_fields=['reason', 'fhir_synced', 'updated_at'])
+        return True
+    return False
+
+
+def _promote_encounter_to_in_progress(encounter, reason=None, started_at=None):
+    fields = []
+    if encounter.status == 'planned':
+        encounter.status = 'in-progress'
+        fields.append('status')
+
+    if started_at and (encounter.start_time is None or encounter.start_time > started_at):
+        encounter.start_time = started_at
+        fields.append('start_time')
+
+    if reason and not encounter.reason:
+        encounter.reason = reason
+        fields.append('reason')
+
+    if not fields:
+        return encounter
+
+    encounter.fhir_synced = False
+    encounter.save(update_fields=[*fields, 'fhir_synced', 'updated_at'])
+    return encounter
+
+
+def _planned_encounter_is_usable(encounter, now=None, reason=None):
+    now = now or timezone.now()
+
+    if encounter.encounter_type == 'outpatient':
+        if not _has_active_outpatient_visit(encounter):
+            return False
+        visit = _get_outpatient_visit(encounter)
+        if visit and visit.visit_status in STARTED_OUTPATIENT_VISIT_STATUSES:
+            _promote_encounter_to_in_progress(
+                encounter,
+                reason=reason,
+                started_at=visit.consultation_started_at,
+            )
+        else:
+            _maybe_add_encounter_reason(encounter, reason)
+        return True
+
+    if encounter.start_time and encounter.start_time > now:
+        return False
+
+    _promote_encounter_to_in_progress(encounter, reason=reason)
+    return True
+
+
+def _active_encounter_is_usable(encounter, now=None):
+    now = now or timezone.now()
+    if encounter.encounter_type != 'outpatient':
+        return True
+
+    visit = _get_outpatient_visit(encounter)
+    if visit and visit.visit_status in TERMINAL_OUTPATIENT_VISIT_STATUSES:
+        return False
+
+    if encounter.start_time and encounter.start_time > now:
+        return False
+
+    return True
+
+
+def _validate_outpatient_encounter_reuse(encounter, now=None):
+    now = now or timezone.now()
+    start_of_day, end_of_day = _get_day_bounds(now)
+    visit = _get_outpatient_visit(encounter)
+
+    if encounter.start_time < start_of_day or encounter.start_time >= end_of_day:
+        raise ValueError(
+            f"Cannot add entries to outpatient encounter {encounter.id} from a different day"
+        )
+
+    if visit and visit.visit_status in TERMINAL_OUTPATIENT_VISIT_STATUSES:
+        raise ValueError(
+            f"Cannot add entries to outpatient encounter {encounter.id} with visit status {visit.visit_status}"
+        )
+
+    if encounter.status == 'in-progress' and encounter.start_time > now:
+        raise ValueError(
+            f"Cannot add entries to outpatient encounter {encounter.id} before its start time"
+        )
+
+    if encounter.status == 'planned' and not _has_active_outpatient_visit(encounter):
+        raise ValueError(
+            f"Cannot add entries to planned outpatient encounter {encounter.id} before check-in"
+        )
 
 
 def get_or_create_active_encounter(
@@ -47,8 +185,7 @@ def get_or_create_active_encounter(
     from apps.wards.models import Admission
 
     now = timezone.now()
-    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
-    end_of_day = start_of_day + timedelta(days=1)
+    start_of_day, end_of_day = _get_day_bounds(now)
     effective_type = encounter_type or 'outpatient'
 
     # Use transaction with select_for_update to prevent race conditions
@@ -98,8 +235,7 @@ def get_or_create_active_encounter(
             # For emergency, prefer matching type but fall back to any
             type_filter = ['emergency', 'outpatient']
 
-        # Rule 2: Check for planned encounter today (transition it to in-progress)
-        # Use select_for_update to lock the row and prevent race conditions
+        # Rule 2: Reuse same-day planned encounters only when they are operationally active.
         planned_filters = {
             'patient': patient,
             'status': 'planned',
@@ -108,34 +244,29 @@ def get_or_create_active_encounter(
             'encounter_type__in': type_filter,
         }
 
-        # Prefer same practitioner's planned encounter
+        def _find_planned_encounter(queryset):
+            for planned_encounter in queryset:
+                if _planned_encounter_is_usable(planned_encounter, now=now, reason=reason):
+                    return planned_encounter
+            return None
+
         if practitioner:
-            planned_encounter = (
+            planned_encounter = _find_planned_encounter(
                 Encounter.objects
                 .select_for_update(skip_locked=True)
                 .filter(**planned_filters, practitioner=practitioner)
-                .first()
+                .order_by('start_time', 'created_at', 'id')
             )
             if planned_encounter:
-                # Transition from planned to in-progress
-                planned_encounter.status = 'in-progress'
-                if reason and not planned_encounter.reason:
-                    planned_encounter.reason = reason
-                planned_encounter.save(update_fields=['status', 'reason', 'updated_at'])
                 return planned_encounter, False
 
-        # Check any planned encounter today
-        planned_encounter = (
+        planned_encounter = _find_planned_encounter(
             Encounter.objects
             .select_for_update(skip_locked=True)
             .filter(**planned_filters)
-            .first()
+            .order_by('start_time', 'created_at', 'id')
         )
         if planned_encounter:
-            planned_encounter.status = 'in-progress'
-            if reason and not planned_encounter.reason:
-                planned_encounter.reason = reason
-            planned_encounter.save(update_fields=['status', 'reason', 'updated_at'])
             return planned_encounter, False
 
         # Rule 3: Check for active (in-progress) outpatient/emergency encounter today
@@ -148,22 +279,28 @@ def get_or_create_active_encounter(
         }
 
         # If practitioner is provided, prefer same practitioner's encounter
+        def _find_active_encounter(queryset):
+            for active_encounter in queryset:
+                if _active_encounter_is_usable(active_encounter, now=now):
+                    return active_encounter
+            return None
+
         if practitioner:
-            practitioner_encounter = (
+            practitioner_encounter = _find_active_encounter(
                 Encounter.objects
                 .select_for_update(skip_locked=True)
                 .filter(**active_filters, practitioner=practitioner)
-                .first()
+                .order_by('start_time', 'created_at', 'id')
             )
             if practitioner_encounter:
                 return practitioner_encounter, False
 
         # Check for any active encounter today (different practitioner)
-        any_encounter = (
+        any_encounter = _find_active_encounter(
             Encounter.objects
             .select_for_update(skip_locked=True)
             .filter(**active_filters)
-            .first()
+            .order_by('start_time', 'created_at', 'id')
         )
         if any_encounter:
             return any_encounter, False
@@ -191,8 +328,7 @@ def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     from apps.wards.models import Admission
 
     now = timezone.now()
-    start_of_day = timezone.make_aware(datetime.combine(now.date(), time.min))
-    end_of_day = start_of_day + timedelta(days=1)
+    start_of_day, end_of_day = _get_day_bounds(now)
 
     # Check for active inpatient admission first
     # Order by admission_date desc to get most recent
@@ -219,7 +355,21 @@ def get_active_encounter_for_patient(patient, encounter_type=None, clinic=None):
     if clinic:
         filters['clinic'] = clinic
 
-    return Encounter.objects.filter(**filters).first()
+    queryset = Encounter.objects.filter(**filters).select_related('clinic').order_by('start_time', 'created_at', 'id')
+
+    for active_encounter in queryset.filter(status='in-progress'):
+        if _active_encounter_is_usable(active_encounter, now=now):
+            return active_encounter
+
+    for planned_encounter in queryset.filter(status='planned'):
+        if planned_encounter.encounter_type == 'outpatient':
+            if _has_active_outpatient_visit(planned_encounter):
+                return planned_encounter
+            continue
+        if not planned_encounter.start_time or planned_encounter.start_time <= now:
+            return planned_encounter
+
+    return None
 
 
 def ensure_encounter_for_entry(
@@ -267,6 +417,9 @@ def ensure_encounter_for_entry(
                 raise ValueError(
                     f"Cannot add entries to {encounter.status} encounter {encounter_id}"
                 )
+
+            if encounter.encounter_type == 'outpatient':
+                _validate_outpatient_encounter_reuse(encounter)
 
             return encounter, False
         except Encounter.DoesNotExist:
@@ -339,10 +492,12 @@ class VisitService:
         return visit
 
     @staticmethod
+    @transaction.atomic
     def start_consultation(visit):
         allowed = {
             OutpatientVisit.VisitStatus.CALLED,
             OutpatientVisit.VisitStatus.CHECKED_IN,
+            OutpatientVisit.VisitStatus.WAITING,
             OutpatientVisit.VisitStatus.ON_HOLD,
         }
         if visit.visit_status not in allowed:
@@ -351,6 +506,11 @@ class VisitService:
         if not visit.consultation_started_at:
             visit.consultation_started_at = timezone.now()
         visit.save(update_fields=['visit_status', 'consultation_started_at', 'updated_at'])
+
+        VisitService._sync_encounter_started(
+            visit.encounter,
+            started_at=visit.consultation_started_at,
+        )
         return visit
 
     @staticmethod
@@ -362,12 +522,19 @@ class VisitService:
         return visit
 
     @staticmethod
+    @transaction.atomic
     def end_consultation(visit):
         if visit.visit_status != OutpatientVisit.VisitStatus.IN_PROGRESS:
             raise ValueError(f"Cannot end consultation from {visit.visit_status}")
         visit.visit_status = OutpatientVisit.VisitStatus.READY_CHECKOUT
         visit.consultation_ended_at = timezone.now()
         visit.save(update_fields=['visit_status', 'consultation_ended_at', 'updated_at'])
+
+        VisitService._finish_outpatient_encounter(
+            visit.encounter,
+            ended_at=visit.consultation_ended_at,
+            started_at=visit.consultation_started_at,
+        )
 
         if visit.encounter.appointment_id:
             visit.encounter.appointment.status = 'fulfilled'
@@ -424,9 +591,11 @@ class VisitService:
             'consultation_ended_at', 'updated_at'
         ])
 
-        visit.encounter.status = 'finished'
-        visit.encounter.end_time = timezone.now()
-        visit.encounter.save(update_fields=['status', 'end_time', 'updated_at'])
+        VisitService._finish_outpatient_encounter(
+            visit.encounter,
+            ended_at=visit.consultation_ended_at,
+            started_at=visit.consultation_started_at,
+        )
 
         if visit.encounter.appointment_id:
             visit.encounter.appointment.status = 'fulfilled'
@@ -435,6 +604,7 @@ class VisitService:
         return visit
 
     @staticmethod
+    @transaction.atomic
     def mark_no_show(visit):
         allowed = {
             OutpatientVisit.VisitStatus.WAITING,
@@ -444,6 +614,9 @@ class VisitService:
             raise ValueError(f"Cannot mark no-show from {visit.visit_status}")
         visit.visit_status = OutpatientVisit.VisitStatus.NO_SHOW
         visit.save(update_fields=['visit_status', 'updated_at'])
+
+        if visit.encounter.status not in ['finished', 'cancelled']:
+            visit.encounter.cancel()
 
         if visit.encounter.appointment_id:
             visit.encounter.appointment.status = 'noshow'
@@ -464,10 +637,30 @@ class VisitService:
             visit_status__in=[
                 OutpatientVisit.VisitStatus.WAITING,
                 OutpatientVisit.VisitStatus.CALLED,
+                OutpatientVisit.VisitStatus.READY_CHECKOUT,
             ],
             checked_in_at__gte=start_dt,
             checked_in_at__lt=end_dt,
         ).select_related('encounter__patient__user').order_by('queue_number')
+
+    @staticmethod
+    def _sync_encounter_started(encounter, started_at):
+        if encounter.status in ['finished', 'cancelled']:
+            raise ValueError(f"Cannot start consultation for {encounter.status} encounter")
+        _promote_encounter_to_in_progress(encounter, started_at=started_at)
+
+    @staticmethod
+    def _finish_outpatient_encounter(encounter, ended_at, started_at=None):
+        if encounter.status == 'cancelled':
+            raise ValueError("Cannot finish a cancelled encounter")
+        if encounter.status == 'planned':
+            VisitService._sync_encounter_started(encounter, started_at or ended_at)
+        if encounter.status != 'finished':
+            encounter.finish(end_time=ended_at)
+        elif not encounter.end_time or encounter.end_time < ended_at:
+            encounter.end_time = ended_at
+            encounter.fhir_synced = False
+            encounter.save(update_fields=['end_time', 'fhir_synced', 'updated_at'])
 
 
 class TriageService:

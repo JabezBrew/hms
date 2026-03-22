@@ -116,6 +116,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             result = ConsultationEngine.start(
                 user=request.user,
                 patient_id=serializer.validated_data['patient_id'],
+                encounter_id=serializer.validated_data.get('encounter_id'),
                 appointment_id=serializer.validated_data.get('appointment_id'),
                 initial_data=serializer.validated_data.get('initial_data', {}),
             )

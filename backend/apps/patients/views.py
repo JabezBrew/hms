@@ -55,6 +55,32 @@ from .tasks import (
 logger = logging.getLogger(__name__)
 
 
+def _build_operational_active_encounter_q(start_of_day, end_of_day):
+    outpatient_active = (
+        Q(encounter_type='outpatient') &
+        Q(start_time__gte=start_of_day, start_time__lt=end_of_day) &
+        (
+            Q(status='in-progress') |
+            Q(
+                status='planned',
+                outpatient_visit__visit_status__in=[
+                    'checked_in',
+                    'waiting',
+                    'called',
+                    'in_progress',
+                    'on_hold',
+                    'ready_checkout',
+                ],
+            )
+        )
+    )
+    non_outpatient_active = (
+        ~Q(encounter_type='outpatient') &
+        Q(status__in=['planned', 'in-progress'])
+    )
+    return outpatient_active | non_outpatient_active
+
+
 def _build_safe_patient_search_summary(
     *,
     query=None,
@@ -629,10 +655,13 @@ class PatientViewSet(viewsets.ViewSet):
             from apps.laboratory.models import LabOrder
             from apps.clinical_notes.models import Prescription
             from apps.billing.models import Invoice
-            from apps.core.security import ACTIVE_ADMISSION_STATUSES, ACTIVE_ENCOUNTER_STATUSES
+            from apps.core.security import ACTIVE_ADMISSION_STATUSES
             facility = get_user_facility(request)
             if not facility:
                 raise PermissionDenied("Facility context is required.")
+            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            active_encounter_q = _build_operational_active_encounter_q(today_start, today_end)
 
             # Base query with bounded prefetches for active admission/encounter context.
             local_patients_qs = PatientProfile.objects.select_related('user').prefetch_related(
@@ -646,8 +675,8 @@ class PatientViewSet(viewsets.ViewSet):
                 Prefetch(
                     'encounters',
                     queryset=Encounter.objects.filter(
-                        status__in=ACTIVE_ENCOUNTER_STATUSES
-                    ).select_related('clinic').order_by('-start_time', '-id'),
+                        active_encounter_q
+                    ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id'),
                     to_attr='active_encounters_list'
                 )
             ).filter(facility=facility)
@@ -723,7 +752,12 @@ class PatientViewSet(viewsets.ViewSet):
                 active_encounter_exists_qs = Encounter.objects.filter(
                     patient=OuterRef('pk'),
                     facility=facility,
-                    status__in=ACTIVE_ENCOUNTER_STATUSES,
+                ).filter(active_encounter_q)
+                completed_outpatient_exists_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    encounter_type='outpatient',
+                    status__in=['finished', 'cancelled'],
                 )
                 deceased_admission_exists_qs = Admission.objects.filter(
                     patient=OuterRef('pk'),
@@ -734,12 +768,6 @@ class PatientViewSet(viewsets.ViewSet):
                     patient=OuterRef('pk'),
                     facility=facility,
                     status__in=['discharged', 'transferred'],
-                )
-                completed_outpatient_exists_qs = Encounter.objects.filter(
-                    patient=OuterRef('pk'),
-                    facility=facility,
-                    encounter_type='outpatient',
-                    status__in=['finished', 'cancelled'],
                 )
 
                 local_patients_qs = local_patients_qs.annotate(
@@ -805,8 +833,7 @@ class PatientViewSet(viewsets.ViewSet):
                 encounter_qs = Encounter.objects.filter(
                     patient=OuterRef('pk'),
                     facility=facility,
-                    status__in=ACTIVE_ENCOUNTER_STATUSES,
-                )
+                ).filter(active_encounter_q)
                 if encounter_type:
                     encounter_qs = encounter_qs.filter(encounter_type=encounter_type)
                 if department_id:
@@ -832,8 +859,7 @@ class PatientViewSet(viewsets.ViewSet):
                     patient=OuterRef('pk'),
                     facility=facility,
                     practitioner_id=attending_id,
-                    status__in=ACTIVE_ENCOUNTER_STATUSES,
-                )
+                ).filter(active_encounter_q)
                 if encounter_type:
                     encounter_attending_qs = encounter_attending_qs.filter(encounter_type=encounter_type)
 
@@ -868,8 +894,7 @@ class PatientViewSet(viewsets.ViewSet):
             active_encounter_sort_qs = Encounter.objects.filter(
                 patient=OuterRef('pk'),
                 facility=facility,
-                status__in=ACTIVE_ENCOUNTER_STATUSES,
-            ).order_by('-start_time', '-id')
+            ).filter(active_encounter_q).order_by('-start_time', '-id')
             terminal_admission_sort_qs = Admission.objects.filter(
                 patient=OuterRef('pk'),
                 facility=facility,

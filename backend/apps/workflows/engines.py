@@ -213,7 +213,13 @@ class ConsultationEngine(BaseWorkflowEngine):
 
     @staticmethod
     @transaction.atomic
-    def start(user, patient_id, appointment_id: Optional[str] = None, initial_data: Optional[Dict] = None) -> Dict[str, Any]:
+    def start(
+        user,
+        patient_id,
+        appointment_id: Optional[str] = None,
+        encounter_id: Optional[str] = None,
+        initial_data: Optional[Dict] = None
+    ) -> Dict[str, Any]:
         """
         Initialize a new consultation workflow
 
@@ -254,6 +260,8 @@ class ConsultationEngine(BaseWorkflowEngine):
             'appointment_id': appointment_id,
             'prep_data': prep_data,
         }
+        if encounter_id:
+            context_data['encounter_id'] = str(encounter_id)
 
         if initial_data:
             context_data.update(initial_data)
@@ -264,6 +272,7 @@ class ConsultationEngine(BaseWorkflowEngine):
             status=WorkflowStatus.IN_PROGRESS,
             user=user,
             patient=patient,
+            encounter_id=str(encounter_id) if encounter_id else None,
             current_step=1,
             total_steps=5,
             context_data=context_data,
@@ -386,7 +395,10 @@ class ConsultationEngine(BaseWorkflowEngine):
         """
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.encounters.services import get_or_create_active_encounter
+        from apps.encounters.services import (
+            ensure_encounter_for_entry,
+            get_or_create_active_encounter,
+        )
 
         context = workflow.context_data
         consultation_data = workflow.consultation_data
@@ -411,13 +423,22 @@ class ConsultationEngine(BaseWorkflowEngine):
             ['chief_complaint']
         )
 
-        # Get or create Django Encounter (local model)
-        encounter, encounter_created = get_or_create_active_encounter(
-            patient=workflow.patient,
-            practitioner=practitioner,
-            encounter_type=encounter_type,
-            reason=reason
-        )
+        explicit_encounter_id = workflow.encounter_id or context.get('encounter_id')
+        if explicit_encounter_id:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=workflow.patient,
+                practitioner=practitioner,
+                encounter_id=explicit_encounter_id,
+                encounter_type=encounter_type,
+                reason=reason,
+            )
+        else:
+            encounter, encounter_created = get_or_create_active_encounter(
+                patient=workflow.patient,
+                practitioner=practitioner,
+                encounter_type=encounter_type,
+                reason=reason
+            )
 
         logger.info(f"{'Created' if encounter_created else 'Found existing'} encounter {encounter.id} for workflow {workflow.id}")
 
