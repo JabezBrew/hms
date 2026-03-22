@@ -169,6 +169,7 @@ def main():
         else:
             log("Skipping migrate command; schema is already up to date.")
         call_command("ensure_admin")
+        call_command("provision_default_facility")
     finally:
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_unlock(1)")

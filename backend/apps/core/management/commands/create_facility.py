@@ -1,6 +1,8 @@
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from apps.core.models import Facility
+from apps.core.provisioning import ensure_organization_config, ensure_facility_root_unit
 
 
 class Command(BaseCommand):
@@ -23,6 +25,7 @@ class Command(BaseCommand):
         parser.add_argument('--headquarters', action='store_true', help="Mark as headquarters")
         parser.add_argument('--inactive', action='store_true', help="Create facility as inactive")
 
+    @transaction.atomic
     def handle(self, *args, **options):
         code = options['code'].strip().upper()
         if Facility.objects.filter(code=code).exists():
@@ -59,7 +62,10 @@ class Command(BaseCommand):
             is_headquarters=bool(options['headquarters']),
             is_active=not bool(options['inactive']),
         )
+        ensure_organization_config()
+        root_unit, root_created, _root_updated = ensure_facility_root_unit(facility)
 
         self.stdout.write(self.style.SUCCESS(
-            f"Facility created: {facility.name} ({facility.code})"
+            f"Facility created: {facility.name} ({facility.code}); "
+            f"root organization unit {'created' if root_created else 'ensured'} ({root_unit.id})."
         ))

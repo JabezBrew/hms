@@ -179,6 +179,13 @@ def run_migrations_with_lock(db_connection, call_command, default_facility_code)
             log("ensure_admin complete")
         except Exception as exc:
             log(f"ensure_admin skipped: {exc}")
+
+        try:
+            call_command("provision_default_facility")
+            log("default facility provisioning complete")
+        except Exception as exc:
+            log(f"default facility provisioning failed: {exc}")
+            raise
     finally:
         with db_connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_unlock(1)")
