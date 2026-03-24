@@ -85,6 +85,7 @@ urlpatterns = [
     # Include app URLs
     path('api/users/', include('apps.users.urls')),
     path('api/patients/', include('apps.patients.urls')),
+    path('api/admissions/', include('apps.admissions.urls')),
     path('api/appointments/', include('apps.appointments.urls')),
     path('api/wards/', include('apps.wards.urls')),
     path('api/encounters/', include('apps.encounters.urls')),

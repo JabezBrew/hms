@@ -3027,30 +3027,36 @@ def patient_clinical_summary(request, patient_id):
                     'severity': 'medium',
                 })
 
-    # Source 2: Get initial diagnosis from active admission workflow
+    # Source 2: Get initial diagnosis from the latest open admission case
     try:
-        from apps.workflows.models import AdmissionWorkflow
-        # AdmissionWorkflow is accessed through workflow.patient
-        # Only consider in_progress admissions (completed means discharged)
-        active_admission = AdmissionWorkflow.objects.filter(
-            workflow__patient=patient,
-            workflow__status='in_progress'
-        ).select_related('workflow').order_by('-workflow__created_at').first()
+        from apps.admissions.models import AdmissionCase
 
-        if active_admission and active_admission.initial_diagnosis:
-            dx_text = active_admission.initial_diagnosis.strip()
+        active_admission_case = AdmissionCase.objects.filter(
+            patient=patient,
+        ).exclude(
+            status__in=[AdmissionCase.Status.COMPLETED, AdmissionCase.Status.CANCELLED]
+        ).order_by('-requested_at').first()
+
+        if active_admission_case:
+            draft = active_admission_case.draft_payload or {}
+            dx_text = (
+                draft.get('initial_diagnosis')
+                or draft.get('admission_reason')
+                or draft.get('chief_complaint')
+                or ''
+            ).strip()
             if dx_text and dx_text.lower() not in seen_problems:
                 seen_problems.add(dx_text.lower())
                 problems.insert(0, {  # Insert at beginning as it's the admission diagnosis
-                    'id': f'admission-{active_admission.id}',
+                    'id': f'admission-case-{active_admission_case.id}',
                     'name': dx_text,
                     'source': 'admission',
-                    'source_date': active_admission.workflow.created_at.isoformat(),
+                    'source_date': active_admission_case.requested_at.isoformat(),
                     'is_primary': True,
                     'severity': 'high',
                 })
     except (ImportError, Exception):
-        pass  # workflows app not available
+        pass
 
     return Response({
         'medications': medications,
@@ -3240,23 +3246,31 @@ def chronicle_context(request, patient_id):
                     'severity': 'medium',
                 })
 
-    # Source 2: Get initial diagnosis from active admission workflow
+    # Source 2: Get initial diagnosis from the latest open admission case
     try:
-        from apps.workflows.models import AdmissionWorkflow
-        active_admission_wf = AdmissionWorkflow.objects.filter(
-            workflow__patient=patient,
-            workflow__status='in_progress'
-        ).select_related('workflow').order_by('-workflow__created_at').first()
+        from apps.admissions.models import AdmissionCase
 
-        if active_admission_wf and active_admission_wf.initial_diagnosis:
-            dx_text = active_admission_wf.initial_diagnosis.strip()
+        active_admission_case = AdmissionCase.objects.filter(
+            patient=patient,
+        ).exclude(
+            status__in=[AdmissionCase.Status.COMPLETED, AdmissionCase.Status.CANCELLED]
+        ).order_by('-requested_at').first()
+
+        if active_admission_case:
+            draft = active_admission_case.draft_payload or {}
+            dx_text = (
+                draft.get('initial_diagnosis')
+                or draft.get('admission_reason')
+                or draft.get('chief_complaint')
+                or ''
+            ).strip()
             if dx_text and dx_text.lower() not in seen_problems:
                 seen_problems.add(dx_text.lower())
                 problems.insert(0, {
-                    'id': f'admission-{active_admission_wf.id}',
+                    'id': f'admission-case-{active_admission_case.id}',
                     'name': dx_text,
                     'source': 'admission',
-                    'source_date': active_admission_wf.workflow.created_at.isoformat(),
+                    'source_date': active_admission_case.requested_at.isoformat(),
                     'is_primary': True,
                     'severity': 'high',
                 })

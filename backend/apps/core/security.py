@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge', 'waiting']
+ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
 
 

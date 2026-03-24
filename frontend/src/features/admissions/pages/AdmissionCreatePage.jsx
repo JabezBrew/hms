@@ -11,12 +11,12 @@ import { Button } from '@/components/ui/button';
 import { useWard } from '@/features/wards/hooks/useWardQueries';
 
 /**
- * AdmissionCreatePage - Chronicle-style patient admission page
+ * AdmissionCreatePage - admission case start page
  *
  * Features:
  * - Editorial header with ward context
- * - Guided admission workflow
- * - Pre-selected ward when navigating from ward page
+ * - Starts the admission case workflow
+ * - Supports pre-selected ward context
  */
 export default function AdmissionCreatePage() {
   const location = useLocation();
@@ -31,7 +31,7 @@ export default function AdmissionCreatePage() {
     ? [
         { label: 'Wards', path: '/wards' },
         { label: ward.name, path: `/wards/${wardId}` },
-        { label: 'New Admission' }
+        { label: 'Start Admission' }
       ]
     : [
         { label: 'Wards', path: '/wards' },
@@ -39,7 +39,7 @@ export default function AdmissionCreatePage() {
       ];
 
   const pageMeta = usePageMeta({
-    title: 'New Admission | Hospital Management System',
+    title: 'Start Admission | Hospital Management System',
     breadcrumbs,
   });
 
@@ -73,17 +73,17 @@ export default function AdmissionCreatePage() {
               <UserPlus className="h-6 w-6 text-primary" />
             </div>
             <PageHeader
-              title="New Patient Admission"
+              title="Start Admission"
               description={ward ? (
                 <span className="flex items-center gap-2">
                   <Building2 className="h-4 w-4" />
-                  Admitting to <span className="text-foreground font-medium">{ward.name}</span>
+                  Admission request for <span className="text-foreground font-medium">{ward.name}</span>
                   <span className="text-muted-foreground">
                     ({ward.available_beds_count} beds available)
                   </span>
                 </span>
               ) : (
-                'Select a patient and assign a bed'
+                'Create the admission case, reserve a bed if available, and move the patient through clearance'
               )}
               size="md"
               wrap={false}

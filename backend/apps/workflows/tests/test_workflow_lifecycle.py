@@ -20,7 +20,7 @@ from apps.users.tests.factories import PatientProfileFactory, DoctorUserFactory
 from .factories import (
     ClinicalWorkflowFactory, InProgressWorkflowFactory, CompletedWorkflowFactory,
     ConsultationWorkflowFactory, WardRoundWorkflowFactory,
-    AdmissionWorkflowFactory, DischargeWorkflowFactory,
+    DischargeWorkflowFactory,
     create_consultation_workflow, create_ward_round_workflow
 )
 
@@ -436,68 +436,6 @@ class TestWardRoundWorkflowLifecycle:
 
         ward_round.refresh_from_db()
         assert len(ward_round.orders_placed) == 2
-
-
-# =============================================================================
-# Admission Workflow Lifecycle Tests
-# =============================================================================
-
-@pytest.mark.tier1
-class TestAdmissionWorkflowLifecycle:
-    """Tests for admission workflow lifecycle."""
-
-    def test_admission_workflow_step_progression(self, db):
-        """Test admission workflow step progression."""
-        admission = AdmissionWorkflowFactory()
-        workflow = admission.workflow
-
-        # Step 1: Patient Info
-        admission.patient_verified = True
-        admission.emergency_contact_name = 'John Doe'
-        workflow.mark_step_complete(1)
-        workflow.advance_to_step(2)
-        admission.save()
-
-        # Step 2: Bed Assignment (would be assigned programmatically)
-        admission.admission_type = 'elective'
-        workflow.mark_step_complete(2)
-        workflow.advance_to_step(3)
-        admission.save()
-
-        assert workflow.current_step == 3
-        assert admission.patient_verified is True
-
-    def test_admission_clinical_info(self, db):
-        """Test admission clinical information storage."""
-        admission = AdmissionWorkflowFactory(
-            admission_reason='Elective surgery',
-            chief_complaint='Hip replacement',
-            initial_diagnosis='Osteoarthritis',
-            relevant_history='No previous surgeries'
-        )
-
-        assert admission.admission_reason == 'Elective surgery'
-        assert admission.initial_diagnosis == 'Osteoarthritis'
-
-    def test_admission_orders_storage(self, db):
-        """Test admission orders are stored correctly."""
-        admission = AdmissionWorkflowFactory(
-            diet='NPO after midnight',
-            activity='Bed rest',
-            vitals_frequency='Q4H',
-            medications=[
-                {'name': 'Enoxaparin', 'dose': '40mg', 'route': 'SC'}
-            ],
-            labs=[
-                {'name': 'Type and Screen'},
-                {'name': 'CBC'},
-                {'name': 'BMP'}
-            ]
-        )
-
-        assert admission.diet == 'NPO after midnight'
-        assert len(admission.medications) == 1
-        assert len(admission.labs) == 3
 
 
 # =============================================================================

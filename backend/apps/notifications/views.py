@@ -58,7 +58,9 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
 
         if user.user_type not in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
             queryset = queryset.filter(
-                Q(patient__isnull=True) | Q(source_type=InboxItem.SourceType.DISCHARGE)
+                Q(patient__isnull=True)
+                | Q(source_type=InboxItem.SourceType.DISCHARGE)
+                | Q(source_type=InboxItem.SourceType.ADMISSION)
             )
 
         return queryset.select_related('patient__user')

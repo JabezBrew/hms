@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from apps.workflows.models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowTemplate, WorkflowType, WorkflowStatus, ClinicalNoteType
 )
 from apps.users.tests.factories import (
@@ -183,40 +183,6 @@ class WardRoundWorkflowFactory(factory.django.DjangoModelFactory):
     discharge_planning_needed = False
 
 
-class AdmissionWorkflowFactory(factory.django.DjangoModelFactory):
-    """Factory for AdmissionWorkflow model."""
-
-    class Meta:
-        model = AdmissionWorkflow
-
-    workflow = factory.SubFactory(
-        ClinicalWorkflowFactory,
-        workflow_type=WorkflowType.ADMISSION,
-        total_steps=5
-    )
-    patient_verified = True
-    emergency_contact_name = factory.Faker('name')
-    emergency_contact_relationship = 'Spouse'
-    emergency_contact_phone = factory.Faker('numerify', text='###-###-####')
-    ward_id = None
-    bed_id = None
-    admission_type = 'elective'
-    admission_source = 'Outpatient clinic'
-    admission_reason = factory.Faker('sentence')
-    chief_complaint = factory.Faker('sentence')
-    initial_diagnosis = factory.Faker('sentence')
-    relevant_history = factory.Faker('paragraph')
-    diet = 'Regular'
-    activity = 'Bed rest'
-    vitals_frequency = 'Q4H'
-    medications = factory.LazyFunction(list)
-    labs = factory.LazyFunction(list)
-    nursing_instructions = factory.Faker('paragraph')
-    admission_note = factory.Faker('paragraph')
-    expected_los = 3
-    attending_physician = factory.Faker('name')
-
-
 class DischargeWorkflowFactory(factory.django.DjangoModelFactory):
     """Factory for DischargeWorkflow model."""
 
@@ -287,13 +253,6 @@ class ConsultationTemplateFactory(WorkflowTemplateFactory):
     })
 
 
-class AdmissionTemplateFactory(WorkflowTemplateFactory):
-    """Factory for admission workflow templates."""
-
-    workflow_type = WorkflowType.ADMISSION
-    name = factory.Sequence(lambda n: f'Admission Template {n}')
-
-
 class DischargeTemplateFactory(WorkflowTemplateFactory):
     """Factory for discharge workflow templates."""
 
@@ -355,29 +314,6 @@ def create_ward_round_workflow(user, patient, admission_id=None, **kwargs):
     )
     ward_round_data = WardRoundWorkflow.objects.create(workflow=workflow)
     return workflow, ward_round_data
-
-
-def create_admission_workflow(user, patient, **kwargs):
-    """
-    Create an admission workflow.
-
-    Args:
-        user: User performing the admission
-        patient: Patient being admitted
-        **kwargs: Additional workflow attributes
-
-    Returns:
-        Tuple of (ClinicalWorkflow, AdmissionWorkflow)
-    """
-    workflow = ClinicalWorkflowFactory(
-        user=user,
-        patient=patient,
-        workflow_type=WorkflowType.ADMISSION,
-        total_steps=5,
-        **kwargs
-    )
-    admission_data = AdmissionWorkflow.objects.create(workflow=workflow)
-    return workflow, admission_data
 
 
 def create_discharge_workflow(user, patient, admission_id=None, **kwargs):

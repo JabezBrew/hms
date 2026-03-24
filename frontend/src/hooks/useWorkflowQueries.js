@@ -78,68 +78,6 @@ export function useWardRoundWorkflow() {
 }
 
 /**
- * Hook for Admission workflow
- */
-export function useAdmissionWorkflow() {
-  const queryClient = useQueryClient();
-
-  // Start admission
-  const startAdmission = useMutation({
-    mutationFn: async ({ patientId, initialData }) => {
-      return await apiClient.post('/workflows/admission/start/', {
-        patient_id: patientId,
-        initial_data: initialData || {},
-      });
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(workflowKeys.detail(data.workflow.id), data);
-      toast.success('Admission workflow started');
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to start admission');
-    },
-  });
-
-  // Update admission step
-  const updateAdmissionStep = useMutation({
-    mutationFn: async ({ workflowId, stepData }) => {
-      return await apiClient.patch(`/workflows/${workflowId}/admission/step/`, {
-        step_data: stepData,
-      });
-    },
-    onSuccess: (data, variables) => {
-      queryClient.setQueryData(workflowKeys.detail(variables.workflowId), data);
-      toast.success('Progress saved');
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to update step');
-    },
-  });
-
-  // Complete admission
-  const completeAdmission = useMutation({
-    mutationFn: async ({ workflowId, finalData }) => {
-      return await apiClient.post(`/workflows/${workflowId}/admission/complete/`, {
-        final_data: finalData || {},
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(workflowKeys.all);
-      toast.success('Admission completed');
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to complete admission');
-    },
-  });
-
-  return {
-    startAdmission,
-    updateAdmissionStep,
-    completeAdmission,
-  };
-}
-
-/**
  * Hook for Discharge workflow
  */
 export function useDischargeWorkflow() {

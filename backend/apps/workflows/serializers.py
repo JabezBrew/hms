@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowTemplate, ClinicalNoteType
 )
 from apps.core.security import ACTIVE_ADMISSION_STATUSES
@@ -418,99 +418,6 @@ class WardRoundWorkflowUpdateSerializer(serializers.Serializer):
 class WardRoundWorkflowCompleteSerializer(serializers.Serializer):
     """
     Serializer for completing ward round workflow
-    """
-    final_data = serializers.JSONField(required=False, default=dict)
-
-
-# ============================================
-# Admission Workflow Serializers
-# ============================================
-
-class AdmissionWorkflowSerializer(serializers.ModelSerializer):
-    """
-    Serializer for AdmissionWorkflow model
-    """
-    workflow = ClinicalWorkflowSerializer(read_only=True)
-
-    class Meta:
-        model = AdmissionWorkflow
-        fields = [
-            'id',
-            'workflow',
-            'patient_verified',
-            'emergency_contact_name',
-            'emergency_contact_relationship',
-            'emergency_contact_phone',
-            'ward_id',
-            'bed_id',
-            'admission_type',
-            'admission_source',
-            'admission_reason',
-            'chief_complaint',
-            'initial_diagnosis',
-            'relevant_history',
-            'diet',
-            'activity',
-            'vitals_frequency',
-            'medications',
-            'labs',
-            'nursing_instructions',
-            'admission_note',
-            'expected_los',
-            'attending_physician',
-        ]
-
-
-class AdmissionWorkflowCreateSerializer(serializers.Serializer):
-    """
-    Serializer for creating a new admission workflow
-    """
-    patient_id = serializers.UUIDField(required=True)
-    initial_data = serializers.JSONField(required=False, default=dict)
-
-    def validate_patient_id(self, value):
-        """Validate patient exists"""
-        try:
-            PatientProfile.objects.get(id=value)
-        except PatientProfile.DoesNotExist:
-            raise serializers.ValidationError("Patient not found")
-        return value
-
-
-class AdmissionWorkflowUpdateSerializer(serializers.Serializer):
-    """
-    Serializer for updating admission workflow step data
-    """
-    step_data = serializers.JSONField(required=True)
-    next_step = serializers.IntegerField(required=False)
-
-    # Optional admission-specific fields
-    patient_verified = serializers.BooleanField(required=False)
-    emergency_contact_name = serializers.CharField(required=False, allow_blank=True)
-    emergency_contact_relationship = serializers.CharField(required=False, allow_blank=True)
-    emergency_contact_phone = serializers.CharField(required=False, allow_blank=True)
-    ward_id = serializers.UUIDField(required=False, allow_null=True)
-    bed_id = serializers.UUIDField(required=False, allow_null=True)
-    admission_type = serializers.CharField(required=False, allow_blank=True)
-    admission_source = serializers.CharField(required=False, allow_blank=True)
-    admission_reason = serializers.CharField(required=False, allow_blank=True)
-    chief_complaint = serializers.CharField(required=False, allow_blank=True)
-    initial_diagnosis = serializers.CharField(required=False, allow_blank=True)
-    relevant_history = serializers.CharField(required=False, allow_blank=True)
-    diet = serializers.CharField(required=False, allow_blank=True)
-    activity = serializers.CharField(required=False, allow_blank=True)
-    vitals_frequency = serializers.CharField(required=False, allow_blank=True)
-    medications = serializers.JSONField(required=False)
-    labs = serializers.JSONField(required=False)
-    nursing_instructions = serializers.CharField(required=False, allow_blank=True)
-    admission_note = serializers.CharField(required=False, allow_blank=True)
-    expected_los = serializers.IntegerField(required=False, allow_null=True)
-    attending_physician = serializers.CharField(required=False, allow_blank=True)
-
-
-class AdmissionWorkflowCompleteSerializer(serializers.Serializer):
-    """
-    Serializer for completing admission workflow
     """
     final_data = serializers.JSONField(required=False, default=dict)
 

@@ -11,6 +11,7 @@ class InboxItem(models.Model):
 
     class SourceType(models.TextChoices):
         REFERRAL = 'referral', 'Referral'
+        ADMISSION = 'admission', 'Admission'
         NURSING_ALERT = 'nursing_alert', 'Nursing Alert'
         NURSING_TASK = 'nursing_task', 'Nursing Task'
         DRUG_SAFETY = 'drug_safety', 'Drug Safety'

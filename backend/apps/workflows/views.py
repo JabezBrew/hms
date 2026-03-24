@@ -9,7 +9,7 @@ import logging
 
 from .models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowTemplate, WorkflowType
 )
 from .serializers import (
@@ -26,10 +26,6 @@ from .serializers import (
     WardRoundWorkflowCreateSerializer,
     WardRoundWorkflowUpdateSerializer,
     WardRoundWorkflowCompleteSerializer,
-    AdmissionWorkflowSerializer,
-    AdmissionWorkflowCreateSerializer,
-    AdmissionWorkflowUpdateSerializer,
-    AdmissionWorkflowCompleteSerializer,
     DischargeWorkflowSerializer,
     DischargeWorkflowCreateSerializer,
     DischargeWorkflowUpdateSerializer,
@@ -39,7 +35,7 @@ from .serializers import (
 )
 from .engines import (
     ConsultationEngine, ClinicalNoteEngine,
-    WardRoundEngine, AdmissionEngine, DischargeEngine
+    WardRoundEngine, DischargeEngine
 )
 from apps.users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination
@@ -615,127 +611,6 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             logger.error(f"Error completing ward round: {str(e)}")
             return Response(
                 {'error': 'Failed to complete ward round. Please try again.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    # ====================================
-    # Admission Workflow Actions
-    # ====================================
-
-    @action(detail=False, methods=['post'], url_path='admission/start')
-    def start_admission(self, request):
-        """
-        Start a new admission workflow
-
-        POST /api/workflows/admission/start/
-        Body: {
-            "patient_id": "uuid",
-            "initial_data": {}  // optional
-        }
-        """
-        serializer = AdmissionWorkflowCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            _require_patient_access(request, serializer.validated_data['patient_id'])
-            result = AdmissionEngine.start(
-                user=request.user,
-                patient_id=serializer.validated_data['patient_id'],
-                initial_data=serializer.validated_data.get('initial_data', {}),
-            )
-
-            workflow_serializer = ClinicalWorkflowSerializer(result['workflow'])
-            admission_serializer = AdmissionWorkflowSerializer(result['admission_data'])
-
-            return Response({
-                'workflow': workflow_serializer.data,
-                'admission_data': admission_serializer.data,
-            }, status=status.HTTP_201_CREATED)
-
-        except ValueError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            logger.error(f"Error starting admission: {str(e)}")
-            return Response(
-                {'error': 'Failed to start admission. Please try again.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @action(detail=True, methods=['patch'], url_path='admission/step')
-    def update_admission_step(self, request, pk=None):
-        """
-        Update admission workflow step
-
-        PATCH /api/workflows/{id}/admission/step/
-        """
-        workflow = self.get_object()
-
-        if workflow.workflow_type != WorkflowType.ADMISSION:
-            return Response(
-                {'error': 'Invalid workflow type'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = AdmissionWorkflowUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            step_data = serializer.validated_data.get('step_data', {})
-
-            # Update workflow
-            updated_workflow = AdmissionEngine.update_step(
-                workflow=workflow,
-                step_number=workflow.current_step,
-                step_data=step_data,
-            )
-
-            workflow_serializer = ClinicalWorkflowSerializer(updated_workflow)
-
-            return Response({
-                'workflow': workflow_serializer.data,
-                'message': f'Step {workflow.current_step} updated successfully'
-            })
-
-        except Exception as e:
-            logger.error(f"Error updating admission step: {str(e)}")
-            return Response(
-                {'error': 'Failed to update step. Please try again.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @action(detail=True, methods=['post'], url_path='admission/complete')
-    def complete_admission(self, request, pk=None):
-        """
-        Complete admission workflow
-
-        POST /api/workflows/{id}/admission/complete/
-        """
-        workflow = self.get_object()
-
-        if workflow.workflow_type != WorkflowType.ADMISSION:
-            return Response(
-                {'error': 'Invalid workflow type'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = AdmissionWorkflowCompleteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            result = AdmissionEngine.complete(
-                workflow=workflow,
-                final_data=serializer.validated_data.get('final_data', {}),
-            )
-
-            return Response(result)
-
-        except Exception as e:
-            logger.error(f"Error completing admission: {str(e)}")
-            return Response(
-                {'error': 'Failed to complete admission. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

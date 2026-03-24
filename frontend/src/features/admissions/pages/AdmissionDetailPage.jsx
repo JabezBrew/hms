@@ -45,7 +45,7 @@ export default function AdmissionDetailPage() {
       setError(null);
       const data = await admissionsApi.getAdmission(admissionId);
       setAdmission(data);
-    } catch (err) {
+    } catch {
       setError('Failed to load admission details. Please try again.');
     } finally {
       setLoading(false);
@@ -153,6 +153,15 @@ export default function AdmissionDetailPage() {
               <ChevronLeft className="h-4 w-4 mr-2" />
               {backLabel}
             </Button>
+            {admission.admission_case_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/admissions/cases/${admission.admission_case_id}`)}
+              >
+                Admission Case
+              </Button>
+            )}
             {['admitted', 'pending_discharge'].includes(admission.status) && (
               <Button
                 size="sm"

@@ -129,6 +129,7 @@ INSTALLED_APPS = [
     'apps.fhir_client',
     'apps.appointments',
     'apps.patients',
+    'apps.admissions.apps.AdmissionsConfig',
     'apps.wards',
     'apps.encounters.apps.EncountersConfig',  # Extracted from wards for cleaner architecture
     'apps.inventory',

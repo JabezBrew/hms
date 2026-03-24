@@ -203,8 +203,7 @@ class Ward(models.Model):
         """
         Calculate the number of available beds in the ward.
         """
-        occupied_beds = self.beds.filter(status='occupied').count()
-        return self.total_beds - occupied_beds
+        return self.beds.filter(status='available').count()
 
     @property
     def occupancy_rate(self):

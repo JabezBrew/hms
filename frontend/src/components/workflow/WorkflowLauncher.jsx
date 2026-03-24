@@ -1,5 +1,4 @@
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,6 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   useWardRoundWorkflow,
-  useAdmissionWorkflow,
   useDischargeWorkflow,
 } from '@/features/workflows/hooks';
 
@@ -33,7 +31,7 @@ import {
  * @param {Object} props
  * @param {Object} props.patient - Patient data (required for ward-round and discharge)
  * @param {Object} props.admission - Admission data (required for ward-round and discharge)
- * @param {string} props.workflowType - Specific workflow type: 'ward-round', 'admission', 'discharge'
+ * @param {string} props.workflowType - Specific workflow type: 'ward-round', 'discharge'
  * @param {string} props.variant - Button variant (default: 'default')
  * @param {string} props.size - Button size (default: 'default')
  * @param {Function} props.onWorkflowStart - Callback when workflow starts with workflow data
@@ -54,7 +52,6 @@ export default function WorkflowLauncher({
   const [selectedWorkflow, setSelectedWorkflow] = useState(workflowType || '');
 
   const { startWardRound } = useWardRoundWorkflow();
-  const { startAdmission } = useAdmissionWorkflow();
   const { startDischarge } = useDischargeWorkflow();
 
   const workflows = [
@@ -65,14 +62,6 @@ export default function WorkflowLauncher({
       icon: Stethoscope,
       color: 'amber',
       requiresAdmission: true,
-    },
-    {
-      type: 'admission',
-      name: 'Patient Admission',
-      description: 'Complete admission workflow with history, examination, and orders',
-      icon: UserPlus,
-      color: 'emerald',
-      requiresAdmission: false,
     },
     {
       type: 'discharge',
@@ -102,15 +91,6 @@ export default function WorkflowLauncher({
           result = await startWardRound.mutateAsync({
             patientId: patient.id,
             admissionId: admission.id,
-          });
-          break;
-
-        case 'admission':
-          if (!patient?.id) {
-            throw new Error('Patient required for admission');
-          }
-          result = await startAdmission.mutateAsync({
-            patientId: patient.id,
           });
           break;
 
@@ -148,7 +128,6 @@ export default function WorkflowLauncher({
         onClick={handleStartWorkflow}
         disabled={
           startWardRound.isPending ||
-          startAdmission.isPending ||
           startDischarge.isPending
         }
       >
@@ -246,7 +225,6 @@ export default function WorkflowLauncher({
               disabled={
                 !selectedWorkflow ||
                 startWardRound.isPending ||
-                startAdmission.isPending ||
                 startDischarge.isPending
               }
             >
@@ -254,7 +232,6 @@ export default function WorkflowLauncher({
                 <selectedWorkflowConfig.icon className="h-4 w-4 mr-2" />
               )}
               {startWardRound.isPending ||
-              startAdmission.isPending ||
               startDischarge.isPending
                 ? 'Starting...'
                 : `Start ${selectedWorkflowConfig?.name || 'Workflow'}`}

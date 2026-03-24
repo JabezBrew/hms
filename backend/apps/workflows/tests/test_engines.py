@@ -4,7 +4,6 @@ Workflow engines tests for workflows app.
 Tests for:
 - ConsultationEngine
 - WardRoundEngine
-- AdmissionEngine
 - DischargeEngine
 - ClinicalNoteEngine
 - BaseWorkflowEngine
@@ -17,12 +16,12 @@ from django.db import transaction
 
 from apps.workflows.models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowStatus, WorkflowType, ClinicalNoteType
 )
 from apps.workflows.engines import (
     BaseWorkflowEngine, ConsultationEngine, WardRoundEngine,
-    AdmissionEngine, DischargeEngine, ClinicalNoteEngine
+    DischargeEngine, ClinicalNoteEngine
 )
 from apps.discharge.models import DischargeCase
 from apps.clinical_notes.models import Prescription
@@ -33,7 +32,7 @@ from apps.wards.tests.factories import AdmissionFactory
 from apps.encounters.tests.factories import EncounterFactory
 from .factories import (
     ClinicalWorkflowFactory, ConsultationWorkflowFactory,
-    WardRoundWorkflowFactory, AdmissionWorkflowFactory,
+    WardRoundWorkflowFactory,
     DischargeWorkflowFactory
 )
 
@@ -301,76 +300,6 @@ class TestWardRoundEngine:
 
         ward_round.refresh_from_db()
         assert ward_round.overnight_events == 'Patient stable overnight'
-
-
-# =============================================================================
-# AdmissionEngine Tests
-# =============================================================================
-
-@pytest.mark.tier1
-class TestAdmissionEngine:
-    """Tests for AdmissionEngine."""
-
-    def test_start_admission(self, db):
-        """Test starting an admission workflow."""
-        user = DoctorUserFactory()
-        patient = PatientProfileFactory()
-
-        result = AdmissionEngine.start(
-            user=user,
-            patient_id=patient.id
-        )
-
-        assert 'workflow' in result
-        assert 'admission_data' in result
-        assert result['workflow'].workflow_type == WorkflowType.ADMISSION
-        assert result['workflow'].status == WorkflowStatus.IN_PROGRESS
-
-    def test_start_admission_invalid_patient(self, db):
-        """Test starting admission with invalid patient raises error."""
-        user = DoctorUserFactory()
-        import uuid
-
-        with pytest.raises(ValueError) as exc_info:
-            AdmissionEngine.start(
-                user=user,
-                patient_id=uuid.uuid4()
-            )
-
-        assert 'not found' in str(exc_info.value)
-
-    def test_start_admission_with_initial_data(self, db):
-        """Test starting admission with initial data."""
-        user = DoctorUserFactory()
-        patient = PatientProfileFactory()
-
-        result = AdmissionEngine.start(
-            user=user,
-            patient_id=patient.id,
-            initial_data={'source': 'Emergency Department'}
-        )
-
-        assert result['workflow'].context_data['source'] == 'Emergency Department'
-
-    def test_update_admission_step(self, db):
-        """Test updating admission step."""
-        admission = AdmissionWorkflowFactory()
-        workflow = admission.workflow
-        workflow.status = WorkflowStatus.IN_PROGRESS
-        workflow.save()
-
-        AdmissionEngine.update_step(
-            workflow=workflow,
-            step_number=1,
-            step_data={
-                'patient_verified': True,
-                'emergency_contact_name': 'Jane Doe'
-            }
-        )
-
-        admission.refresh_from_db()
-        assert admission.patient_verified is True
-        assert admission.emergency_contact_name == 'Jane Doe'
 
 
 # =============================================================================
@@ -647,17 +576,6 @@ class TestEngineValidation:
                 patient_id=None
             )
 
-    def test_admission_requires_patient(self, db):
-        """Test admission requires a valid patient."""
-        user = DoctorUserFactory()
-
-        with pytest.raises(ValueError):
-            AdmissionEngine.start(
-                user=user,
-                patient_id=None
-            )
-
-
 # =============================================================================
 # Engine Integration Tests
 # =============================================================================
@@ -724,44 +642,6 @@ class TestEngineIntegration:
         workflow.refresh_from_db()
         assert workflow.current_step == 5
         assert len(workflow.steps_completed) == 5
-
-    def test_admission_step_by_step(self, db):
-        """Test admission workflow step progression."""
-        user = DoctorUserFactory()
-        patient = PatientProfileFactory()
-
-        # Start workflow
-        result = AdmissionEngine.start(
-            user=user,
-            patient_id=patient.id
-        )
-        workflow = result['workflow']
-
-        # Step 1: Patient Verification
-        AdmissionEngine.update_step(
-            workflow=workflow,
-            step_number=1,
-            step_data={
-                'patient_verified': True,
-                'emergency_contact_name': 'John Doe',
-                'emergency_contact_phone': '555-1234'
-            }
-        )
-
-        # Step 2: Bed Assignment (simulate)
-        AdmissionEngine.update_step(
-            workflow=workflow,
-            step_number=2,
-            step_data={
-                'admission_type': 'elective',
-                'admission_source': 'Outpatient'
-            }
-        )
-
-        workflow.refresh_from_db()
-        assert workflow.current_step == 3
-        assert 1 in workflow.steps_completed
-        assert 2 in workflow.steps_completed
 
     def test_clinical_note_workflow_progression(self, db):
         """Test clinical note workflow progression."""

@@ -231,10 +231,12 @@ class AdmissionSerializer(serializers.ModelSerializer):
     admitting_doctor_details = PractitionerProfileSerializer(source='admitting_doctor', read_only=True)
     length_of_stay = serializers.ReadOnlyField()
     total_cost = serializers.ReadOnlyField()
+    admission_case_id = serializers.UUIDField(source='admission_case.id', read_only=True, allow_null=True)
 
     class Meta:
         model = Admission
-        fields = ['id', 'patient', 'patient_details', 'bed', 'bed_details', 
+        fields = ['id', 'patient', 'patient_details', 'bed', 'bed_details',
+                  'admission_case_id',
                   'fhir_encounter_id', 'admission_date', 'expected_discharge_date', 
                   'actual_discharge_date', 'status', 'admission_type', 
                   'admission_notes', 'discharge_notes', 'daily_rate', 
@@ -249,12 +251,18 @@ class AdmissionCreateSerializer(serializers.ModelSerializer):
     Serializer for creating a new Admission.
     """
     ed_encounter_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    requested_ward = serializers.PrimaryKeyRelatedField(
+        queryset=Ward.objects.select_related('department'),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Admission
         fields = ['id', 'patient', 'bed', 'fhir_encounter_id', 'admission_date', 
                   'expected_discharge_date', 'admission_type', 'admission_notes', 
-                  'admitting_doctor', 'ed_encounter_id']
+                  'admitting_doctor', 'ed_encounter_id', 'requested_ward']
         read_only_fields = ['id']
 
     def validate(self, data):
@@ -262,6 +270,7 @@ class AdmissionCreateSerializer(serializers.ModelSerializer):
         Validate that the bed is available and matches patient gender restrictions.
         """
         ed_encounter_id = data.pop('ed_encounter_id', None)
+        requested_ward = data.get('requested_ward')
         bed = data.get('bed')
         patient = data.get('patient')
 
@@ -286,6 +295,10 @@ class AdmissionCreateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'bed': f"Bed {bed.bed_number} is in a female-only section. Patient gender: {patient.user.get_gender_display()}"
                     })
+            if requested_ward and bed.ward_id != requested_ward.id:
+                raise serializers.ValidationError({
+                    'requested_ward': 'Requested ward does not match the selected bed ward.'
+                })
 
         admission_type = data.get('admission_type') or 'elective'
         if admission_type == 'emergency':
@@ -614,11 +627,12 @@ class AdmissionListSerializer(serializers.ModelSerializer):
     ward_name = serializers.SerializerMethodField()
     bed_number = serializers.SerializerMethodField()
     admitting_doctor_name = serializers.SerializerMethodField()
+    admission_case_id = serializers.UUIDField(source='admission_case.id', read_only=True, allow_null=True)
 
     class Meta:
         model = Admission
         fields = [
-            'id', 'patient', 'patient_name', 'patient_mrn',
+            'id', 'patient', 'patient_name', 'patient_mrn', 'admission_case_id',
             'ward_name', 'bed_number', 'bed',
             'admission_date', 'expected_discharge_date', 'status',
             'admission_type', 'admitting_doctor_name', 'is_billed'

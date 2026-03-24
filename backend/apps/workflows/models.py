@@ -12,7 +12,6 @@ class WorkflowType(models.TextChoices):
     """Workflow type choices"""
     CONSULTATION = 'consultation', 'Consultation'
     WARD_ROUND = 'ward_round', 'Ward Round'
-    ADMISSION = 'admission', 'Admission'
     DISCHARGE = 'discharge', 'Discharge'
     EMERGENCY = 'emergency', 'Emergency Intake'
     CLINICAL_NOTE = 'clinical_note', 'Clinical Note'
@@ -285,56 +284,6 @@ class WardRoundWorkflow(models.Model):
     def __str__(self):
         patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
         return f"Ward Round - {patient_name}"
-
-
-class AdmissionWorkflow(models.Model):
-    """
-    Specific model for admission workflow data
-    Stores data for patient admissions
-    """
-    workflow = models.OneToOneField(
-        ClinicalWorkflow,
-        on_delete=models.CASCADE,
-        related_name='admission_data'
-    )
-
-    # Step 1: Patient Info
-    patient_verified = models.BooleanField(default=False)
-    emergency_contact_name = models.CharField(max_length=255, blank=True)
-    emergency_contact_relationship = models.CharField(max_length=100, blank=True)
-    emergency_contact_phone = models.CharField(max_length=50, blank=True)
-
-    # Step 2: Bed Assignment
-    ward_id = models.UUIDField(null=True, blank=True)
-    bed_id = models.UUIDField(null=True, blank=True)
-    admission_type = models.CharField(max_length=50, blank=True)
-    admission_source = models.CharField(max_length=100, blank=True)
-
-    # Step 3: Clinical Info
-    admission_reason = models.TextField(blank=True)
-    chief_complaint = models.TextField(blank=True)
-    initial_diagnosis = models.TextField(blank=True)
-    relevant_history = models.TextField(blank=True)
-
-    # Step 4: Orders
-    diet = models.CharField(max_length=100, blank=True)
-    activity = models.CharField(max_length=100, blank=True)
-    vitals_frequency = models.CharField(max_length=50, blank=True)
-    medications = models.JSONField(default=list, blank=True)
-    labs = models.JSONField(default=list, blank=True)
-    nursing_instructions = models.TextField(blank=True)
-
-    # Step 5: Documentation
-    admission_note = models.TextField(blank=True)
-    expected_los = models.IntegerField(null=True, blank=True, verbose_name='Expected Length of Stay')
-    attending_physician = models.CharField(max_length=255, blank=True)
-
-    class Meta:
-        db_table = 'workflows_admission'
-
-    def __str__(self):
-        patient_name = self.workflow.patient.user.get_full_name() if self.workflow.patient else "Unknown"
-        return f"Admission - {patient_name}"
 
 
 class DischargeWorkflow(models.Model):
