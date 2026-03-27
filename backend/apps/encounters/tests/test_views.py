@@ -210,7 +210,9 @@ class TestEncounterListView:
         user = UserFactory(first_name='John', last_name='Doe')
         patient = PatientProfileFactory(user=user)
         EncounterFactory(patient=patient)
-        EncounterFactory()  # Different patient
+        other_user = UserFactory(first_name='Jane', last_name='Smith')
+        other_patient = PatientProfileFactory(user=other_user)
+        EncounterFactory(patient=other_patient)
 
         response = api_client.get('/api/encounters/?search=John')
 
@@ -464,7 +466,7 @@ class TestEncounterDischargeAction:
     """Tests for POST /api/encounters/{id}/discharge/"""
 
     def test_discharge_inpatient(self, api_client):
-        """Test discharging an inpatient."""
+        """Test submitting medical discharge for downstream clearance."""
         patient = PatientProfileFactory()
         bed = BedFactory()
         admission = AdmissionFactory(patient=patient, bed=bed, status='admitted')
@@ -486,9 +488,10 @@ class TestEncounterDischargeAction:
 
         assert response.status_code == status.HTTP_200_OK
         encounter.refresh_from_db()
-        assert encounter.status == 'finished'
+        assert encounter.status == 'in-progress'
         admission.refresh_from_db()
-        assert admission.status == 'discharged'
+        assert admission.status == 'pending_discharge'
+        assert 'discharge_case_id' in response.data
 
     def test_discharge_outpatient_returns_error(self, api_client):
         """Test discharging outpatient returns error."""

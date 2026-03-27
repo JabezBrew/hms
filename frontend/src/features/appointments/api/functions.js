@@ -10,7 +10,4 @@ export const updateAppointmentStatus = (id, status) => appointmentsApi.updateApp
 export const checkInAppointment = (id) => appointmentsApi.checkInAppointment(id)
 export const cancelAppointment = (id, reason) => appointmentsApi.cancelAppointment(id, reason)
 export const fetchAppointmentTypes = () => appointmentsApi.getAppointmentTypes()
-export const createScheduleTemplate = (data) => appointmentsApi.createScheduleTemplate(data)
-export const updateScheduleTemplate = (id, data) => appointmentsApi.updateScheduleTemplate(id, data)
-export const generateSchedule = (id, data) => appointmentsApi.generateSchedule(id, data)
 export const previewSlots = (data) => appointmentsApi.previewSlots(data)

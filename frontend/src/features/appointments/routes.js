@@ -7,7 +7,6 @@ const AppointmentCreatePage = lazy(() => import('./pages/AppointmentCreatePage')
 const AppointmentDetailPage = lazy(() => import('./pages/AppointmentDetailPage'))
 const AppointmentEditPage = lazy(() => import('./pages/AppointmentEditPage'))
 const PractitionerAvailabilityPage = lazy(() => import('./pages/PractitionerAvailabilityPage'))
-const PractitionerAvailabilityDetailPage = lazy(() => import('./pages/PractitionerAvailabilityDetailPage'))
 const ScheduleSlotsPage = lazy(() => import('./pages/ScheduleSlotsPage'))
 
 export const appointmentRoutes = [
@@ -59,17 +58,6 @@ export const appointmentRoutes = [
     layout: ROUTE_LAYOUTS.APP,
     title: 'Practitioner Availability | Hospital Management System',
     breadcrumbs: [{ label: 'Availability', path: '/practitioner-availability' }],
-  },
-  {
-    path: '/practitioner-availability/:id',
-    component: PractitionerAvailabilityDetailPage,
-    roles: ROLE_GROUPS.PRACTITIONER_AVAILABILITY,
-    layout: ROUTE_LAYOUTS.APP,
-    title: 'Schedule Template | Hospital Management System',
-    breadcrumbs: [
-      { label: 'Availability', path: '/practitioner-availability' },
-      { label: 'Schedule Template', path: '/practitioner-availability/:id' },
-    ],
   },
   {
     path: '/schedules/:id/slots',
