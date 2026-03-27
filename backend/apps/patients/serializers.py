@@ -576,7 +576,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         at_datetime=encounter.start_time,
                     )
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )
@@ -606,7 +606,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         at_datetime=encounter.start_time,
                     )
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )
@@ -692,7 +692,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     admission.save(update_fields=['fhir_encounter_id'])
 
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )

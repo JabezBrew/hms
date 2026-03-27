@@ -420,7 +420,7 @@ class TestPatientNoteViewSet:
 class TestPatientViewSet:
     """Tests for PatientViewSet (register, search, get, update, delete)."""
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_register_patient(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test patient registration."""
@@ -478,7 +478,7 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_register_patient_as_receptionist(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test that receptionists can register patients."""

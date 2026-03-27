@@ -677,7 +677,7 @@ def reserve_bed_for_case(*, case: AdmissionCase, actor, bed, expires_at=None):
 
 def _sync_encounter_to_fhir_async(encounter):
     try:
-        from apps.wards.tasks import sync_encounter_to_fhir
+        from apps.encounters.tasks import sync_encounter_to_fhir
 
         sync_encounter_to_fhir.delay(str(encounter.id))
     except Exception:

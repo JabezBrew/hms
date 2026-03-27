@@ -366,7 +366,7 @@ class TestPatientRegistrationSerializer:
         serializer = PatientRegistrationSerializer(data=data, context=request_context)
         assert serializer.is_valid(), serializer.errors
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     @override_settings(REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False)
     def test_outpatient_registration_without_clinic_creates_department_scoped_encounter(
@@ -534,7 +534,7 @@ class TestPatientRegistrationSerializer:
         assert not serializer.is_valid()
         assert 'phone_number' in serializer.errors
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_create_patient_with_fhir(self, mock_create_task, mock_sync_encounter_task, db, request_context, django_capture_on_commit_callbacks):
         """Test creating a patient queues FHIR resource creation."""
