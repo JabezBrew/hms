@@ -560,6 +560,26 @@ class TestPatientViewSet:
         assert 'results' in response.data
         assert 'total' in response.data
 
+    def test_search_patients_by_full_name_tokens(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(
+                first_name='Smoke',
+                last_name='Patient',
+                primary_facility=facility,
+            ),
+            medical_record_number='MRN-SMOKE-001',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'query': 'Smoke Patient'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert str(patient.id) in ids
+
     def test_search_supports_ordering_by_name(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility

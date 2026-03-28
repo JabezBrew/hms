@@ -66,6 +66,8 @@ docs/
 # Lighthouse CI (local artifacts)
 .lighthouseci/
 frontend/.lighthouseci/
+frontend/playwright-report/
+frontend/test-results/
 
 # Logs
 logs/

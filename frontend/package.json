@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "preview:ci": "serve -s dist -l 4173",
+    "e2e": "playwright test",
+    "e2e:list": "playwright test --list",
     "perf:bundle-budget": "node ./scripts/check-bundle-budget.mjs",
     "perf:lhci": "npx -y @lhci/cli@0.13.x autorun --config=.lighthouserc.json",
     "perf:ci": "npm run build && npm run perf:bundle-budget",
@@ -72,6 +74,7 @@
   "devDependencies": {
     "@eslint/js": "^9.21.0",
     "@faker-js/faker": "^8.3.1",
+    "@playwright/test": "^1.58.2",
     "@testing-library/dom": "^9.3.3",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^14.1.2",

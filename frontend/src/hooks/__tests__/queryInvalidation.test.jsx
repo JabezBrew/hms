@@ -2,8 +2,10 @@ import { QueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { chartKeys, invalidateChartAssignmentMutationQueries, invalidateChartEntryMutationQueries } from '@/hooks/useChartQueries';
+import { clinicalNotesKeys, invalidateClinicalNoteMutationQueries } from '@/hooks/useClinicalNotesQueries';
 import { invalidateEncounterMutationQueries } from '@/features/encounters/hooks/useEncounterQueries';
 import { invalidateOperationalDoctorDashboardQueries } from '@/hooks/useDashboardQueries';
+import { invalidatePrescriptionMutationQueries, prescriptionKeys } from '@/hooks/usePrescriptionMutations';
 import { invalidatePatientTimelineQueries, timelineKeys } from '@/hooks/useTimelineQueries';
 import { invalidateVisitMutationQueries, visitKeys } from '@/hooks/useVisitQueries';
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries';
@@ -173,5 +175,71 @@ describe('targeted query invalidation helpers', () => {
         predicate({ queryKey: chartKeys.entryList({ assignment: 'assignment-2' }) }),
       ),
     ).toBe(false);
+  });
+
+  it('invalidates clinical note entry, encounter list, and patient timeline together', async () => {
+    await invalidateClinicalNoteMutationQueries(queryClient, {
+      entryId: 'note-1',
+      encounterId: 'enc-1',
+      patientId: 'patient-1',
+    });
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: clinicalNotesKeys.entries(),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: clinicalNotesKeys.entry('note-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: clinicalNotesKeys.entriesByEncounter('enc-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: timelineKeys.list('patient-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: timelineKeys.stats('patient-1'),
+    });
+  });
+
+  it('invalidates patient-scoped prescription lists, detail, and timeline together', async () => {
+    await invalidatePrescriptionMutationQueries(queryClient, {
+      prescriptionId: 'rx-1',
+      patientId: 'patient-1',
+    });
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.detail('rx-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.list('patient-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.active('patient-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: timelineKeys.list('patient-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: timelineKeys.stats('patient-1'),
+    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.all,
+    });
+  });
+
+  it('falls back to broad prescription invalidation when the patient scope is unknown', async () => {
+    await invalidatePrescriptionMutationQueries(queryClient, {
+      prescriptionId: 'rx-1',
+    });
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.detail('rx-1'),
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: prescriptionKeys.all,
+    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
+      queryKey: timelineKeys.list('patient-1'),
+    });
   });
 });

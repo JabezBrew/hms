@@ -81,6 +81,24 @@ def _build_operational_active_encounter_q(start_of_day, end_of_day):
     return outpatient_active | non_outpatient_active
 
 
+def _build_patient_text_query(query):
+    normalized_query = " ".join(str(query or "").split())
+    if not normalized_query:
+        return Q()
+
+    query_terms = normalized_query.split(" ")
+    name_query = None
+    for term in query_terms:
+        term_query = Q(user__first_name__icontains=term) | Q(user__last_name__icontains=term)
+        name_query = term_query if name_query is None else name_query & term_query
+
+    return (
+        name_query
+        | Q(medical_record_number__icontains=normalized_query)
+        | Q(nhis_id__icontains=normalized_query)
+    )
+
+
 def _build_safe_patient_search_summary(
     *,
     query=None,
@@ -729,12 +747,7 @@ class PatientViewSet(viewsets.ViewSet):
 
             # Filter by text query (Name, MRN, NHIS)
             if query:
-                local_patients_qs = local_patients_qs.filter(
-                    Q(user__first_name__icontains=query) |
-                    Q(user__last_name__icontains=query) |
-                    Q(medical_record_number__icontains=query) |
-                    Q(nhis_id__icontains=query)
-                )
+                local_patients_qs = local_patients_qs.filter(_build_patient_text_query(query))
 
             if my_patients:
                 my_patients_exists = UserPatientList.objects.filter(
