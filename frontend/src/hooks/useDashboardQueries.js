@@ -3,6 +3,7 @@ import { dashboardsApi } from '@/features/dashboards/api';
 import { useAuth } from '@/lib/auth';
 import { useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks/useDoctorDashboardLiveUpdates';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { hasQueryPrefix, invalidateQueriesMatching } from '@/shared/lib/queryInvalidation';
 
 // Query keys
 const dashboardKeyFactory = createKeyFactory('dashboards');
@@ -21,6 +22,17 @@ export const dashboardKeys = {
   myWork: (filters) => keyWith('dashboards', 'my-work', { filters }),
   clinic: (filters) => keyWith('dashboards', 'clinic', { filters }),
 };
+
+export function invalidateOperationalDoctorDashboardQueries(queryClient) {
+  return invalidateQueriesMatching(queryClient, (query) => {
+    const { queryKey } = query;
+
+    return (
+      hasQueryPrefix(queryKey, ['dashboards', 'my-work']) ||
+      hasQueryPrefix(queryKey, ['dashboards', 'clinic'])
+    );
+  });
+}
 
 // Default polling interval (30 seconds)
 const DEFAULT_REFETCH_INTERVAL = 30000;

@@ -11,6 +11,12 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { emitOnboardingEvent } from '@/features/onboarding';
+import {
+  hasQueryPrefix,
+  invalidateQueriesMatching,
+  invalidateQueryKeys,
+} from '@/shared/lib/queryInvalidation';
+import { invalidatePatientTimelineQueries } from '@/hooks/useTimelineQueries';
 
 // =============================================================================
 // Query Keys
@@ -40,6 +46,174 @@ export const chartKeys = {
   entryTrends: (assignmentId, fieldKey) => keyWith('charts', 'entries', 'trends', assignmentId, fieldKey),
   entriesByPatient: (patientId) => keyWith('charts', 'entries', 'patient', patientId),
 };
+
+function normalizeIdentifier(value) {
+  if (!value) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.id ?? value.uuid ?? null;
+  }
+  return null;
+}
+
+function getCachedAssignment(queryClient, assignmentId) {
+  if (!assignmentId) return null;
+  return queryClient.getQueryData(chartKeys.assignmentDetail(assignmentId));
+}
+
+function getCachedEntry(queryClient, entryId) {
+  if (!entryId) return null;
+  return queryClient.getQueryData(chartKeys.entryDetail(entryId));
+}
+
+function resolveChartAssignmentId(queryClient, { assignmentId, entryId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (assignmentId) {
+    candidates.push(assignmentId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(source.assignment, source.assignmentId, source.assignment_id);
+    }
+  }
+
+  if (entryId) {
+    const cachedEntry = getCachedEntry(queryClient, entryId);
+    if (cachedEntry) {
+      candidates.push(
+        cachedEntry.assignment,
+        cachedEntry.assignmentId,
+        cachedEntry.assignment_id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function resolveChartPatientId(queryClient, { patientId, assignmentId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (patientId) {
+    candidates.push(patientId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(
+        source.patient,
+        source.patientId,
+        source.patient_id,
+        source.patient?.id,
+      );
+    }
+  }
+
+  if (assignmentId) {
+    const cachedAssignment = getCachedAssignment(queryClient, assignmentId);
+    if (cachedAssignment) {
+      candidates.push(
+        cachedAssignment.patient,
+        cachedAssignment.patientId,
+        cachedAssignment.patient_id,
+        cachedAssignment.patient?.id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+export function invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId } = {}) {
+  const tasks = [];
+
+  if (assignmentId) {
+    tasks.push(invalidateQueryKeys(queryClient, [chartKeys.assignmentDetail(assignmentId)]));
+  }
+
+  if (patientId) {
+    tasks.push(invalidateQueriesMatching(queryClient, (query) => {
+      const { queryKey } = query;
+
+      if (!Array.isArray(queryKey)) return false;
+
+      if (hasQueryPrefix(queryKey, ['charts', 'assignments', 'list'])) {
+        return queryKey[3] === patientId;
+      }
+
+      if (hasQueryPrefix(queryKey, ['charts', 'assignments', 'patient'])) {
+        return queryKey[3] === patientId;
+      }
+
+      return false;
+    }));
+  } else {
+    tasks.push(queryClient.invalidateQueries({ queryKey: chartKeys.assignments() }));
+  }
+
+  return Promise.all(tasks);
+}
+
+export function invalidateChartEntryMutationQueries(
+  queryClient,
+  { assignmentId, patientId, entryId } = {},
+) {
+  const tasks = [invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId })];
+
+  if (entryId) {
+    tasks.push(invalidateQueryKeys(queryClient, [chartKeys.entryDetail(entryId)]));
+  }
+
+  if (assignmentId) {
+    tasks.push(invalidateQueryKeys(queryClient, [chartKeys.entrySummary(assignmentId)]));
+    tasks.push(invalidateQueriesMatching(queryClient, (query) => {
+      const { queryKey } = query;
+
+      if (!Array.isArray(queryKey)) return false;
+
+      if (hasQueryPrefix(queryKey, ['charts', 'entries', 'list'])) {
+        return queryKey[3]?.assignment === assignmentId;
+      }
+
+      if (hasQueryPrefix(queryKey, ['charts', 'entries', 'trends'])) {
+        return queryKey[3] === assignmentId;
+      }
+
+      return false;
+    }));
+  } else {
+    tasks.push(queryClient.invalidateQueries({ queryKey: chartKeys.entries() }));
+  }
+
+  if (patientId) {
+    tasks.push(invalidateQueryKeys(queryClient, [chartKeys.entriesByPatient(patientId)]));
+    tasks.push(invalidatePatientTimelineQueries(queryClient, patientId));
+  }
+
+  return Promise.all(tasks);
+}
 
 // =============================================================================
 // Template Queries
@@ -301,7 +475,7 @@ export function useReorderChartFields() {
     onSuccess: (data, { templateId }) => {
       queryClient.invalidateQueries({ queryKey: chartKeys.templateDetail(templateId) });
     },
-    onError: (error) => {
+    onError: () => {
       toast.error('Failed to reorder fields');
     },
   });
@@ -381,7 +555,17 @@ export function useCreateChartAssignment() {
       return await apiClient.post('/charts/assignments/', assignmentData);
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+      const assignmentId = normalizeIdentifier(data?.id);
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data, variables],
+      });
+
+      if (assignmentId) {
+        queryClient.setQueryData(chartKeys.assignmentDetail(assignmentId), data);
+      }
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
       toast.success('Chart assigned to patient');
       emitOnboardingEvent('charts.assignment.created', {
         success: true,
@@ -408,8 +592,13 @@ export function useUpdateChartAssignment() {
       return await apiClient.patch(`/charts/assignments/${assignmentId}/`, data);
     },
     onSuccess: (data, { assignmentId }) => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
       queryClient.setQueryData(chartKeys.assignmentDetail(assignmentId), data);
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
     },
     onError: (error) => {
       const message = error.response?.data?.detail || 'Failed to update assignment';
@@ -428,8 +617,13 @@ export function useCompleteChartAssignment() {
     mutationFn: async (assignmentId) => {
       return await apiClient.post(`/charts/assignments/${assignmentId}/complete/`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+    onSuccess: (data, assignmentId) => {
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
       toast.success('Chart monitoring completed');
     },
     onError: (error) => {
@@ -449,8 +643,13 @@ export function usePauseChartAssignment() {
     mutationFn: async (assignmentId) => {
       return await apiClient.post(`/charts/assignments/${assignmentId}/pause/`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+    onSuccess: (data, assignmentId) => {
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
       toast.success('Chart monitoring paused');
     },
     onError: (error) => {
@@ -470,8 +669,13 @@ export function useResumeChartAssignment() {
     mutationFn: async (assignmentId) => {
       return await apiClient.post(`/charts/assignments/${assignmentId}/resume/`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+    onSuccess: (data, assignmentId) => {
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
       toast.success('Chart monitoring resumed');
     },
     onError: (error) => {
@@ -494,8 +698,13 @@ export function useDiscontinueChartAssignment() {
         { reason }
       );
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+    onSuccess: (data, { assignmentId }) => {
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartAssignmentMutationQueries(queryClient, { assignmentId, patientId });
       toast.success('Chart monitoring discontinued');
     },
     onError: (error) => {
@@ -617,8 +826,24 @@ export function useCreateChartEntry() {
       return await apiClient.post('/charts/entries/', entryData);
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.entries() });
-      queryClient.invalidateQueries({ queryKey: chartKeys.assignments() });
+      const entryId = normalizeIdentifier(data?.id);
+      const assignmentId = resolveChartAssignmentId(queryClient, {
+        sources: [data, variables],
+      });
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data, variables],
+      });
+
+      if (entryId) {
+        queryClient.setQueryData(chartKeys.entryDetail(entryId), data);
+      }
+
+      void invalidateChartEntryMutationQueries(queryClient, {
+        assignmentId,
+        patientId,
+        entryId,
+      });
 
       emitOnboardingEvent('charts.entry.created', {
         success: true,
@@ -660,8 +885,21 @@ export function useUpdateChartEntry() {
       return await apiClient.patch(`/charts/entries/${entryId}/`, data);
     },
     onSuccess: (data, { entryId }) => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.entries() });
       queryClient.setQueryData(chartKeys.entryDetail(entryId), data);
+      const assignmentId = resolveChartAssignmentId(queryClient, {
+        entryId,
+        sources: [data],
+      });
+      const patientId = resolveChartPatientId(queryClient, {
+        assignmentId,
+        sources: [data],
+      });
+
+      void invalidateChartEntryMutationQueries(queryClient, {
+        assignmentId,
+        patientId,
+        entryId,
+      });
       toast.success('Entry updated');
     },
     onError: (error) => {
@@ -682,8 +920,15 @@ export function useDeleteChartEntry() {
       await apiClient.delete(`/charts/entries/${entryId}/`, { data: { reason } });
       return entryId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chartKeys.entries() });
+    onSuccess: (data, entryId) => {
+      const assignmentId = resolveChartAssignmentId(queryClient, { entryId });
+      const patientId = resolveChartPatientId(queryClient, { assignmentId });
+
+      void invalidateChartEntryMutationQueries(queryClient, {
+        assignmentId,
+        patientId,
+        entryId,
+      });
       toast.success('Entry deleted');
     },
     onError: (error) => {
@@ -730,7 +975,7 @@ export function useChartEntryForm(template) {
           if (value !== null) {
             result[field.field_key] = value;
           }
-        } catch (e) {
+        } catch {
           // Skip on error
         }
       }

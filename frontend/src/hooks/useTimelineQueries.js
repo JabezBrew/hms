@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 
 // Query keys for timeline data
 const timelineKeyFactory = createKeyFactory('timeline');
@@ -292,15 +293,18 @@ export function usePrefetchTimelinePage(patientId, options, currentPage) {
 export function useInvalidateTimeline() {
   const queryClient = useQueryClient();
 
-  return (patientId) => {
-    if (patientId) {
-      // Invalidate timeline list queries for this patient
-      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
-      queryClient.invalidateQueries({ queryKey: timelineKeys.stats(patientId) });
-    } else {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-    }
-  };
+  return (patientId) => invalidatePatientTimelineQueries(queryClient, patientId);
+}
+
+export function invalidatePatientTimelineQueries(queryClient, patientId) {
+  if (!patientId) {
+    return queryClient.invalidateQueries({ queryKey: timelineKeys.all });
+  }
+
+  return invalidateQueryKeys(queryClient, [
+    timelineKeys.list(patientId),
+    timelineKeys.stats(patientId),
+  ]);
 }
 
 /**

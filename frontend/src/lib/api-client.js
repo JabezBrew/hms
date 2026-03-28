@@ -3,11 +3,7 @@
  */
 import { toast } from 'sonner';
 import { getClientDeviceLabel } from './device-label';
-
-// Base URL for API requests
-// In production, use the backend URL. In development, use Vite's proxy.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? 'https://backend-production-d15a.up.railway.app/api' : '/api');
+import { getApiBasePathname, getApiBaseUrl } from './runtime-config';
 
 const AUTH_ENDPOINTS = [
   '/auth/login/',
@@ -137,7 +133,7 @@ export async function performTokenRefresh() {
         refreshHeaders['X-Device-Label'] = deviceLabel;
       }
 
-      const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/token/refresh/`, {
         method: 'POST',
         headers: refreshHeaders,
         credentials: 'include', // Include cookies for refresh token
@@ -157,7 +153,7 @@ export async function performTokenRefresh() {
       lastRefreshTime = Date.now();
 
       return data.access;
-    } catch (_error) {
+    } catch {
       // Reset attempts and notify auth context of failure
       consecutiveRefreshAttempts = 0;
       await onRefreshFailure();
@@ -201,7 +197,7 @@ function getCsrfToken() {
  * Makes a request to the API with proper error handling and token refresh
  */
 async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = `${getApiBaseUrl()}${endpoint}`;
 
   // Skip token refresh for auth endpoints.
   // Note: `/auth/token/refresh/` is intentionally excluded from AUTH_ENDPOINTS.
@@ -343,7 +339,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
             // Refresh failed, throw error
             throw new ApiError(message, response.status, data);
           }
-        } catch (_refreshError) {
+        } catch {
           // If refresh fails, throw the original error
           throw new ApiError(message, response.status, data);
         }
@@ -399,9 +395,10 @@ async function fetchAllPages(endpoint, options = {}) {
     if (nextUrl.startsWith('http')) {
       const url = new URL(nextUrl);
       path = url.pathname + url.search;
-      // Remove the API_BASE_URL prefix if present since fetchWithAuth will add it back
-      if (API_BASE_URL && path.startsWith(API_BASE_URL)) {
-        path = path.substring(API_BASE_URL.length);
+      // Remove the configured API pathname prefix if present since fetchWithAuth will add it back.
+      const apiBasePathname = getApiBasePathname();
+      if (apiBasePathname && path.startsWith(apiBasePathname)) {
+        path = path.substring(apiBasePathname.length) || '/';
       }
     }
 

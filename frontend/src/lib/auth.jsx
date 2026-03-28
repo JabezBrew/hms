@@ -5,6 +5,7 @@ import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
 import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "./api-client"
 import { queryClient } from './react-query'
+import { getDefaultFacilityCode } from './runtime-config'
 
 // Create an authentication context
 const AuthContext = createContext(undefined)
@@ -19,7 +20,7 @@ export function AuthProvider({ children }) {
   const [mfaUser, setMfaUser] = useState(null)
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false)
   const [mfaAvailableMethods, setMfaAvailableMethods] = useState(null)
-  const defaultFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || null
+  const defaultFacilityCode = getDefaultFacilityCode()
   // Store access token in memory (not in localStorage)
   const accessTokenRef = useRef(null)
   const logoutPromiseRef = useRef(null)
@@ -75,7 +76,7 @@ export function AuthProvider({ children }) {
   const notifyBackendLogout = useCallback(async () => {
     try {
       await authApi.logout()
-    } catch (_error) {
+    } catch {
       // Session may already be invalid/expired; local cleanup still proceeds.
     }
   }, [])
@@ -194,7 +195,7 @@ export function AuthProvider({ children }) {
               // Silent fail - user will be redirected to login if needed
             }
           }
-        } catch (_e) {
+        } catch {
           // Failed to parse stored user
           void notifyBackendLogout()
           clearLocalAuthState()
@@ -204,7 +205,7 @@ export function AuthProvider({ children }) {
     }
 
     initializeAuth()
-  }, [clearLocalAuthState, isSessionValid, notifyBackendLogout, refreshAccessToken])
+  }, [clearLocalAuthState, defaultFacilityCode, isSessionValid, notifyBackendLogout, refreshAccessToken])
 
   // Connect auth context to api-client
   useEffect(() => {
@@ -340,6 +341,9 @@ export function AuthProvider({ children }) {
       mfaAvailableMethods,
       clearPasswordChangeRequirement,
       completeMfa,
+      login,
+      logout,
+      resetPassword,
     ]
   )
 

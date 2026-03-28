@@ -11,11 +11,11 @@ import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 import { notifications } from "../../lib/notifications"
 import { MFAChallenge } from "./MFAChallenge"
+import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "@/lib/runtime-config"
 
 export function LoginForm() {
-  const defaultFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || ""
-  const multiFacilityMode =
-    String(import.meta.env.VITE_MULTI_FACILITY_MODE || "").toLowerCase() === "true"
+  const defaultFacilityCode = getDefaultFacilityCode() || ""
+  const multiFacilityMode = isMultiFacilityModeEnabled()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [facilityCode, setFacilityCode] = useState(defaultFacilityCode)
@@ -39,7 +39,7 @@ export function LoginForm() {
       }
       notifications.success("Logged in successfully");
       navigate('/');
-    } catch (error) {
+    } catch {
       // Error is already handled in the auth provider
     } finally {
       setIsLoading(false);

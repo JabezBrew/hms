@@ -16,16 +16,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
 import { useFacilities } from "@/hooks/useFacilityQueries";
+import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "@/lib/runtime-config";
 import { toast } from "sonner";
 
-const DEFAULT_FACILITY_CODE = import.meta.env.VITE_DEFAULT_FACILITY_CODE || "";
+const DEFAULT_FACILITY_CODE = getDefaultFacilityCode() || "";
 
 export function FacilitySwitcher() {
   const { facilityCode, setFacilityCode } = useAuth();
   const [draft, setDraft] = useState(facilityCode || DEFAULT_FACILITY_CODE);
   const [searchQuery, setSearchQuery] = useState("");
-  const multiFacilityMode =
-    String(import.meta.env.VITE_MULTI_FACILITY_MODE || "").toLowerCase() === "true";
+  const multiFacilityMode = isMultiFacilityModeEnabled();
   const {
     data: facilities = [],
     isLoading,
