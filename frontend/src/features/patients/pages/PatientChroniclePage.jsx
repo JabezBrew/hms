@@ -13,7 +13,7 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
@@ -25,7 +25,6 @@ import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQu
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,48 +35,16 @@ import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
 import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
-import { chartKeys, useChartAssignments } from "@/features/charts/hooks";
-import { laboratoryApi } from "@/features/laboratory/api";
-import { labKeys } from "@/features/laboratory/hooks";
+import { useChartAssignments } from "@/features/charts/hooks";
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
-import { drugSafetyApi } from "@/shared/api/drugSafety";
-import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
-import { keyWith } from "@/shared/lib/queryKeys";
+import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
+import {
+  chronicleWorkspaceIds,
+  prefetchChronicleWorkspaceResources,
+} from "@/features/patients/chronicle/workspaceRegistry";
 import { emitOnboardingEvent } from "@/features/onboarding";
 
 import { useDebounce } from "@/hooks/use-debounce";
-
-const loadAddNoteSlideOver = () => import("@/components/chronicle/AddNoteSlideOver");
-const loadAddVitalsSlideOver = () => import("@/components/chronicle/AddVitalsSlideOver");
-const loadAddPrescriptionSlideOver = () => import("@/components/chronicle/AddPrescriptionSlideOver");
-const loadAddFluidBalanceSlideOver = () => import("@/components/chronicle/AddFluidBalanceSlideOver");
-const loadPatientInsuranceSlideOver = () => import("@/components/chronicle/PatientInsuranceSlideOver");
-const loadWardRoundSlideOver = () => import("@/components/chronicle/WardRoundSlideOver");
-const loadConsultationSlideOver = () => import("@/components/chronicle/ConsultationSlideOver");
-const loadDischargeSlideOver = () => import("@/components/chronicle/DischargeSlideOver");
-const loadAddChartSlideOver = () => import("@/components/charts/AddChartSlideOver");
-const loadChartEntryForm = () => import("@/components/charts/ChartEntryForm");
-const loadLabOrderForm = () => import("@/components/laboratory/LabOrderForm");
-const loadReferralForm = () => import("@/components/referrals/ReferralForm");
-const loadCrossFacilitySharePanel = () => import("@/components/consent/CrossFacilitySharePanel");
-const loadReceiveRecordPanel = () => import("@/components/interop/ReceiveRecordPanel");
-const loadChronicleCopilotSlideOver = () => import("@/features/patients/components/ChronicleCopilotSlideOver");
-
-const AddNoteSlideOver = lazy(loadAddNoteSlideOver);
-const AddVitalsSlideOver = lazy(loadAddVitalsSlideOver);
-const AddPrescriptionSlideOver = lazy(loadAddPrescriptionSlideOver);
-const AddFluidBalanceSlideOver = lazy(loadAddFluidBalanceSlideOver);
-const PatientInsuranceSlideOver = lazy(loadPatientInsuranceSlideOver);
-const WardRoundSlideOver = lazy(loadWardRoundSlideOver);
-const ConsultationSlideOver = lazy(loadConsultationSlideOver);
-const DischargeSlideOver = lazy(loadDischargeSlideOver);
-const AddChartSlideOver = lazy(loadAddChartSlideOver);
-const ChartEntryForm = lazy(loadChartEntryForm);
-const LabOrderForm = lazy(loadLabOrderForm);
-const ReferralForm = lazy(loadReferralForm);
-const CrossFacilitySharePanel = lazy(loadCrossFacilitySharePanel);
-const ReceiveRecordPanel = lazy(loadReceiveRecordPanel);
-const ChronicleCopilotSlideOver = lazy(loadChronicleCopilotSlideOver);
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
   'doctor',
@@ -136,23 +103,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [location.pathname, location.search, navigate]);
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers([
-    'copilot',
-    'note',
-    'vitals',
-    'prescription',
-    'labs',
-    'referral',
-    'crossFacility',
-    'receiveRecord',
-    'fluids',
-    'charts',
-    'chartEntry',
-    'insurance',
-    'wardRound',
-    'consultation',
-    'discharge',
-  ]);
+  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
@@ -162,25 +113,32 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Check if user has clinical access (from patient endpoint response)
   const hasClinicalAccess = patient?.access?.clinical === true;
+  const patientLocalId = patient?.local_data?.id || patient?.id || id;
+  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
+    prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
+  }, [patientLocalId, queryClient]);
 
   // Auto-open slide-over based on action query param or defaultAction prop
   const wardRoundParam = searchParams.get('wardRound');
   const consultationParam = searchParams.get('consultation');
+  const openChronicleWorkspace = useCallback((workspaceId) => {
+    prefetchWorkspaceForOpen(workspaceId);
+    slideOvers.open(workspaceId);
+  }, [prefetchWorkspaceForOpen, slideOvers]);
+
   useEffect(() => {
     const action = actionParam || defaultAction;
     if (action === 'add_note') {
-      loadAddNoteSlideOver();
-      slideOvers.open('note');
+      openChronicleWorkspace('note');
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
-      loadWardRoundSlideOver();
-      slideOvers.open('wardRound');
+      openChronicleWorkspace('wardRound');
       // Clear the query params after opening
       if (actionParam || wardRoundParam) clearQueryParams();
     } else if (action === 'consultation' || consultationParam === 'true') {
-      loadConsultationSlideOver();
-      slideOvers.open('consultation');
+      openChronicleWorkspace('consultation');
       // Clear the query params after opening
       if (actionParam || consultationParam) clearQueryParams();
     } else if (action === 'discharge') {
@@ -198,12 +156,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
       }
 
       setRequestedDischargeAdmissionId(String(admissionId));
-      loadDischargeSlideOver();
-      slideOvers.open('discharge');
+      openChronicleWorkspace('discharge');
       if (actionParam || admissionParam) clearQueryParams();
     } else if (action === 'add_prescription') {
-      loadAddPrescriptionSlideOver();
-      slideOvers.open('prescription');
+      openChronicleWorkspace('prescription');
       if (actionParam) clearQueryParams();
     }
   }, [
@@ -213,7 +169,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     consultationParam,
     admissionParam,
     patient,
-    slideOvers,
+    openChronicleWorkspace,
     clearQueryParams,
   ]);
 
@@ -251,8 +207,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
-  const patientLocalId = patient?.local_data?.id || patient?.id || id;
-  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
   const copilotPatientName = useMemo(() => {
     const details = patient?.local_data || patient;
     if (!details) return 'Patient';
@@ -678,155 +632,40 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
     prefetchedActionsRef.current.add(actionToken);
-
-    if (action === 'note') {
-      loadAddNoteSlideOver();
-      return;
-    }
-
-    if (action === 'copilot') {
-      loadChronicleCopilotSlideOver();
-      return;
-    }
-
-    if (action === 'vitals') {
-      loadAddVitalsSlideOver();
-      return;
-    }
-
-    if (action === 'prescription') {
-      loadAddPrescriptionSlideOver();
-      if (patientLocalId) {
-        void queryClient.prefetchQuery({
-          queryKey: drugSafetyKeys.patientAllergies(patientLocalId),
-          queryFn: () => drugSafetyApi.getPatientAllergies(patientLocalId),
-          staleTime: 60 * 1000,
-        });
-      }
-      return;
-    }
-
-    if (action === 'labs') {
-      loadLabOrderForm();
-      void queryClient.prefetchQuery({
-        queryKey: labKeys.testsList({}),
-        queryFn: () => laboratoryApi.getLabTests({}),
-        staleTime: 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: labKeys.panelsList({}),
-        queryFn: () => laboratoryApi.getLabPanels({}),
-        staleTime: 60 * 1000,
-      });
-      return;
-    }
-
-    if (action === 'referral') {
-      loadReferralForm();
-      return;
-    }
-
-    if (action === 'crossFacility') {
-      loadCrossFacilitySharePanel();
-      return;
-    }
-
-    if (action === 'receiveRecord') {
-      loadReceiveRecordPanel();
-      return;
-    }
-
-    if (action === 'fluids') {
-      loadAddFluidBalanceSlideOver();
-      return;
-    }
-
-    if (action === 'charts') {
-      loadAddChartSlideOver();
-      void queryClient.prefetchQuery({
-        queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
-        queryFn: () => apiClient.get('/charts/templates/?is_active=true'),
-        staleTime: 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: chartKeys.categories(),
-        queryFn: () => apiClient.get('/charts/templates/categories/').then((response) => response.categories),
-        staleTime: 60 * 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: chartKeys.intervals(),
-        queryFn: () => apiClient.get('/charts/templates/intervals/').then((response) => response.intervals),
-        staleTime: 60 * 60 * 1000,
-      });
-      return;
-    }
-
-    if (action === 'chartEntry') {
-      loadChartEntryForm();
-      return;
-    }
-
-    if (action === 'insurance') {
-      loadPatientInsuranceSlideOver();
-      return;
-    }
-
-    if (action === 'wardRound') {
-      loadWardRoundSlideOver();
-      return;
-    }
-
-    if (action === 'consultation') {
-      loadConsultationSlideOver();
-      return;
-    }
-
-    if (action === 'discharge') {
-      loadDischargeSlideOver();
-    }
+    prefetchChronicleWorkspaceResources(action, { patientLocalId, queryClient });
   }, [patientLocalId, queryClient]);
 
   // Slide-over handlers - using the centralized hook
   const handleAskChronicle = useCallback(() => {
-    prefetchActionResources('copilot');
-    slideOvers.open('copilot');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('copilot');
+  }, [openChronicleWorkspace]);
   const handleAddNote = useCallback(() => {
-    prefetchActionResources('note');
-    slideOvers.open('note');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('note');
+  }, [openChronicleWorkspace]);
   const handleRecordVitals = useCallback(() => {
-    prefetchActionResources('vitals');
-    slideOvers.open('vitals');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('vitals');
+  }, [openChronicleWorkspace]);
   const handlePrescribe = useCallback(() => {
-    prefetchActionResources('prescription');
-    slideOvers.open('prescription');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('prescription');
+  }, [openChronicleWorkspace]);
   const handleOrderLabs = useCallback(() => {
-    prefetchActionResources('labs');
-    slideOvers.open('labs');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('labs');
+  }, [openChronicleWorkspace]);
   const handleRequestConsult = useCallback(() => {
-    prefetchActionResources('referral');
-    slideOvers.open('referral');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('referral');
+  }, [openChronicleWorkspace]);
   const handleShareRecord = useCallback(() => {
-    prefetchActionResources('crossFacility');
-    slideOvers.open('crossFacility');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('crossFacility');
+  }, [openChronicleWorkspace]);
   const handleReceiveRecord = useCallback(() => {
-    prefetchActionResources('receiveRecord');
-    slideOvers.open('receiveRecord');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('receiveRecord');
+  }, [openChronicleWorkspace]);
   const handleRecordFluids = useCallback(() => {
-    prefetchActionResources('fluids');
-    slideOvers.open('fluids');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('fluids');
+  }, [openChronicleWorkspace]);
   const handleStartWardRound = useCallback(() => {
-    prefetchActionResources('wardRound');
-    slideOvers.open('wardRound');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('wardRound');
+  }, [openChronicleWorkspace]);
   const handleStartDischarge = useCallback(() => {
     const admissionId = patient?.local_data?.current_admission_id
       || patient?.current_admission_id
@@ -838,9 +677,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
 
     setRequestedDischargeAdmissionId(String(admissionId));
-    prefetchActionResources('discharge');
-    slideOvers.open('discharge');
-  }, [patient, activeEncounter, prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('discharge');
+  }, [patient, activeEncounter, openChronicleWorkspace]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -873,11 +711,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
       sectionsCopied: copyData.sectionsCopied,
     });
     setEditNoteData(null); // Clear any edit data
-    slideOvers.open('note');
+    openChronicleWorkspace('note');
     toast.success("Note copied", {
       description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
     });
-  }, [slideOvers]);
+  }, [openChronicleWorkspace]);
 
   // Handle edit note from timeline - opens note editor in edit mode
   const handleEditNote = useCallback((editData) => {
@@ -893,8 +731,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
       data: editData.data,
     });
     setCopyForwardData(null); // Clear any copy data
-    slideOvers.open('note');
-  }, [slideOvers]);
+    openChronicleWorkspace('note');
+  }, [openChronicleWorkspace]);
 
   const handleVitalsRecorded = useCallback(() => {
     refreshData();
@@ -929,9 +767,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Chart handlers
   const handleAssignChart = useCallback(() => {
-    prefetchActionResources('charts');
-    slideOvers.open('charts');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('charts');
+  }, [openChronicleWorkspace]);
 
   const handleChartAssigned = useCallback(() => {
     refetchCharts();
@@ -939,10 +776,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [refetchCharts, slideOvers]);
 
   const handleRecordChartEntry = useCallback((assignment) => {
-    prefetchActionResources('chartEntry');
     setActiveChartAssignment(assignment);
-    slideOvers.open('chartEntry');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('chartEntry');
+  }, [openChronicleWorkspace]);
 
   const handleChartEntryRecorded = useCallback(() => {
     refetchCharts();
@@ -955,6 +791,65 @@ const PatientChroniclePage = ({ defaultAction }) => {
     slideOvers.close();
     setActiveChartAssignment(null);
   }, [slideOvers]);
+
+  const handleManageInsurance = useCallback(() => {
+    openChronicleWorkspace('insurance');
+  }, [openChronicleWorkspace]);
+
+  const handleConsultationCompleted = useCallback(() => {
+    refetchTimeline?.();
+    refetchContext?.();
+  }, [refetchTimeline, refetchContext]);
+
+  const workspaceContext = useMemo(() => ({
+    patientId: id,
+    patient,
+    activeEncounter,
+    patientIdentityId,
+    referralId: referralIdParam,
+    copilotPatientName,
+    copyForwardData,
+    editNoteData,
+    activeChartAssignment,
+    requestedDischargeAdmissionId,
+    onClose: handleSlideOverClose,
+    onChartWorkspaceClose: handleChartSlideOverClose,
+    onNoteCreated: handleNoteCreated,
+    onVitalsRecorded: handleVitalsRecorded,
+    onPrescriptionCreated: handlePrescriptionCreated,
+    onLabOrderCreated: handleLabOrderCreated,
+    onReferralCreated: handleReferralCreated,
+    onFluidRecorded: refreshData,
+    onChartAssigned: handleChartAssigned,
+    onChartEntryRecorded: handleChartEntryRecorded,
+    onWardRoundCompleted: handleWardRoundCompleted,
+    onConsultationCompleted: handleConsultationCompleted,
+    onDischargeCompleted: handleDischargeCompleted,
+  }), [
+    id,
+    patient,
+    activeEncounter,
+    patientIdentityId,
+    referralIdParam,
+    copilotPatientName,
+    copyForwardData,
+    editNoteData,
+    activeChartAssignment,
+    requestedDischargeAdmissionId,
+    handleSlideOverClose,
+    handleChartSlideOverClose,
+    handleNoteCreated,
+    handleVitalsRecorded,
+    handlePrescriptionCreated,
+    handleLabOrderCreated,
+    handleReferralCreated,
+    refreshData,
+    handleChartAssigned,
+    handleChartEntryRecorded,
+    handleWardRoundCompleted,
+    handleConsultationCompleted,
+    handleDischargeCompleted,
+  ]);
 
   // Schedule Follow-up handler (navigate to appointments page)
   const handleScheduleFollowUp = useCallback(() => {
@@ -1183,10 +1078,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onAssignChart={handleAssignChart}
         onStartWardRound={handleStartWardRound}
         onStartDischarge={handleStartDischarge}
-        onManageInsurance={() => {
-          prefetchActionResources('insurance');
-          slideOvers.open('insurance');
-        }}
+        onManageInsurance={handleManageInsurance}
         insurance={patientInsurance}
         activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
       />
@@ -1593,227 +1485,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
           </div>
         </main>
 
-        {slideOvers.isOpen('copilot') && (
-          <Suspense fallback={null}>
-            <ChronicleCopilotSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patientId={id}
-              encounterId={activeEncounter?.id || null}
-              patientName={copilotPatientName}
-            />
-          </Suspense>
-        )}
-
-        {/* Add Note Slide-Over Panel */}
-        {slideOvers.isOpen('note') && (
-          <Suspense fallback={null}>
-            <AddNoteSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onNoteCreated={handleNoteCreated}
-              initialTemplate={editNoteData?.template || copyForwardData?.template}
-              initialData={editNoteData?.data || copyForwardData?.data}
-              editNoteId={editNoteData?.noteId}
-            />
-          </Suspense>
-        )}
-
-        {/* Add Vitals Slide-Over Panel */}
-        {slideOvers.isOpen('vitals') && (
-          <Suspense fallback={null}>
-            <AddVitalsSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onVitalsRecorded={handleVitalsRecorded}
-            />
-          </Suspense>
-        )}
-
-        {/* Add Prescription Slide-Over Panel */}
-        {slideOvers.isOpen('prescription') && (
-          <Suspense fallback={null}>
-            <AddPrescriptionSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onPrescriptionCreated={handlePrescriptionCreated}
-            />
-          </Suspense>
-        )}
-
-        {/* Lab Order Form Slide-Over */}
-        {slideOvers.isOpen('labs') && (
-          <Suspense fallback={null}>
-            <LabOrderForm
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onOrderCreated={handleLabOrderCreated}
-            />
-          </Suspense>
-        )}
-
-        {/* Referral/Consult Form Slide-Over */}
-        {slideOvers.isOpen('referral') && (
-          <Suspense fallback={null}>
-            <ReferralForm
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onReferralCreated={handleReferralCreated}
-            />
-          </Suspense>
-        )}
-
-        {slideOvers.isOpen('crossFacility') && (
-          <Suspense fallback={null}>
-            <CrossFacilitySharePanel
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              patientIdentityId={patientIdentityId}
-            />
-          </Suspense>
-        )}
-
-        {slideOvers.isOpen('receiveRecord') && (
-          <Suspense fallback={null}>
-            <ReceiveRecordPanel
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-            />
-          </Suspense>
-        )}
-
-        {/* Fluid Balance Slide-Over */}
-        {slideOvers.isOpen('fluids') && (
-          <Suspense fallback={null}>
-            <AddFluidBalanceSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              admission={
-                // Use actual WardAdmission ID, not encounter ID
-                // The admission prop expects a WardAdmission object with id
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onFluidRecorded={refreshData}
-            />
-          </Suspense>
-        )}
-
-        {/* Chart Assignment Slide-Over */}
-        {slideOvers.isOpen('charts') && (
-          <Suspense fallback={null}>
-            <AddChartSlideOver
-              open
-              onClose={handleChartSlideOverClose}
-              patient={patient}
-              admission={
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onChartAssigned={handleChartAssigned}
-            />
-          </Suspense>
-        )}
-
-        {/* Chart Entry Form Slide-Over */}
-        {slideOvers.isOpen('chartEntry') && (
-          <Suspense fallback={null}>
-            <ChartEntryForm
-              open
-              onClose={handleChartSlideOverClose}
-              assignmentId={activeChartAssignment?.id}
-              patient={patient}
-              onEntryRecorded={handleChartEntryRecorded}
-            />
-          </Suspense>
-        )}
-
-        {/* Patient Insurance Slide-Over */}
-        {slideOvers.isOpen('insurance') && (
-          <Suspense fallback={null}>
-            <PatientInsuranceSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-            />
-          </Suspense>
-        )}
-
-        {/* Ward Round Slide-Over */}
-        {slideOvers.isOpen('wardRound') && (
-          <Suspense fallback={null}>
-            <WardRoundSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              admission={
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onComplete={handleWardRoundCompleted}
-            />
-          </Suspense>
-        )}
-
-        {/* Discharge Slide-Over */}
-        {slideOvers.isOpen('discharge') && (
-          <Suspense fallback={null}>
-            <DischargeSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              admission={
-                requestedDischargeAdmissionId
-                  ? { id: requestedDischargeAdmissionId }
-                  : patient?.local_data?.current_admission_id
-                    ? { id: patient.local_data.current_admission_id }
-                    : patient?.current_admission_id
-                      ? { id: patient.current_admission_id }
-                      : null
-              }
-              onComplete={handleDischargeCompleted}
-            />
-          </Suspense>
-        )}
-
-        {/* Consultation Slide-Over */}
-        {slideOvers.isOpen('consultation') && (
-          <Suspense fallback={null}>
-            <ConsultationSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounterId={activeEncounter?.id || null}
-              referralId={referralIdParam}
-              onComplete={() => {
-                refetchTimeline?.();
-                refetchContext?.();
-              }}
-            />
-          </Suspense>
-        )}
+        <ChronicleWorkspaceHost
+          activeWorkspace={slideOvers.activeSlideOver}
+          workspaceContext={workspaceContext}
+        />
       </div>
     </div>
   );
