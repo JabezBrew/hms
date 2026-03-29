@@ -2,6 +2,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from apps.core.management.commands.check_pending_migrations import Command as PendingCommand
 from apps.core.management.commands.preflight_migration_checks import Command
 
 
@@ -59,3 +60,20 @@ def test_preflight_skips_default_facility_validation_when_table_missing(monkeypa
     monkeypatch.setattr(Command, "_default_facility_exists", lambda self, code: False)
 
     call_command("preflight_migration_checks", strict=True)
+
+
+def test_check_pending_migrations_passes_without_pending(monkeypatch):
+    monkeypatch.setattr(PendingCommand, "_get_pending_migrations", staticmethod(lambda: []))
+
+    call_command("check_pending_migrations", fail_on_pending=True)
+
+
+def test_check_pending_migrations_fails_when_requested(monkeypatch):
+    monkeypatch.setattr(
+        PendingCommand,
+        "_get_pending_migrations",
+        staticmethod(lambda: [("patients", "0006_patient_search_index")]),
+    )
+
+    with pytest.raises(CommandError, match="patients.0006_patient_search_index"):
+        call_command("check_pending_migrations", fail_on_pending=True)

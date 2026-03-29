@@ -356,19 +356,28 @@ const PatientChronicleListPage = () => {
 
   const searchPatients = useMemo(() => normalizeApiResults(searchResults), [searchResults]);
 
-  const searchTotal = searchResults?.total ?? searchResults?.count ?? searchPatients.length;
   const searchCurrentPage = searchResults?.page ?? searchPage;
   const searchPageSize = searchResults?.page_size ?? SEARCH_TABLE_PAGE_SIZE;
-  const searchTotalPages = searchPageSize > 0
-    ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
-    : 1;
-  const searchHasNext = Boolean(searchResults?.next) || searchCurrentPage < searchTotalPages;
+  const searchCountExact = searchResults?.count_exact !== false;
+  const searchHasNext = Boolean(searchResults?.next);
   const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
+  const searchTotal = searchCountExact
+    ? (searchResults?.total ?? searchResults?.count ?? searchPatients.length)
+    : ((searchCurrentPage - 1) * searchPageSize) + searchPatients.length + (searchHasNext ? 1 : 0);
+  const searchTotalPages = searchCountExact
+    ? (searchPageSize > 0
+      ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
+      : 1)
+    : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
 
   const searchSummary = hasSearchSignal
     ? (effectiveSearchQuery
-      ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
-      : `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`)
+      ? (searchCountExact
+        ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
+        : `Showing ${searchPatients.length} result${searchPatients.length === 1 ? '' : 's'} for "${effectiveSearchQuery}"`)
+      : (searchCountExact
+        ? `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`
+        : `Showing ${searchPatients.length} filtered result${searchPatients.length === 1 ? '' : 's'}`))
     : '';
 
   const departments = useMemo(() => normalizeApiResults(departmentsData), [departmentsData]);
@@ -486,7 +495,10 @@ const PatientChronicleListPage = () => {
 
   const handleSearchPageChange = (nextPage) => {
     if (!Number.isFinite(nextPage)) return;
-    const boundedPage = Math.min(Math.max(nextPage, 1), searchTotalPages);
+    const maxPage = searchCountExact
+      ? searchTotalPages
+      : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
+    const boundedPage = Math.min(Math.max(nextPage, 1), Math.max(maxPage, 1));
     setSearchPage(boundedPage);
   };
 

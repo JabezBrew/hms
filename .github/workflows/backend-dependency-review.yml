@@ -1,0 +1,24 @@
+name: Backend Dependency Review
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/requirements.txt'
+      - 'backend/requirements-dev.txt'
+      - '.github/workflows/backend-dependency-review.yml'
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review backend dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

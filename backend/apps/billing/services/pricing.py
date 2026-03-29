@@ -25,6 +25,7 @@ from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core.metadata_cache import get_or_set_metadata, invalidate_metadata_prefix, metadata_cache_key
 from apps.billing.models import Service, ServicePrice
 
 logger = logging.getLogger(__name__)
@@ -114,24 +115,17 @@ class PricingService:
             target_date
         )
 
-        # Try cache first
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        # Resolve price through fallback chain
-        resolved = cls._resolve_price(
-            service=service,
-            facility=facility,
-            department=department,
-            context=context,
-            target_date=target_date
+        return get_or_set_metadata(
+            cache_key,
+            lambda: cls._resolve_price(
+                service=service,
+                facility=facility,
+                department=department,
+                context=context,
+                target_date=target_date,
+            ),
+            timeout=cls.CACHE_TIMEOUT,
         )
-
-        # Cache the result
-        cache.set(cache_key, resolved, cls.CACHE_TIMEOUT)
-
-        return resolved
 
     @classmethod
     def get_prices_bulk(
@@ -173,8 +167,8 @@ class PricingService:
             cached = cache.get(cache_key)
             if cached is not None:
                 results[service.id] = cached
-            else:
-                uncached_services.append(service)
+                continue
+            uncached_services.append(service)
 
         # Resolve uncached services
         if uncached_services:
@@ -267,20 +261,7 @@ class PricingService:
         """
         # Try pattern-based deletion first (Redis, etc.)
         # Fall back to clearing all cache if not supported
-        try:
-            if hasattr(cache, 'delete_pattern'):
-                cache.delete_pattern('service_price_*')
-            else:
-                # For backends that don't support delete_pattern (like LocMemCache),
-                # we clear the entire cache. In production, use Redis.
-                cache.clear()
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
-            # Fallback: clear entire cache
-            try:
-                cache.clear()
-            except Exception:
-                pass
+        invalidate_metadata_prefix('service_price:')
 
         logger.info(
             f"Invalidated pricing cache: service={service_id}, "
@@ -302,8 +283,14 @@ class PricingService:
     ) -> str:
         """Build a cache key for price lookup."""
         return (
-            f"service_price_{service_id}_{facility_id or 'all'}_"
-            f"{department_id or 'all'}_{context}_{target_date.isoformat()}"
+            metadata_cache_key(
+                'service_price',
+                service_id,
+                facility_id or 'all',
+                department_id or 'all',
+                context,
+                target_date.isoformat(),
+            )
         )
 
     @classmethod

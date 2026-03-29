@@ -15,6 +15,7 @@ from apps.appointments.models import Appointment
 from apps.audit.models import AuditAction, AuditLog
 from apps.clinical_notes.models import NoteEntry
 from apps.core.cache_utils import facility_cache_key_for_code
+from apps.core.metrics import inc_counter, measure_duration, observe_histogram, track_query_count
 from apps.core.models import BreakGlassEvent
 from apps.core.security import ACTIVE_ADMISSION_STATUSES, FacilityScopedPermission, get_user_facility
 from apps.dashboards.tasks import (
@@ -51,6 +52,14 @@ def _resolve_dashboard_role(user):
     return getattr(user, 'user_type', None) or getattr(user, 'role', None)
 
 
+def _record_dashboard_cache_event(dashboard: str, result: str) -> None:
+    inc_counter(
+        'hms_dashboard_cache_events_total',
+        labels={'dashboard': dashboard, 'result': result},
+        description='Dashboard cache hits, misses, and stale serves.',
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, FacilityScopedPermission])
 def my_work_dashboard(request):
@@ -83,6 +92,7 @@ def my_work_dashboard(request):
 def _get_cached_appointments(facility_code, cache_key, refresh_fn):
     cached = cache.get(facility_cache_key_for_code(facility_code, cache_key))
     if cached is not None:
+        _record_dashboard_cache_event('appointments', 'hit')
         return cached, False
 
     stale_key = facility_cache_key_for_code(facility_code, f"{cache_key}_stale")
@@ -93,8 +103,10 @@ def _get_cached_appointments(facility_code, cache_key, refresh_fn):
         refresh_fn()
 
     if stale is not None:
+        _record_dashboard_cache_event('appointments', 'stale')
         return stale, True
 
+    _record_dashboard_cache_event('appointments', 'miss')
     return [], True
 
 
@@ -793,6 +805,7 @@ def get_doctor_dashboard_data(user, request):
     )
     cached_projection = cache.get(projection_cache_key)
     if cached_projection is not None:
+        _record_dashboard_cache_event('doctor_my_work', 'hit')
         return {
             'role': 'doctor',
             'user_name': user.get_full_name(),
@@ -801,65 +814,74 @@ def get_doctor_dashboard_data(user, request):
 
     # Fetch today's appointments (cached; refreshed asynchronously)
     try:
-        cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{today.isoformat()}"
-        all_appointments, is_stale = _get_cached_appointments(
-            facility.code,
-            cache_key,
-            lambda: refresh_doctor_dashboard_appointments.delay(
-                facility_id=str(facility.id),
-                facility_code=facility.code,
-                practitioner_id=practitioner_id,
-                date_str=today.isoformat(),
-            ),
-        )
+        _record_dashboard_cache_event('doctor_my_work', 'miss')
+        with track_query_count() as query_counter:
+            with measure_duration(
+                'hms_dashboard_latency_seconds',
+                labels={'dashboard': 'doctor_my_work'},
+                description='Dashboard compute latency in seconds.',
+            ):
+                cache_key = f"doctor_dashboard_appointments_{practitioner_id}_{today.isoformat()}"
+                all_appointments, is_stale = _get_cached_appointments(
+                    facility.code,
+                    cache_key,
+                    lambda: refresh_doctor_dashboard_appointments.delay(
+                        facility_id=str(facility.id),
+                        facility_code=facility.code,
+                        practitioner_id=practitioner_id,
+                        date_str=today.isoformat(),
+                    ),
+                )
 
-        # Separate by status
-        current_patient = None
-        upcoming = []
-        completed_today = []
+                # Separate by status
+                current_patient = None
+                upcoming = []
+                completed_today = []
 
-        now = timezone.now()
+                now = timezone.now()
 
-        for appt in all_appointments:
-            appt_data = format_appointment_for_dashboard(appt)
+                for appt in all_appointments:
+                    appt_data = format_appointment_for_dashboard(appt)
 
-            if appt.get('status') == 'fulfilled' or appt.get('status') == 'cancelled':
-                completed_today.append(appt_data)
-            elif appt.get('status') == 'arrived' or appt.get('status') == 'in-progress':
-                # This is likely the current patient
-                if not current_patient:
-                    current_patient = appt_data
-                else:
-                    upcoming.append(appt_data)
-            else:
-                # booked or pending
-                upcoming.append(appt_data)
+                    if appt.get('status') == 'fulfilled' or appt.get('status') == 'cancelled':
+                        completed_today.append(appt_data)
+                    elif appt.get('status') == 'arrived' or appt.get('status') == 'in-progress':
+                        if not current_patient:
+                            current_patient = appt_data
+                        else:
+                            upcoming.append(appt_data)
+                    else:
+                        upcoming.append(appt_data)
 
-        # Sort upcoming by start time
-        upcoming.sort(key=lambda x: x.get('start_time', ''))
+                upcoming.sort(key=lambda x: x.get('start_time', ''))
 
-        # If no current patient, take the first upcoming if it's within 15 minutes
-        if not current_patient and upcoming:
-            first_upcoming = upcoming[0]
-            # Check if appointment time is within 15 minutes
-            try:
-                appt_time_str = first_upcoming.get('start_time')
-                if appt_time_str:
-                    appt_time = timezone.datetime.fromisoformat(appt_time_str.replace('Z', '+00:00'))
-                    if abs((now - appt_time).total_seconds()) < 900:  # 15 minutes
-                        current_patient = upcoming.pop(0)
-            except:
-                pass
+                if not current_patient and upcoming:
+                    first_upcoming = upcoming[0]
+                    try:
+                        appt_time_str = first_upcoming.get('start_time')
+                        if appt_time_str:
+                            appt_time = timezone.datetime.fromisoformat(appt_time_str.replace('Z', '+00:00'))
+                            if abs((now - appt_time).total_seconds()) < 900:
+                                current_patient = upcoming.pop(0)
+                    except Exception:
+                        pass
 
-        projection = {
-            'date': today.isoformat(),
-            'current_patient': current_patient,
-            'upcoming': upcoming[:10],  # Next 10 appointments
-            'completed': completed_today[-5:],  # Last 5 completed
-            'appointments_stale': bool(is_stale),
-        }
+                projection = {
+                    'date': today.isoformat(),
+                    'current_patient': current_patient,
+                    'upcoming': upcoming[:10],
+                    'completed': completed_today[-5:],
+                    'appointments_stale': bool(is_stale),
+                }
         # Keep stale projection short-lived so async refresh can replace it quickly.
         cache.set(projection_cache_key, projection, timeout=300 if not is_stale else 15)
+        observe_histogram(
+            'hms_dashboard_query_count',
+            query_counter.count,
+            labels={'dashboard': 'doctor_my_work'},
+            description='SQL statements executed to build a dashboard response.',
+            buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+        )
         return {
             'role': 'doctor',
             'user_name': user.get_full_name(),
@@ -919,57 +941,59 @@ def get_nurse_dashboard_data(user, request):
     projection_cache_key = nurse_dashboard_projection_cache_key(facility.code, ward_scope)
     cached_projection = cache.get(projection_cache_key)
     if cached_projection is not None:
+        _record_dashboard_cache_event('nurse_my_work', 'hit')
         return {
             'role': 'nurse',
             'user_name': user.get_full_name(),
             **cached_projection,
         }
 
-    # Build admission filter
-    admission_filter = {'status': 'admitted', 'facility': facility}
-    if assigned_ward:
-        admission_filter['bed__ward_id'] = assigned_ward
+    _record_dashboard_cache_event('nurse_my_work', 'miss')
+    with track_query_count() as query_counter:
+        with measure_duration(
+            'hms_dashboard_latency_seconds',
+            labels={'dashboard': 'nurse_my_work'},
+            description='Dashboard compute latency in seconds.',
+        ):
+            admission_filter = {'status': 'admitted', 'facility': facility}
+            if assigned_ward:
+                admission_filter['bed__ward_id'] = assigned_ward
 
-    # Get admitted patients
-    admissions_qs = Admission.objects.filter(**admission_filter).select_related(
-        'patient', 'patient__user', 'bed', 'bed__ward', 'admitting_doctor', 'admitting_doctor__staff', 'admitting_doctor__staff__user'
-    ).order_by('bed__bed_number')
+            admissions_qs = Admission.objects.filter(**admission_filter).select_related(
+                'patient', 'patient__user', 'bed', 'bed__ward', 'admitting_doctor', 'admitting_doctor__staff', 'admitting_doctor__staff__user'
+            ).order_by('bed__bed_number')
 
-    patient_ids_subquery = admissions_qs.values('patient_id')
-    admissions = list(admissions_qs)
+            patient_ids_subquery = admissions_qs.values('patient_id')
+            admissions = list(admissions_qs)
 
-    # Critical alerts (unacknowledged, high severity)
-    critical_alerts = NursingAlert.objects.filter(
-        facility=facility,
-        patient_id__in=patient_ids_subquery,
-        is_acknowledged=False,
-        severity__in=['critical', 'high']
-    ).select_related('patient', 'patient__user').order_by('-created_at')[:10]
+            critical_alerts = NursingAlert.objects.filter(
+                facility=facility,
+                patient_id__in=patient_ids_subquery,
+                is_acknowledged=False,
+                severity__in=['critical', 'high']
+            ).select_related('patient', 'patient__user').order_by('-created_at')[:10]
 
-    # Overdue medications
-    overdue_meds = MedicationAdministration.objects.filter(
-        facility=facility,
-        patient_id__in=patient_ids_subquery,
-        status='scheduled',
-        scheduled_time__lt=now
-    ).select_related('patient', 'patient__user').order_by('scheduled_time')[:10]
+            overdue_meds = MedicationAdministration.objects.filter(
+                facility=facility,
+                patient_id__in=patient_ids_subquery,
+                status='scheduled',
+                scheduled_time__lt=now
+            ).select_related('patient', 'patient__user').order_by('scheduled_time')[:10]
 
-    # Medications due in next 2 hours
-    medications_due = MedicationAdministration.objects.filter(
-        facility=facility,
-        patient_id__in=patient_ids_subquery,
-        status='scheduled',
-        scheduled_time__gte=now,
-        scheduled_time__lte=now + timedelta(hours=2)
-    ).select_related('patient', 'patient__user').order_by('scheduled_time')
+            medications_due = MedicationAdministration.objects.filter(
+                facility=facility,
+                patient_id__in=patient_ids_subquery,
+                status='scheduled',
+                scheduled_time__gte=now,
+                scheduled_time__lte=now + timedelta(hours=2)
+            ).select_related('patient', 'patient__user').order_by('scheduled_time')
 
-    # Today's pending tasks
-    pending_tasks = NursingTask.objects.filter(
-        facility=facility,
-        patient_id__in=patient_ids_subquery,
-        status__in=['pending', 'overdue'],
-        scheduled_time__gte=today_start
-    ).select_related('patient', 'patient__user').order_by('scheduled_time')
+            pending_tasks = NursingTask.objects.filter(
+                facility=facility,
+                patient_id__in=patient_ids_subquery,
+                status__in=['pending', 'overdue'],
+                scheduled_time__gte=today_start
+            ).select_related('patient', 'patient__user').order_by('scheduled_time')
 
     # Format shift patients
     shift_patients_data = []
@@ -1049,6 +1073,13 @@ def get_nurse_dashboard_data(user, request):
         'tasks': tasks_data,
     }
     cache.set(projection_cache_key, projection, timeout=300)
+    observe_histogram(
+        'hms_dashboard_query_count',
+        query_counter.count,
+        labels={'dashboard': 'nurse_my_work'},
+        description='SQL statements executed to build a dashboard response.',
+        buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+    )
     return {
         'role': 'nurse',
         'user_name': user.get_full_name(),
@@ -1453,6 +1484,7 @@ def admin_dashboard(request):
     projection_cache_key = admin_dashboard_projection_cache_key(facility.code)
     cached_projection = cache.get(projection_cache_key)
     if cached_projection is not None:
+        _record_dashboard_cache_event('admin', 'hit')
         return Response({
             'role': 'admin',
             'user_name': request.user.get_full_name(),
@@ -1460,95 +1492,97 @@ def admin_dashboard(request):
             'wards': cached_projection.get('wards', []),
         })
 
-    today = timezone.now().date()
+    _record_dashboard_cache_event('admin', 'miss')
+    with track_query_count() as query_counter:
+        with measure_duration(
+            'hms_dashboard_latency_seconds',
+            labels={'dashboard': 'admin'},
+            description='Dashboard compute latency in seconds.',
+        ):
+            today = timezone.now().date()
+            total_patients = PatientProfile.objects.filter(facility=facility).count()
+            bed_stats = Bed.objects.filter(facility=facility).aggregate(
+                total=Count('id'),
+                occupied=Count('id', filter=Q(status='occupied')),
+            )
+            total_beds = bed_stats['total'] or 0
+            occupied_beds = bed_stats['occupied'] or 0
+            occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
+            current_admissions = Admission.objects.filter(
+                facility=facility,
+                status__in=ACTIVE_ADMISSION_STATUSES
+            ).count()
+            cache_key = facility_cache_key_for_code(
+                facility.code,
+                f"admin_dashboard_appointments_{today.isoformat()}"
+            )
+            stale_cache_key = facility_cache_key_for_code(
+                facility.code,
+                f"admin_dashboard_appointments_{today.isoformat()}_stale"
+            )
+            lock_key = f"{cache_key}:lock"
 
-    # Patient count
-    total_patients = PatientProfile.objects.filter(facility=facility).count()
+            appointments_today = cache.get(cache_key)
+            if appointments_today is None:
+                appointments_today = cache.get(stale_cache_key, 0)
+                if cache.add(lock_key, '1', timeout=30):
+                    try:
+                        refresh_admin_dashboard_appointments.delay(
+                            facility_id=str(facility.id),
+                            facility_code=facility.code,
+                            date_str=today.isoformat(),
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to queue admin dashboard appointments refresh: %s", e)
 
-    # Bed statistics - single query with aggregation
-    bed_stats = Bed.objects.filter(facility=facility).aggregate(
-        total=Count('id'),
-        occupied=Count('id', filter=Q(status='occupied')),
-    )
-    total_beds = bed_stats['total'] or 0
-    occupied_beds = bed_stats['occupied'] or 0
-    occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
+            active_staff = PractitionerProfile.objects.filter(
+                staff__user__is_active=True,
+                staff__primary_facility=facility
+            ).count()
 
-    # Current admissions
-    current_admissions = Admission.objects.filter(
-        facility=facility,
-        status__in=ACTIVE_ADMISSION_STATUSES
-    ).count()
+            wards = Ward.objects.filter(
+                is_active=True,
+                department__facility=facility
+            ).annotate(
+                total_beds_annotated=Count('beds'),
+                occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
+                available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
+                maintenance_beds_annotated=Count('beds', filter=Q(beds__status='maintenance')),
+            )
 
-    # Today's appointments - cached + refreshed async to avoid blocking on FHIR
-    cache_key = facility_cache_key_for_code(
-        facility.code,
-        f"admin_dashboard_appointments_{today.isoformat()}"
-    )
-    stale_cache_key = facility_cache_key_for_code(
-        facility.code,
-        f"admin_dashboard_appointments_{today.isoformat()}_stale"
-    )
-    lock_key = f"{cache_key}:lock"
+            ward_stats = [
+                {
+                    'id': str(ward.id),
+                    'name': ward.name,
+                    'description': ward.description or '',
+                    'total_beds': ward.total_beds_annotated,
+                    'occupied_beds': ward.occupied_beds_annotated,
+                    'available_beds': ward.available_beds_annotated,
+                    'maintenance_beds': ward.maintenance_beds_annotated,
+                }
+                for ward in wards
+            ]
 
-    appointments_today = cache.get(cache_key)
-    if appointments_today is None:
-        appointments_today = cache.get(stale_cache_key, 0)
-        if cache.add(lock_key, '1', timeout=30):
-            try:
-                refresh_admin_dashboard_appointments.delay(
-                    facility_id=str(facility.id),
-                    facility_code=facility.code,
-                    date_str=today.isoformat(),
-                )
-            except Exception as e:
-                logger.warning("Failed to queue admin dashboard appointments refresh: %s", e)
-
-    # Active staff (count practitioners whose user accounts are active)
-    active_staff = PractitionerProfile.objects.filter(
-        staff__user__is_active=True,
-        staff__primary_facility=facility
-    ).count()
-
-    # Ward breakdown - optimized with annotation to avoid N+1
-    # Note: Annotation names must not conflict with Ward model properties
-    # (e.g., available_beds_count is a @property on Ward, so we use _annotated suffix)
-    wards = Ward.objects.filter(
-        is_active=True,
-        department__facility=facility
-    ).annotate(
-        total_beds_annotated=Count('beds'),
-        occupied_beds_annotated=Count('beds', filter=Q(beds__status='occupied')),
-        available_beds_annotated=Count('beds', filter=Q(beds__status='available')),
-        maintenance_beds_annotated=Count('beds', filter=Q(beds__status='maintenance')),
-    )
-
-    ward_stats = [
-        {
-            'id': str(ward.id),
-            'name': ward.name,
-            'description': ward.description or '',
-            'total_beds': ward.total_beds_annotated,
-            'occupied_beds': ward.occupied_beds_annotated,
-            'available_beds': ward.available_beds_annotated,
-            'maintenance_beds': ward.maintenance_beds_annotated,
-        }
-        for ward in wards
-    ]
-
-    projection = {
-        'stats': {
-            'total_patients': total_patients,
-            'current_admissions': current_admissions,
-            'occupancy_rate': round(occupancy_rate, 1),
-            'total_beds': total_beds,
-            'occupied_beds': occupied_beds,
-            'todays_appointments': appointments_today,
-            'active_staff': active_staff,
-        },
-        'wards': ward_stats,
-    }
+            projection = {
+                'stats': {
+                    'total_patients': total_patients,
+                    'current_admissions': current_admissions,
+                    'occupancy_rate': round(occupancy_rate, 1),
+                    'total_beds': total_beds,
+                    'occupied_beds': occupied_beds,
+                    'todays_appointments': appointments_today,
+                    'active_staff': active_staff,
+                },
+                'wards': ward_stats,
+            }
     cache.set(projection_cache_key, projection, timeout=300)
+    observe_histogram(
+        'hms_dashboard_query_count',
+        query_counter.count,
+        labels={'dashboard': 'admin'},
+        description='SQL statements executed to build a dashboard response.',
+        buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+    )
 
     return Response({
         'role': 'admin',

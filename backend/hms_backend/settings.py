@@ -605,13 +605,21 @@ SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000 if not DEB
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True if not DEBUG else False)
 SECURE_HSTS_PRELOAD = env.bool('SECURE_HSTS_PRELOAD', default=True if not DEBUG else False)
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True if not DEBUG else False)
+_probe_and_metrics_exempt_paths = [
+    r'^api/health/$',
+    r'^api/health/alive/$',
+    r'^api/health/ready/$',
+    r'^api/health/started/$',
+    r'^api/metrics/$',
+]
 _secure_redirect_exempt = [
     pattern.strip()
-    for pattern in env.list('SECURE_REDIRECT_EXEMPT', default=[r'^api/health/$'])
+    for pattern in env.list('SECURE_REDIRECT_EXEMPT', default=_probe_and_metrics_exempt_paths)
     if pattern and pattern.strip()
 ]
-if r'^api/health/$' not in _secure_redirect_exempt:
-    _secure_redirect_exempt.append(r'^api/health/$')
+for pattern in _probe_and_metrics_exempt_paths:
+    if pattern not in _secure_redirect_exempt:
+        _secure_redirect_exempt.append(pattern)
 SECURE_REDIRECT_EXEMPT = _secure_redirect_exempt
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True if not DEBUG else False)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG else False)
@@ -687,6 +695,12 @@ USER_SESSION_IDLE_TIMEOUT_MINUTES = env.int('USER_SESSION_IDLE_TIMEOUT_MINUTES',
 # Logging Configuration
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
+LOG_LEVEL = env('LOG_LEVEL', default='INFO').upper()
+DJANGO_DB_LOG_LEVEL = env('DJANGO_DB_LOG_LEVEL', default='WARNING' if not DEBUG else 'INFO').upper()
+LOG_AS_JSON = env.bool('LOG_AS_JSON', default=not DEBUG)
+FILE_LOGGING_ENABLED = env.bool('FILE_LOGGING_ENABLED', default=DEBUG)
+_console_formatter = 'json' if LOG_AS_JSON else 'standard'
+_default_app_handlers = ['console'] + (['file'] if FILE_LOGGING_ENABLED else [])
 
 LOGGING = {
     'version': 1,
@@ -705,11 +719,11 @@ LOGGING = {
             'style': '{',
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },
+        'json': {
+            '()': 'hms_backend.logging_utils.JsonLogFormatter',
+        },
     },
     'filters': {
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
-        },
         'require_debug_false': {
             '()': 'django.utils.log.RequireDebugFalse',
         },
@@ -719,13 +733,12 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'INFO',
-            'filters': ['require_debug_true'],
+            'level': LOG_LEVEL,
             'class': 'logging.StreamHandler',
-            'formatter': 'standard',
+            'formatter': _console_formatter,
         },
         'file': {
-            'level': 'INFO',
+            'level': LOG_LEVEL,
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'hms.log'),
             'maxBytes': 1024 * 1024 * 5,  # 5 MB
@@ -758,37 +771,37 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file', 'mail_admins'],
-            'level': 'INFO',
+            'handlers': _default_app_handlers + ['mail_admins'],
+            'level': LOG_LEVEL,
             'propagate': True,
         },
         'django.request': {
-            'handlers': ['console', 'file', 'mail_admins'],
-            'level': 'INFO',
+            'handlers': _default_app_handlers + ['mail_admins'],
+            'level': LOG_LEVEL,
             'propagate': False,
         },
         'django.security': {
-            'handlers': ['mail_admins', 'file'],
+            'handlers': ['mail_admins'] + (['file'] if FILE_LOGGING_ENABLED else ['console']),
             'level': 'ERROR',
             'propagate': False,
         },
         'django.db.backends': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'handlers': _default_app_handlers,
+            'level': DJANGO_DB_LOG_LEVEL,
             'propagate': False,
         },
         'apps': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
+            'handlers': _default_app_handlers,
+            'level': LOG_LEVEL if not DEBUG else 'DEBUG',
             'propagate': True,
         },
         'apps.fhir_client': {
-            'handlers': ['console', 'fhir_client_file'],
+            'handlers': ['console'] + (['fhir_client_file'] if FILE_LOGGING_ENABLED else []),
             'level': 'DEBUG',
             'propagate': False,
         },
         'apps.ai': {
-            'handlers': ['console', 'ai_file'],
+            'handlers': ['console'] + (['ai_file'] if FILE_LOGGING_ENABLED else []),
             'level': 'INFO',
             'propagate': False,
         },

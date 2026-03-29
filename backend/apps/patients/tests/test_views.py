@@ -662,7 +662,8 @@ class TestPatientViewSet:
         })
 
         assert first_page.status_code == status.HTTP_200_OK
-        assert first_page.data.get('total') == 3
+        assert first_page.data.get('total') is None
+        assert first_page.data.get('count_exact') is False
         assert first_page.data.get('page') == 1
         assert first_page.data.get('page_size') == 2
         assert len(first_page.data.get('results', [])) == 2
@@ -678,8 +679,38 @@ class TestPatientViewSet:
 
         assert second_page.status_code == status.HTTP_200_OK
         assert second_page.data.get('page') == 2
+        assert second_page.data.get('total') == 3
+        assert second_page.data.get('count_exact') is True
         assert len(second_page.data.get('results', [])) == 1
         assert second_page.data.get('previous') is not None
+
+    def test_search_include_total_returns_exact_count(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        for idx in range(3):
+            PatientProfileFactory(
+                facility=facility,
+                user=PatientUserFactory(
+                    first_name='Exact',
+                    last_name=f'Patient{idx}',
+                    primary_facility=facility,
+                ),
+                medical_record_number=f'MRN-EXACT-00{idx}',
+            )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'Exact',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 1,
+            'include_total': 'true',
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('total') == 3
+        assert response.data.get('count_exact') is True
 
     def test_search_rejects_invalid_ordering(self, db):
         admin = AdminUserFactory()
@@ -1105,6 +1136,19 @@ class TestPatientViewSet:
         assert response.status_code == status.HTTP_200_OK
         # One additional prefetch query is expected for active encounter context.
         assert len(ctx) <= 9
+
+    @patch('apps.patients.tasks.enqueue_patient_search_index_rebuild.delay')
+    def test_admin_can_queue_patient_search_reindex(self, mock_reindex_task, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        mock_reindex_task.return_value = MagicMock(id='reindex-task-123')
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.post('/api/patients/search-index/reindex/', {}, format='json')
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.data['task_id'] == 'reindex-task-123'
+        mock_reindex_task.assert_called_once()
 
     def test_search_include_fhir_forbidden_for_receptionist(self, db):
         """Test that FHIR search is restricted to clinical staff."""

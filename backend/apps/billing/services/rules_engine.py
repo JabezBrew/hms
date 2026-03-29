@@ -22,10 +22,14 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, List, Dict, Any
 import logging
 
-from django.core.cache import cache
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
+from apps.core.metadata_cache import (
+    get_or_set_metadata,
+    invalidate_metadata_prefix,
+    metadata_cache_key,
+)
 from apps.billing.models import BillingRule, FacilityBillingSettings, Service
 
 logger = logging.getLogger(__name__)
@@ -617,11 +621,9 @@ class BillingRulesEngine:
 
         Performance: Uses prefetch_related for M2M relationships.
         """
-        cache_key = f"billing_rules_{facility_id or 'global'}"
-        rules = cache.get(cache_key)
+        cache_key = metadata_cache_key('billing_rules', facility_id or 'global')
 
-        if rules is None:
-            # Build query
+        def _load_rules():
             today = timezone.now().date()
 
             query = Q(is_active=True) & Q(effective_from__lte=today) & (
@@ -634,15 +636,14 @@ class BillingRulesEngine:
             else:
                 query &= Q(facility__isnull=True)
 
-            rules = list(
+            return list(
                 BillingRule.objects
                 .filter(query)
                 .select_related('facility')
                 .prefetch_related('applicable_services', 'applicable_categories')
                 .order_by('priority', 'name')
             )
-
-            cache.set(cache_key, rules, self.CACHE_TIMEOUT)
+        rules = get_or_set_metadata(cache_key, _load_rules, timeout=self.CACHE_TIMEOUT)
 
         # Filter by insurance status
         filtered_rules = []
@@ -681,17 +682,6 @@ class BillingRulesEngine:
 
         Call when rules are created/updated/deleted.
         """
-        if facility_id:
-            cache.delete(f"billing_rules_{facility_id}")
-        cache.delete("billing_rules_global")
-
-        # Try to clear all rule caches
-        try:
-            if hasattr(cache, 'delete_pattern'):
-                cache.delete_pattern('billing_rules_*')
-            else:
-                cache.clear()
-        except Exception:
-            pass
+        invalidate_metadata_prefix('billing_rules:')
 
         logger.info(f"Invalidated billing rules cache: facility={facility_id}")

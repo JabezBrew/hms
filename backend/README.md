@@ -23,26 +23,24 @@ Press `Ctrl+C` to stop all services at once.
 
 ### Railway Deployment Pattern
 
-For production Railway deployments, use a single startup command:
+For production Railway deployments, split migration and web startup:
 
-1. **Web service**: keep Railway start command as `python /app/startup_and_run.py`.
-2. **Startup flow**: the script acquires an advisory lock, runs strict migration preflight, applies pending migrations, runs `ensure_admin`, then starts Daphne.
-3. **Replica safety**: concurrent replicas wait on the lock so only one process applies schema changes at a time.
+1. **Migrator job**: run `python /app/run_migrations.py` once per release.
+2. **Web service**: keep Railway start command as `python /app/startup_and_run.py`.
+3. **Startup flow**: the web process performs dependency checks and fails fast if pending migrations remain, but it does not mutate schema.
+4. **Replica safety**: only the dedicated migrator acquires the advisory lock and applies schema/bootstrap changes.
 
 Recommended Railway environment variables:
 
 ```bash
-MIGRATE_ON_STARTUP=True
+MIGRATE_ON_STARTUP=False
 FAIL_ON_PENDING_MIGRATIONS=True
 DEFAULT_FACILITY_CODE=<valid existing facility code>
 RUN_MIGRATIONS_ONLY=False
 ```
 
-If `core_facility` exists but is empty, startup migration mode will bootstrap a minimal
-facility row using `DEFAULT_FACILITY_CODE` before strict preflight checks.
-
-`RUN_MIGRATIONS_ONLY=True` is still available for rare migration-only jobs, but routine
-Railway deploys no longer need command or script switching.
+The dedicated migrator will bootstrap a minimal `core_facility` row when needed before
+strict preflight checks run.
 
 Before running migrations, execute:
 
@@ -51,6 +49,13 @@ python manage.py preflight_migration_checks --strict
 ```
 
 This prevents known facility-backfill migrations from failing mid-deploy due to missing fallback configuration (for example missing `DEFAULT_FACILITY_CODE` on multi-facility datasets).
+
+Health and metrics endpoints:
+
+- `/api/health/alive/`
+- `/api/health/started/`
+- `/api/health/ready/`
+- `/api/metrics/`
 
 ### Prerequisites
 

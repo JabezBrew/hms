@@ -20,10 +20,16 @@ import logging
 
 from django.db import transaction
 from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 logger = logging.getLogger(__name__)
 
 
+@receiver(
+    post_save,
+    sender='encounters.Encounter',
+    dispatch_uid='billing_encounter_completion',
+)
 def handle_encounter_completion(sender, instance, **kwargs):
     """
     Maintain a draft invoice during the encounter, then finalize on completion.
@@ -83,6 +89,11 @@ def handle_encounter_completion(sender, instance, **kwargs):
         )
 
 
+@receiver(
+    post_save,
+    sender='wards.Admission',
+    dispatch_uid='billing_discharge',
+)
 def handle_discharge(sender, instance, **kwargs):
     """
     Maintain a draft invoice while the admission is actively admitted.
@@ -135,6 +146,11 @@ def handle_discharge(sender, instance, **kwargs):
         )
 
 
+@receiver(
+    post_save,
+    sender='laboratory.LabOrderTest',
+    dispatch_uid='billing_lab_order_test_update',
+)
 def handle_lab_order_test_update(sender, instance, **kwargs):
     """
     Sync the encounter draft invoice when a lab test status changes.
@@ -153,40 +169,3 @@ def handle_lab_order_test_update(sender, instance, **kwargs):
         transaction.on_commit(_enqueue)
     except Exception:
         _enqueue()
-
-
-def connect_billing_signals():
-    """
-    Connect billing signals to models.
-
-    Called from apps.billing.apps.BillingConfig.ready()
-    """
-    try:
-        from apps.encounters.models import Encounter
-        from apps.wards.models import Admission
-        from apps.laboratory.models import LabOrderTest
-
-        # Connect encounter completion handler
-        post_save.connect(
-            handle_encounter_completion,
-            sender=Encounter,
-            dispatch_uid='billing_encounter_completion'
-        )
-
-        # Connect discharge handler
-        post_save.connect(
-            handle_discharge,
-            sender=Admission,
-            dispatch_uid='billing_discharge'
-        )
-
-        post_save.connect(
-            handle_lab_order_test_update,
-            sender=LabOrderTest,
-            dispatch_uid='billing_lab_order_test_update'
-        )
-
-        logger.info("Billing signals connected successfully")
-
-    except ImportError as e:
-        logger.warning(f"Could not connect billing signals: {e}")

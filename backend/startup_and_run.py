@@ -251,7 +251,7 @@ wait_for_database(connection)
 
 migrate_on_startup = parse_bool(
     os.environ.get("MIGRATE_ON_STARTUP"),
-    default=True,
+    default=False,
 )
 fail_on_pending = parse_bool(
     os.environ.get("FAIL_ON_PENDING_MIGRATIONS"),

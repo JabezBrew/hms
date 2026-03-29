@@ -373,6 +373,10 @@ class PasswordChangeRequiredMiddleware(MiddlewareMixin):
         skip_paths = [
             '/api/auth/',
             '/api/health/',
+            '/api/health/alive/',
+            '/api/health/ready/',
+            '/api/health/started/',
+            '/api/metrics/',
             '/api/users/users/change_password',
             '/api/users/users/me/',
             '/api/users/sessions/',

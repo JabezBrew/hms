@@ -2,6 +2,7 @@
 Billing app configuration.
 """
 from django.apps import AppConfig
+from importlib import import_module
 
 
 class BillingConfig(AppConfig):
@@ -12,6 +13,4 @@ class BillingConfig(AppConfig):
     verbose_name = 'Billing'
 
     def ready(self):
-        """Connect billing signals when app is ready."""
-        from apps.billing.signals import connect_billing_signals
-        connect_billing_signals()
+        import_module(f'{self.name}.signals')

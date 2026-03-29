@@ -30,7 +30,13 @@ from apps.users.models import PatientProfile
 from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
 from apps.users.permissions import IsAdminOrOwner
 from apps.users.rbac import IsAdmin
-from apps.core.pagination import StandardResultsSetPagination
+from apps.core.metrics import (
+    inc_counter,
+    measure_duration,
+    observe_histogram,
+    track_query_count,
+)
+from apps.core.pagination import StandardResultsSetPagination, PatientSearchPagination
 from apps.core.security import (
     ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
@@ -44,12 +50,15 @@ from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSe
 from apps.core.cache_utils import facility_cache_key
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
+from .search_index import apply_search_index_filter
 from .tasks import (
     sync_patient_with_fhir,
     log_patient_search,
     search_patients_in_fhir,
     update_patient_in_fhir,
     delete_patient_in_fhir,
+    enqueue_patient_search_index_rebuild,
+    rebuild_patient_search_index_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -422,7 +431,7 @@ class PatientViewSet(viewsets.ViewSet):
     API endpoint for patient management.
     """
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = PatientSearchPagination
 
     @action(detail=False, methods=['post'])
     def register(self, request):
@@ -502,6 +511,7 @@ class PatientViewSet(viewsets.ViewSet):
         ordering = request.query_params.get('ordering', '-created_at').strip() or '-created_at'
         requested_page = request.query_params.get('page', '').strip() or '1'
         requested_page_size = request.query_params.get('page_size', '').strip()
+        include_total = request.query_params.get('include_total', '').lower() == 'true'
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
         registry_scope = request.query_params.get('registry_scope', 'all').strip().lower() or 'all'
@@ -601,8 +611,12 @@ class PatientViewSet(viewsets.ViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        logger = logging.getLogger(__name__)
-        start_time = time.time()
+        start_time = time.perf_counter()
+        inc_counter(
+            'hms_patient_search_requests_total',
+            labels={'source': 'http'},
+            description='Patient search requests received by the API.',
+        )
 
         cache_params = {
             "query": query,
@@ -619,6 +633,7 @@ class PatientViewSet(viewsets.ViewSet):
             "ordering": ordering,
             "page": requested_page,
             "page_size": requested_page_size,
+            "include_total": include_total,
             "my_patients": my_patients,
             "registry_scope": registry_scope,
             "user_id": str(request.user.id),
@@ -650,6 +665,17 @@ class PatientViewSet(viewsets.ViewSet):
             cached_result = cache.get(cache_key)
             if cached_result is not None:
                 logger.info("Search cache hit for user %s", request.user.id)
+                inc_counter(
+                    'hms_patient_search_cache_events_total',
+                    labels={'result': 'hit'},
+                    description='Patient search cache events.',
+                )
+                observe_histogram(
+                    'hms_patient_search_latency_seconds',
+                    time.perf_counter() - start_time,
+                    labels={'source': 'cache'},
+                    description='Patient search latency in seconds.',
+                )
                 facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
                 log_patient_search.delay(
                     str(request.user.id),
@@ -657,6 +683,11 @@ class PatientViewSet(viewsets.ViewSet):
                     facility_code=facility.code if facility else None
                 )
                 return Response(cached_result)
+        inc_counter(
+            'hms_patient_search_cache_events_total',
+            labels={'result': 'miss'},
+            description='Patient search cache events.',
+        )
 
         # Log search for auditing/history
         facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
@@ -745,9 +776,26 @@ class PatientViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Filter by text query (Name, MRN, NHIS)
+            # Filter by text query (Name, MRN, NHIS) using the compact search projection
+            search_index_ready = bool(cache.get(facility_cache_key('patient_search_index_ready')))
             if query:
-                local_patients_qs = local_patients_qs.filter(_build_patient_text_query(query))
+                if search_index_ready:
+                    local_patients_qs, _normalized_query = apply_search_index_filter(
+                        local_patients_qs,
+                        facility=facility,
+                        query=query,
+                    )
+                else:
+                    rebuild_request_key = facility_cache_key('patient_search_index_rebuild_requested')
+                    if (
+                        not getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False)
+                        and cache.add(rebuild_request_key, '1', timeout=300)
+                    ):
+                        enqueue_patient_search_index_rebuild.delay(
+                            facility_id=str(facility.id),
+                            facility_code=facility.code,
+                        )
+                    local_patients_qs = local_patients_qs.filter(_build_patient_text_query(query))
 
             if my_patients:
                 my_patients_exists = UserPatientList.objects.filter(
@@ -948,25 +996,48 @@ class PatientViewSet(viewsets.ViewSet):
             local_patients_qs = local_patients_qs.order_by(*order_fields)
 
             paginator = self.pagination_class()
-            page = paginator.paginate_queryset(local_patients_qs, request, view=self)
-            patients_list = page if page is not None else list(local_patients_qs)
-            results = PatientSearchListSerializer(patients_list, many=True).data
-            total_results = paginator.page.paginator.count if page is not None else len(results)
-            page_number = paginator.page.number if page is not None else 1
-            page_size_value = paginator.get_page_size(request) or len(results)
+            with track_query_count() as query_counter:
+                with measure_duration(
+                    'hms_patient_search_latency_seconds',
+                    labels={'source': 'database'},
+                    description='Patient search latency in seconds.',
+                ):
+                    page = paginator.paginate_queryset(local_patients_qs, request, view=self)
+                    patients_list = page if page is not None else list(local_patients_qs)
+                    results = PatientSearchListSerializer(patients_list, many=True).data
+
+            total_results = getattr(paginator, 'total_count', len(results))
+            total_is_exact = getattr(paginator, 'total_is_exact', True)
+            page_number = getattr(paginator, 'page_number', 1)
+            page_size_value = getattr(paginator, 'page_size_value', (paginator.get_page_size(request) or len(results)))
             next_link = paginator.get_next_link() if page is not None else None
             previous_link = paginator.get_previous_link() if page is not None else None
+            observe_histogram(
+                'hms_patient_search_query_count',
+                query_counter.count,
+                labels={'search_index': 'warm' if search_index_ready else 'cold'},
+                description='SQL statements executed by patient search requests.',
+                buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+            )
+            observe_histogram(
+                'hms_patient_search_results_returned',
+                len(results),
+                description='Patient search result counts per page.',
+                buckets=(1, 5, 10, 25, 50, 100),
+            )
 
             # Log timing
-            local_proc_time = time.time()
+            local_proc_time = time.perf_counter()
             logger.info(
-                "Search completed in %.4fs. Returned=%s total=%s ordering=%s page=%s page_size=%s",
+                "Search completed in %.4fs. Returned=%s total=%s exact=%s ordering=%s page=%s page_size=%s queries=%s",
                 local_proc_time - start_time,
                 len(results),
                 total_results,
+                total_is_exact,
                 ordering,
                 page_number,
                 page_size_value,
+                query_counter.count,
             )
 
             response_data = {
@@ -975,6 +1046,7 @@ class PatientViewSet(viewsets.ViewSet):
                 "ordering": ordering,
                 "total": total_results,
                 "count": total_results,
+                "count_exact": total_is_exact,
                 "page": page_number,
                 "page_size": page_size_value,
                 "next": next_link,
@@ -1007,6 +1079,38 @@ class PatientViewSet(viewsets.ViewSet):
                 {"error": "Failed to search patients. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='search-index/reindex',
+        permission_classes=[permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin],
+    )
+    def reindex_search_index(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient_ids = request.data.get('patient_ids') or None
+        if patient_ids:
+            task = rebuild_patient_search_index_task.delay(
+                patient_profile_ids=patient_ids,
+                facility_code=facility.code,
+            )
+        else:
+            task = enqueue_patient_search_index_rebuild.delay(
+                facility_id=str(facility.id),
+                facility_code=facility.code,
+            )
+
+        return Response(
+            {
+                'message': 'Patient search index rebuild queued.',
+                'task_id': task.id,
+                'facility_code': facility.code,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     def _search_fhir(self, query, existing_results, user, facility):
         """

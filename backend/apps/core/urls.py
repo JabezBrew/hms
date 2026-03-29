@@ -13,6 +13,11 @@ router.register(r'facilities', views.FacilityViewSet, basename='facility')
 
 urlpatterns = [
     path(
+        'system/jobs/',
+        views.celery_operability,
+        name='celery-operability',
+    ),
+    path(
         'settings/deployment-capabilities/',
         views.deployment_capabilities,
         name='deployment-capabilities',

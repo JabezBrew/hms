@@ -1,0 +1,20 @@
+groups:
+  - name: hms-operability
+    rules:
+      - alert: HMSApiNotReady
+        expr: hms_health_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS API is not ready
+          description: The API readiness probe has been failing for at least two minutes.
+
+      - alert: HMSCeleryQueueBacklog
+        expr: sum(hms_celery_queue_depth) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Celery queue backlog is elevated
+          description: Total queue depth across HMS Celery queues has stayed above 100 for five minutes.

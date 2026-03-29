@@ -85,6 +85,30 @@ jobs:
         cd backend
         python manage.py preflight_migration_checks --strict
 
+    - name: Startup gate smoke
+      env:
+        DEBUG: True
+        SECRET_KEY: test-secret-key-ci-${{ github.run_id }}
+        DB_NAME: hms_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
+        REDIS_URL: redis://localhost:6379/0
+        SENDGRID_API_KEY: test-sendgrid-key
+        DEFAULT_FROM_EMAIL: ci@example.com
+        GOOGLE_APPLICATION_CREDENTIALS: ""
+        GOOGLE_CLOUD_PROJECT: test-project
+        GOOGLE_HEALTHCARE_DATASET: test-dataset
+        GOOGLE_FHIR_STORE: test-fhir-store
+        GOOGLE_DICOM_STORE: test-dicom-store
+        GOOGLE_HL7V2_STORE: test-hl7v2-store
+      run: |
+        cd backend
+        python manage.py migrate --noinput
+        python manage.py check_pending_migrations --fail-on-pending
+        python startup.py
+
     - name: Run tests with coverage
       env:
         DEBUG: True
@@ -295,7 +319,7 @@ jobs:
     - name: Wait for backend and frontend
       run: |
         for attempt in $(seq 1 60); do
-          if curl -fsS http://127.0.0.1:8000/api/health/ >/dev/null && curl -fsS http://127.0.0.1:4173/ >/dev/null; then
+          if curl -fsS http://127.0.0.1:8000/api/health/ready/ >/dev/null && curl -fsS http://127.0.0.1:4173/ >/dev/null; then
             exit 0
           fi
           sleep 2

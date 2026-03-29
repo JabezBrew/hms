@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+from importlib import import_module
 
 
 class DashboardsConfig(AppConfig):
@@ -8,4 +9,4 @@ class DashboardsConfig(AppConfig):
 
     def ready(self):
         # Register signal handlers for cache invalidation and realtime updates.
-        from . import signals  # noqa: F401
+        import_module(f'{self.name}.signals')

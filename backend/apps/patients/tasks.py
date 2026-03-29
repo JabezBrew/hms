@@ -3,9 +3,9 @@ import hashlib
 from django.core.cache import cache
 from apps.fhir_client.client import fhir_client
 from apps.fhir_client.utils import project_fhir_patient
-from apps.core.cache_utils import facility_cache_key
+from apps.core.cache_utils import facility_cache_key, facility_cache_key_for_code
 from hms_backend.tenancy import facility_task
-from .models import PatientFHIRMapping
+from .models import PatientFHIRMapping, PatientSearchIndex
 from apps.users.models import PatientProfile, User
 from apps.fhir_client.utils import (
     create_human_name,
@@ -15,6 +15,7 @@ from apps.fhir_client.utils import (
     generate_fhir_id,
 )
 import logging
+from .search_index import rebuild_patient_search_index, sync_patient_search_index
 
 logger = logging.getLogger(__name__)
 
@@ -292,3 +293,80 @@ def log_patient_search(user_id, search_query, facility_code=None):
         logger.warning(f"User {user_id} not found when logging search")
     except Exception as e:
         logger.error(f"Error logging patient search: {str(e)}")
+
+
+@shared_task(bind=True, max_retries=3, ignore_result=True)
+@facility_task
+def sync_patient_search_index_task(self, patient_profile_id, facility_code=None):
+    """
+    Sync the compact patient search projection for a single patient.
+    """
+    try:
+        patient_profile = PatientProfile.objects.select_related('user', 'facility').get(id=patient_profile_id)
+        sync_patient_search_index(patient_profile)
+        logger.debug("Synced patient search index for %s", patient_profile_id)
+        return {"status": "success", "patient_profile_id": str(patient_profile_id)}
+    except PatientProfile.DoesNotExist:
+        PatientSearchIndex.objects.filter(patient_profile_id=patient_profile_id).delete()
+        logger.warning("Patient profile %s missing during search index sync", patient_profile_id)
+        return {"status": "missing", "patient_profile_id": str(patient_profile_id)}
+    except Exception as exc:
+        logger.error("Error syncing patient search index for %s", patient_profile_id)
+        raise self.retry(exc=exc, countdown=30)
+
+
+@shared_task(bind=True, max_retries=2)
+@facility_task
+def rebuild_patient_search_index_task(
+    self,
+    patient_profile_ids=None,
+    facility_id=None,
+    chunk_size=500,
+    facility_code=None,
+):
+    """
+    Rebuild the patient search projection in bulk.
+    """
+    try:
+        indexed = rebuild_patient_search_index(
+            facility_id=facility_id,
+            patient_ids=patient_profile_ids,
+            chunk_size=chunk_size,
+        )
+        if facility_code and not patient_profile_ids:
+            cache.set(
+                facility_cache_key_for_code(facility_code, 'patient_search_index_ready'),
+                '1',
+                timeout=86400,
+            )
+        return {"status": "success", "indexed": indexed}
+    except Exception as exc:
+        logger.error("Bulk patient search index rebuild failed")
+        raise self.retry(exc=exc, countdown=60)
+    finally:
+        if facility_code:
+            cache.delete(
+                facility_cache_key_for_code(
+                    facility_code,
+                    'patient_search_index_rebuild_in_progress',
+                )
+            )
+
+
+@shared_task(bind=True, max_retries=2, ignore_result=True)
+@facility_task
+def enqueue_patient_search_index_rebuild(self, facility_id=None, facility_code=None, batch_size=1000):
+    """
+    Queue a patient search index rebuild if one is not already in progress.
+    """
+    cache_key = facility_cache_key_for_code(
+        facility_code,
+        'patient_search_index_rebuild_in_progress',
+    )
+    if not cache.add(cache_key, '1', timeout=900):
+        return
+    rebuild_patient_search_index_task.delay(
+        facility_id=facility_id,
+        chunk_size=batch_size,
+        facility_code=facility_code,
+    )

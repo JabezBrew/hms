@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 """
-Railway production startup script.
-Handles database waiting, migrations with advisory locks, and config verification.
+Startup gate for containerized web processes.
+
+This script validates dependencies and migration state without mutating schema or
+bootstrap data. Dedicated migration jobs must use run_migrations.py instead.
 """
 import os
 import sys
@@ -57,34 +59,19 @@ def main():
         log("ERROR: Could not connect to database after 30 attempts")
         return 1
 
-    # Run migrations with advisory lock
-    log("Attempting to acquire migration lock...")
+    # Validate deployment state without mutating it.
+    fail_on_pending = os.environ.get("FAIL_ON_PENDING_MIGRATIONS", "true").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    log(
+        "Running startup preflight checks "
+        f"(FAIL_ON_PENDING_MIGRATIONS={fail_on_pending})..."
+    )
     try:
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT pg_try_advisory_lock(1)')
-            acquired = cursor.fetchone()[0]
-
-            if acquired:
-                log("Lock acquired - running migrations...")
-                try:
-                    call_command('migrate', '--noinput', verbosity=1)
-                    log("Migrations complete")
-
-                    try:
-                        call_command('ensure_admin')
-                        log("ensure_admin complete")
-                    except Exception as e:
-                        log(f"ensure_admin skipped: {e}")
-                finally:
-                    cursor.execute('SELECT pg_advisory_unlock(1)')
-                    log("Lock released")
-            else:
-                log("Another instance running migrations, waiting...")
-                cursor.execute('SELECT pg_advisory_lock(1)')
-                cursor.execute('SELECT pg_advisory_unlock(1)')
-                log("Migrations completed by another instance")
+        call_command('preflight_migration_checks', strict=True)
+        call_command('check_pending_migrations', fail_on_pending=fail_on_pending)
     except Exception as e:
-        log(f"ERROR during migrations: {e}")
+        log(f"ERROR during startup gating: {e}")
         import traceback
         traceback.print_exc()
         return 1
@@ -100,7 +87,7 @@ def main():
     cors_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
     log(f"CORS origins: {cors_origins}")
 
-    log("Startup complete - ready for ASGI web server")
+    log("Startup gate complete - ready for web server")
     return 0
 
 if __name__ == "__main__":

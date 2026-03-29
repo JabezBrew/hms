@@ -1,18 +1,27 @@
 """
 Core views for system-wide settings and configuration APIs.
 """
+import os
 import re
+import time
+from urllib.parse import urlparse
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
 from django.conf import settings
+from django.core.cache import cache
+from django.db import connection
 from django.db.models import Q, Exists, OuterRef, Prefetch
+from django.http import HttpResponse
+
+from redis import Redis
 
 from .models import Facility, FacilityFluidBalanceSettings
+from .metrics import render_prometheus_metrics, set_gauge
 from .pagination import StandardResultsSetPagination
 from .serializers import FacilityFluidBalanceSettingsSerializer, FacilityListSerializer
 from .mixins import FacilityScopedCreateMixin
@@ -23,6 +32,242 @@ from .security import (
     get_user_facility,
     get_user_facility_codes,
 )
+from hms_backend.celery import app as celery_app
+
+
+PROCESS_STARTED_AT = time.time()
+
+
+def _health_response(check_name: str, ok: bool, *, dependencies: dict | None = None, status_code: int = 200):
+    payload = {
+        'status': 'healthy' if ok else 'unhealthy',
+        'check': check_name,
+        'service': 'hms-backend',
+        'pid': os.getpid(),
+        'uptime_seconds': round(max(0.0, time.time() - PROCESS_STARTED_AT), 3),
+    }
+    if dependencies is not None:
+        payload['dependencies'] = dependencies
+    return Response(payload, status=status_code)
+
+
+def _check_database():
+    started = time.perf_counter()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        duration = time.perf_counter() - started
+        return True, round(duration, 6), None
+    except Exception:
+        duration = time.perf_counter() - started
+        return False, round(duration, 6), 'database_unavailable'
+
+
+def _check_cache():
+    probe_key = f"health:probe:{os.getpid()}"
+    started = time.perf_counter()
+    try:
+        cache.set(probe_key, '1', timeout=5)
+        cached = cache.get(probe_key)
+        cache.delete(probe_key)
+        duration = time.perf_counter() - started
+        if cached != '1':
+            return False, round(duration, 6), 'cache_roundtrip_failed'
+        return True, round(duration, 6), None
+    except Exception:
+        duration = time.perf_counter() - started
+        return False, round(duration, 6), 'cache_unavailable'
+
+
+def _dependency_snapshot():
+    db_ok, db_duration, db_error = _check_database()
+    cache_ok, cache_duration, cache_error = _check_cache()
+
+    set_gauge(
+        'hms_dependency_ready',
+        1 if db_ok else 0,
+        labels={'dependency': 'database'},
+        description='Dependency readiness for process-local health checks.',
+    )
+    set_gauge(
+        'hms_dependency_ready',
+        1 if cache_ok else 0,
+        labels={'dependency': 'cache'},
+        description='Dependency readiness for process-local health checks.',
+    )
+    set_gauge(
+        'hms_process_uptime_seconds',
+        max(0.0, time.time() - PROCESS_STARTED_AT),
+        description='Process uptime in seconds.',
+    )
+
+    dependencies = {
+        'database': {
+            'status': 'connected' if db_ok else 'disconnected',
+            'latency_seconds': db_duration,
+        },
+        'cache': {
+            'status': 'connected' if cache_ok else 'disconnected',
+            'latency_seconds': cache_duration,
+        },
+    }
+    if db_error:
+        dependencies['database']['error'] = db_error
+    if cache_error:
+        dependencies['cache']['error'] = cache_error
+
+    return {
+        'database_ok': db_ok,
+        'cache_ok': cache_ok,
+        'dependencies': dependencies,
+    }
+
+
+def _redis_queue_depths():
+    broker_url = getattr(settings, 'CELERY_BROKER_URL', '')
+    parsed = urlparse(broker_url)
+    if parsed.scheme not in {'redis', 'rediss'}:
+        return {}
+
+    client = Redis.from_url(broker_url, socket_timeout=1.0, socket_connect_timeout=1.0)
+    queue_names = []
+    for queue in getattr(settings, 'CELERY_TASK_QUEUES', ()) or ():
+        queue_name = getattr(queue, 'name', None)
+        if queue_name:
+            queue_names.append(queue_name)
+
+    default_queue = getattr(settings, 'CELERY_TASK_DEFAULT_QUEUE', None) or 'celery'
+    if default_queue not in queue_names:
+        queue_names.append(default_queue)
+
+    return {
+        queue_name: int(client.llen(queue_name))
+        for queue_name in queue_names
+    }
+
+
+def _collect_celery_operability():
+    inspector = celery_app.control.inspect(timeout=1.0)
+
+    try:
+        stats = inspector.stats() or {}
+    except Exception:
+        stats = {}
+
+    try:
+        active = inspector.active() or {}
+    except Exception:
+        active = {}
+
+    try:
+        scheduled = inspector.scheduled() or {}
+    except Exception:
+        scheduled = {}
+
+    try:
+        reserved = inspector.reserved() or {}
+    except Exception:
+        reserved = {}
+
+    workers = {}
+    worker_names = set(stats) | set(active) | set(scheduled) | set(reserved)
+    for worker_name in sorted(worker_names):
+        worker_stats = stats.get(worker_name) or {}
+        workers[worker_name] = {
+            'active_count': len(active.get(worker_name) or []),
+            'scheduled_count': len(scheduled.get(worker_name) or []),
+            'reserved_count': len(reserved.get(worker_name) or []),
+            'pool_max_concurrency': ((worker_stats.get('pool') or {}).get('max-concurrency')),
+            'uptime_seconds': worker_stats.get('uptime'),
+            'processed_total': sum((worker_stats.get('total') or {}).values()),
+        }
+
+    queue_depths = {}
+    try:
+        queue_depths = _redis_queue_depths()
+    except Exception:
+        queue_depths = {}
+
+    return {
+        'worker_count': len(workers),
+        'workers': workers,
+        'queue_depths': queue_depths,
+        'aggregates': {
+            'active_tasks': sum(worker['active_count'] for worker in workers.values()),
+            'scheduled_tasks': sum(worker['scheduled_count'] for worker in workers.values()),
+            'reserved_tasks': sum(worker['reserved_count'] for worker in workers.values()),
+            'queue_depth_total': sum(queue_depths.values()),
+        },
+    }
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_alive(_request):
+    return _health_response('alive', True)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_started(_request):
+    return _health_response('started', True)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_ready(_request):
+    snapshot = _dependency_snapshot()
+    ready = snapshot['database_ok'] and snapshot['cache_ok']
+    return _health_response(
+        'ready',
+        ready,
+        dependencies=snapshot['dependencies'],
+        status_code=200 if ready else 503,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def metrics_view(_request):
+    snapshot = _dependency_snapshot()
+    operability = _collect_celery_operability()
+
+    for queue_name, depth in operability['queue_depths'].items():
+        set_gauge(
+            'hms_celery_queue_depth',
+            depth,
+            labels={'queue': queue_name},
+            description='Current Redis-backed Celery queue depth.',
+        )
+    set_gauge(
+        'hms_celery_workers',
+        operability['worker_count'],
+        description='Number of Celery workers visible via control.inspect.',
+    )
+
+    body = render_prometheus_metrics(
+        extra_lines=[
+            f'hms_health_ready {1 if snapshot["database_ok"] and snapshot["cache_ok"] else 0}',
+        ]
+    )
+    response = HttpResponse(body, content_type='text/plain; version=0.0.4; charset=utf-8')
+    response['Cache-Control'] = 'no-store'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def celery_operability(request):
+    facility = get_user_facility(request)
+    snapshot = _dependency_snapshot()
+    operability = _collect_celery_operability()
+    return Response({
+        'service': 'hms-backend',
+        'facility_scope': getattr(facility, 'code', None),
+        'health': snapshot['dependencies'],
+        'celery': operability,
+    })
 
 
 class FacilityScopedViewSet(FacilityScopedQuerysetMixin, FacilityScopedCreateMixin, viewsets.ModelViewSet):

@@ -13,6 +13,7 @@ from django.conf import settings
 from datetime import timedelta, datetime
 import logging
 
+from apps.core.metrics import inc_counter, measure_duration, observe_histogram, track_query_count
 from ..core.pagination import StandardResultsSetPagination, SmallResultsSetPagination
 from apps.core.cache_utils import facility_cache_key
 
@@ -1073,6 +1074,11 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
             # Try to get from cache first
             cached_result = cache.get(cache_key)
             if cached_result is not None:
+                inc_counter(
+                    'hms_dashboard_cache_events_total',
+                    labels={'dashboard': 'nursing_monitoring', 'result': 'hit'},
+                    description='Dashboard cache hits, misses, and stale serves.',
+                )
                 return Response(cached_result)
             
             # Cache miss - try to acquire lock for single-flight
@@ -1088,128 +1094,142 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 # Quick retry - check if cache was populated while we waited
                 cached_result = cache.get(cache_key)
                 if cached_result is not None:
+                    inc_counter(
+                        'hms_dashboard_cache_events_total',
+                        labels={'dashboard': 'nursing_monitoring', 'result': 'hit'},
+                        description='Dashboard cache hits, misses, and stale serves.',
+                    )
                     return Response(cached_result)
                 if stale_result is not None:
+                    inc_counter(
+                        'hms_dashboard_cache_events_total',
+                        labels={'dashboard': 'nursing_monitoring', 'result': 'stale'},
+                        description='Dashboard cache hits, misses, and stale serves.',
+                    )
                     return Response(stale_result)
                 # Cold-cache fallback: recompute locally rather than blocking request threads.
             
+            inc_counter(
+                'hms_dashboard_cache_events_total',
+                labels={'dashboard': 'nursing_monitoring', 'result': 'miss'},
+                description='Dashboard cache hits, misses, and stale serves.',
+            )
 
             try:
-                # Calculate time boundaries for prefetch filters
-                now = timezone.now()
-                twenty_four_hours_ago = now - timedelta(hours=24)
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                today_end = today_start + timedelta(days=1)
-                two_hours_later = now + timedelta(hours=2)
+                with track_query_count() as query_counter:
+                    with measure_duration(
+                        'hms_dashboard_latency_seconds',
+                        labels={'dashboard': 'nursing_monitoring'},
+                        description='Dashboard compute latency in seconds.',
+                    ):
+                        # Calculate time boundaries for prefetch filters
+                        now = timezone.now()
+                        twenty_four_hours_ago = now - timedelta(hours=24)
+                        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                        today_end = today_start + timedelta(days=1)
+                        two_hours_later = now + timedelta(hours=2)
 
-                # OPTIMIZED: Get currently admitted patients with all related data prefetched
-                # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
-                admissions = Admission.objects.filter(
-                    status__in=ACTIVE_ADMISSION_STATUSES,
-                    facility=facility
-                ).select_related(
-                    'patient__user',
-                    'bed__ward',
-                    'admitting_doctor__staff__user'
-                ).prefetch_related(
-                    # Prefetch recent vital signs (last 24 hours)
-                    Prefetch(
-                        'patient__vital_signs',
-                        queryset=VitalSigns.objects.filter(
-                            recorded_at__gte=twenty_four_hours_ago
-                        ).order_by('-recorded_at')[:5],
-                        to_attr='recent_vitals_list'
-                    ),
-                    # Prefetch active alerts (unacknowledged)
-                    Prefetch(
-                        'patient__nursing_alerts',
-                        queryset=NursingAlert.objects.filter(
-                            is_acknowledged=False
-                        ).order_by('-severity', '-created_at')[:5],
-                        to_attr='active_alerts_list'
-                    ),
-                    # Prefetch pending tasks for today
-                    Prefetch(
-                        'patient__nursing_tasks',
-                        queryset=NursingTask.objects.filter(
-                            status__in=['pending', 'overdue'],
-                            scheduled_time__gte=today_start,
-                            scheduled_time__lt=today_end
-                        ).order_by('scheduled_time')[:10],
-                        to_attr='pending_tasks_list'
-                    ),
-                    # Prefetch medications due in next 2 hours
-                    Prefetch(
-                        'patient__medication_administrations',
-                        queryset=MedicationAdministration.objects.filter(
-                            status='scheduled',
-                            scheduled_time__gte=now,
-                            scheduled_time__lte=two_hours_later
-                        ).order_by('scheduled_time')[:10],
-                        to_attr='medications_due_list'
-                    ),
-                ).order_by('-admission_date')
+                        admissions = Admission.objects.filter(
+                            status__in=ACTIVE_ADMISSION_STATUSES,
+                            facility=facility
+                        ).select_related(
+                            'patient__user',
+                            'bed__ward',
+                            'admitting_doctor__staff__user'
+                        ).prefetch_related(
+                            Prefetch(
+                                'patient__vital_signs',
+                                queryset=VitalSigns.objects.filter(
+                                    recorded_at__gte=twenty_four_hours_ago
+                                ).order_by('-recorded_at')[:5],
+                                to_attr='recent_vitals_list'
+                            ),
+                            Prefetch(
+                                'patient__nursing_alerts',
+                                queryset=NursingAlert.objects.filter(
+                                    is_acknowledged=False
+                                ).order_by('-severity', '-created_at')[:5],
+                                to_attr='active_alerts_list'
+                            ),
+                            Prefetch(
+                                'patient__nursing_tasks',
+                                queryset=NursingTask.objects.filter(
+                                    status__in=['pending', 'overdue'],
+                                    scheduled_time__gte=today_start,
+                                    scheduled_time__lt=today_end
+                                ).order_by('scheduled_time')[:10],
+                                to_attr='pending_tasks_list'
+                            ),
+                            Prefetch(
+                                'patient__medication_administrations',
+                                queryset=MedicationAdministration.objects.filter(
+                                    status='scheduled',
+                                    scheduled_time__gte=now,
+                                    scheduled_time__lte=two_hours_later
+                                ).order_by('scheduled_time')[:10],
+                                to_attr='medications_due_list'
+                            ),
+                        ).order_by('-admission_date')
 
-                # Restrict to accessible patients for nurses
-                if request.user.user_type == 'nurse' and getattr(settings, 'TEAM_ACCESS_STRICT', True):
-                    accessible_patients = get_accessible_patients_for_clinician(request.user)
-                    admissions = admissions.filter(patient__in=accessible_patients)
+                        if request.user.user_type == 'nurse' and getattr(settings, 'TEAM_ACCESS_STRICT', True):
+                            accessible_patients = get_accessible_patients_for_clinician(request.user)
+                            admissions = admissions.filter(patient__in=accessible_patients)
 
-                # Filter by ward if specified
-                if ward_id:
-                    admissions = admissions.filter(bed__ward_id=ward_id)
+                        if ward_id:
+                            admissions = admissions.filter(bed__ward_id=ward_id)
 
-                # Get total count with caching (avoid expensive count on every request)
-                count_cache_key = facility_cache_key(
-                    f'nursing_dashboard_count_{ward_id or "all"}_u{request.user.id}'
-                )
-                total_count = cache.get(count_cache_key)
-                if total_count is None:
-                    total_count = admissions.count()
-                    cache.set(count_cache_key, total_count, 120)  # Cache count for 120 seconds
+                        count_cache_key = facility_cache_key(
+                            f'nursing_dashboard_count_{ward_id or "all"}_u{request.user.id}'
+                        )
+                        total_count = cache.get(count_cache_key)
+                        if total_count is None:
+                            total_count = admissions.count()
+                            cache.set(count_cache_key, total_count, 120)
 
-                # Apply pagination
-                start = (page - 1) * page_size
-                end = start + page_size
-                admissions = list(admissions[start:end])
+                        start = (page - 1) * page_size
+                        end = start + page_size
+                        admissions = list(admissions[start:end])
 
-                monitoring_data = []
+                        monitoring_data = []
 
-                for admission in admissions:
-                    patient = admission.patient
+                        for admission in admissions:
+                            patient = admission.patient
 
-                    # Use prefetched data instead of making individual queries
-                    recent_vitals = getattr(patient, 'recent_vitals_list', [])
-                    latest_vitals = recent_vitals[0] if recent_vitals else None
+                            recent_vitals = getattr(patient, 'recent_vitals_list', [])
+                            latest_vitals = recent_vitals[0] if recent_vitals else None
 
-                    active_alerts = getattr(patient, 'active_alerts_list', [])
-                    pending_tasks = getattr(patient, 'pending_tasks_list', [])
-                    medications_due = getattr(patient, 'medications_due_list', [])
+                            active_alerts = getattr(patient, 'active_alerts_list', [])
+                            pending_tasks = getattr(patient, 'pending_tasks_list', [])
+                            medications_due = getattr(patient, 'medications_due_list', [])
 
-                    monitoring_data.append({
-                        'patient': patient,
-                        'admission': admission,
-                        'latest_vitals': latest_vitals,
-                        'active_alerts': active_alerts,
-                        'pending_tasks': pending_tasks,
-                        'medications_due': medications_due
-                    })
+                            monitoring_data.append({
+                                'patient': patient,
+                                'admission': admission,
+                                'latest_vitals': latest_vitals,
+                                'active_alerts': active_alerts,
+                                'pending_tasks': pending_tasks,
+                                'medications_due': medications_due
+                            })
 
-                # Use lightweight list serializer for dashboard (97% payload reduction)
-                serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
+                        serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
 
-                # Build response data
-                result = {
-                    'count': total_count,
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (total_count + page_size - 1) // page_size,
-                    'results': serializer.data
-                }
+                        result = {
+                            'count': total_count,
+                            'page': page,
+                            'page_size': page_size,
+                            'total_pages': (total_count + page_size - 1) // page_size,
+                            'results': serializer.data
+                        }
                 
-                # Cache the result for 60 seconds
-                cache.set(cache_key, result, 60)
-                cache.set(stale_cache_key, result, 300)
+                        cache.set(cache_key, result, 60)
+                        cache.set(stale_cache_key, result, 300)
+                observe_histogram(
+                    'hms_dashboard_query_count',
+                    query_counter.count,
+                    labels={'dashboard': 'nursing_monitoring'},
+                    description='SQL statements executed to build a dashboard response.',
+                    buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+                )
                 
                 return Response(result)
             
