@@ -1,0 +1,13 @@
+# Railway configuration for HMS Celery worker service.
+# Point the Railway service's config-as-code path to `/backend/railway.worker.toml`.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.celery"
+
+[deploy]
+startCommand = "celery -A hms_backend worker --loglevel=info"
+preDeployCommand = "python /app/run_migrations.py"
+numReplicas = 1
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5

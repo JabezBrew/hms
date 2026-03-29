@@ -25,10 +25,19 @@ Press `Ctrl+C` to stop all services at once.
 
 For production Railway deployments, split migration and web startup:
 
-1. **Migrator job**: run `python /app/run_migrations.py` once per release.
-2. **Web service**: keep Railway start command as `python /app/startup_and_run.py`.
-3. **Startup flow**: the web process performs dependency checks and fails fast if pending migrations remain, but it does not mutate schema.
-4. **Replica safety**: only the dedicated migrator acquires the advisory lock and applies schema/bootstrap changes.
+1. **Dedicated migrator path**: use `python /app/run_migrations.py` as the only schema-mutating command.
+2. **Web service**: run `python /app/startup_and_run.py`.
+3. **Worker/beat services**: use explicit Celery start commands, but keep the same pre-deploy migration command so isolated service deploys stay schema-safe.
+4. **Startup flow**: the web process performs dependency checks and fails fast if pending migrations remain, but it does not mutate schema.
+5. **Replica safety**: `run_migrations.py` holds a PostgreSQL advisory lock, so duplicate pre-deploy runs collapse safely to a single migration owner.
+
+Recommended Railway service config files:
+
+- Web API: `/backend/railway.toml`
+- Celery worker: `/backend/railway.worker.toml`
+- Celery beat: `/backend/railway.beat.toml`
+
+Railway config-as-code is service-scoped. In practice, that means each Railway service should point at its own config file path in the dashboard. The web, worker, and beat services can all safely use the same `preDeployCommand` because the migration runner is lock-protected and exits cleanly when the schema is already current.
 
 Recommended Railway environment variables:
 
@@ -56,6 +65,21 @@ Health and metrics endpoints:
 - `/api/health/started/`
 - `/api/health/ready/`
 - `/api/metrics/`
+
+### Kubernetes Deployment Pattern
+
+For Kubernetes releases, apply the migrator job before the long-running workloads:
+
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
+kubectl apply -f k8s/migrator-job.yaml
+kubectl wait --for=condition=complete job/hms-migrator -n hms --timeout=10m
+kubectl apply -f k8s/api-deployment.yaml
+kubectl apply -f k8s/celery-deployment.yaml
+```
+
+The web deployment then relies on `/api/health/ready/` and `FAIL_ON_PENDING_MIGRATIONS=true` to reject traffic if a release skipped the migrator step.
 
 ### Prerequisites
 

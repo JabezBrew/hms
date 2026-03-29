@@ -1,7 +1,8 @@
 # Kubernetes Deployment for HMS API
 # Django REST API served by Gunicorn
 #
-# Apply: kubectl apply -f k8s/api-deployment.yaml
+# Apply after `k8s/migrator-job.yaml` has completed:
+#   kubectl apply -f k8s/api-deployment.yaml
 
 apiVersion: apps/v1
 kind: Deployment

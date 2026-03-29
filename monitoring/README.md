@@ -28,5 +28,6 @@ docker compose -f monitoring/docker-compose.monitoring.yml up -d
 ## Notes
 
 - Prometheus scrapes `/api/metrics/` directly from the HMS API service.
+- Grafana ships with an `HMS Operability` dashboard for dependency readiness, worker counts, and queue depth.
 - The sample alert rules are intentionally conservative and should be tuned per deployment.
 - If your Docker network is not `hms-network`, set `HMS_DOCKER_NETWORK` before starting the bundle.
