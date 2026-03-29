@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { laboratoryApi } from '@/features/laboratory/api';
 import { aiAssistantApi } from '@/shared/api/aiAssistant';
+import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -39,10 +40,12 @@ export const labAiKeys = {
  */
 export function useLabTests(filters = {}) {
   const { enabled = true, ...queryFilters } = filters;
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(queryFilters);
   return useQuery({
     queryKey: labKeys.testsList(queryFilters),
     queryFn: () => laboratoryApi.getLabTests(queryFilters),
     enabled,
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 
@@ -121,10 +124,12 @@ export function useDeleteLabTest() {
  */
 export function useLabPanels(filters = {}) {
   const { enabled = true, ...queryFilters } = filters;
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(queryFilters);
   return useQuery({
     queryKey: labKeys.panelsList(queryFilters),
     queryFn: () => laboratoryApi.getLabPanels(queryFilters),
     enabled,
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 

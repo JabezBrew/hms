@@ -8,6 +8,7 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { emitOnboardingEvent } from '@/features/onboarding';
@@ -271,8 +272,8 @@ export function useChartCategories(options = {}) {
       const response = await apiClient.get('/charts/templates/categories/');
       return response.categories;
     },
-    staleTime: 1000 * 60 * 60, // Categories rarely change
     enabled,
+    ...immutableMetadataQueryOptions(),
   });
 }
 
@@ -289,8 +290,8 @@ export function useChartIntervals(options = {}) {
       const response = await apiClient.get('/charts/templates/intervals/');
       return response.intervals;
     },
-    staleTime: 1000 * 60 * 60,
     enabled,
+    ...immutableMetadataQueryOptions(),
   });
 }
 

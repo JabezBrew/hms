@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/features/billing/api';
+import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -509,10 +510,11 @@ export function useServices(params = {}) {
 }
 
 export function useServiceCategories(params = {}) {
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(params);
   return useQuery({
     queryKey: billingKeys.serviceCategoryList(params),
     queryFn: () => billingApi.getServiceCategories(params),
-    staleTime: 5 * 60 * 1000,
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 

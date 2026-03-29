@@ -3,6 +3,7 @@ import { laboratoryApi } from '@/features/laboratory/api';
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
 import { apiClient } from '@/lib/api-client';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { keyWith } from '@/shared/lib/queryKeys';
 import { drugSafetyApi } from '@/shared/api/drugSafety';
 
@@ -81,12 +82,12 @@ export function prefetchChronicleWorkspaceResources(
     void queryClient.prefetchQuery({
       queryKey: labKeys.testsList({}),
       queryFn: () => laboratoryApi.getLabTests({}),
-      staleTime: 60 * 1000,
+      ...immutableMetadataQueryOptions(),
     });
     void queryClient.prefetchQuery({
       queryKey: labKeys.panelsList({}),
       queryFn: () => laboratoryApi.getLabPanels({}),
-      staleTime: 60 * 1000,
+      ...immutableMetadataQueryOptions(),
     });
     return;
   }
@@ -95,17 +96,17 @@ export function prefetchChronicleWorkspaceResources(
     void queryClient.prefetchQuery({
       queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
       queryFn: () => apiClient.get('/charts/templates/?is_active=true'),
-      staleTime: 60 * 1000,
+      ...immutableMetadataQueryOptions(),
     });
     void queryClient.prefetchQuery({
       queryKey: chartKeys.categories(),
       queryFn: () => apiClient.get('/charts/templates/categories/').then((response) => response.categories),
-      staleTime: 60 * 60 * 1000,
+      ...immutableMetadataQueryOptions(),
     });
     void queryClient.prefetchQuery({
       queryKey: chartKeys.intervals(),
       queryFn: () => apiClient.get('/charts/templates/intervals/').then((response) => response.intervals),
-      staleTime: 60 * 60 * 1000,
+      ...immutableMetadataQueryOptions(),
     });
   }
 }

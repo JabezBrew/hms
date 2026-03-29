@@ -1,5 +1,44 @@
 import { QueryClient } from '@tanstack/react-query';
 
+export const IMMUTABLE_METADATA_GC_TIME = 24 * 60 * 60 * 1000;
+
+export function immutableMetadataQueryOptions(overrides = {}) {
+  return {
+    staleTime: Infinity,
+    gcTime: IMMUTABLE_METADATA_GC_TIME,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    ...overrides,
+  };
+}
+
+export function hasMeaningfulQueryParams(params = {}) {
+  if (!params || typeof params !== 'object') {
+    return false;
+  }
+
+  return Object.values(params).some((value) => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() !== '';
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value).length > 0;
+    }
+
+    return true;
+  });
+}
+
 /**
  * Global React Query client configuration
  * Optimized for hospital management system with balanced performance and data freshness

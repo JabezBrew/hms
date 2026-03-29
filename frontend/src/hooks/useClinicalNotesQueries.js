@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinicalNotesApi } from '@/features/clinical-notes/api';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 import { invalidatePatientTimelineQueries } from './useTimelineQueries';
@@ -312,7 +313,7 @@ export function useTemplateCategories() {
   return useQuery({
     queryKey: clinicalNotesKeys.templateCategories(),
     queryFn: () => clinicalNotesApi.getTemplateCategories(),
-    staleTime: 1000 * 60 * 60, // Categories don't change often, cache for 1 hour
+    ...immutableMetadataQueryOptions(),
   });
 }
 

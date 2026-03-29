@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { chartKeys } from '@/features/charts/hooks';
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
+import { IMMUTABLE_METADATA_GC_TIME } from '@/lib/react-query';
 import { keyWith } from '@/shared/lib/queryKeys';
 import {
   buildChronicleWorkspaceProps,
@@ -111,18 +112,24 @@ describe('chronicle workspace registry', () => {
       1,
       expect.objectContaining({
         queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
+        staleTime: Infinity,
+        gcTime: IMMUTABLE_METADATA_GC_TIME,
       }),
     );
     expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         queryKey: chartKeys.categories(),
+        staleTime: Infinity,
+        gcTime: IMMUTABLE_METADATA_GC_TIME,
       }),
     );
     expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
         queryKey: chartKeys.intervals(),
+        staleTime: Infinity,
+        gcTime: IMMUTABLE_METADATA_GC_TIME,
       }),
     );
   });
@@ -157,12 +164,16 @@ describe('chronicle workspace registry', () => {
       1,
       expect.objectContaining({
         queryKey: labKeys.testsList({}),
+        staleTime: Infinity,
+        gcTime: IMMUTABLE_METADATA_GC_TIME,
       }),
     );
     expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         queryKey: labKeys.panelsList({}),
+        staleTime: Infinity,
+        gcTime: IMMUTABLE_METADATA_GC_TIME,
       }),
     );
   });

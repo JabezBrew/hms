@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appointmentsApi } from '@/features/appointments/api';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -296,7 +297,7 @@ export function useAppointmentTypes() {
   return useQuery({
     queryKey: appointmentKeys.types(),
     queryFn: () => appointmentsApi.getAppointmentTypes(),
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - types rarely change
+    ...immutableMetadataQueryOptions(),
   });
 }
 
@@ -310,7 +311,7 @@ export function useAppointmentType(id) {
     queryKey: appointmentKeys.type(id),
     queryFn: () => appointmentsApi.getAppointmentType(id),
     enabled: !!id,
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - types rarely change
+    ...immutableMetadataQueryOptions(),
   });
 }
 

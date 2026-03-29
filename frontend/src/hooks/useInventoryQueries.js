@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryApi } from '@/features/inventory/api';
+import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -162,10 +163,11 @@ export function useExpiringItems(params = {}) {
  * @returns {Object} Query result
  */
 export function useInventoryCategories(params = {}) {
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(params);
   return useQuery({
     queryKey: inventoryKeys.categoryList(params),
     queryFn: () => inventoryApi.getCategories(params),
-    staleTime: 5 * 60 * 1000, // 5 minutes - categories change infrequently
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 
