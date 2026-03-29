@@ -1,14 +1,41 @@
+import fs from "node:fs"
 import path from "path"
+import { execSync } from "node:child_process"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { visualizer } from "rollup-plugin-visualizer"
 
+function readGitValue(command, fallback = null) {
+  try {
+    return execSync(command, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const analyze = mode === "analyze" || process.env.ANALYZE === "true"
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf8"))
+  const buildInfo = {
+    version: packageJson.version,
+    commit:
+      process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ||
+      process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
+      readGitValue("git rev-parse --short HEAD"),
+    branch:
+      process.env.RAILWAY_GIT_BRANCH ||
+      process.env.VERCEL_GIT_COMMIT_REF ||
+      readGitValue("git rev-parse --abbrev-ref HEAD"),
+    builtAt: new Date().toISOString(),
+    mode,
+  }
 
   return {
+    define: {
+      "globalThis.__HMS_STATIC_BUILD_INFO__": JSON.stringify(buildInfo),
+    },
     plugins: [
       react(),
       tailwindcss(),
