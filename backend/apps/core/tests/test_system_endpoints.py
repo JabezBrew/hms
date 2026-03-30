@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core import views as core_views
 from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import AdminUserFactory
 
@@ -70,3 +71,32 @@ def test_admin_can_fetch_celery_operability(monkeypatch):
     assert response.data['facility_scope'] == facility.code
     assert response.data['celery']['worker_count'] == 1
     assert response.data['celery']['queue_depths']['default'] == 2
+
+
+def test_check_cache_uses_unique_probe_keys(monkeypatch):
+    recorded_keys = []
+
+    class RecordingCache:
+        def __init__(self):
+            self._store = {}
+
+        def set(self, key, value, timeout=None):
+            recorded_keys.append(key)
+            self._store[key] = value
+
+        def get(self, key):
+            return self._store.get(key)
+
+        def delete(self, key):
+            self._store.pop(key, None)
+            return True
+
+    monkeypatch.setattr(core_views, 'cache', RecordingCache())
+
+    first_ok, _, _ = core_views._check_cache()
+    second_ok, _, _ = core_views._check_cache()
+
+    assert first_ok is True
+    assert second_ok is True
+    assert len(recorded_keys) == 2
+    assert recorded_keys[0] != recorded_keys[1]

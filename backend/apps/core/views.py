@@ -4,6 +4,7 @@ Core views for system-wide settings and configuration APIs.
 import os
 import re
 import time
+import uuid
 from urllib.parse import urlparse
 
 from rest_framework import status, viewsets
@@ -65,7 +66,7 @@ def _check_database():
 
 
 def _check_cache():
-    probe_key = f"health:probe:{os.getpid()}"
+    probe_key = f"health:probe:{os.getpid()}:{uuid.uuid4().hex}"
     started = time.perf_counter()
     try:
         cache.set(probe_key, '1', timeout=5)
