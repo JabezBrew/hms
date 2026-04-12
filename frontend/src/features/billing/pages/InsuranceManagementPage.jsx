@@ -15,9 +15,10 @@ import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -96,6 +97,99 @@ export default function InsuranceManagementPage() {
   const insurances = insurancesData?.results || [];
   const totalCount = insurancesData?.count || 0;
   const totalPages = Math.ceil(totalCount / 20);
+
+  const insuranceColumns = [
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '220px',
+      render: (insurance) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{insurance.patient_name || 'Unknown Patient'}</p>
+          <p className="truncate text-xs text-muted-foreground">Policy: {insurance.policy_number || '—'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'coverage',
+      header: 'Coverage',
+      width: '240px',
+      render: (insurance) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-foreground">{insurance.provider_name || insurance.plan_name || '—'}</p>
+          <p className="truncate text-xs text-muted-foreground">{insurance.plan_name || 'No plan name'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'member',
+      header: 'Member ID',
+      width: '160px',
+      render: (insurance) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {insurance.member_id || insurance.subscriber_number || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'validity',
+      header: 'Validity',
+      width: '220px',
+      render: (insurance) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {formatDate(insurance.valid_from)}
+          {insurance.valid_until ? ` - ${formatDate(insurance.valid_until)}` : ' - No expiry'}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '120px',
+      render: (insurance) => (
+        <Badge
+          variant="outline"
+          className={insurance.is_active
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 text-xs'
+            : 'text-xs'
+          }
+        >
+          {insurance.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '160px',
+      render: (insurance) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleEditInsurance(insurance);
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs text-destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleDeleteClick(insurance);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   // Update search input
   const handleSearchChange = (e) => {
@@ -273,21 +367,17 @@ export default function InsuranceManagementPage() {
             )}
           </div>
         ) : (
-          <VirtualizedList
-            items={insurances}
-            estimateSize={160}
-            gap={12}
-            className="space-y-3"
-            getItemKey={(insurance) => insurance.id}
-            renderItem={(insurance) => (
-              <InsuranceCard
-                insurance={insurance}
-                onEdit={() => handleEditInsurance(insurance)}
-                onDelete={() => handleDeleteClick(insurance)}
-                formatDate={formatDate}
-              />
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={insurances}
+              rowKey={(insurance) => insurance.id}
+              rowHeight={68}
+              columns={insuranceColumns}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1120px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
 
         {/* Pagination */}

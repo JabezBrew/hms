@@ -5,16 +5,16 @@ import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -101,6 +101,98 @@ export default function WardsPage() {
     if (rate < 85) return { color: 'text-amber-600', bg: 'bg-amber-500', label: 'Moderate' };
     return { color: 'text-rose-600', bg: 'bg-rose-500', label: 'High' };
   };
+
+  const wardColumns = useMemo(() => ([
+    {
+      key: 'ward',
+      header: 'Ward',
+      width: '260px',
+      render: (ward) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{ward.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {ward.description || 'No description'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      width: '140px',
+      render: (ward) => (
+        <Badge variant="outline" className="text-xs">
+          {wardTypeLabels[ward.ward_type] || ward.ward_type || 'Ward'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'beds',
+      header: 'Beds',
+      width: '100px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center font-mono text-sm',
+      render: (ward) => ward.total_beds || 0,
+    },
+    {
+      key: 'available',
+      header: 'Available',
+      width: '120px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center font-mono text-sm text-emerald-600',
+      render: (ward) => ward.available_beds_count || 0,
+    },
+    {
+      key: 'occupied',
+      header: 'Occupied',
+      width: '120px',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center font-mono text-sm text-rose-600',
+      render: (ward) => (ward.total_beds || 0) - (ward.available_beds_count || 0),
+    },
+    {
+      key: 'occupancy',
+      header: 'Occupancy',
+      width: '160px',
+      render: (ward) => {
+        const occupancyStyle = getOccupancyStyle(ward.occupancy_rate || 0);
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className={cn('font-mono', occupancyStyle.color)}>
+                {(ward.occupancy_rate || 0).toFixed(0)}%
+              </span>
+              <span className="text-muted-foreground">{occupancyStyle.label}</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted">
+              <div
+                className={cn('h-2 rounded-full', occupancyStyle.bg)}
+                style={{ width: `${Math.min(ward.occupancy_rate || 0, 100)}%` }}
+              />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '120px',
+      render: (ward) => (
+        <Badge
+          variant="outline"
+          className={cn(
+            'text-xs',
+            ward.is_active
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-border text-muted-foreground'
+          )}
+        >
+          {ward.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+  ]), [wardTypeLabels]);
 
   // Loading state
   if (isLoading) {
@@ -237,7 +329,7 @@ export default function WardsPage() {
           </div>
         </div>
 
-        {/* Wards Grid */}
+        {/* Wards Table */}
         {filteredWards.length === 0 ? (
           <div className="text-center py-16">
             <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -255,86 +347,18 @@ export default function WardsPage() {
             )}
           </div>
         ) : (
-          <VirtualizedGrid
-            items={filteredWards}
-            minItemWidth={280}
-            rowHeight={280}
-            gap={24}
-            getItemKey={(ward) => ward.id}
-            renderItem={(ward) => {
-              const occupancyStyle = getOccupancyStyle(ward.occupancy_rate);
-              const availableBeds = ward.available_beds_count || 0;
-              const occupiedBeds = (ward.total_beds || 0) - availableBeds;
-
-              return (
-                <article
-                  onClick={() => navigate(`/wards/${ward.id}`)}
-                  className={cn(
-                    "group relative bg-card rounded-xl border border-border/50 p-6",
-                    "hover:border-border hover:shadow-lg transition-all duration-200 cursor-pointer"
-                  )}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {ward.name}
-                      </h3>
-                      <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mt-0.5">
-                        {wardTypeLabels[ward.ward_type] || ward.ward_type}
-                      </p>
-                    </div>
-                    <div className={cn(
-                      "px-2 py-1 rounded-full text-xs font-mono",
-                      ward.is_active
-                        ? "bg-emerald-500/10 text-emerald-600"
-                        : "bg-muted text-muted-foreground"
-                    )}>
-                      {ward.is_active ? 'Active' : 'Inactive'}
-                    </div>
-                  </div>
-
-                  {ward.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
-                      {ward.description}
-                    </p>
-                  )}
-
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-muted-foreground">Occupancy</span>
-                      <span className={cn("font-mono font-medium", occupancyStyle.color)}>
-                        {ward.occupancy_rate?.toFixed(0) || 0}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={cn("h-full rounded-full transition-all", occupancyStyle.bg)}
-                        style={{ width: `${Math.min(ward.occupancy_rate || 0, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-border/50">
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <p className="font-mono text-lg font-bold text-foreground">{ward.total_beds || 0}</p>
-                        <p className="text-xs text-muted-foreground">Total</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="font-mono text-lg font-bold text-emerald-600">{availableBeds}</p>
-                        <p className="text-xs text-muted-foreground">Available</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="font-mono text-lg font-bold text-rose-600">{occupiedBeds}</p>
-                        <p className="text-xs text-muted-foreground">Occupied</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                </article>
-              );
-            }}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={filteredWards}
+              rowKey={(ward) => ward.id}
+              rowHeight={72}
+              columns={wardColumns}
+              onRowClick={(ward) => navigate(`/wards/${ward.id}`)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1120px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
       </div>
     </PageShell>

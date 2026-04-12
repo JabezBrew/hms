@@ -1,35 +1,123 @@
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import Bed from 'lucide-react/dist/esm/icons/bed.js';
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 
 export function PatientList({ patients, onPatientSelect }) {
-  // Function to calculate time since admission
   const getTimeSinceAdmission = (admissionDate) => {
+    if (!admissionDate) return 'N/A';
     const now = new Date();
     const admitted = new Date(admissionDate);
     const diffTime = Math.abs(now - admitted);
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
+
     if (diffDays > 0) {
       return `${diffDays}d ${diffHours}h`;
     }
     return `${diffHours}h`;
   };
 
-  // Function to determine if patient needs attention
-  const needsAttention = (patient) => {
-    // This is a placeholder. In a real application, this would check for:
-    // - Overdue medications
-    // - Abnormal vital signs
-    // - Pending tasks
-    // - etc.
-    
-    // For demo purposes, we'll randomly mark some patients as needing attention
-    return Math.random() > 0.7;
+  const getPatientName = (patient) => patient?.user?.full_name || 'Unknown Patient';
+
+  const getAge = (dateOfBirth) => {
+    if (!dateOfBirth) return 'N/A';
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
+    return age >= 0 ? `${age}y` : 'N/A';
   };
+
+  const getAdmissionTypeLabel = (value) =>
+    value ? value.replaceAll('_', ' ') : 'Not specified';
+
+  const columns = [
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '220px',
+      render: (patient) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{getPatientName(patient)}</p>
+          <p className="truncate text-xs text-muted-foreground">{patient?.id || 'No patient ID'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'bed',
+      header: 'Ward / Bed',
+      width: '220px',
+      render: (patient) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-foreground">{patient?.bed?.ward?.name || 'Unassigned ward'}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Bed className="h-3 w-3" />
+            Bed {patient?.bed?.bed_number || 'Unassigned'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'demographics',
+      header: 'Demographics',
+      width: '160px',
+      render: (patient) => (
+        <div className="space-y-1">
+          <p className="text-sm text-foreground">{getAge(patient?.date_of_birth)}</p>
+          <p className="text-xs capitalize text-muted-foreground">{patient?.gender || 'Not recorded'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'doctor',
+      header: 'Doctor / Type',
+      width: '240px',
+      render: (patient) => (
+        <div className="min-w-0">
+          <p className="flex items-center gap-1 truncate text-sm text-foreground">
+            <Stethoscope className="h-3 w-3 text-muted-foreground" />
+            {patient?.admission?.admitting_doctor?.user?.full_name || 'Not assigned'}
+          </p>
+          <p className="text-xs capitalize text-muted-foreground">
+            {getAdmissionTypeLabel(patient?.admission?.admission_type)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'stay',
+      header: 'Length Of Stay',
+      width: '160px',
+      render: (patient) => (
+        <div className="space-y-1">
+          <p className="flex items-center gap-1 text-sm text-foreground">
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            {getTimeSinceAdmission(patient?.admission?.admission_date)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Since {patient?.admission?.admission_date ? new Date(patient.admission.admission_date).toLocaleDateString() : 'N/A'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (patient) => (
+        <Badge variant="outline" className="text-xs capitalize">
+          {patient?.admission?.status || 'Admitted'}
+        </Badge>
+      ),
+    },
+  ];
 
   if (patients.length === 0) {
     return (
@@ -54,65 +142,21 @@ export function PatientList({ patients, onPatientSelect }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <VirtualizedList
-          items={patients}
-          useWindow={false}
-          height={500}
-          estimateSize={140}
-          gap={16}
-          getItemKey={(patient) => patient.id}
-          renderItem={(patient) => {
-            const requiresAttention = needsAttention(patient);
-
-            return (
-              <div
-                className={`p-4 border rounded-md cursor-pointer hover:bg-muted transition-colors ${
-                  requiresAttention ? 'border-red-300 bg-red-50' : ''
-                }`}
-                onClick={() => onPatientSelect(patient)}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-medium">{patient.user.full_name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {patient.bed.ward.name} - Bed {patient.bed.bed_number}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    {requiresAttention && (
-                      <Badge variant="destructive" className="mb-1">
-                        Needs Attention
-                      </Badge>
-                    )}
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {getTimeSinceAdmission(patient.admission.admission_date)}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Age:</span>{' '}
-                    {patient.date_of_birth ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear() : 'N/A'}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Gender:</span>{' '}
-                    {patient.gender || 'N/A'}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Doctor:</span>{' '}
-                    {patient.admission.admitting_doctor?.user.full_name || 'Not assigned'}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Type:</span>{' '}
-                    {patient.admission.admission_type.replace('_', ' ')}
-                  </div>
-                </div>
-              </div>
-            );
-          }}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={patients}
+            columns={columns}
+            rowKey={(patient) => patient.id}
+            rowHeight={72}
+            useWindow={false}
+            height={500}
+            threshold={8}
+            onRowClick={onPatientSelect}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[1140px]"
+            headerClassName="border-b border-border bg-muted/50"
+          />
+        </div>
       </CardContent>
     </Card>
   );

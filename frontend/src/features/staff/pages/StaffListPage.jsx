@@ -2,8 +2,6 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
@@ -13,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -20,9 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StaffChronicleCard } from "@/components/staff/StaffChronicleCard";
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { useListFilters } from "@/shared/hooks/useListFilters";
@@ -42,7 +39,6 @@ const StaffListPage = () => {
   const { search: searchQuery, updateSearch, hasActiveFilters: hasBaseFilters } = useListFilters();
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedDepartment, setSelectedDepartment] = useState("all");
-  const [viewMode, setViewMode] = useState("grid");
 
   // Fetch staff
   const {
@@ -182,6 +178,89 @@ const StaffListPage = () => {
     </span>
   );
 
+  const staffColumns = useMemo(() => ([
+    {
+      key: "staff",
+      header: "Staff",
+      width: "260px",
+      render: (member) => {
+        const displayName =
+          member?.name ||
+          [member?.user_details?.first_name, member?.user_details?.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          "Unknown Staff";
+        const email = member?.user_details?.email || member?.email || "No email";
+
+        return (
+          <div className="min-w-0">
+            <p className="truncate font-medium text-foreground">{displayName}</p>
+            <p className="truncate font-mono text-xs text-muted-foreground">{email}</p>
+          </div>
+        );
+      },
+    },
+    {
+      key: "employee_id",
+      header: "Employee ID",
+      width: "150px",
+      render: (member) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {member?.employee_id || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "role",
+      header: "Role",
+      width: "160px",
+      render: (member) => (
+        <Badge variant="outline" className="text-xs">
+          {formatRoleLabel(getStaffUserType(member) || "staff")}
+        </Badge>
+      ),
+    },
+    {
+      key: "department",
+      header: "Department",
+      width: "180px",
+      render: (member) => (
+        <span className="text-sm text-muted-foreground">
+          {member?.department || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "position",
+      header: "Position",
+      width: "180px",
+      render: (member) => (
+        <span className="text-sm text-muted-foreground">
+          {member?.position || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "120px",
+      render: (member) => (
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-xs",
+            member?.user_details?.is_active === false
+              ? "border-border text-muted-foreground"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          )}
+        >
+          {member?.user_details?.is_active === false ? "Inactive" : "Active"}
+        </Badge>
+      ),
+    },
+  ]), []);
+
   // ============================================
   // Render
   // ============================================
@@ -246,32 +325,6 @@ const StaffListPage = () => {
               </SelectContent>
             </Select>
 
-            {/* View Mode Toggle */}
-            <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'grid'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'list'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-
             {/* Refresh */}
             <Button
               variant="ghost"
@@ -299,37 +352,26 @@ const StaffListPage = () => {
 
         {/* Staff List */}
         {isLoading ? (
-          <LoadingSkeleton viewMode={viewMode} />
+          <LoadingSkeleton />
         ) : filteredStaff.length === 0 ? (
           <EmptyState hasFilters={hasActiveFilters} onClear={handleClearFilters} />
-        ) : viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={filteredStaff}
-            minItemWidth={300}
-            rowHeight={320}
-            gap={24}
-            getItemKey={(member, index) => member?.id || index}
-            renderItem={(member, index) => (
-              <StaffChronicleCard
-                staff={member}
-                index={index}
-              />
-            )}
-          />
         ) : (
-          <VirtualizedList
-            items={filteredStaff}
-            estimateSize={180}
-            gap={16}
-            getItemKey={(member, index) => member?.id || index}
-            renderItem={(member, index) => (
-              <StaffChronicleCard
-                staff={member}
-                index={index}
-                className="max-w-none"
-              />
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={filteredStaff}
+              rowKey={(member, index) => member?.id || index}
+              rowHeight={68}
+              columns={staffColumns}
+              onRowClick={(member) => {
+                if (member?.id) {
+                  navigate(`/staff/${member.id}`);
+                }
+              }}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1040px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
       </div>
     </PageShell>
@@ -339,38 +381,12 @@ const StaffListPage = () => {
 /**
  * LoadingSkeleton - Skeleton loading state
  */
-const LoadingSkeleton = ({ viewMode }) => {
-  const count = viewMode === 'grid' ? 6 : 4;
-
+const LoadingSkeleton = () => {
   return (
-    <div className={cn(
-      viewMode === 'grid'
-        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
-        : "space-y-4"
-    )}>
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="bg-card/50 border border-border rounded-2xl p-6 space-y-4"
-        >
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-40" />
-              <Skeleton className="h-4 w-56" />
-            </div>
-            <Skeleton className="h-6 w-24 rounded-full" />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <Skeleton className="h-12 w-full rounded-xl" />
-          <div className="flex justify-between pt-4 border-t border-border">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-8 w-24 rounded-lg" />
-          </div>
-        </div>
+    <div className="space-y-3 rounded-xl border border-border/60 bg-card/40 p-4">
+      <Skeleton className="h-10 w-full rounded-lg" />
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-14 w-full rounded-lg" />
       ))}
     </div>
   );

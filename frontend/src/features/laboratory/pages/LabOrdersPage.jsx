@@ -2,19 +2,18 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
 import { useEffect, useMemo, useState } from "react";
+import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from '@/components/ui/table-pagination';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -25,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard";
-import { LabOrderCard, LabOrderDetailSlideOver } from "@/components/laboratory";
+import { LabOrderDetailSlideOver } from "@/components/laboratory";
 
 import { useAuth } from "@/lib/auth";
 import { usePaginatedLabOrders } from "@/features/laboratory/hooks";
@@ -58,7 +57,6 @@ export default function LabOrdersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [selectedDoctorFilter, setSelectedDoctorFilter] = useState("all");
-  const [viewMode, setViewMode] = useState("grid");
   const [page, setPage] = useState(1);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -201,6 +199,125 @@ export default function LabOrdersPage() {
     { value: "stat", label: "STAT" },
   ];
 
+  const getStatusConfig = (status) => {
+    const configs = {
+      draft: { label: "Draft", className: "border-stone-300 bg-stone-100 text-stone-700" },
+      ordered: { label: "Ordered", className: "border-sky-300 bg-sky-100 text-sky-700" },
+      collected: { label: "Collected", className: "border-amber-300 bg-amber-100 text-amber-700" },
+      received: { label: "Received", className: "border-violet-300 bg-violet-100 text-violet-700" },
+      processing: { label: "Processing", className: "border-indigo-300 bg-indigo-100 text-indigo-700" },
+      completed: { label: "Completed", className: "border-emerald-300 bg-emerald-100 text-emerald-700" },
+      cancelled: { label: "Cancelled", className: "border-rose-300 bg-rose-100 text-rose-700" },
+    };
+    return configs[status] || configs.draft;
+  };
+
+  const getPriorityConfig = (priority) => {
+    const configs = {
+      routine: { label: "Routine", className: "border-stone-300 bg-stone-100 text-stone-600" },
+      urgent: { label: "Urgent", className: "border-amber-300 bg-amber-100 text-amber-700" },
+      stat: { label: "STAT", className: "border-rose-300 bg-rose-100 text-rose-700 font-semibold" },
+    };
+    return configs[priority] || configs.routine;
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    try {
+      return format(new Date(dateString), "MMM d, yyyy h:mm a");
+    } catch {
+      return "-";
+    }
+  };
+
+  const orderColumns = useMemo(() => ([
+    {
+      key: "order",
+      header: "Order",
+      width: "200px",
+      render: (order) => (
+        <div className="min-w-0">
+          <p className="font-mono text-sm font-medium text-primary">{order.order_number}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {formatDate(order.ordered_at || order.created_at)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "patient",
+      header: "Patient",
+      width: "220px",
+      render: (order) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{order.patient_name || "Unknown Patient"}</p>
+          <p className="font-mono text-xs text-muted-foreground">MRN: {order.patient_mrn || "-"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "provider",
+      header: "Ordering Provider",
+      width: "200px",
+      render: (order) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {order.ordering_provider_name || "Unknown"}
+        </span>
+      ),
+    },
+    {
+      key: "tests",
+      header: "Tests",
+      width: "120px",
+      headerClassName: "text-center",
+      cellClassName: "text-center",
+      render: (order) => `${order.test_count || 0}`,
+    },
+    {
+      key: "priority",
+      header: "Priority",
+      width: "120px",
+      render: (order) => {
+        const priorityConfig = getPriorityConfig(order.priority);
+        return (
+          <Badge variant="outline" className={cn("text-xs", priorityConfig.className)}>
+            {priorityConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "140px",
+      render: (order) => {
+        const statusConfig = getStatusConfig(order.status);
+        return (
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={cn("text-xs", statusConfig.className)}>
+              {order.status_display || statusConfig.label}
+            </Badge>
+            {order.has_critical_results && (
+              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 text-xs">
+                Critical
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "notes",
+      header: "Notes",
+      width: "180px",
+      render: (order) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {order.fasting_required ? "Fasting required" : "No special prep"}
+        </span>
+      ),
+    },
+  ]), []);
+
   return (
     <PageShell>
       <PageHeader
@@ -244,7 +361,7 @@ export default function LabOrdersPage() {
           <StatCard
             title="Visible"
             value={stats.visible}
-            icon={List}
+            icon={UserRound}
             color="sky"
           />
           <StatCard
@@ -327,26 +444,6 @@ export default function LabOrdersPage() {
               </SelectContent>
             </Select>
 
-            {/* View toggle */}
-            <div className="flex items-center gap-1 ml-auto">
-              <Button
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setViewMode("grid")}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setViewMode("list")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
-
             {/* Clear filters */}
             {hasActiveFilters && (
               <Button
@@ -366,31 +463,10 @@ export default function LabOrdersPage() {
       {/* Content */}
       <main className="p-4 sm:p-6">
         {isLoading ? (
-          // Loading skeletons
-          <div
-            className={cn(
-              viewMode === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                : "flex flex-col gap-3"
-            )}
-          >
+          <div className="space-y-3 rounded-xl border border-border/60 bg-card/40 p-4">
+            <Skeleton className="h-10 w-full rounded-lg" />
             {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-card/30 rounded-lg border border-border/50 p-4"
-              >
-                <div className="flex justify-between mb-3">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-                <Skeleton className="h-6 w-40 mb-2" />
-                <Skeleton className="h-3 w-20 mb-3" />
-                <Skeleton className="h-4 w-full mb-2" />
-                <div className="flex justify-between pt-2 border-t border-border/30">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
-              </div>
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
             ))}
           </div>
         ) : orders.length === 0 ? (
@@ -418,35 +494,19 @@ export default function LabOrdersPage() {
               </Button>
             )}
           </div>
-        ) : viewMode === "grid" ? (
-          <VirtualizedGrid
-            items={orders}
-            minItemWidth={320}
-            rowHeight={260}
-            gap={16}
-            getItemKey={(order) => order.id}
-            renderItem={(order, index) => (
-              <LabOrderCard
-                order={order}
-                index={index}
-                onClick={handleOrderClick}
-              />
-            )}
-          />
         ) : (
-          <VirtualizedList
-            items={orders}
-            estimateSize={140}
-            gap={12}
-            getItemKey={(order) => order.id}
-            renderItem={(order, index) => (
-              <LabOrderCard
-                order={order}
-                index={index}
-                onClick={handleOrderClick}
-              />
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={orders}
+              rowKey={(order) => order.id}
+              rowHeight={68}
+              columns={orderColumns}
+              onRowClick={(order) => handleOrderClick(order)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1180px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
       </main>
 

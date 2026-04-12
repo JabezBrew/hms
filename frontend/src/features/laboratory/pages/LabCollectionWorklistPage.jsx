@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from '@/components/ui/table-pagination';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -124,6 +124,90 @@ export default function LabCollectionWorklistPage() {
       return "-";
     }
   };
+
+  const collectionColumns = useMemo(() => ([
+    {
+      key: "order",
+      header: "Order",
+      width: "180px",
+      render: (order) => (
+        <span className="font-mono text-sm font-medium text-primary">
+          {order.order_number}
+        </span>
+      ),
+    },
+    {
+      key: "patient",
+      header: "Patient",
+      width: "220px",
+      render: (order) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{order.patient_name}</p>
+          <p className="font-mono text-xs text-muted-foreground">MRN: {order.patient_mrn || "-"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "tests",
+      header: "Tests",
+      width: "120px",
+      render: (order) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {order.test_count || 0}
+        </span>
+      ),
+    },
+    {
+      key: "ordered",
+      header: "Ordered",
+      width: "180px",
+      render: (order) => (
+        <span className="text-sm text-muted-foreground">
+          {formatTimeAgo(order.ordered_at || order.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "priority",
+      header: "Priority",
+      width: "140px",
+      render: (order) => {
+        const priorityConfig = getPriorityConfig(order.priority);
+        return (
+          <Badge variant="outline" className={cn("text-xs", priorityConfig.className)}>
+            {priorityConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "notes",
+      header: "Notes",
+      width: "180px",
+      render: (order) => (
+        <span className="text-sm text-muted-foreground">
+          {order.fasting_required ? "Fasting required" : "Ready for collection"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "120px",
+      render: (order) => (
+        <div className="flex justify-end">
+          <Button
+            onClick={(event) => handleQuickCollect(event, order)}
+            className="h-8 bg-amber-600 px-2 text-xs hover:bg-amber-700"
+            size="sm"
+          >
+            <Droplet className="mr-1.5 h-3.5 w-3.5" />
+            Collect
+          </Button>
+        </div>
+      ),
+    },
+  ]), []);
 
   // Handlers
   const handleOrderClick = (order) => {
@@ -280,78 +364,18 @@ export default function LabCollectionWorklistPage() {
             </p>
           </div>
         ) : (
-          <VirtualizedList
-            items={orders}
-            estimateSize={150}
-            gap={12}
-            getItemKey={(order) => order.id}
-            renderItem={(order, index) => {
-              const priorityConfig = getPriorityConfig(order.priority);
-
-              return (
-                <div
-                  onClick={() => handleOrderClick(order)}
-                  className={cn(
-                    "bg-card rounded-lg border border-border p-4 cursor-pointer",
-                    "hover:border-amber-300 hover:shadow-md transition-all",
-                    "animate-chronicle-enter",
-                    order.priority === "stat" && "border-l-4 border-l-rose-500"
-                  )}
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant="outline"
-                          className={cn("text-xs", priorityConfig.className)}
-                        >
-                          {priorityConfig.label}
-                        </Badge>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {order.order_number}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 mb-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-display text-lg truncate">
-                          {order.patient_name}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span className="font-mono">MRN: {order.patient_mrn}</span>
-                        <span>{order.test_count} test(s)</span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Ordered {formatTimeAgo(order.ordered_at || order.created_at)}
-                        </span>
-                      </div>
-
-                      {order.fasting_required && (
-                        <div className="flex items-center gap-1.5 mt-2 text-amber-600 text-xs">
-                          <AlertTriangle className="h-3 w-3" />
-                          <span className="font-medium">Fasting required</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 sm:flex-shrink-0">
-                      <Button
-                        onClick={(e) => handleQuickCollect(e, order)}
-                        className="bg-amber-600 hover:bg-amber-700 text-white"
-                        size="sm"
-                      >
-                        <Droplet className="h-4 w-4 mr-1.5" />
-                        Collect
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );
-            }}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={orders}
+              rowKey={(order) => order.id}
+              rowHeight={68}
+              columns={collectionColumns}
+              onRowClick={(order) => handleOrderClick(order)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1120px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
       </main>
 

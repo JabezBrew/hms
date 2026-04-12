@@ -9,25 +9,13 @@ vi.mock('@/features/staff/hooks', () => ({
   useStaff: vi.fn(),
 }))
 
-vi.mock('@/components/staff/StaffChronicleCard', () => ({
-  StaffChronicleCard: ({ staff }) => <div data-testid="staff-card">{staff?.name}</div>,
-}))
-
-vi.mock('@/components/ui/VirtualizedGrid', () => ({
-  default: ({ items, renderItem }) => (
-    <div data-testid="virtualized-grid">
-      {items.map((item, index) => (
-        <div key={item?.id || index}>{renderItem(item, index)}</div>
-      ))}
-    </div>
-  ),
-}))
-
-vi.mock('@/components/ui/VirtualizedList', () => ({
-  default: ({ items, renderItem }) => (
-    <div data-testid="virtualized-list">
-      {items.map((item, index) => (
-        <div key={item?.id || index}>{renderItem(item, index)}</div>
+vi.mock('@/components/ui/VirtualizedTable', () => ({
+  default: ({ rows }) => (
+    <div data-testid="virtualized-table">
+      {rows.map((row, index) => (
+        <div key={row?.id || index} data-testid="staff-row">
+          {row?.name}
+        </div>
       ))}
     </div>
   ),
@@ -108,15 +96,15 @@ describe('StaffListPage role filters', () => {
 
     renderStaffListPage()
 
-    expect(screen.getAllByTestId('staff-card')).toHaveLength(3)
+    expect(screen.getAllByTestId('staff-row')).toHaveLength(3)
 
     const [roleFilter] = screen.getAllByRole('combobox')
     await user.click(roleFilter)
     await user.click(screen.getByRole('option', { name: 'Doctor' }))
 
     await waitFor(() => {
-      const cards = screen.getAllByTestId('staff-card')
-      expect(cards).toHaveLength(1)
+      const rows = screen.getAllByTestId('staff-row')
+      expect(rows).toHaveLength(1)
       expect(screen.getByText('Alice Carter')).toBeInTheDocument()
     })
 
@@ -124,7 +112,7 @@ describe('StaffListPage role filters', () => {
     await user.click(screen.getByRole('option', { name: 'All Roles' }))
 
     await waitFor(() => {
-      expect(screen.getAllByTestId('staff-card')).toHaveLength(3)
+      expect(screen.getAllByTestId('staff-row')).toHaveLength(3)
     })
   })
 })

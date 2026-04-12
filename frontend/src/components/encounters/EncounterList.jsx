@@ -19,12 +19,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import isValid from 'date-fns/isValid';
@@ -128,6 +130,101 @@ export function EncounterList() {
       return 'Invalid date';
     }
   };
+
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case 'planned':
+        return { className: 'border-sky-200 bg-sky-50 text-sky-700', label: 'Planned' };
+      case 'in-progress':
+        return { className: 'border-amber-200 bg-amber-50 text-amber-700', label: 'In Progress' };
+      case 'finished':
+        return { className: 'border-emerald-200 bg-emerald-50 text-emerald-700', label: 'Finished' };
+      case 'cancelled':
+        return { className: 'border-rose-200 bg-rose-50 text-rose-700', label: 'Cancelled' };
+      default:
+        return { className: 'border-border bg-muted text-muted-foreground', label: status || 'Unknown' };
+    }
+  };
+
+  const getTypeConfig = (type) => {
+    switch (type) {
+      case 'inpatient':
+        return { label: 'Inpatient' };
+      case 'outpatient':
+        return { label: 'Outpatient' };
+      case 'emergency':
+        return { label: 'Emergency' };
+      default:
+        return { label: type || 'Encounter' };
+    }
+  };
+
+  const encounterColumns = [
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '240px',
+      render: (encounter) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{encounter.patient_name || 'Unknown Patient'}</p>
+          <p className="truncate text-xs text-muted-foreground">{encounter.id || 'Encounter'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      width: '140px',
+      render: (encounter) => (
+        <Badge variant="outline" className="text-xs">
+          {getTypeConfig(encounter.encounter_type).label}
+        </Badge>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (encounter) => {
+        const statusConfig = getStatusConfig(encounter.status);
+        return (
+          <Badge variant="outline" className={cn('text-xs', statusConfig.className)}>
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'practitioner',
+      header: 'Practitioner',
+      width: '220px',
+      render: (encounter) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {encounter.practitioner_name || 'Unassigned'}
+        </span>
+      ),
+    },
+    {
+      key: 'start_time',
+      header: 'Scheduled',
+      width: '180px',
+      render: (encounter) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {formatDate(encounter.start_time)}
+        </span>
+      ),
+    },
+    {
+      key: 'location',
+      header: 'Location',
+      width: '180px',
+      render: (encounter) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {encounter.location || '—'}
+        </span>
+      ),
+    },
+  ];
 
   // Prepare encounters data from paginated response
   const encounters = encountersData?.results || [];
@@ -340,12 +437,43 @@ export function EncounterList() {
           {/* Tab Content */}
           {['all', 'inpatient', 'outpatient', 'emergency'].map((tab) => (
             <TabsContent key={tab} value={tab} className="mt-6">
-              <EncounterGrid
-                encounters={encounters}
-                loading={isLoading}
-                formatDate={formatDate}
-                navigate={navigate}
-              />
+              {isLoading ? (
+                <div className="space-y-4">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : encounters.length === 0 ? (
+                <div className={cn(
+                  "bg-card/50 border border-border rounded-2xl p-12 text-center",
+                  "animate-chronicle-enter"
+                )}>
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-display text-xl text-foreground mb-2">No Encounters Found</h3>
+                  <p className="text-muted-foreground text-sm mb-6">
+                    No encounters match your current filters.
+                  </p>
+                  <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    Create New Encounter
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <VirtualizedTable
+                    rows={encounters}
+                    rowKey={(encounter) => encounter.id}
+                    rowHeight={68}
+                    columns={encounterColumns}
+                    onRowClick={(encounter) => navigate(`/encounters/${encounter.id}`)}
+                    rowClassName="hover:bg-muted/30"
+                    className="min-w-[1100px]"
+                    headerClassName="bg-muted/50 border-b border-border"
+                  />
+                </div>
+              )}
             </TabsContent>
           ))}
         </Tabs>

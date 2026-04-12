@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -26,7 +25,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  GRNCard,
   GRNCardSkeleton,
   GRNForm,
 } from '@/components/inventory';
@@ -36,8 +34,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
@@ -64,11 +60,6 @@ export default function GRNsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // View mode from localStorage
-  const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('grns-view-mode') || 'list';
-  });
-
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const status = searchParams.get('status') || 'all';
@@ -76,11 +67,6 @@ export default function GRNsPage() {
 
   // Debounced search
   const debouncedSearch = useDebounce(search, 300);
-
-  // Persist view mode to localStorage
-  useEffect(() => {
-    localStorage.setItem('grns-view-mode', viewMode);
-  }, [viewMode]);
 
   // Build query params
   const queryParams = {
@@ -447,62 +433,20 @@ export default function GRNsPage() {
         )}
       </div>
 
-      {/* View Toggle */}
-      <div className="flex items-center justify-end">
-        <div className="flex items-center border rounded-lg p-1 bg-muted/30">
-          <Button
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="h-8 w-8 p-0"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="h-8 w-8 p-0"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {/* GRNs Display */}
       {grns.length > 0 ? (
-        viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={grns}
-            minItemWidth={280}
-            rowHeight={280}
-            gap={16}
-            getItemKey={(grn) => grn.id}
-            renderItem={(grn, index) => (
-              <GRNCard
-                grn={grn}
-                index={index}
-                onClick={() => handleGRNClick(grn.id)}
-                onInspect={() => handleInspect(grn.id)}
-                onAccept={() => handleAccept(grn.id)}
-                onReject={() => handleReject(grn.id)}
-              />
-            )}
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={grns}
+            rowKey={(grn) => grn.id}
+            rowHeight={64}
+            columns={grnColumns}
+            onRowClick={(grn) => handleGRNClick(grn.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[980px]"
+            headerClassName="bg-muted/50 border-b border-border"
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={grns}
-              rowKey={(grn) => grn.id}
-              rowHeight={64}
-              columns={grnColumns}
-              onRowClick={(grn) => handleGRNClick(grn.id)}
-              rowClassName="hover:bg-muted/30"
-              className="min-w-[980px]"
-              headerClassName="bg-muted/50 border-b border-border"
-            />
-          </div>
-        )
+        </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

@@ -1,24 +1,20 @@
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
-import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
-import isValid from 'date-fns/isValid';
 import { cn } from '@/lib/utils';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,16 +36,6 @@ import { toast } from 'sonner';
 import { useAppointments } from '@/features/appointments/hooks/useAppointmentQueries';
 import { PageState } from '@/shared/components/page/PageState';
 import { useListFilters } from '@/shared/hooks/useListFilters';
-
-const safeParse = (value) => {
-  if (!value || typeof value !== 'string') return null;
-  try {
-    const parsed = parseISO(value);
-    return isValid(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};
 
 const AppointmentList = () => {
   const { user } = useAuth();
@@ -251,6 +237,130 @@ const AppointmentList = () => {
     return practitionerParticipant?.actor?.display || 'Unknown Practitioner';
   };
 
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case 'proposed':
+        return { className: 'border-sky-200 bg-sky-50 text-sky-700', label: 'Proposed' };
+      case 'pending':
+        return { className: 'border-amber-200 bg-amber-50 text-amber-700', label: 'Pending' };
+      case 'booked':
+        return { className: 'border-emerald-200 bg-emerald-50 text-emerald-700', label: 'Booked' };
+      case 'arrived':
+        return { className: 'border-amber-200 bg-amber-50 text-amber-700', label: 'Arrived' };
+      case 'fulfilled':
+        return { className: 'border-emerald-200 bg-emerald-50 text-emerald-700', label: 'Fulfilled' };
+      case 'cancelled':
+        return { className: 'border-rose-200 bg-rose-50 text-rose-700', label: 'Cancelled' };
+      case 'noshow':
+        return { className: 'border-border bg-muted text-muted-foreground', label: 'No Show' };
+      default:
+        return { className: 'border-border bg-muted text-muted-foreground', label: status || 'Unknown' };
+    }
+  };
+
+  const appointmentColumns = useMemo(() => ([
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '240px',
+      render: (appointment) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{getPatientName(appointment)}</p>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            {appointment.patient_identifier || appointment.patient_mrn || appointment.description || 'Appointment'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'practitioner',
+      header: 'Practitioner',
+      width: '220px',
+      render: (appointment) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-foreground">{getPractitionerName(appointment)}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {appointment.service_category?.[0]?.coding?.[0]?.display || appointment.specialty?.[0]?.coding?.[0]?.display || 'Assigned care team'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Appointment',
+      width: '220px',
+      render: (appointment) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-foreground">
+            {appointment.appointment_type_name ||
+              appointment.appointment_type_details?.name ||
+              appointment.appointmentType?.coding?.[0]?.display ||
+              'General'}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {appointment.comment || appointment.reason_code?.[0]?.text || 'No notes'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'scheduled',
+      header: 'Scheduled',
+      width: '180px',
+      render: (appointment) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {formatDateTime(appointment.start || appointment.start_time)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (appointment) => {
+        const statusConfig = getStatusConfig(appointment.status);
+        return (
+          <Badge variant="outline" className={cn('text-xs', statusConfig.className)}>
+            {statusConfig.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: canOpenContext ? '148px' : '88px',
+      render: (appointment) => (
+        <div className="flex items-center justify-end gap-2">
+          {canOpenContext && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                handlePatientContext(appointment);
+              }}
+            >
+              Patient
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              viewAppointmentDetail(appointment.id);
+            }}
+          >
+            View
+          </Button>
+        </div>
+      ),
+    },
+  ]), [canOpenContext]);
+
   // Render loading state
   if (isLoading) {
     return (
@@ -394,23 +504,18 @@ const AppointmentList = () => {
           </Button>
         </div>
       ) : (
-        <VirtualizedList
-          items={appointments}
-          estimateSize={140}
-          gap={12}
-          getItemKey={(appointment) => appointment.id}
-          renderItem={(appointment, index) => (
-            <AppointmentCard
-              appointment={appointment}
-              index={index}
-              formatDateTime={formatDateTime}
-              getPatientName={getPatientName}
-              getPractitionerName={getPractitionerName}
-              onClick={() => viewAppointmentDetail(appointment.id)}
-              onPatientContext={canOpenContext ? handlePatientContext : null}
-            />
-          )}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={appointments}
+            rowKey={(appointment) => appointment.id}
+            rowHeight={68}
+            columns={appointmentColumns}
+            onRowClick={(appointment) => viewAppointmentDetail(appointment.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[1140px]"
+            headerClassName="bg-muted/50 border-b border-border"
+          />
+        </div>
       )}
 
       {/* Pagination */}
@@ -463,123 +568,5 @@ const AppointmentList = () => {
     </div>
   );
 };
-
-/**
- * AppointmentCard - Individual appointment card in Chronicle style
- */
-  function AppointmentCard({
-  appointment,
-  index,
-  formatDateTime,
-  getPatientName,
-  getPractitionerName,
-  onClick,
-  onPatientContext,
-  }) {
-  const getStatusConfig = (status) => {
-    switch (status) {
-      case 'proposed':
-        return { badge: 'badge-chronicle-sky', label: 'Proposed' };
-      case 'pending':
-        return { badge: 'badge-chronicle-amber', label: 'Pending' };
-      case 'booked':
-        return { badge: 'badge-chronicle-emerald', label: 'Booked' };
-      case 'arrived':
-        return { badge: 'badge-chronicle-amber', label: 'Arrived', ribbon: 'status-ribbon-warning' };
-      case 'fulfilled':
-        return { badge: 'badge-chronicle-emerald', label: 'Fulfilled' };
-      case 'cancelled':
-        return { badge: 'badge-chronicle-rose', label: 'Cancelled' };
-      case 'noshow':
-        return { badge: 'font-mono text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground', label: 'No Show' };
-      default:
-        return { badge: 'font-mono text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground', label: status || 'Unknown' };
-    }
-  };
-
-    const statusConfig = getStatusConfig(appointment.status);
-    const patientName = getPatientName(appointment);
-    const practitionerName = getPractitionerName(appointment);
-    const appointmentType =
-      appointment.appointment_type_name ||
-      appointment.appointment_type_details?.name ||
-      appointment.appointmentType?.coding?.[0]?.display ||
-      'General';
-
-    const startAt = appointment.start || appointment.start_time || null;
-    const startDate = safeParse(startAt);
-
-    return (
-    <article
-      className={cn(
-        "group relative bg-card/50 border border-border rounded-xl p-5",
-        "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
-        "transition-all duration-300 cursor-pointer",
-        "animate-chronicle-enter"
-      )}
-      style={{ animationDelay: `${index * 50}ms` }}
-      onClick={onClick}
-    >
-      {statusConfig.ribbon && <div className={cn("status-ribbon", statusConfig.ribbon)} />}
-
-      <div className="flex items-center gap-4">
-        {/* Avatar */}
-        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-display text-primary border-2 border-background">
-          {patientName.split(' ').map(n => n[0]).join('').slice(0, 2)}
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <h3 className="font-display text-xl text-foreground truncate">
-              {patientName}
-            </h3>
-            <span className={statusConfig.badge}>
-              {statusConfig.label}
-            </span>
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">
-              {appointmentType}
-            </span>
-          </div>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Clock className="h-3 w-3" />
-              {startDate ? format(startDate, 'MMM d, yyyy h:mm a') : formatDateTime(startAt)}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <UserRound className="h-3 w-3" />
-              {practitionerName}
-            </span>
-          </div>
-        </div>
-
-        {/* Hover Action */}
-        <div className="flex items-center gap-2">
-          {onPatientContext && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(event) => {
-                event.stopPropagation();
-                onPatientContext(appointment);
-              }}
-            >
-              Patient
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            View
-            <ChevronRight className="h-3 w-3 ml-1" />
-          </Button>
-        </div>
-      </div>
-    </article>
-  );
-}
 
 export default AppointmentList;

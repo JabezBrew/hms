@@ -19,7 +19,9 @@ import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import VirtualizedTable from "@/components/ui/VirtualizedTable";
 import {
   Select,
   SelectContent,
@@ -46,7 +48,6 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { toast } from "sonner";
-import { ChartTemplateCard } from "@/components/charts";
 import {
   useChartTemplates,
   useChartCategories,
@@ -138,20 +139,64 @@ const ChartTemplateListPage = () => {
     }
   };
 
-  // Template card with actions
-  const renderTemplateCard = (template, index) => (
-    <div key={template.id} className="relative group">
-      <ChartTemplateCard
-        template={template}
-        index={index}
-        onSelect={handleEdit}
-        showActions={false}
-      />
-      {/* Actions dropdown */}
-      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+  const templateColumns = useMemo(() => ([
+    {
+      key: "name",
+      header: "Template",
+      width: "280px",
+      render: (template) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{template.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {template.description || "No description"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      width: "160px",
+      render: (template) => (
+        <Badge variant="outline" className="text-xs">
+          {categories.find((cat) => cat.value === template.category)?.label || template.category || "General"}
+        </Badge>
+      ),
+    },
+    {
+      key: "visibility",
+      header: "Visibility",
+      width: "140px",
+      render: (template) => (
+        <span className="font-mono text-sm text-muted-foreground capitalize">
+          {template.visibility || "private"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "120px",
+      render: (template) => (
+        <Badge
+          variant="outline"
+          className={template.is_active
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700 text-xs"
+            : "text-xs"
+          }
+        >
+          {template.is_active ? "Active" : "Inactive"}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "88px",
+      render: (template) => (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 w-7 p-0 bg-card">
+          <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-card">
               <MoreVertical className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
@@ -187,9 +232,9 @@ const ChartTemplateListPage = () => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-    </div>
-  );
+      ),
+    },
+  ]), [categories]);
 
   return (
     <PageShell>
@@ -346,10 +391,17 @@ const ChartTemplateListPage = () => {
               </p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredTemplates.map((template, index) =>
-                renderTemplateCard(template, index)
-              )}
+            <div className="overflow-x-auto">
+              <VirtualizedTable
+                rows={filteredTemplates}
+                rowKey={(template) => template.id}
+                rowHeight={68}
+                columns={templateColumns}
+                onRowClick={(template) => handleEdit(template)}
+                rowClassName="hover:bg-muted/30"
+                className="min-w-[860px]"
+                headerClassName="bg-muted/50 border-b border-border"
+              />
             </div>
           </>
         )}

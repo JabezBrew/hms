@@ -4,16 +4,14 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import { Badge } from "@/components/ui/badge";
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import {
@@ -25,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { LabTestCard, LabPanelCard } from "@/components/laboratory/LabTestCard";
 import { LabTestCustomizeSlideOver } from "@/components/laboratory/LabTestCustomizeSlideOver";
 import { AddLabTestSlideOver } from "@/components/laboratory/AddLabTestSlideOver";
 import {
@@ -61,9 +58,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 const LabCatalogPage = () => {
   // Tab state
   const [activeTab, setActiveTab] = useState("tests");
-
-  // View mode
-  const [viewMode, setViewMode] = useState("grid");
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -279,6 +273,269 @@ const LabCatalogPage = () => {
   const hasActiveFilters =
     searchQuery || categoryFilter !== "all" || statusFilter !== "all";
 
+  const formatPrice = (price) => {
+    if (!price) return "Not set";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(price);
+  };
+
+  const getStatusBadge = (item) => {
+    if (!item.is_system_default) {
+      return {
+        label: "Custom",
+        className: "border-sky-500/30 bg-sky-500/10 text-sky-600",
+      };
+    }
+    if (item.is_facility_modified) {
+      return {
+        label: "Modified",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-600",
+      };
+    }
+    return {
+      label: "System",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
+    };
+  };
+
+  const testsColumns = useMemo(() => ([
+    {
+      key: "name",
+      header: "Test",
+      width: "260px",
+      render: (test) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{test.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {test.description || "No description"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "code",
+      header: "Code",
+      width: "140px",
+      render: (test) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {test.loinc_code || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      width: "150px",
+      render: (test) => (
+        <Badge variant="outline" className="text-xs">
+          {categories.find((cat) => cat.value === test.category)?.label || test.category || "Other"}
+        </Badge>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "140px",
+      render: (test) => {
+        const badge = getStatusBadge(test);
+        return (
+          <Badge variant="outline" className={cn("text-xs", badge.className)}>
+            {badge.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "price",
+      header: "Price",
+      width: "120px",
+      render: (test) => (
+        <span className="font-mono text-sm text-muted-foreground">{formatPrice(test.price)}</span>
+      ),
+    },
+    {
+      key: "tat",
+      header: "TAT",
+      width: "120px",
+      render: (test) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {test.tat_hours ? `${test.tat_hours}h` : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "specimen",
+      header: "Specimen",
+      width: "140px",
+      render: (test) => (
+        <span className="font-mono text-xs uppercase text-muted-foreground">
+          {test.specimen_type || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "180px",
+      render: (test) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleCustomize(test, "test");
+            }}
+          >
+            Edit
+          </Button>
+          {test.is_system_default && test.is_facility_modified && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleReset(test, "test");
+              }}
+            >
+              Reset
+            </Button>
+          )}
+          {!test.is_system_default && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-destructive"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeleteInit(test, "test");
+              }}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]), [categories]);
+
+  const panelsColumns = useMemo(() => ([
+    {
+      key: "name",
+      header: "Panel",
+      width: "260px",
+      render: (panel) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{panel.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {panel.description || "No description"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "code",
+      header: "Code",
+      width: "140px",
+      render: (panel) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {panel.code || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "tests",
+      header: "Tests",
+      width: "120px",
+      render: (panel) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {panel.tests?.length || panel.tests_count || 0}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "140px",
+      render: (panel) => {
+        const badge = getStatusBadge(panel);
+        return (
+          <Badge variant="outline" className={cn("text-xs", badge.className)}>
+            {badge.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "price",
+      header: "Price",
+      width: "120px",
+      render: (panel) => (
+        <span className="font-mono text-sm text-muted-foreground">{formatPrice(panel.price)}</span>
+      ),
+    },
+    {
+      key: "state",
+      header: "State",
+      width: "120px",
+      render: (panel) => (
+        <Badge variant="outline" className="text-xs">
+          {panel.is_active === false ? "Inactive" : "Active"}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "180px",
+      render: (panel) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleCustomize(panel, "panel");
+            }}
+          >
+            Edit
+          </Button>
+          {panel.is_system_default && panel.is_facility_modified && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleReset(panel, "panel");
+              }}
+            >
+              Reset
+            </Button>
+          )}
+          {!panel.is_system_default && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-destructive"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeleteInit(panel, "panel");
+              }}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]), []);
+
   // Loading skeleton
   const LoadingSkeleton = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -402,25 +659,6 @@ const LabCatalogPage = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* View toggle */}
-          <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
-            <Button
-              variant={viewMode === "grid" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("grid")}
-              className="h-7 px-2"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="h-7 px-2"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
 
         {/* Filters */}
@@ -492,39 +730,19 @@ const LabCatalogPage = () => {
                   : "Add your first lab test to get started"}
               </p>
             </div>
-          ) : viewMode === "grid" ? (
-            <VirtualizedGrid
-              items={filteredTests}
-              minItemWidth={300}
-              rowHeight={260}
-              gap={16}
-              getItemKey={(test) => test.id}
-              renderItem={(test, index) => (
-                <LabTestCard
-                  test={test}
-                  index={index}
-                  onCustomize={() => handleCustomize(test, "test")}
-                  onReset={() => handleReset(test, "test")}
-                  onDelete={() => handleDeleteInit(test, "test")}
-                />
-              )}
-            />
           ) : (
-            <VirtualizedList
-              items={filteredTests}
-              estimateSize={140}
-              gap={12}
-              getItemKey={(test) => test.id}
-              renderItem={(test, index) => (
-                <LabTestCard
-                  test={test}
-                  index={index}
-                  onCustomize={() => handleCustomize(test, "test")}
-                  onReset={() => handleReset(test, "test")}
-                  onDelete={() => handleDeleteInit(test, "test")}
-                />
-              )}
-            />
+            <div className="overflow-x-auto">
+              <VirtualizedTable
+                rows={filteredTests}
+                rowKey={(test) => test.id}
+                rowHeight={68}
+                columns={testsColumns}
+                onRowClick={(test) => handleCustomize(test, "test")}
+                rowClassName="hover:bg-muted/30"
+                className="min-w-[1260px]"
+                headerClassName="bg-muted/50 border-b border-border"
+              />
+            </div>
           )}
         </TabsContent>
 
@@ -544,39 +762,19 @@ const LabCatalogPage = () => {
                   : "Add your first lab panel to get started"}
               </p>
             </div>
-          ) : viewMode === "grid" ? (
-            <VirtualizedGrid
-              items={filteredPanels}
-              minItemWidth={300}
-              rowHeight={260}
-              gap={16}
-              getItemKey={(panel) => panel.id}
-              renderItem={(panel, index) => (
-                <LabPanelCard
-                  panel={panel}
-                  index={index}
-                  onCustomize={() => handleCustomize(panel, "panel")}
-                  onReset={() => handleReset(panel, "panel")}
-                  onDelete={() => handleDeleteInit(panel, "panel")}
-                />
-              )}
-            />
           ) : (
-            <VirtualizedList
-              items={filteredPanels}
-              estimateSize={140}
-              gap={12}
-              getItemKey={(panel) => panel.id}
-              renderItem={(panel, index) => (
-                <LabPanelCard
-                  panel={panel}
-                  index={index}
-                  onCustomize={() => handleCustomize(panel, "panel")}
-                  onReset={() => handleReset(panel, "panel")}
-                  onDelete={() => handleDeleteInit(panel, "panel")}
-                />
-              )}
-            />
+            <div className="overflow-x-auto">
+              <VirtualizedTable
+                rows={filteredPanels}
+                rowKey={(panel) => panel.id}
+                rowHeight={68}
+                columns={panelsColumns}
+                onRowClick={(panel) => handleCustomize(panel, "panel")}
+                rowClassName="hover:bg-muted/30"
+                className="min-w-[1180px]"
+                headerClassName="bg-muted/50 border-b border-border"
+              />
+            </div>
           )}
         </TabsContent>
       </Tabs>
