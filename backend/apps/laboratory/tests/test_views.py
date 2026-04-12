@@ -162,6 +162,50 @@ class TestLabOrderViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['count'] == 2
 
+    def test_list_orders_searches_order_number_patient_name_and_mrn(self, admin_client, default_facility, db):
+        """Test searching orders by order number, patient full name, and MRN."""
+        matching_patient = PatientProfileFactory(
+            facility=default_facility,
+            medical_record_number='MRN-SEARCH-001',
+        )
+        matching_patient.user.first_name = 'Ada'
+        matching_patient.user.last_name = 'Lovelace'
+        matching_patient.user.save(update_fields=['first_name', 'last_name'])
+
+        other_patient = PatientProfileFactory(
+            facility=default_facility,
+            medical_record_number='MRN-OTHER-001',
+        )
+        other_patient.user.first_name = 'Marie'
+        other_patient.user.last_name = 'Curie'
+        other_patient.user.save(update_fields=['first_name', 'last_name'])
+
+        matching_order = LabOrderFactory(
+            facility=default_facility,
+            patient=matching_patient,
+            order_number='LAB-SEARCH-001',
+        )
+        LabOrderFactory(
+            facility=default_facility,
+            patient=other_patient,
+            order_number='LAB-OTHER-001',
+        )
+
+        response = admin_client.get(f'{BASE_URL}/orders/', {'search': 'Ada Lovelace'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_order.id)
+
+        response = admin_client.get(f'{BASE_URL}/orders/', {'search': 'LAB-SEARCH-001'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_order.id)
+
+        response = admin_client.get(f'{BASE_URL}/orders/', {'search': 'MRN-SEARCH-001'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_order.id)
+
     def test_create_order(self, admin_client, db):
         """Test creating a new lab order."""
         patient = PatientProfileFactory()
@@ -317,6 +361,67 @@ class TestLabResultViewSet:
         }
         response = admin_client.post(f'{BASE_URL}/results/', data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
+
+    def test_list_results_searches_test_name_patient_name_and_mrn(self, admin_client, default_facility, db):
+        """Test searching results by test name, patient full name, and MRN."""
+        matching_patient = PatientProfileFactory(
+            facility=default_facility,
+            medical_record_number='MRN-LAB-001',
+        )
+        matching_patient.user.first_name = 'Grace'
+        matching_patient.user.last_name = 'Hopper'
+        matching_patient.user.save(update_fields=['first_name', 'last_name'])
+
+        troponin_test = LabTestCatalogFactory(
+            facility=default_facility,
+            name='Troponin I',
+            short_name='Troponin',
+            code='TROP-I',
+        )
+        matching_order = LabOrderFactory(
+            facility=default_facility,
+            patient=matching_patient,
+        )
+        matching_order_test = LabOrderTestFactory(
+            order=matching_order,
+            facility=default_facility,
+            test=troponin_test,
+        )
+        matching_specimen = LabSpecimenFactory(order=matching_order, facility=default_facility)
+        matching_result = LabResultFactory(
+            order_test=matching_order_test,
+            specimen=matching_specimen,
+            facility=default_facility,
+        )
+
+        other_patient = PatientProfileFactory(facility=default_facility)
+        other_patient.user.first_name = 'Alan'
+        other_patient.user.last_name = 'Turing'
+        other_patient.user.save(update_fields=['first_name', 'last_name'])
+        other_order = LabOrderFactory(facility=default_facility, patient=other_patient)
+        other_order_test = LabOrderTestFactory(order=other_order, facility=default_facility)
+        other_specimen = LabSpecimenFactory(order=other_order, facility=default_facility)
+        LabResultFactory(order_test=other_order_test, specimen=other_specimen, facility=default_facility)
+
+        response = admin_client.get(f'{BASE_URL}/results/', {'search': 'Troponin'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_result.id)
+
+        response = admin_client.get(f'{BASE_URL}/results/', {'search': matching_order.order_number})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_result.id)
+
+        response = admin_client.get(f'{BASE_URL}/results/', {'search': 'Grace Hopper'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_result.id)
+
+        response = admin_client.get(f'{BASE_URL}/results/', {'search': 'MRN-LAB-001'})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['id'] == str(matching_result.id)
 
     def test_verify_result(self, api_client, db):
         """Test verifying a result."""

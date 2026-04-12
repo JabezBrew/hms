@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api-client';
+import { laboratoryApi } from '../api/laboratory';
 
 describe('apiClient runtime config integration', () => {
   const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
@@ -74,5 +75,37 @@ describe('apiClient runtime config integration', () => {
       'https://api.example.com/api/patients/?page=2',
       expect.objectContaining({ method: 'GET' }),
     );
+  });
+
+  it('stops paginated fetch chains when the request is aborted', async () => {
+    const controller = new AbortController();
+
+    globalThis.fetch.mockImplementationOnce(async () => {
+      controller.abort();
+      return new Response(
+        JSON.stringify({
+          results: [{ id: 1 }],
+          next: 'https://api.example.com/api/patients/?page=2',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    });
+
+    await expect(apiClient.getAll('/patients/', { signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves abort errors through the laboratory API wrapper', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      laboratoryApi.getLabOrdersPaginated({}, { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
   });
 });

@@ -55,6 +55,35 @@ LAB_TECH_VISIBLE_ORDER_STATUSES = [
 ]
 
 
+def _build_name_search_query(first_name_lookup, last_name_lookup, raw_search):
+    """Build a simple full-name-aware search query."""
+    search = (raw_search or '').strip()
+    if not search:
+        return Q()
+
+    parts = [part for part in search.split() if part]
+    query = (
+        Q(**{f'{first_name_lookup}__icontains': search})
+        | Q(**{f'{last_name_lookup}__icontains': search})
+    )
+
+    if len(parts) >= 2:
+        query |= Q(
+            **{
+                f'{first_name_lookup}__icontains': parts[0],
+                f'{last_name_lookup}__icontains': ' '.join(parts[1:]),
+            }
+        )
+        query |= Q(
+            **{
+                f'{first_name_lookup}__icontains': parts[-1],
+                f'{last_name_lookup}__icontains': ' '.join(parts[:-1]),
+            }
+        )
+
+    return query
+
+
 def _scope_lab_queryset_for_user(queryset, *, user, patient_lookup, order_status_lookup=None):
     """Apply lab-domain authorization at the queryset level."""
     user_type = getattr(user, 'user_type', None)
@@ -542,6 +571,19 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             except AttributeError:
                 # User is not a practitioner, return empty queryset
                 queryset = queryset.none()
+
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            normalized_search = search.lstrip('#')
+            queryset = queryset.filter(
+                Q(order_number__icontains=normalized_search)
+                | Q(patient__medical_record_number__icontains=normalized_search)
+                | _build_name_search_query(
+                    'patient__user__first_name',
+                    'patient__user__last_name',
+                    normalized_search,
+                )
+            )
 
         return queryset.order_by('-created_at')
 
@@ -1068,6 +1110,22 @@ class LabResultViewSet(viewsets.ModelViewSet):
         critical_only = self.request.query_params.get('critical_only')
         if critical_only and critical_only.lower() == 'true':
             queryset = queryset.filter(flag__in=['critical_low', 'critical_high'])
+
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            normalized_search = search.lstrip('#')
+            queryset = queryset.filter(
+                Q(order_test__order__order_number__icontains=normalized_search)
+                | Q(order_test__order__patient__medical_record_number__icontains=normalized_search)
+                | Q(order_test__test__short_name__icontains=normalized_search)
+                | Q(order_test__test__name__icontains=normalized_search)
+                | Q(order_test__test__code__icontains=normalized_search)
+                | _build_name_search_query(
+                    'order_test__order__patient__user__first_name',
+                    'order_test__order__patient__user__last_name',
+                    normalized_search,
+                )
+            )
 
         return queryset.order_by('-performed_at')
 

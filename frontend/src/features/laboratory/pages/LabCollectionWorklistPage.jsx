@@ -4,14 +4,14 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -23,11 +23,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import format from "date-fns/format";
 import formatDistanceToNow from "date-fns/formatDistanceToNow";
-import { useAuth } from "@/lib/auth";
-import { useLabOrders } from "@/features/laboratory/hooks";
+import { usePaginatedLabOrders } from "@/features/laboratory/hooks";
 import { LabOrderDetailSlideOver, SpecimenCollectionDialog } from "@/components/laboratory";
+import { useDebounce } from '@/hooks/use-debounce';
+
+const COLLECTION_PAGE_SIZE = 20;
 
 /**
  * LabCollectionWorklistPage - Worklist for specimen collection
@@ -40,11 +41,11 @@ import { LabOrderDetailSlideOver, SpecimenCollectionDialog } from "@/components/
  * - Search by patient name or order number
  */
 export default function LabCollectionWorklistPage() {
-  const { user } = useAuth();
-
   // State
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Slide-over state
   const [selectedOrderId, setSelectedOrderId] = useState(null);
@@ -56,54 +57,53 @@ export default function LabCollectionWorklistPage() {
 
   // Fetch orders with "ordered" status
   const queryFilters = useMemo(() => {
-    const filters = { status: "ordered" };
+    const filters = {
+      status: "ordered",
+      page,
+      page_size: COLLECTION_PAGE_SIZE,
+    };
+    if (debouncedSearchQuery.trim()) {
+      filters.search = debouncedSearchQuery.trim();
+    }
     if (priorityFilter !== "all") {
       filters.priority = priorityFilter;
     }
     return filters;
-  }, [priorityFilter]);
+  }, [priorityFilter, debouncedSearchQuery, page]);
 
-  const { data: ordersData, isLoading, refetch } = useLabOrders(queryFilters);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, priorityFilter]);
+
+  const { data: ordersData, isLoading, isFetching, refetch } = usePaginatedLabOrders(queryFilters);
 
   // Process and sort orders by priority
   const orders = useMemo(() => {
-    const data = ordersData?.results || ordersData || [];
+    const data = ordersData?.results || [];
     const ordersList = Array.isArray(data) ? data : [];
 
     // Priority order: stat > urgent > routine
     const priorityOrder = { stat: 0, urgent: 1, routine: 2 };
 
-    return ordersList.sort((a, b) => {
+    return [...ordersList].sort((a, b) => {
       const priorityDiff = (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2);
       if (priorityDiff !== 0) return priorityDiff;
       // Within same priority, older orders first
       return new Date(a.ordered_at || a.created_at) - new Date(b.ordered_at || b.created_at);
     });
   }, [ordersData]);
-
-  // Client-side search filtering
-  const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return orders;
-
-    const query = searchQuery.toLowerCase();
-    return orders.filter((order) => {
-      return (
-        order.order_number?.toLowerCase().includes(query) ||
-        order.patient_name?.toLowerCase().includes(query) ||
-        order.patient_mrn?.toLowerCase().includes(query)
-      );
-    });
-  }, [orders, searchQuery]);
+  const totalCount = ordersData?.count || 0;
 
   // Stats
   const stats = useMemo(() => {
     return {
-      total: orders.length,
+      total: totalCount,
+      visible: orders.length,
       stat: orders.filter((o) => o.priority === "stat").length,
       urgent: orders.filter((o) => o.priority === "urgent").length,
       routine: orders.filter((o) => o.priority === "routine").length,
     };
-  }, [orders]);
+  }, [orders, totalCount]);
 
   // Priority config
   const getPriorityConfig = (priority) => {
@@ -159,9 +159,14 @@ export default function LabCollectionWorklistPage() {
         description={(
           <span>
             {stats.total} orders awaiting specimen collection
+            {stats.total !== stats.visible && (
+              <span className="text-muted-foreground ml-2">
+                (showing {stats.visible} on this page)
+              </span>
+            )}
             {stats.stat > 0 && (
               <span className="text-rose-600 font-semibold ml-2">
-                ({stats.stat} STAT)
+                ({stats.stat} STAT on this page)
               </span>
             )}
           </span>
@@ -172,8 +177,9 @@ export default function LabCollectionWorklistPage() {
             size="sm"
             onClick={() => refetch()}
             className="flex items-center gap-2"
+            disabled={isFetching}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -186,6 +192,13 @@ export default function LabCollectionWorklistPage() {
               <span className="text-xs text-muted-foreground">Total</span>
             </div>
             <p className="font-display text-2xl">{stats.total}</p>
+          </div>
+          <div className="bg-background rounded-lg border p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <MapPin className="h-4 w-4 text-sky-600" />
+              <span className="text-xs text-muted-foreground">Visible</span>
+            </div>
+            <p className="font-display text-2xl">{stats.visible}</p>
           </div>
           <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800 p-3">
             <div className="flex items-center gap-2 mb-1">
@@ -200,13 +213,6 @@ export default function LabCollectionWorklistPage() {
               <span className="text-xs text-amber-600 font-medium">Urgent</span>
             </div>
             <p className="font-display text-2xl text-amber-700">{stats.urgent}</p>
-          </div>
-          <div className="bg-background rounded-lg border p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <TestTube2 className="h-4 w-4 text-stone-500" />
-              <span className="text-xs text-muted-foreground">Routine</span>
-            </div>
-            <p className="font-display text-2xl">{stats.routine}</p>
           </div>
         </div>
       </PageHeader>
@@ -260,7 +266,7 @@ export default function LabCollectionWorklistPage() {
               </div>
             ))}
           </div>
-        ) : filteredOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           // Empty state
           <div className="flex flex-col items-center justify-center py-16 px-4">
             <Droplet className="h-12 w-12 text-muted-foreground/50 mb-4" />
@@ -275,7 +281,7 @@ export default function LabCollectionWorklistPage() {
           </div>
         ) : (
           <VirtualizedList
-            items={filteredOrders}
+            items={orders}
             estimateSize={150}
             gap={12}
             getItemKey={(order) => order.id}
@@ -348,6 +354,18 @@ export default function LabCollectionWorklistPage() {
           />
         )}
       </main>
+
+      {totalCount > COLLECTION_PAGE_SIZE && (
+        <div className="px-4 sm:px-6 pb-6">
+          <TablePagination
+            currentPage={page}
+            totalCount={totalCount}
+            pageSize={COLLECTION_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="orders"
+          />
+        </div>
+      )}
 
       {/* Order Detail Slide-over */}
       <LabOrderDetailSlideOver

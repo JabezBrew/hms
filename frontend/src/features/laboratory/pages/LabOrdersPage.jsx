@@ -2,17 +2,17 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
 import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -28,8 +28,11 @@ import { StatCard } from "@/components/dashboard";
 import { LabOrderCard, LabOrderDetailSlideOver } from "@/components/laboratory";
 
 import { useAuth } from "@/lib/auth";
-import { useLabOrders } from "@/features/laboratory/hooks";
+import { usePaginatedLabOrders } from "@/features/laboratory/hooks";
 import { usePractitioners } from "@/features/staff/hooks";
+import { useDebounce } from '@/hooks/use-debounce';
+
+const ORDERS_PAGE_SIZE = 24;
 
 /**
  * LabOrdersPage - Lab orders list for clinicians
@@ -56,6 +59,9 @@ export default function LabOrdersPage() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [selectedDoctorFilter, setSelectedDoctorFilter] = useState("all");
   const [viewMode, setViewMode] = useState("grid");
+  const [page, setPage] = useState(1);
+
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Slide-over state
   const [selectedOrderId, setSelectedOrderId] = useState(null);
@@ -68,9 +74,20 @@ export default function LabOrdersPage() {
     return Array.isArray(data) ? data : [];
   }, [practitionersData]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, statusFilter, priorityFilter, selectedDoctorFilter]);
+
   // Build query filters
   const queryFilters = useMemo(() => {
-    const filters = {};
+    const filters = {
+      page,
+      page_size: ORDERS_PAGE_SIZE,
+    };
+
+    if (debouncedSearchQuery.trim()) {
+      filters.search = debouncedSearchQuery.trim();
+    }
 
     if (statusFilter !== "all") {
       filters.status = statusFilter;
@@ -91,38 +108,33 @@ export default function LabOrdersPage() {
     }
 
     return filters;
-  }, [statusFilter, priorityFilter, isDoctor, isLabStaff, selectedDoctorFilter]);
+  }, [
+    debouncedSearchQuery,
+    statusFilter,
+    priorityFilter,
+    isDoctor,
+    isLabStaff,
+    selectedDoctorFilter,
+    page,
+  ]);
 
   // Fetch orders
   const {
     data: ordersData,
     isLoading,
+    isFetching,
     refetch,
-  } = useLabOrders(queryFilters);
+  } = usePaginatedLabOrders(queryFilters);
 
   // Process orders data
   const orders = useMemo(() => {
-    const data = ordersData?.results || ordersData || [];
+    const data = ordersData?.results || [];
     return Array.isArray(data) ? data : [];
   }, [ordersData]);
+  const totalCount = ordersData?.count || 0;
 
-  // Client-side search filtering
-  const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return orders;
-
-    const query = searchQuery.toLowerCase();
-    return orders.filter((order) => {
-      return (
-        order.order_number?.toLowerCase().includes(query) ||
-        order.patient_name?.toLowerCase().includes(query) ||
-        order.patient_mrn?.toLowerCase().includes(query)
-      );
-    });
-  }, [orders, searchQuery]);
-
-  // Calculate stats
+  // Calculate page-local stats
   const stats = useMemo(() => {
-    const all = orders;
     const pending = orders.filter((o) =>
       ["ordered", "collected", "received"].includes(o.status)
     );
@@ -131,13 +143,14 @@ export default function LabOrdersPage() {
     const critical = orders.filter((o) => o.has_critical_results);
 
     return {
-      total: all.length,
+      total: totalCount,
+      visible: orders.length,
       pending: pending.length,
       processing: processing.length,
       completed: completed.length,
       critical: critical.length,
     };
-  }, [orders]);
+  }, [orders, totalCount]);
 
   // Event handlers
   const handleClearFilters = () => {
@@ -145,6 +158,7 @@ export default function LabOrdersPage() {
     setStatusFilter("all");
     setPriorityFilter("all");
     setSelectedDoctorFilter("all");
+    setPage(1);
   };
 
   const handleOrderClick = (order) => {
@@ -162,7 +176,7 @@ export default function LabOrdersPage() {
   };
 
   const hasActiveFilters =
-    searchQuery ||
+    searchQuery.trim() ||
     statusFilter !== "all" ||
     priorityFilter !== "all" ||
     selectedDoctorFilter !== "all";
@@ -193,10 +207,15 @@ export default function LabOrdersPage() {
         title="Lab Orders"
         description={(
           <span>
-            {stats.total} {isDoctor ? "of your orders" : "orders"}
+            {stats.total} {isDoctor ? "matching orders placed by you" : "matching orders"}
+            {stats.total !== stats.visible && (
+              <span className="ml-2 text-muted-foreground">
+                (showing {stats.visible} on this page)
+              </span>
+            )}
             {stats.critical > 0 && (
               <span className="text-rose-600 ml-2">
-                ({stats.critical} critical)
+                ({stats.critical} critical on this page)
               </span>
             )}
           </span>
@@ -207,8 +226,9 @@ export default function LabOrdersPage() {
             size="sm"
             onClick={() => refetch()}
             className="flex items-center gap-2"
+            disabled={isFetching}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -222,19 +242,19 @@ export default function LabOrdersPage() {
             color="sky"
           />
           <StatCard
-            title="Pending"
+            title="Visible"
+            value={stats.visible}
+            icon={List}
+            color="sky"
+          />
+          <StatCard
+            title="Pending Page"
             value={stats.pending}
             icon={Clock}
             color="amber"
           />
           <StatCard
-            title="Processing"
-            value={stats.processing}
-            icon={AlertTriangle}
-            color="rose"
-          />
-          <StatCard
-            title="Completed"
+            title="Completed Page"
             value={stats.completed}
             icon={CheckCircle2}
             color="emerald"
@@ -373,7 +393,7 @@ export default function LabOrdersPage() {
               </div>
             ))}
           </div>
-        ) : filteredOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           // Empty state
           <div className="flex flex-col items-center justify-center py-16 px-4">
             <TestTube2 className="h-12 w-12 text-muted-foreground/50 mb-4" />
@@ -381,7 +401,7 @@ export default function LabOrdersPage() {
               No orders found
             </h3>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              {searchQuery || statusFilter !== "all" || priorityFilter !== "all" || selectedDoctorFilter !== "all"
+              {hasActiveFilters
                 ? "Try adjusting your filters to see more orders."
                 : isDoctor
                 ? "You haven't placed any lab orders yet."
@@ -400,7 +420,7 @@ export default function LabOrdersPage() {
           </div>
         ) : viewMode === "grid" ? (
           <VirtualizedGrid
-            items={filteredOrders}
+            items={orders}
             minItemWidth={320}
             rowHeight={260}
             gap={16}
@@ -415,7 +435,7 @@ export default function LabOrdersPage() {
           />
         ) : (
           <VirtualizedList
-            items={filteredOrders}
+            items={orders}
             estimateSize={140}
             gap={12}
             getItemKey={(order) => order.id}
@@ -429,6 +449,18 @@ export default function LabOrdersPage() {
           />
         )}
       </main>
+
+      {totalCount > ORDERS_PAGE_SIZE && (
+        <div className="px-4 sm:px-6 pb-6">
+          <TablePagination
+            currentPage={page}
+            totalCount={totalCount}
+            pageSize={ORDERS_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="orders"
+          />
+        </div>
+      )}
 
       {/* Order Detail Slide-over */}
       <LabOrderDetailSlideOver

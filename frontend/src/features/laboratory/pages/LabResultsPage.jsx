@@ -14,13 +14,14 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -58,12 +59,15 @@ import { StatCard } from "@/components/dashboard";
 import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
 import {
-  useLabResults,
+  usePaginatedLabResults,
   useLabInterpretation,
   useVerifyLabResult,
   useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
+import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from "sonner";
+
+const RESULTS_PAGE_SIZE = 100;
 
 /**
  * LabResultsPage - Lab results grouped by order with patient context
@@ -89,6 +93,9 @@ export default function LabResultsPage() {
   const [verificationFilter, setVerificationFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("all");
   const [expandedOrders, setExpandedOrders] = useState(new Set());
+  const [page, setPage] = useState(1);
+
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Verify dialog state
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
@@ -105,7 +112,14 @@ export default function LabResultsPage() {
 
   // Build query filters
   const queryFilters = useMemo(() => {
-    const filters = {};
+    const filters = {
+      page,
+      page_size: RESULTS_PAGE_SIZE,
+    };
+
+    if (debouncedSearchQuery.trim()) {
+      filters.search = debouncedSearchQuery.trim();
+    }
 
     if (verificationFilter !== "all") {
       filters.is_verified = verificationFilter === "verified";
@@ -116,10 +130,14 @@ export default function LabResultsPage() {
     }
 
     return filters;
-  }, [verificationFilter, activeTab]);
+  }, [verificationFilter, activeTab, debouncedSearchQuery, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, verificationFilter, activeTab]);
 
   // Fetch results
-  const { data: resultsData, isLoading, refetch } = useLabResults(queryFilters);
+  const { data: resultsData, isLoading, isFetching, refetch } = usePaginatedLabResults(queryFilters);
 
   // Mutations
   const verifyMutation = useVerifyLabResult();
@@ -146,9 +164,10 @@ export default function LabResultsPage() {
 
   // Process results data
   const results = useMemo(() => {
-    const data = resultsData?.results || resultsData || [];
+    const data = resultsData?.results || [];
     return Array.isArray(data) ? data : [];
   }, [resultsData]);
+  const totalCount = resultsData?.count || 0;
 
   // Group results by order
   const groupedResults = useMemo(() => {
@@ -196,33 +215,21 @@ export default function LabResultsPage() {
     );
   }, [results]);
 
-  // Client-side search filtering
-  const filteredGroups = useMemo(() => {
-    if (!searchQuery.trim()) return groupedResults;
-
-    const query = searchQuery.toLowerCase();
-    return groupedResults.filter((group) => {
-      return (
-        group.order_number?.toLowerCase().includes(query) ||
-        group.patient_name?.toLowerCase().includes(query) ||
-        group.patient_mrn?.toLowerCase().includes(query) ||
-        group.results.some((r) => r.test_name?.toLowerCase().includes(query))
-      );
-    });
-  }, [groupedResults, searchQuery]);
+  const filteredGroups = groupedResults;
 
   // Calculate stats
   const stats = useMemo(() => {
-    const total = results.length;
+    const total = totalCount;
+    const visible = results.length;
     const verified = results.filter((r) => r.is_verified).length;
-    const pending = total - verified;
+    const pending = visible - verified;
     const critical = results.filter((r) =>
       ["critical_low", "critical_high"].includes(r.flag)
     ).length;
     const orders = groupedResults.length;
 
-    return { total, verified, pending, critical, orders };
-  }, [results, groupedResults]);
+    return { total, visible, verified, pending, critical, orders };
+  }, [results, groupedResults, totalCount]);
 
   const activeInterpretation =
     interpretAudience === "patient" ? patientInterpretation : clinicianInterpretation;
@@ -415,9 +422,10 @@ export default function LabResultsPage() {
   const handleClearFilters = () => {
     setSearchQuery("");
     setVerificationFilter("all");
+    setPage(1);
   };
 
-  const hasActiveFilters = searchQuery || verificationFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() || verificationFilter !== "all";
 
   // Filter options
   const verificationOptions = [
@@ -434,10 +442,13 @@ export default function LabResultsPage() {
         title="Lab Results"
         description={(
           <span>
-            {stats.orders} orders · {stats.total} results
+            {stats.total} matching results
+            <span className="ml-2 text-muted-foreground">
+              ({stats.orders} orders on this page)
+            </span>
             {stats.critical > 0 && (
               <span className="text-rose-600 ml-2">
-                ({stats.critical} critical)
+                ({stats.critical} critical on this page)
               </span>
             )}
           </span>
@@ -448,8 +459,9 @@ export default function LabResultsPage() {
             size="sm"
             onClick={() => refetch()}
             className="flex items-center gap-2"
+            disabled={isFetching}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -463,19 +475,19 @@ export default function LabResultsPage() {
             color="sky"
           />
           <StatCard
-            title="Verified"
-            value={stats.verified}
+            title="Visible"
+            value={stats.visible}
             icon={CheckCircle2}
             color="emerald"
           />
           <StatCard
-            title="Pending"
+            title="Pending Page"
             value={stats.pending}
             icon={Clock}
             color="amber"
           />
           <StatCard
-            title="Critical"
+            title="Critical Page"
             value={stats.critical}
             icon={AlertTriangle}
             color="rose"
@@ -907,6 +919,18 @@ export default function LabResultsPage() {
           />
         )}
       </main>
+
+      {totalCount > RESULTS_PAGE_SIZE && (
+        <div className="px-4 sm:px-6 pb-6">
+          <TablePagination
+            currentPage={page}
+            totalCount={totalCount}
+            pageSize={RESULTS_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="results"
+          />
+        </div>
+      )}
 
       <Dialog
         open={interpretDialogOpen}

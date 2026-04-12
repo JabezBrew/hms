@@ -352,6 +352,10 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
     consecutiveRefreshAttempts = 0;
     return data;
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw error;
+    }
+
     // Re-throw ApiError instances
     if (error instanceof ApiError) {
       throw error;
@@ -388,8 +392,13 @@ function handlePaginatedResponse(response) {
 async function fetchAllPages(endpoint, options = {}) {
   let allResults = [];
   let nextUrl = endpoint;
+  const { signal } = options;
 
   while (nextUrl) {
+    if (signal?.aborted) {
+      throw signal.reason || new DOMException('The operation was aborted.', 'AbortError');
+    }
+
     // Extract the path from the full URL if it's an absolute URL
     let path = nextUrl;
     if (nextUrl.startsWith('http')) {
@@ -407,7 +416,7 @@ async function fetchAllPages(endpoint, options = {}) {
 
     // Add results from this page
     if (response && typeof response === 'object' && Array.isArray(response.results)) {
-      allResults = [...allResults, ...response.results];
+      allResults.push(...response.results);
 
       // Get the next page URL, if any
       nextUrl = response.next;

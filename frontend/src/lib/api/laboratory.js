@@ -3,6 +3,12 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 export const laboratoryApi = {
   // ========== Lab Tests ==========
 
@@ -11,12 +17,13 @@ export const laboratoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Array>} List of lab tests
    */
-  getLabTests: async (params = {}) => {
+  getLabTests: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/tests/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.getAll(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab tests'));
     }
   },
@@ -98,12 +105,13 @@ export const laboratoryApi = {
 
   // ========== Lab Panels ==========
 
-  getLabPanels: async (params = {}) => {
+  getLabPanels: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/panels/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.getAll(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab panels'));
     }
   },
@@ -185,12 +193,24 @@ export const laboratoryApi = {
 
   // ========== Lab Orders ==========
 
-  getLabOrders: async (params = {}) => {
+  getLabOrders: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/orders/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.getAll(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleApiError(error, 'Failed to fetch lab orders'));
+    }
+  },
+
+  getLabOrdersPaginated: async (params = {}, options = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/laboratory/orders/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint, options);
+    } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab orders'));
     }
   },
@@ -271,12 +291,13 @@ export const laboratoryApi = {
 
   // ========== Lab Specimens ==========
 
-  getLabSpecimens: async (params = {}) => {
+  getLabSpecimens: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/specimens/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.getAll(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch specimens'));
     }
   },
@@ -307,12 +328,24 @@ export const laboratoryApi = {
 
   // ========== Lab Results ==========
 
-  getLabResults: async (params = {}) => {
+  getLabResults: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/results/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.getAll(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleApiError(error, 'Failed to fetch lab results'));
+    }
+  },
+
+  getLabResultsPaginated: async (params = {}, options = {}) => {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const endpoint = `/laboratory/results/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint, options);
+    } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab results'));
     }
   },
