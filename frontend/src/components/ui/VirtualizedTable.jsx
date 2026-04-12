@@ -2,6 +2,21 @@ import { useMemo, useRef } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 
+function getScrollMargin(element) {
+  if (!element) return 0;
+
+  const rect = element.getBoundingClientRect?.();
+  if (!rect) {
+    return element.offsetTop ?? 0;
+  }
+
+  if (typeof window === 'undefined') {
+    return rect.top;
+  }
+
+  return rect.top + window.scrollY;
+}
+
 export function VirtualizedTable({
   rows = [],
   columns = [],
@@ -44,11 +59,12 @@ export function VirtualizedTable({
   };
 
   const parentRef = useRef(null);
+  const scrollMargin = useWindow ? getScrollMargin(parentRef.current) : 0;
   const windowVirtualizer = useWindowVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     estimateSize: () => rowHeight,
     overscan,
-    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    scrollMargin,
   });
   const elementVirtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
@@ -58,6 +74,7 @@ export function VirtualizedTable({
   });
   const virtualizer = useWindow ? windowVirtualizer : elementVirtualizer;
   const virtualRows = virtualizer.getVirtualItems();
+  const virtualScrollMargin = useWindow ? (virtualizer.options?.scrollMargin ?? scrollMargin) : 0;
 
   if (!hasRows) {
     return null;
@@ -150,7 +167,7 @@ export function VirtualizedTable({
                 top: 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
+                transform: `translateY(${virtualRow.start - virtualScrollMargin}px)`,
               }}
               onClick={isRowClickable ? () => onRowClick(row, virtualRow.index) : undefined}
               onKeyDown={(event) => handleRowKeyDown(event, row, virtualRow.index)}
