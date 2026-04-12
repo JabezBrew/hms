@@ -93,6 +93,12 @@ favor correctness, least privilege, and predictable performance.
 - Import pagination from `apps.core.pagination.StandardResultsSetPagination`.
 - Never nest full related objects in list serializers; flatten required fields instead.
 
+## Interactive List Fetching (Mandatory)
+- Route-level list pages must not use `apiClient.getAll()` against paginated endpoints. Use server-side pagination via `getWithPagination()` and explicit pagination UI.
+- Search, filter, and tab state for paginated lists must be pushed to the backend query params; do not fetch the full dataset just to filter client-side.
+- TanStack Query `signal` must be threaded through every API helper involved in list fetching, and shared API wrappers must preserve `AbortError` instead of converting it into a generic error.
+- When a user navigates away, in-flight paginated fetch chains must stop immediately. Continuing to walk backend pages after unmount is a production bug, not acceptable background behavior.
+
 ## Caching and Real-Time
 - Cache read-heavy list endpoints with short TTLs and invalidate on writes.
 - Use WebSockets for real-time updates; polling is only a fallback.
