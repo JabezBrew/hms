@@ -41,6 +41,28 @@ describe('VirtualizedTable', () => {
     expect(screen.getByText('Row 4')).toBeInTheDocument()
   })
 
+  it('uses proportional grid tracks while preserving a minimum width from pixel columns', () => {
+    const rows = [{ id: 1, name: 'Visible row', status: 'Active' }]
+
+    const { container } = render(
+      <VirtualizedTable
+        rows={rows}
+        columns={[
+          { key: 'name', header: 'Name', width: '240px' },
+          { key: 'status', header: 'Status', width: '120px' },
+        ]}
+        rowKey={(row) => row.id}
+        threshold={10}
+      />
+    )
+
+    const table = container.querySelector('[role="table"]')
+    const headerRow = container.querySelector('[role="columnheader"]')?.parentElement
+
+    expect(table).toHaveStyle({ minWidth: '360px' })
+    expect(headerRow).toHaveStyle({ gridTemplateColumns: 'minmax(0, 240fr) minmax(0, 120fr)' })
+  })
+
   it('subtracts window scroll margin from virtual row positioning', () => {
     useWindowVirtualizer.mockReturnValue({
       getVirtualItems: () => [{ index: 0, start: 240 }],
