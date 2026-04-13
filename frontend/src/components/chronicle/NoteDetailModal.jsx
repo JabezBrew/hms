@@ -15,6 +15,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import ChronicleNoteBody from "./ChronicleNoteBody";
 
 const NoteHistoryModal = lazy(() => import("./NoteHistoryModal"));
 
@@ -32,7 +33,7 @@ const NoteHistoryModal = lazy(() => import("./NoteHistoryModal"));
  * - onEditNote: (editData) => void - callback when user clicks edit button
  * - onNoteUpdated: () => void - callback when a note is updated (for legacy compatibility)
  */
-const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote, onNoteUpdated }) => {
+const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote, onNoteUpdated: _onNoteUpdated }) => {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   if (!entry) return null;
@@ -192,21 +193,17 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
           {/* Scrollable content */}
           <ScrollArea className="flex-1 -mx-6 px-6 overflow-auto">
             <div className="space-y-4 py-4">
-              {/* Render text content if present (not for lab results) */}
-              {entry.content && entry.type !== 'lab_result' && (
-                <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                  {entry.content}
-                </div>
-              )}
-
               {/* Special rendering for lab results */}
               {entry.type === 'lab_result' && entry.data && (
                 <LabResultsDetail data={entry.data} />
               )}
 
-              {/* Render structured data for other types */}
-              {entry.type !== 'lab_result' && entry.data && typeof entry.data === 'object' && (
-                <GenericDataRenderer data={entry.data} />
+              {/* Render note content inline for all note-like entries */}
+              {entry.type !== 'lab_result' && (entry.content || entry.data) && (
+                <ChronicleNoteBody
+                  content={entry.content}
+                  data={entry.data}
+                />
               )}
             </div>
           </ScrollArea>
@@ -377,190 +374,6 @@ const LabResultsDetail = ({ data }) => {
           </table>
         </div>
       )}
-    </div>
-  );
-};
-
-/**
- * Preferred ordering for clinical note sections
- * Keys not in this list will appear at the end in their original order
- */
-const SECTION_ORDER = [
-  // SOAP note sections
-  'subjective', 'objective', 'assessment', 'plan',
-  // Common subjective subsections
-  'chief_complaint', 'chiefComplaint', 'history_of_present_illness', 'historyOfPresentIllness',
-  'review_of_systems', 'reviewOfSystems', 'current_medications', 'currentMedications',
-  'allergies', 'social_history', 'socialHistory', 'family_history', 'familyHistory',
-  // Common objective subsections
-  'vital_signs', 'vitalSigns', 'physical_exam', 'physicalExam', 'investigations', 'investigations_results',
-  // Common assessment subsections
-  'primary_diagnosis', 'primaryDiagnosis', 'differential_diagnoses', 'differentialDiagnoses',
-  'secondary_findings', 'secondaryFindings', 'clinical_reasoning', 'clinicalReasoning', 'severity',
-  // Common plan subsections
-  'medications', 'investigations', 'non_pharmacological', 'nonPharmacological',
-  'patient_education', 'patientEducation', 'follow_up', 'followUp', 'referrals', 'disposition',
-  // Other common sections
-  'history', 'examination', 'diagnosis', 'treatment', 'notes', 'findings', 'recommendations'
-];
-
-/**
- * Sort object entries according to clinical section ordering
- */
-const sortClinicalEntries = (entries) => {
-  return [...entries].sort((a, b) => {
-    const indexA = SECTION_ORDER.indexOf(a[0].toLowerCase());
-    const indexB = SECTION_ORDER.indexOf(b[0].toLowerCase());
-
-    // If both keys are in the order list, sort by their position
-    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-    // If only one key is in the list, it comes first
-    if (indexA !== -1) return -1;
-    if (indexB !== -1) return 1;
-    // If neither is in the list, keep original order
-    return 0;
-  });
-};
-
-/**
- * GenericDataRenderer - Recursively renders any data structure
- *
- * Handles strings, arrays, objects, and nested structures.
- * Automatically formats keys to be human-readable.
- * Sorts clinical sections in proper order (e.g., SOAP: Subjective, Objective, Assessment, Plan)
- */
-const GenericDataRenderer = ({ data, depth = 0 }) => {
-  if (!data) return null;
-
-  // Handle string values
-  if (typeof data === 'string') {
-    return (
-      <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
-        {data}
-      </p>
-    );
-  }
-
-  // Handle arrays
-  if (Array.isArray(data)) {
-    if (data.length === 0) return null;
-
-    // Check if array contains simple values or objects
-    const hasComplexItems = data.some(item => typeof item === 'object' && item !== null);
-
-    if (!hasComplexItems) {
-      return (
-        <ul className="list-disc list-inside text-sm text-foreground/80 space-y-1">
-          {data.map((item, i) => (
-            <li key={i}>{String(item)}</li>
-          ))}
-        </ul>
-      );
-    }
-
-    return (
-      <div className="space-y-3">
-        {data.map((item, i) => (
-          <div key={i} className="pl-3 border-l-2 border-border/50">
-            <GenericDataRenderer data={item} depth={depth + 1} />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // Handle objects
-  if (typeof data === 'object') {
-    const entries = Object.entries(data);
-    if (entries.length === 0) return null;
-
-    // Sort entries according to clinical section ordering
-    const sortedEntries = sortClinicalEntries(entries);
-
-    return (
-      <div className={cn("space-y-4", depth > 0 && "space-y-3")}>
-        {sortedEntries.map(([key, value]) => {
-          // Skip null/undefined values
-          if (value === null || value === undefined) return null;
-          // Skip empty strings
-          if (typeof value === 'string' && value.trim() === '') return null;
-          // Skip empty arrays
-          if (Array.isArray(value) && value.length === 0) return null;
-          // Skip empty objects
-          if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return null;
-
-          return (
-            <DataSection
-              key={key}
-              label={key}
-              value={value}
-              depth={depth}
-            />
-          );
-        })}
-      </div>
-    );
-  }
-
-  // Handle primitives
-  return (
-    <span className="text-sm text-foreground/80">{String(data)}</span>
-  );
-};
-
-/**
- * DataSection - Renders a labeled section of data
- */
-const DataSection = ({ label, value, depth }) => {
-  // Format label: snake_case/camelCase to Title Case
-  const formatLabel = (str) => {
-    return str
-      .replace(/_/g, ' ')
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .replace(/\b\w/g, c => c.toUpperCase());
-  };
-
-  // Determine if this is a "major" section (SOAP-like categories or top-level)
-  const isMajorSection = depth === 0 && ['subjective', 'objective', 'assessment', 'plan',
-    'history', 'examination', 'diagnosis', 'treatment', 'notes', 'findings',
-    'chief_complaint', 'history_of_present_illness', 'review_of_systems',
-    'physical_exam', 'medications', 'allergies', 'vitals'].includes(label.toLowerCase());
-
-  // Color coding for common clinical sections
-  const getSectionColor = (sectionLabel) => {
-    const lowerLabel = sectionLabel.toLowerCase();
-    if (['subjective', 'chief_complaint', 'history', 'history_of_present_illness'].includes(lowerLabel)) {
-      return 'border-blue-500/50 dark:border-blue-400/50';
-    }
-    if (['objective', 'examination', 'physical_exam', 'vitals', 'findings'].includes(lowerLabel)) {
-      return 'border-green-500/50 dark:border-green-400/50';
-    }
-    if (['assessment', 'diagnosis'].includes(lowerLabel)) {
-      return 'border-amber-500/50 dark:border-amber-400/50';
-    }
-    if (['plan', 'treatment', 'medications'].includes(lowerLabel)) {
-      return 'border-purple-500/50 dark:border-purple-400/50';
-    }
-    return 'border-border';
-  };
-
-  const borderColor = isMajorSection ? getSectionColor(label) : 'border-border/50';
-
-  return (
-    <div className={cn(
-      "border-l-2 pl-4",
-      borderColor,
-      isMajorSection && "pb-2"
-    )}>
-      <h5 className={cn(
-        "font-mono text-xs uppercase tracking-wider mb-2",
-        isMajorSection ? "text-foreground/70 font-semibold" : "text-muted-foreground/70"
-      )}>
-        {formatLabel(label)}
-      </h5>
-      <div className={cn(depth > 0 && "text-sm")}>
-        <GenericDataRenderer data={value} depth={depth + 1} />
-      </div>
     </div>
   );
 };

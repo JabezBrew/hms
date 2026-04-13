@@ -39,6 +39,11 @@ import { useChartAssignments } from "@/features/charts/hooks";
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
 import {
+  getInitialExpandedEncounterIds,
+  getInitialExpandedNoteIds,
+  normalizeExpansionId,
+} from "@/components/chronicle/chronicleNoteUtils";
+import {
   chronicleWorkspaceIds,
   prefetchChronicleWorkspaceResources,
 } from "@/features/patients/chronicle/workspaceRegistry";
@@ -76,10 +81,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const prefetchedActionsRef = useRef(new Set());
   const openedPatientChartsRef = useRef(new Set());
   const lastFilterEventRef = useRef(null);
+  const encounterExpansionSeedRef = useRef(null);
+  const noteExpansionSeedRef = useRef(null);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
-  const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
+  const [expandedEncounters, setExpandedEncounters] = useState(() => new Set());
+  const [expandedNoteIds, setExpandedNoteIds] = useState(() => new Set());
 
   // Copy forward state - holds template and data for pre-filling note editor
   const [copyForwardData, setCopyForwardData] = useState(null);
@@ -195,7 +203,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
 
   // Fetch patient encounters for grouping
-  const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
+  const {
+    data: encounters,
+    isLoading: areEncountersLoading,
+    refetch: refetchEncounters,
+  } = usePatientEncounters(id, {
     enabled: canFetchClinical,
   });
 
@@ -583,14 +595,83 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return groups;
   }, [filteredEntries, encounters]);
 
+  const expansionSeedKey = useMemo(() => (
+    `${id}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
+  ), [activeFilter, debouncedSearch, id]);
+
+  useEffect(() => {
+    const hasEncounterGroups = groupedByEncounter.encounters.length > 0;
+    const hasUnlinkedEntries = groupedByEncounter.unlinked.length > 0;
+
+    if (hasEncounterGroups && areEncountersLoading) {
+      return;
+    }
+    if (!hasEncounterGroups && !hasUnlinkedEntries) {
+      return;
+    }
+    if (encounterExpansionSeedRef.current === expansionSeedKey) {
+      return;
+    }
+
+    setExpandedEncounters(getInitialExpandedEncounterIds({
+      encounters: groupedByEncounter.encounters,
+      unlinkedEntries: groupedByEncounter.unlinked,
+      activeEncounterId: activeEncounter?.id,
+    }));
+    encounterExpansionSeedRef.current = expansionSeedKey;
+  }, [
+    activeEncounter?.id,
+    areEncountersLoading,
+    expansionSeedKey,
+    groupedByEncounter.encounters,
+    groupedByEncounter.unlinked,
+  ]);
+
+  useEffect(() => {
+    if (filteredEntries.length === 0) {
+      return;
+    }
+    if (noteExpansionSeedRef.current === expansionSeedKey) {
+      return;
+    }
+
+    setExpandedNoteIds(getInitialExpandedNoteIds({
+      entries: filteredEntries,
+      activeFilter,
+    }));
+    noteExpansionSeedRef.current = expansionSeedKey;
+  }, [activeFilter, expansionSeedKey, filteredEntries]);
+
   // Toggle encounter expansion
   const toggleEncounter = useCallback((encounterId) => {
+    const normalizedEncounterId = normalizeExpansionId(encounterId);
+    if (!normalizedEncounterId) {
+      return;
+    }
+
     setExpandedEncounters(prev => {
       const next = new Set(prev);
-      if (next.has(encounterId)) {
-        next.delete(encounterId);
+      if (next.has(normalizedEncounterId)) {
+        next.delete(normalizedEncounterId);
       } else {
-        next.add(encounterId);
+        next.add(normalizedEncounterId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleNoteExpanded = useCallback((noteId) => {
+    const normalizedNoteId = normalizeExpansionId(noteId);
+    if (!normalizedNoteId) {
+      return;
+    }
+
+    setExpandedNoteIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(normalizedNoteId)) {
+        next.delete(normalizedNoteId);
+      } else {
+        next.add(normalizedNoteId);
       }
       return next;
     });
@@ -598,8 +679,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Expand all encounters
   const expandAll = useCallback(() => {
-    const allIds = new Set(['unlinked']);
-    groupedByEncounter.encounters.forEach(g => allIds.add(g.encounter.id));
+    const allIds = new Set();
+    if (groupedByEncounter.unlinked.length > 0) {
+      allIds.add('unlinked');
+    }
+    groupedByEncounter.encounters.forEach((group) => {
+      const normalizedEncounterId = normalizeExpansionId(group.encounter?.id);
+      if (normalizedEncounterId) {
+        allIds.add(normalizedEncounterId);
+      }
+    });
     setExpandedEncounters(allIds);
   }, [groupedByEncounter]);
 
@@ -1246,7 +1335,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     onClick={expandAll}
                     className="h-8 px-2 font-mono text-xs"
                   >
-                    Expand All
+                    Expand visits
                   </Button>
                   <Button
                     variant="ghost"
@@ -1254,7 +1343,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     onClick={collapseAll}
                     className="h-8 px-2 font-mono text-xs"
                   >
-                    Collapse
+                    Collapse visits
                   </Button>
                 </div>
               </div>
@@ -1275,7 +1364,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
               {/* Encounter Groups */}
               {groupedByEncounter.encounters.map(({ encounter, entries }) => {
-                const isExpanded = expandedEncounters.has(encounter.id);
+                const normalizedEncounterId = normalizeExpansionId(encounter.id);
+                const isExpanded = normalizedEncounterId
+                  ? expandedEncounters.has(normalizedEncounterId)
+                  : false;
                 const encounterDate = encounter.start_time
                   ? new Date(encounter.start_time).toLocaleDateString('en-US', {
                       month: 'short',
@@ -1302,7 +1394,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
                     {/* Encounter Header */}
                     <button
-                      onClick={() => toggleEncounter(encounter.id)}
+                      onClick={() => toggleEncounter(normalizedEncounterId)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
                     >
                       {isExpanded ? (
@@ -1367,6 +1459,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                             entry={entry}
                             index={index}
                             currentUserId={user?.id}
+                            isNoteExpanded={entry.id !== null && entry.id !== undefined
+                              ? expandedNoteIds.has(String(entry.id))
+                              : false}
+                            onToggleNoteExpanded={toggleNoteExpanded}
                             onCopyNote={handleCopyNote}
                             onEditNote={handleEditNote}
                             onNoteUpdated={refetchTimeline}
@@ -1421,6 +1517,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                           entry={entry}
                           index={index}
                           currentUserId={user?.id}
+                          isNoteExpanded={entry.id !== null && entry.id !== undefined
+                            ? expandedNoteIds.has(String(entry.id))
+                            : false}
+                          onToggleNoteExpanded={toggleNoteExpanded}
                           onCopyNote={handleCopyNote}
                           onEditNote={handleEditNote}
                           onNoteUpdated={refetchTimeline}
