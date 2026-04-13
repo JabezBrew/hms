@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.management.base import CommandError
 from django.db import transaction
 
 from apps.core.management.commands import seed_production_dataset as seed_module
@@ -159,6 +160,69 @@ def test_reconcile_pending_batches_restores_patient_graph_to_manifest(tmp_path):
     assert str(patient.user_id) in manifest.data["User"]
     assert str(patient.pk) in manifest.data["PatientProfile"]
     assert str(patient.pk) in manifest.data["PatientSearchIndex"]
+
+
+def test_resolve_patient_range_uses_next_unseeded_resume_window(tmp_path):
+    command = Command()
+    manifest = SeedManifest(str(tmp_path / "resume-manifest.json"))
+    fac_configs = [{"code": "KBTH"}, {"code": "KATH"}]
+    patients_per_fac = [2, 3]
+
+    first = manifest.start_batch(facility_code="KBTH", patient_start=1, patient_end=2)
+    manifest.complete_batch(first)
+    second = manifest.start_batch(facility_code="KATH", patient_start=1, patient_end=1)
+    manifest.complete_batch(second)
+
+    chunk_start, chunk_end = command._resolve_patient_range(
+        manifest=manifest,
+        fac_configs=fac_configs,
+        patients_per_fac=patients_per_fac,
+        n_patients=5,
+        chunk=None,
+        resume=True,
+        batch_size=2,
+    )
+
+    assert (chunk_start, chunk_end) == (3, 5)
+
+
+def test_ensure_manifest_run_config_rejects_dataset_mismatch(tmp_path):
+    command = Command()
+    manifest = SeedManifest(str(tmp_path / "config-manifest.json"))
+    fac_configs = [{"code": "KBTH"}]
+
+    command._ensure_manifest_run_config(
+        manifest,
+        profile_name="small",
+        fac_configs=fac_configs,
+        n_patients=10,
+        n_years=2,
+    )
+
+    with pytest.raises(CommandError, match="Manifest dataset shape does not match this run"):
+        command._ensure_manifest_run_config(
+            manifest,
+            profile_name="small",
+            fac_configs=fac_configs,
+            n_patients=11,
+            n_years=2,
+        )
+
+
+def test_resolve_patient_range_rejects_resume_with_chunk(tmp_path):
+    command = Command()
+    manifest = SeedManifest(str(tmp_path / "range-manifest.json"))
+
+    with pytest.raises(CommandError, match="cannot be used together"):
+        command._resolve_patient_range(
+            manifest=manifest,
+            fac_configs=[{"code": "KBTH"}],
+            patients_per_fac=[5],
+            n_patients=5,
+            chunk="0-2",
+            resume=True,
+            batch_size=2,
+        )
 
 
 @pytest.mark.django_db

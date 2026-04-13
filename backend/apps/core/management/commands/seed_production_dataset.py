@@ -11,13 +11,14 @@ Usage:
     python manage.py seed_production_dataset --profile large
     python manage.py seed_production_dataset --facilities 3 --patients 10000 --years 5
     python manage.py seed_production_dataset --chunk 0-2000   # seed patients 0-1999
+    python manage.py seed_production_dataset --resume --batch-size 2000
     python manage.py seed_production_dataset --dry-run
     python manage.py seed_production_dataset --rollback --manifest /tmp/seed_manifest.json
 
 Architecture:
     - Direct ORM + bulk_create (no HTTP overhead); ~10-20 min for 10k patients
     - Archetype-driven: each patient's entire history flows from one archetype
-    - Transactions per 1000-patient batch; safe to interrupt and resume with --chunk
+    - Transactions per configurable patient batch; safe to interrupt and resume with --chunk/--resume
     - Manifest JSON records every created PK; --rollback deletes them in safe order
     - Tagged: seed engine admin user (seed_engine@hms.local) as created_by on all records
 """
@@ -458,6 +459,10 @@ class Command(BaseCommand):
                             help="Override years of clinical history to generate")
         parser.add_argument("--chunk", type=str, default=None,
                             help="Seed patient range only, e.g. --chunk 0-2000")
+        parser.add_argument("--batch-size", type=int, default=1000,
+                            help="Patients per DB batch and auto-resume window (default: 1000)")
+        parser.add_argument("--resume", action="store_true",
+                            help="Seed the next unseeded patient batch from the manifest")
         parser.add_argument("--dry-run", action="store_true",
                             help="Print estimated counts without writing any data")
         parser.add_argument("--rollback", action="store_true",
@@ -476,6 +481,7 @@ class Command(BaseCommand):
         n_facilities = options["facilities"] or profile["facilities"]
         n_patients   = options["patients"]   or profile["patients"]
         n_years      = options["years"]      or profile["years"]
+        batch_size   = options["batch_size"]
 
         manifest = SeedManifest(options["manifest"])
 
@@ -483,25 +489,43 @@ class Command(BaseCommand):
             self._rollback(manifest)
             return
 
-        chunk_start, chunk_end = 0, n_patients
-        if options["chunk"]:
-            try:
-                parts = options["chunk"].split("-")
-                chunk_start, chunk_end = int(parts[0]), int(parts[1])
-            except (ValueError, IndexError):
-                raise CommandError("--chunk must be in format START-END, e.g. --chunk 0-2000")
-
         if options["dry_run"]:
             self._dry_run(n_facilities, n_patients, n_years)
             return
 
+        fac_configs = FACILITIES_CONFIG[:n_facilities]
+        patients_per_fac = self._distribute(n_patients, n_facilities)
+
+        self._ensure_manifest_run_config(
+            manifest,
+            profile_name=options["profile"],
+            fac_configs=fac_configs,
+            n_patients=n_patients,
+            n_years=n_years,
+        )
         self._reconcile_pending_batches(manifest)
+        chunk_start, chunk_end = self._resolve_patient_range(
+            manifest=manifest,
+            fac_configs=fac_configs,
+            patients_per_fac=patients_per_fac,
+            n_patients=n_patients,
+            chunk=options["chunk"],
+            resume=options["resume"],
+            batch_size=batch_size,
+        )
+        if chunk_start >= chunk_end:
+            self.stdout.write(self.style.SUCCESS(
+                f"\nNo remaining patients to seed for manifest {options['manifest']}."
+            ))
+            return
+
+        mode_label = "resume" if options["resume"] else "manual" if options["chunk"] else "full"
 
         self.stdout.write(self.style.SUCCESS(
             f"\n{'='*60}\n"
             f"  HMS Production Seeder\n"
             f"  Profile: {options['profile']} | Facilities: {n_facilities} | Patients: {n_patients} | Years: {n_years}\n"
-            f"  Chunk: {chunk_start}–{chunk_end}\n"
+            f"  Mode: {mode_label} | Chunk: {chunk_start}–{chunk_end} | Batch size: {batch_size}\n"
             f"  Manifest: {options['manifest']}\n"
             f"{'='*60}\n"
         ))
@@ -514,7 +538,6 @@ class Command(BaseCommand):
 
         # Step 2: Seed facilities & infrastructure
         facility_contexts: list[FacilityContext] = []
-        fac_configs = FACILITIES_CONFIG[:n_facilities]
 
         for i, fac_cfg in enumerate(fac_configs):
             self.stdout.write(f"\n[Facility {i+1}/{n_facilities}] {fac_cfg['name']}")
@@ -525,8 +548,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"  ✓ Infrastructure seeded"))
 
         # Step 3: Distribute patients across facilities
-        patients_per_fac = self._distribute(n_patients, n_facilities)
-
         for fac_idx, (ctx, n_fac_patients) in enumerate(zip(facility_contexts, patients_per_fac)):
             fac_start = sum(patients_per_fac[:fac_idx])
             fac_end   = fac_start + n_fac_patients
@@ -539,10 +560,9 @@ class Command(BaseCommand):
 
             self.stdout.write(f"\n[Facility {fac_idx+1}] Seeding patients {local_start}–{local_end} ({local_end - local_start} patients)...")
 
-            # Process in batches of 1000
-            BATCH = 1000
-            for batch_start in range(local_start, local_end, BATCH):
-                batch_end = min(batch_start + BATCH, local_end)
+            # Process in batches
+            for batch_start in range(local_start, local_end, batch_size):
+                batch_end = min(batch_start + batch_size, local_end)
                 batch_id = manifest.start_batch(
                     facility_code=ctx.facility.code,
                     patient_start=batch_start + 1,
@@ -617,6 +637,146 @@ class Command(BaseCommand):
         if created:
             self.stdout.write("  Created non-login seed engine user (seed_engine@hms.local)")
         return user, created
+
+    def _ensure_manifest_run_config(
+        self,
+        manifest: SeedManifest,
+        *,
+        profile_name: str,
+        fac_configs: list[dict],
+        n_patients: int,
+        n_years: int,
+    ) -> None:
+        current_config = {
+            "profile": profile_name,
+            "facilities": len(fac_configs),
+            "facility_codes": [cfg["code"] for cfg in fac_configs],
+            "patients": n_patients,
+            "years": n_years,
+        }
+        existing_config = manifest.meta.get("run_config")
+        if existing_config is None:
+            manifest.meta["run_config"] = current_config
+            manifest.save()
+            return
+        if existing_config != current_config:
+            raise CommandError(
+                "Manifest dataset shape does not match this run. "
+                f"Expected {existing_config}, received {current_config}. "
+                "Use the original profile/patients/facilities/years values or a new manifest."
+            )
+
+    def _resolve_patient_range(
+        self,
+        *,
+        manifest: SeedManifest,
+        fac_configs: list[dict],
+        patients_per_fac: list[int],
+        n_patients: int,
+        chunk: Optional[str],
+        resume: bool,
+        batch_size: int,
+    ) -> tuple[int, int]:
+        if batch_size <= 0:
+            raise CommandError("--batch-size must be greater than 0")
+        if chunk and resume:
+            raise CommandError("--chunk and --resume cannot be used together")
+        if chunk:
+            try:
+                parts = chunk.split("-")
+                chunk_start, chunk_end = int(parts[0]), int(parts[1])
+            except (ValueError, IndexError):
+                raise CommandError("--chunk must be in format START-END, e.g. --chunk 0-2000")
+            if chunk_start < 0 or chunk_end <= chunk_start or chunk_end > n_patients:
+                raise CommandError(
+                    f"--chunk must satisfy 0 <= START < END <= {n_patients}"
+                )
+            return chunk_start, chunk_end
+        if not resume:
+            return 0, n_patients
+        return self._resolve_resume_range(
+            manifest=manifest,
+            fac_configs=fac_configs,
+            patients_per_fac=patients_per_fac,
+            n_patients=n_patients,
+            batch_size=batch_size,
+        )
+
+    def _resolve_resume_range(
+        self,
+        *,
+        manifest: SeedManifest,
+        fac_configs: list[dict],
+        patients_per_fac: list[int],
+        n_patients: int,
+        batch_size: int,
+    ) -> tuple[int, int]:
+        facility_windows = self._facility_windows(fac_configs, patients_per_fac)
+        completed_intervals = self._completed_global_intervals(manifest, facility_windows)
+
+        next_start = 0
+        for interval_start, interval_end in completed_intervals:
+            if interval_start > next_start:
+                break
+            next_start = max(next_start, interval_end)
+
+        if next_start >= n_patients:
+            return n_patients, n_patients
+        return next_start, min(next_start + batch_size, n_patients)
+
+    def _facility_windows(
+        self,
+        fac_configs: list[dict],
+        patients_per_fac: list[int],
+    ) -> dict[str, tuple[int, int]]:
+        windows: dict[str, tuple[int, int]] = {}
+        start = 0
+        for fac_cfg, count in zip(fac_configs, patients_per_fac):
+            end = start + count
+            windows[fac_cfg["code"]] = (start, end)
+            start = end
+        return windows
+
+    def _completed_global_intervals(
+        self,
+        manifest: SeedManifest,
+        facility_windows: dict[str, tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        intervals: list[tuple[int, int]] = []
+        for batch in manifest.meta.get("batches", []):
+            if batch.get("status") != "completed":
+                continue
+
+            facility_code = str(batch["facility_code"])
+            if facility_code not in facility_windows:
+                raise CommandError(
+                    f"Manifest batch references unknown facility code {facility_code}."
+                )
+
+            patient_start = int(batch["patient_start"])
+            patient_end = int(batch["patient_end"])
+            facility_start, facility_end = facility_windows[facility_code]
+            facility_count = facility_end - facility_start
+            if patient_start < 1 or patient_end < patient_start or patient_end > facility_count:
+                raise CommandError(
+                    "Manifest batch range is outside the configured patient distribution. "
+                    f"Facility {facility_code} has {facility_count} patients, "
+                    f"but batch recorded {patient_start}-{patient_end}."
+                )
+
+            intervals.append((
+                facility_start + patient_start - 1,
+                facility_start + patient_end,
+            ))
+
+        intervals.sort()
+        merged: list[list[int]] = []
+        for interval_start, interval_end in intervals:
+            if not merged or interval_start > merged[-1][1]:
+                merged.append([interval_start, interval_end])
+                continue
+            merged[-1][1] = max(merged[-1][1], interval_end)
+        return [(start, end) for start, end in merged]
 
     def _patient_seed_email(self, facility_code: str, patient_number: int) -> str:
         return f"seed.patient.{facility_code.lower()}.{patient_number:07d}@hms.local"
