@@ -27,6 +27,13 @@ import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import PatientIdentityHero from "@/components/chronicle/PatientIdentityHero";
 import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySidebar";
@@ -47,6 +54,13 @@ import {
   chronicleWorkspaceIds,
   prefetchChronicleWorkspaceResources,
 } from "@/features/patients/chronicle/workspaceRegistry";
+import {
+  buildChronicleSearch,
+  CHRONICLE_ALL_VISITS,
+  CHRONICLE_VISIT_PARAM,
+  resolveChronicleVisitScope,
+  stripTransientChronicleParams,
+} from "@/features/patients/chronicle/visitScopeUtils";
 import { emitOnboardingEvent } from "@/features/onboarding";
 
 import { useDebounce } from "@/hooks/use-debounce";
@@ -61,6 +75,59 @@ const DISCHARGE_CASE_ROLES = new Set([
   'physician',
   'billing',
 ]);
+
+function getEncounterKind(encounter) {
+  const encounterType = encounter?.encounter_type || encounter?.type;
+  return typeof encounterType === 'string' ? encounterType.toLowerCase() : 'outpatient';
+}
+
+function formatEncounterDateRange(encounter) {
+  const start = encounter?.start_time
+    ? new Date(encounter.start_time).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : 'Unknown date';
+
+  const end = encounter?.end_time
+    ? new Date(encounter.end_time).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
+
+  return end && end !== start ? `${start} - ${end}` : start;
+}
+
+function formatEncounterScopeLabel(encounter, activeEncounterId) {
+  if (!encounter) {
+    return 'Select visit';
+  }
+
+  const encounterKind = getEncounterKind(encounter);
+  const encounterTypeLabel = encounterKind === 'inpatient'
+    ? 'Inpatient'
+    : encounterKind === 'emergency'
+      ? 'Emergency'
+      : 'Outpatient';
+
+  const details = [formatEncounterDateRange(encounter)];
+
+  if (encounter?.practitioner_name) {
+    details.push(encounter.practitioner_name);
+  }
+
+  if (encounter?.status) {
+    details.push(encounter.status);
+  }
+
+  const prefix = String(encounter?.id) === String(activeEncounterId)
+    ? 'Current'
+    : encounterTypeLabel;
+
+  return `${prefix} visit - ${details.join(' • ')}`;
+}
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -104,9 +171,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
   const admissionParam = searchParams.get('admission');
+  const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
   const clearQueryParams = useCallback(() => {
-    if (location.search) {
-      navigate(location.pathname, { replace: true });
+    const nextSearch = stripTransientChronicleParams(location.search);
+    if (nextSearch !== location.search) {
+      navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
     }
   }, [location.pathname, location.search, navigate]);
 
@@ -216,6 +285,76 @@ const PatientChroniclePage = ({ defaultAction }) => {
     enabled: hasClinicalAccess,
   });
   const patientInsurance = insuranceData?.results || insuranceData || [];
+
+  // Find the active encounter (in-progress inpatient admission takes priority)
+  const activeEncounter = useMemo(() => {
+    if (!encounters || encounters.length === 0) return null;
+    const activeOutpatientVisitStatuses = new Set([
+      'checked_in',
+      'waiting',
+      'called',
+      'in_progress',
+      'on_hold',
+      'ready_checkout',
+    ]);
+
+    const activeInpatient = encounters.find((encounter) => (
+      encounter.status === 'in-progress'
+      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(encounter))
+    ));
+
+    if (activeInpatient) {
+      return activeInpatient;
+    }
+
+    const activeAny = encounters.find((encounter) => encounter.status === 'in-progress');
+    if (activeAny) {
+      return activeAny;
+    }
+
+    return encounters.find((encounter) => (
+      getEncounterKind(encounter) === 'outpatient'
+      && encounter.status === 'planned'
+      && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
+    )) || null;
+  }, [encounters]);
+
+  const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
+    requestedVisit: visitParam,
+    activeEncounterId: chronicleContext?.active_encounter?.id || activeEncounter?.id,
+    encounters,
+    areEncountersLoading,
+  }), [
+    activeEncounter?.id,
+    areEncountersLoading,
+    chronicleContext?.active_encounter?.id,
+    encounters,
+    visitParam,
+  ]);
+  const isAllVisitsScope = resolvedVisitScope === CHRONICLE_ALL_VISITS;
+  const selectedEncounterId = !resolvedVisitScope || isAllVisitsScope ? null : resolvedVisitScope;
+  const isVisitScopePending = canFetchClinical && !resolvedVisitScope;
+  const selectedEncounter = useMemo(
+    () => encounters?.find((encounter) => String(encounter.id) === String(selectedEncounterId)) || null,
+    [encounters, selectedEncounterId]
+  );
+  const visitScopeOptions = useMemo(() => {
+    const options = [{
+      value: CHRONICLE_ALL_VISITS,
+      label: 'All history',
+    }];
+
+    if (!Array.isArray(encounters)) {
+      return options;
+    }
+
+    return options.concat(
+      encounters.map((encounter) => ({
+        value: String(encounter.id),
+        label: formatEncounterScopeLabel(encounter, activeEncounter?.id),
+      }))
+    );
+  }, [activeEncounter?.id, encounters]);
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
@@ -388,7 +527,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     type: typeMapping[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
-    enabled: canFetchClinical,
+    encounterId: selectedEncounterId || undefined,
+    enabled: canFetchClinical && !!resolvedVisitScope,
   });
 
   // Invalidate timeline cache helper
@@ -497,36 +637,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
 
-  // Find the active encounter (in-progress inpatient admission takes priority)
-  const activeEncounter = useMemo(() => {
-    if (!encounters || encounters.length === 0) return null;
-    const activeOutpatientVisitStatuses = new Set([
-      'checked_in',
-      'waiting',
-      'called',
-      'in_progress',
-      'on_hold',
-      'ready_checkout',
-    ]);
-
-    // First look for an active inpatient admission
-    const activeInpatient = encounters.find(enc =>
-      enc.status === 'in-progress' &&
-      ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(enc.encounter_type?.toLowerCase())
-    );
-
-    if (activeInpatient) return activeInpatient;
-
-    // Otherwise look for any in-progress encounter
-    const activeAny = encounters.find(enc => enc.status === 'in-progress');
-    if (activeAny) return activeAny;
-
-    return encounters.find(enc =>
-      enc.encounter_type?.toLowerCase() === 'outpatient'
-      && enc.status === 'planned'
-      && activeOutpatientVisitStatuses.has(enc.outpatient_visit_status)
-    ) || null;
-  }, [encounters]);
   const dischargeCaseAdmissionId = useMemo(() => (
     requestedDischargeAdmissionId
     || patient?.local_data?.current_admission_id
@@ -596,8 +706,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [filteredEntries, encounters]);
 
   const expansionSeedKey = useMemo(() => (
-    `${id}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
-  ), [activeFilter, debouncedSearch, id]);
+    `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
+  ), [activeFilter, debouncedSearch, id, resolvedVisitScope]);
 
   useEffect(() => {
     const hasEncounterGroups = groupedByEncounter.encounters.length > 0;
@@ -699,6 +809,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
+
+  useEffect(() => {
+    if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
+      return;
+    }
+
+    const nextSearch = buildChronicleSearch(location.search, {
+      updates: {
+        [CHRONICLE_VISIT_PARAM]: resolvedVisitScope,
+      },
+    });
+
+    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+  }, [location.pathname, location.search, navigate, resolvedVisitScope, visitParam]);
 
   // ============================================
   // Event handlers
@@ -884,6 +1008,28 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const handleManageInsurance = useCallback(() => {
     openChronicleWorkspace('insurance');
   }, [openChronicleWorkspace]);
+
+  const handleVisitScopeChange = useCallback((nextVisitScope) => {
+    const nextSearch = buildChronicleSearch(location.search, {
+      updates: {
+        [CHRONICLE_VISIT_PARAM]: nextVisitScope,
+      },
+    });
+
+    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
+  const handleViewAllHistory = useCallback(() => {
+    handleVisitScopeChange(CHRONICLE_ALL_VISITS);
+  }, [handleVisitScopeChange]);
+
+  const handleViewCurrentVisit = useCallback(() => {
+    if (!activeEncounter?.id) {
+      return;
+    }
+
+    handleVisitScopeChange(String(activeEncounter.id));
+  }, [activeEncounter?.id, handleVisitScopeChange]);
 
   const handleConsultationCompleted = useCallback(() => {
     refetchTimeline?.();
@@ -1254,8 +1400,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
                     </span>
                   )}
+                  {selectedEncounter && !isAllVisitsScope && (
+                    <span className="font-mono text-xs text-muted-foreground/80">
+                      Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
+                    </span>
+                  )}
                   {/* Show encounter count hint when some encounters have no documentation */}
-                  {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                  {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
                     <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
                       • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
                     </span>
@@ -1277,8 +1428,56 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </Button>
               </div>
 
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Visit focus
+                  </span>
+                </div>
+                <Select
+                  value={resolvedVisitScope || CHRONICLE_ALL_VISITS}
+                  onValueChange={handleVisitScopeChange}
+                >
+                  <SelectTrigger className="min-w-[260px] max-w-[420px] font-mono text-xs">
+                    <SelectValue placeholder="Select visit" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200]">
+                    {visitScopeOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="font-mono text-xs"
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!isAllVisitsScope && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleViewAllHistory}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    All history
+                  </Button>
+                )}
+                {activeEncounter?.id && selectedEncounterId !== String(activeEncounter.id) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleViewCurrentVisit}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    Current visit
+                  </Button>
+                )}
+              </div>
+
               {/* Search and Filter row */}
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 {/* Search Input */}
                 <div className="relative flex-1 max-w-sm">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1328,31 +1527,33 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
 
                 {/* Expand/Collapse All */}
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={expandAll}
-                    className="h-8 px-2 font-mono text-xs"
-                  >
-                    Expand visits
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={collapseAll}
-                    className="h-8 px-2 font-mono text-xs"
-                  >
-                    Collapse visits
-                  </Button>
-                </div>
+                {isAllVisitsScope && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={expandAll}
+                      className="h-8 px-2 font-mono text-xs"
+                    >
+                      Expand visits
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={collapseAll}
+                      className="h-8 px-2 font-mono text-xs"
+                    >
+                      Collapse visits
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Timeline Entries Grouped by Encounter */}
             <div className="relative space-y-4">
               {/* Loading state for initial load */}
-              {isTimelineLoading && filteredEntries.length === 0 && (
+              {(isTimelineLoading || isVisitScopePending) && filteredEntries.length === 0 && (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="pl-8 pb-6">
@@ -1368,26 +1569,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 const isExpanded = normalizedEncounterId
                   ? expandedEncounters.has(normalizedEncounterId)
                   : false;
-                const encounterDate = encounter.start_time
-                  ? new Date(encounter.start_time).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric'
-                    })
-                  : 'Unknown date';
-
-                const encounterEndDate = encounter.end_time
-                  ? new Date(encounter.end_time).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric'
-                    })
-                  : null;
-
-                const dateRange = encounterEndDate && encounterEndDate !== encounterDate
-                  ? `${encounterDate} - ${encounterEndDate}`
-                  : encounterDate;
-
-                const typeIcon = encounter.type === 'inpatient' ? Building2 : Calendar;
+                const dateRange = formatEncounterDateRange(encounter);
+                const encounterKind = getEncounterKind(encounter);
+                const typeIcon = encounterKind === 'inpatient' ? Building2 : Calendar;
                 const TypeIcon = typeIcon;
 
                 return (
@@ -1405,11 +1589,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
                       <div className={cn(
                         "rounded-lg p-2",
-                        encounter.type === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
+                        encounterKind === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
                       )}>
                         <TypeIcon className={cn(
                           "h-4 w-4",
-                          encounter.type === 'inpatient' ? "text-blue-500" : "text-amber-500"
+                          encounterKind === 'inpatient' ? "text-blue-500" : "text-amber-500"
                         )} />
                       </div>
 
@@ -1535,7 +1719,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
               {!isTimelineLoading && filteredEntries.length === 0 && (
                 <div className="py-12 text-center text-muted-foreground">
                   <p className="font-mono text-sm">
-                    {searchInput ? 'No entries match your search' : 'No entries found'}
+                    {searchInput
+                      ? 'No entries match your search'
+                      : selectedEncounterId
+                        ? 'No chronicle entries for this visit yet'
+                        : 'No entries found'}
                   </p>
                   {searchInput && (
                     <Button
@@ -1545,6 +1733,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       className="mt-2 font-mono text-xs"
                     >
                       Clear search
+                    </Button>
+                  )}
+                  {!searchInput && selectedEncounterId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleViewAllHistory}
+                      className="mt-2 font-mono text-xs"
+                    >
+                      View all history
                     </Button>
                   )}
                 </div>
