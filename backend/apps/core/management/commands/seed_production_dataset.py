@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -35,11 +35,11 @@ from typing import Optional
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from apps.appointments.models import Appointment, AppointmentType
-from apps.billing.models import Invoice, InvoiceItem, Payment, PatientInsurance, Service, ServiceCategory
+from apps.billing.models import Invoice, InvoiceItem, Payment, Service, ServiceCategory
 from apps.clinical_notes.models import NoteEntry, NoteTemplate
 from apps.core.models import Department, Facility
 from apps.encounters.models import Encounter, OutpatientVisit
@@ -49,8 +49,9 @@ from apps.laboratory.models import (
 from apps.nursing.models import VitalSigns
 from apps.organization.models import ClinicalUnit, Clinic, UnitTypeConfig
 from apps.patients.models import PatientSearchIndex
+from apps.users.identifiers import generate_unique_employee_id, generate_unique_mrn
 from apps.users.models import PatientProfile, PractitionerProfile, Staff
-from apps.wards.models import Admission, Bed, BedAllocationLog, Ward, WardSection
+from apps.wards.models import Admission, Bed, BedAllocationLog, Ward
 
 User = get_user_model()
 
@@ -333,14 +334,6 @@ def _past_dt(days_ago_max: int, days_ago_min: int = 0) -> "datetime":
     return timezone.now() - timedelta(days=days, hours=hours)
 
 
-def _mrn(facility_code: str, n: int, year: int) -> str:
-    return f"MRN-{facility_code}-{year}-{n:07d}"
-
-
-def _emp_id(facility_code: str, n: int, year: int) -> str:
-    return f"EMP-{facility_code}-{year}-{n:07d}"
-
-
 def _license(facility_code: str, user_type: str, n: int) -> str:
     prefix = {"doctor": "DOC", "nurse": "NUR", "pharmacist": "PHAR", "lab_technician": "LAB"}.get(user_type, "STF")
     return f"{prefix}-{facility_code}-{n:04d}"
@@ -355,18 +348,68 @@ class SeedManifest:
 
     def __init__(self, path: str):
         self.path = Path(path)
-        self.data: dict[str, list] = {}
+        self.data: dict[str, list[str]] = {}
+        self.meta: dict[str, list[dict[str, object]]] = {"batches": []}
         if self.path.exists():
-            self.data = json.loads(self.path.read_text())
+            payload = json.loads(self.path.read_text())
+            if "records" in payload or "meta" in payload:
+                self.data = {
+                    model: list(dict.fromkeys(str(pk) for pk in pks))
+                    for model, pks in payload.get("records", {}).items()
+                }
+                self.meta = payload.get("meta", {"batches": []})
+            else:
+                self.data = {
+                    model: list(dict.fromkeys(str(pk) for pk in pks))
+                    for model, pks in payload.items()
+                }
+        self.meta.setdefault("batches", [])
 
     def add(self, model: str, pk) -> None:
-        self.data.setdefault(model, []).append(str(pk))
+        value = str(pk)
+        bucket = self.data.setdefault(model, [])
+        if value not in bucket:
+            bucket.append(value)
 
     def add_bulk(self, model: str, pks) -> None:
-        self.data.setdefault(model, []).extend(str(p) for p in pks)
+        for pk in pks:
+            self.add(model, pk)
+
+    def start_batch(self, *, facility_code: str, patient_start: int, patient_end: int) -> str:
+        batch_id = str(uuid.uuid4())
+        self.meta["batches"].append({
+            "id": batch_id,
+            "facility_code": facility_code,
+            "patient_start": patient_start,
+            "patient_end": patient_end,
+            "status": "started",
+        })
+        return batch_id
+
+    def complete_batch(self, batch_id: str) -> None:
+        for batch in self.meta["batches"]:
+            if batch.get("id") == batch_id:
+                batch["status"] = "completed"
+                return
+
+    def discard_batch(self, batch_id: str) -> None:
+        self.meta["batches"] = [
+            batch for batch in self.meta["batches"]
+            if batch.get("id") != batch_id
+        ]
+
+    def pending_batches(self) -> list[dict[str, object]]:
+        return [
+            batch for batch in self.meta["batches"]
+            if batch.get("status") != "completed"
+        ]
 
     def save(self) -> None:
-        self.path.write_text(json.dumps(self.data, indent=2))
+        payload = {
+            "records": self.data,
+            "meta": self.meta,
+        }
+        self.path.write_text(json.dumps(payload, indent=2))
 
     def total(self) -> int:
         return sum(len(v) for v in self.data.values())
@@ -393,6 +436,8 @@ class FacilityContext:
     lab_techs: list          # Staff objects
     admin_user: object       # User
     seed_user: object        # seed engine user
+    occupied_bed_ids: set = field(default_factory=set)
+    has_seeded_active_admission: bool = False
 
 
 # ============================================================================
@@ -450,6 +495,8 @@ class Command(BaseCommand):
             self._dry_run(n_facilities, n_patients, n_years)
             return
 
+        self._reconcile_pending_batches(manifest)
+
         self.stdout.write(self.style.SUCCESS(
             f"\n{'='*60}\n"
             f"  HMS Production Seeder\n"
@@ -460,8 +507,10 @@ class Command(BaseCommand):
         ))
 
         # Step 1: Seed engine admin user (created_by anchor)
-        seed_user = self._get_or_create_seed_user()
-        manifest.add("User", seed_user.pk)
+        seed_user, created = self._get_or_create_seed_user()
+        if created:
+            manifest.add("User", seed_user.pk)
+            manifest.save()
 
         # Step 2: Seed facilities & infrastructure
         facility_contexts: list[FacilityContext] = []
@@ -469,8 +518,10 @@ class Command(BaseCommand):
 
         for i, fac_cfg in enumerate(fac_configs):
             self.stdout.write(f"\n[Facility {i+1}/{n_facilities}] {fac_cfg['name']}")
-            ctx = self._seed_facility(fac_cfg, seed_user, manifest)
+            with transaction.atomic():
+                ctx = self._seed_facility(fac_cfg, seed_user, manifest)
             facility_contexts.append(ctx)
+            manifest.save()
             self.stdout.write(self.style.SUCCESS(f"  ✓ Infrastructure seeded"))
 
         # Step 3: Distribute patients across facilities
@@ -492,11 +543,18 @@ class Command(BaseCommand):
             BATCH = 1000
             for batch_start in range(local_start, local_end, BATCH):
                 batch_end = min(batch_start + BATCH, local_end)
+                batch_id = manifest.start_batch(
+                    facility_code=ctx.facility.code,
+                    patient_start=batch_start + 1,
+                    patient_end=batch_end,
+                )
+                manifest.save()
                 with transaction.atomic():
                     self._seed_patient_batch(
-                        ctx, fac_start + batch_start, batch_start, batch_end,
+                        ctx, batch_start, batch_end,
                         n_years, seed_user, manifest
                     )
+                manifest.complete_batch(batch_id)
                 manifest.save()
                 done = batch_end - local_start
                 total = local_end - local_start
@@ -516,7 +574,7 @@ class Command(BaseCommand):
     # FACILITY INFRASTRUCTURE
     # ------------------------------------------------------------------
 
-    def _get_or_create_seed_user(self) -> User:
+    def _get_or_create_seed_user(self) -> tuple[User, bool]:
         user, created = User.objects.get_or_create(
             email="seed_engine@hms.local",
             defaults={
@@ -524,17 +582,177 @@ class Command(BaseCommand):
                 "first_name": "Seed",
                 "last_name": "Engine",
                 "user_type": "admin",
-                "is_staff": True,
-                "password": make_password("SeedEngine!2026"),
+                "is_active": False,
+                "is_staff": False,
+                "is_superuser": False,
             }
         )
+        updated_fields = []
+        if user.username != "seed_engine":
+            user.username = "seed_engine"
+            updated_fields.append("username")
+        if user.first_name != "Seed":
+            user.first_name = "Seed"
+            updated_fields.append("first_name")
+        if user.last_name != "Engine":
+            user.last_name = "Engine"
+            updated_fields.append("last_name")
+        if user.user_type != "admin":
+            user.user_type = "admin"
+            updated_fields.append("user_type")
+        if user.is_active:
+            user.is_active = False
+            updated_fields.append("is_active")
+        if user.is_staff:
+            user.is_staff = False
+            updated_fields.append("is_staff")
+        if user.is_superuser:
+            user.is_superuser = False
+            updated_fields.append("is_superuser")
+        if user.has_usable_password():
+            user.set_unusable_password()
+            updated_fields.append("password")
+        if updated_fields:
+            user.save(update_fields=updated_fields)
         if created:
-            self.stdout.write("  Created seed engine user (seed_engine@hms.local)")
-        return user
+            self.stdout.write("  Created non-login seed engine user (seed_engine@hms.local)")
+        return user, created
+
+    def _patient_seed_email(self, facility_code: str, patient_number: int) -> str:
+        return f"seed.patient.{facility_code.lower()}.{patient_number:07d}@hms.local"
+
+    def _patient_seed_username(self, facility_code: str, patient_number: int) -> str:
+        return f"seed_patient_{facility_code.lower()}_{patient_number:07d}"
+
+    def _record_existing_patient_graph(self, patient: PatientProfile, manifest: SeedManifest) -> None:
+        manifest.add("User", patient.user_id)
+        manifest.add("PatientProfile", patient.pk)
+        if PatientSearchIndex.objects.filter(patient_profile=patient).exists():
+            manifest.add("PatientSearchIndex", patient.pk)
+
+        manifest.add_bulk("Appointment", Appointment.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("OutpatientVisit", OutpatientVisit.objects.filter(appointment__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("Encounter", Encounter.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("Admission", Admission.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("BedAllocationLog", BedAllocationLog.objects.filter(admission__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("VitalSigns", VitalSigns.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("NoteEntry", NoteEntry.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("LabOrder", LabOrder.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("LabSpecimen", LabSpecimen.objects.filter(order__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("LabOrderTest", LabOrderTest.objects.filter(order__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("LabResult", LabResult.objects.filter(order_test__order__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("Invoice", Invoice.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("InvoiceItem", InvoiceItem.objects.filter(invoice__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("Payment", Payment.objects.filter(invoice__patient=patient).values_list("pk", flat=True).distinct())
+
+    def _reconcile_pending_batches(self, manifest: SeedManifest) -> None:
+        pending_batches = list(manifest.pending_batches())
+        if not pending_batches:
+            return
+
+        manifest_changed = False
+        for batch in pending_batches:
+            batch_id = str(batch["id"])
+            facility_code = str(batch["facility_code"])
+            patient_start = int(batch["patient_start"])
+            patient_end = int(batch["patient_end"])
+            expected_count = patient_end - patient_start + 1
+            emails = [
+                self._patient_seed_email(facility_code, patient_number)
+                for patient_number in range(patient_start, patient_end + 1)
+            ]
+            users = list(User.objects.filter(email__in=emails).select_related("patient_profile"))
+
+            if not users:
+                manifest.discard_batch(batch_id)
+                manifest_changed = True
+                continue
+
+            if len(users) != expected_count:
+                raise CommandError(
+                    "Seed manifest contains an incomplete committed batch. "
+                    f"Expected {expected_count} patients for {facility_code} "
+                    f"patients {patient_start}-{patient_end}, found {len(users)}."
+                )
+
+            for user in users:
+                patient = getattr(user, "patient_profile", None)
+                if patient is None or user.user_type != "patient":
+                    raise CommandError(
+                        f"Inconsistent seeded patient state for {user.email}; "
+                        "expected a patient user with a PatientProfile."
+                    )
+                self._record_existing_patient_graph(patient, manifest)
+
+            manifest.complete_batch(batch_id)
+            manifest_changed = True
+
+        if manifest_changed:
+            manifest.save()
+
+    def _pick_active_bed(self, ctx: FacilityContext, ward_names: list[str]) -> tuple[Optional[Ward], Optional[Bed]]:
+        candidate_wards = [ctx.wards[name] for name in ward_names if name in ctx.wards]
+        if not candidate_wards and ctx.wards:
+            candidate_wards = [next(iter(ctx.wards.values()))]
+
+        for ward in candidate_wards:
+            available_beds = [
+                bed for bed in ctx.beds
+                if bed.ward_id == ward.pk
+                and bed.status == "available"
+                and bed.pk not in ctx.occupied_bed_ids
+            ]
+            if available_beds:
+                available_beds.sort(key=lambda bed: bed.bed_number)
+                return ward, available_beds[0]
+
+        return (candidate_wards[0], None) if candidate_wards else (None, None)
+
+    def _create_bed_allocation_log(
+        self,
+        *,
+        bed: Bed,
+        facility: Facility,
+        admission: Admission,
+        previous_status: str,
+        new_status: str,
+        notes: str,
+        actor: User,
+        timestamp,
+        manifest: SeedManifest,
+    ) -> None:
+        log = BedAllocationLog.objects.create(
+            bed=bed,
+            facility=facility,
+            previous_status=previous_status,
+            new_status=new_status,
+            admission=admission,
+            notes=notes,
+            created_by=actor,
+        )
+        BedAllocationLog.objects.filter(pk=log.pk).update(timestamp=timestamp)
+        manifest.add("BedAllocationLog", log.pk)
+
+    def _reserve_lab_order_number(self, order_date: date) -> str:
+        with transaction.atomic():
+            seq, _ = LabOrderSequence.objects.select_for_update().get_or_create(
+                date=order_date,
+                defaults={"last_number": 0},
+            )
+            seq.last_number += 1
+            seq.save(update_fields=["last_number"])
+            return f"LAB-{order_date.strftime('%Y%m%d')}-{seq.last_number:04d}"
+
+    def _get_ward_charge_service(self, ctx: FacilityContext, ward: Optional[Ward]) -> Optional[Service]:
+        if ward and ward.ward_type == "icu":
+            return ctx.services.get("WARD-ICU")
+        if ward and ward.ward_type == "private":
+            return ctx.services.get("WARD-PRIV")
+        return ctx.services.get("WARD-GEN")
 
     def _seed_facility(self, cfg: dict, seed_user: User, manifest: SeedManifest) -> FacilityContext:
         # --- Facility ---
-        facility, _ = Facility.objects.get_or_create(
+        facility, created = Facility.objects.get_or_create(
             code=cfg["code"],
             defaults={
                 "name": cfg["name"],
@@ -543,27 +761,34 @@ class Command(BaseCommand):
                 "city": cfg["city"],
                 "region": cfg["region"],
                 "country": "Ghana",
+                "phone": "+233000000000",
+                "email": f"info@{cfg['code'].lower()}.hms.local",
                 "status": "running",
             }
         )
-        manifest.add("Facility", facility.pk)
+        if created:
+            manifest.add("Facility", facility.pk)
 
         # --- Departments ---
         departments = {}
+        created_departments = []
         for dept_name in DEPARTMENTS_CONFIG:
-            dept, _ = Department.objects.get_or_create(
+            dept, created = Department.objects.get_or_create(
                 name=dept_name, facility=facility,
                 defaults={"code": dept_name[:10].upper().replace(" ", "-").replace("&", "AND")}
             )
             departments[dept_name] = dept
-        manifest.add_bulk("Department", [d.pk for d in departments.values()])
+            if created:
+                created_departments.append(dept.pk)
+        manifest.add_bulk("Department", created_departments)
 
         # --- Clinical Units (one per department, flat MPTT tree) ---
         unit_type = self._get_or_create_unit_type(seed_user)
         clinical_units = {}
+        created_units = []
         for dept_name, dept in departments.items():
             code = dept_name[:20].upper().replace(" ", "-").replace("&", "AND").replace("'", "")[:15]
-            cu, _ = ClinicalUnit.objects.get_or_create(
+            cu, created = ClinicalUnit.objects.get_or_create(
                 code=f"{cfg['code']}-{code}",
                 defaults={
                     "unit_type": unit_type,
@@ -575,10 +800,13 @@ class Command(BaseCommand):
                 }
             )
             clinical_units[dept_name] = cu
-        manifest.add_bulk("ClinicalUnit", [u.pk for u in clinical_units.values()])
+            if created:
+                created_units.append(cu.pk)
+        manifest.add_bulk("ClinicalUnit", created_units)
 
         # --- Clinics ---
         clinics = []
+        created_clinics = []
         clinic_depts = ["General Outpatient", "Internal Medicine", "Surgery",
                         "Obstetrics & Gynaecology", "Paediatrics", "Emergency Medicine"]
         for cd_name in clinic_depts:
@@ -586,7 +814,7 @@ class Command(BaseCommand):
                 continue
             cu = clinical_units[cd_name]
             code = f"{cfg['code']}-CLN-{cd_name[:6].upper().replace(' ', '')}"
-            clinic, _ = Clinic.objects.get_or_create(
+            clinic, created = Clinic.objects.get_or_create(
                 code=code,
                 facility=facility,
                 defaults={
@@ -599,14 +827,17 @@ class Command(BaseCommand):
                 }
             )
             clinics.append(clinic)
-        manifest.add_bulk("Clinic", [c.pk for c in clinics])
+            if created:
+                created_clinics.append(clinic.pk)
+        manifest.add_bulk("Clinic", created_clinics)
 
         # --- Appointment Type ---
-        apt, _ = AppointmentType.objects.get_or_create(
+        apt, created = AppointmentType.objects.get_or_create(
             name=f"{cfg['code']} General Consultation",
             defaults={"duration_minutes": 30, "category": "in_person", "created_by": seed_user}
         )
-        manifest.add("AppointmentType", apt.pk)
+        if created:
+            manifest.add("AppointmentType", apt.pk)
 
         # --- Wards & Beds ---
         wards = {}
@@ -617,7 +848,7 @@ class Command(BaseCommand):
             if not dept:
                 dept = list(departments.values())[0]
 
-            ward, _ = Ward.objects.get_or_create(
+            ward, created = Ward.objects.get_or_create(
                 name=f"{cfg['code']} {wc['name']}",
                 department=dept,
                 defaults={
@@ -628,7 +859,8 @@ class Command(BaseCommand):
                     "created_by": seed_user,
                 }
             )
-            manifest.add("Ward", ward.pk)
+            if created:
+                manifest.add("Ward", ward.pk)
             wards[wc["name"]] = ward
 
             # Create beds
@@ -647,15 +879,16 @@ class Command(BaseCommand):
                         created_by=seed_user,
                     ))
             if new_beds:
-                created_beds = Bed.objects.bulk_create(new_beds, ignore_conflicts=True)
-                manifest.add_bulk("Bed", [b.pk for b in created_beds if b.pk])
+                created_beds = Bed.objects.bulk_create(new_beds)
+                manifest.add_bulk("Bed", [b.pk for b in created_beds])
 
             all_beds.extend(list(ward.beds.all()))
 
         # --- Lab Test Catalog ---
         lab_tests = {}
+        created_lab_tests = []
         for ltc in LAB_TESTS_CONFIG:
-            lt, _ = LabTestCatalog.objects.get_or_create(
+            lt, created = LabTestCatalog.objects.get_or_create(
                 facility=facility, code=ltc["code"],
                 defaults={
                     "name": ltc["name"],
@@ -672,25 +905,31 @@ class Command(BaseCommand):
                 }
             )
             lab_tests[ltc["code"]] = lt
-        manifest.add_bulk("LabTestCatalog", [lt.pk for lt in lab_tests.values()])
+            if created:
+                created_lab_tests.append(lt.pk)
+        manifest.add_bulk("LabTestCatalog", created_lab_tests)
 
         # --- Service Categories & Services ---
         categories = {}
+        created_categories = []
         for cat_name in SERVICE_CATEGORIES_CONFIG:
-            cat, _ = ServiceCategory.objects.get_or_create(
+            cat, created = ServiceCategory.objects.get_or_create(
                 facility=facility, name=cat_name,
                 defaults={"created_by": seed_user}
             )
             categories[cat_name] = cat
-        manifest.add_bulk("ServiceCategory", [c.pk for c in categories.values()])
+            if created:
+                created_categories.append(cat.pk)
+        manifest.add_bulk("ServiceCategory", created_categories)
 
         services = {}
+        created_services = []
         for svc in SERVICES_CONFIG:
             cat = categories.get(svc["cat"])
             if not cat:
                 continue
             code = f"{cfg['code']}-{svc['code']}"
-            s, _ = Service.objects.get_or_create(
+            s, created = Service.objects.get_or_create(
                 facility=facility, code=code,
                 defaults={
                     "name": svc["name"],
@@ -702,10 +941,12 @@ class Command(BaseCommand):
                 }
             )
             services[svc["code"]] = s
-        manifest.add_bulk("Service", [s.pk for s in services.values()])
+            if created:
+                created_services.append(s.pk)
+        manifest.add_bulk("Service", created_services)
 
         # --- Note Template ---
-        note_tmpl, _ = NoteTemplate.objects.get_or_create(
+        note_tmpl, created = NoteTemplate.objects.get_or_create(
             facility=facility, title=f"{cfg['code']} SOAP Note",
             defaults={
                 "structure": SOAP_TEMPLATE_STRUCTURE,
@@ -715,7 +956,8 @@ class Command(BaseCommand):
                 "is_active": True,
             }
         )
-        manifest.add("NoteTemplate", note_tmpl.pk)
+        if created:
+            manifest.add("NoteTemplate", note_tmpl.pk)
 
         # --- Staff ---
         doctors, nurses, lab_techs = self._seed_staff(facility, departments, seed_user, manifest, cfg["code"])
@@ -740,6 +982,13 @@ class Command(BaseCommand):
             lab_techs=lab_techs,
             admin_user=seed_user,
             seed_user=seed_user,
+            occupied_bed_ids=set(
+                Admission.objects.filter(
+                    facility=facility,
+                    status__in=("admitted", "pending_discharge"),
+                    bed__isnull=False,
+                ).values_list("bed_id", flat=True)
+            ),
         )
 
     def _get_or_create_unit_type(self, seed_user: User) -> UnitTypeConfig:
@@ -759,7 +1008,6 @@ class Command(BaseCommand):
 
     def _seed_staff(self, facility, departments, seed_user, manifest, fac_code):
         doctors, nurses, lab_techs = [], [], []
-        year = date.today().year
         emp_counter = getattr(self, "_emp_counter", 0)
 
         for spec in STAFF_SPECS:
@@ -771,9 +1019,8 @@ class Command(BaseCommand):
             for i in range(count):
                 emp_counter += 1
                 first, last, gender = _rnd_name(gender="F" if user_type == "nurse" else None)
-                email = f"{first.lower()}.{last.lower()}.{fac_code.lower()}.{emp_counter}@hms.local"
-                username = f"{first.lower()}{last.lower()}{emp_counter}"
-                emp_id = _emp_id(fac_code, emp_counter, year)
+                email = f"seed.staff.{fac_code.lower()}.{emp_counter:04d}@hms.local"
+                username = f"seed_staff_{fac_code.lower()}_{emp_counter:04d}"
 
                 user, created = User.objects.get_or_create(
                     email=email,
@@ -788,14 +1035,14 @@ class Command(BaseCommand):
                         "is_active": True,
                     }
                 )
+                user.facilities.add(facility)
                 if created:
-                    user.facilities.add(facility)
-                manifest.add("User", user.pk)
+                    manifest.add("User", user.pk)
 
-                staff, _ = Staff.objects.get_or_create(
+                staff, staff_created = Staff.objects.get_or_create(
                     user=user,
                     defaults={
-                        "employee_id": emp_id,
+                        "employee_id": generate_unique_employee_id(facility),
                         "department": dept_name,
                         "position": position,
                         "hire_date": date.today() - timedelta(days=_rng.randint(365, 3650)),
@@ -803,11 +1050,12 @@ class Command(BaseCommand):
                         "created_by": seed_user,
                     }
                 )
-                manifest.add("Staff", staff.pk)
+                if staff_created:
+                    manifest.add("Staff", staff.pk)
 
                 if user_type in ("doctor", "nurse"):
                     lic = _license(fac_code, user_type, emp_counter)
-                    prac, _ = PractitionerProfile.objects.get_or_create(
+                    prac, prac_created = PractitionerProfile.objects.get_or_create(
                         staff=staff,
                         defaults={
                             "license_number": lic,
@@ -816,7 +1064,8 @@ class Command(BaseCommand):
                             "created_by": seed_user,
                         }
                     )
-                    manifest.add("PractitionerProfile", prac.pk)
+                    if prac_created:
+                        manifest.add("PractitionerProfile", prac.pk)
                     if user_type == "doctor":
                         doctors.append(prac)
                     else:
@@ -831,13 +1080,12 @@ class Command(BaseCommand):
     # PATIENT BATCH SEEDER
     # ------------------------------------------------------------------
 
-    def _seed_patient_batch(self, ctx: FacilityContext, global_offset: int,
+    def _seed_patient_batch(self, ctx: FacilityContext,
                             local_start: int, local_end: int,
                             n_years: int, seed_user: User, manifest: SeedManifest):
         """Seed patients [local_start, local_end) within a single transaction."""
         facility = ctx.facility
         fac_code = facility.code
-        year = date.today().year
 
         archetypes = list(ARCHETYPE_WEIGHTS.keys())
         weights = list(ARCHETYPE_WEIGHTS.values())
@@ -848,13 +1096,31 @@ class Command(BaseCommand):
             first, last, gender = _rnd_name(gender=gender_override)
             dob = _rnd_dob(archetype)
             phone = _rnd_phone()
+            patient_number = idx + 1
+            email = self._patient_seed_email(fac_code, patient_number)
+            existing_user = User.objects.filter(email=email).select_related("patient_profile").first()
+            if existing_user is not None:
+                patient = getattr(existing_user, "patient_profile", None)
+                if patient is None or existing_user.user_type != "patient":
+                    raise CommandError(
+                        f"Existing user {email} is not a recoverable seeded patient."
+                    )
+                if (
+                    str(existing_user.pk) not in manifest.data.get("User", [])
+                    and str(patient.pk) not in manifest.data.get("PatientProfile", [])
+                ):
+                    raise CommandError(
+                        f"Seed patient {email} already exists outside the current manifest. "
+                        "Use the original manifest to resume or roll back that seeded dataset."
+                    )
+                self._record_existing_patient_graph(patient, manifest)
+                continue
 
-            mrn = _mrn(fac_code, global_offset + idx + 1, year)
-            email = f"patient.{mrn.lower().replace('-', '.')}@hms.local"
+            mrn = generate_unique_mrn(facility)
 
             user = User(
                 email=email,
-                username=mrn.lower().replace("-", "."),
+                username=self._patient_seed_username(fac_code, patient_number),
                 first_name=first,
                 last_name=last,
                 user_type="patient",
@@ -897,6 +1163,7 @@ class Command(BaseCommand):
                     "search_document": f"{first} {last} {mrn} {patient.nhis_id or ''}",
                 }
             )
+            manifest.add("PatientSearchIndex", patient.pk)
 
             # Clinical journey
             self._seed_patient_journey(ctx, patient, archetype, n_years, seed_user, manifest)
@@ -933,9 +1200,9 @@ class Command(BaseCommand):
         clinic = _rng.choice(ctx.clinics) if ctx.clinics else None
 
         days_span = n_years * 365
+        now = timezone.now()
 
         # --- OUTPATIENT ENCOUNTERS ---
-        op_invoices = []
         for op_idx in range(total_op):
             # Spread visits across the years (older visits first)
             days_ago = int(_rng.uniform(
@@ -1038,7 +1305,7 @@ class Command(BaseCommand):
 
             # Lab Orders (70% of encounters get labs)
             if _rng.random() < 0.70 and doctor and cfg["labs"]:
-                lab_result_data = self._seed_lab_order(
+                self._seed_lab_order(
                     ctx, patient, enc, doctor, lab_tech, start_dt, archetype, manifest
                 )
 
@@ -1046,35 +1313,48 @@ class Command(BaseCommand):
             if ctx.services:
                 cons_svc = ctx.services.get("CONS-GEN") or ctx.services.get("CONS-SPEC")
                 if cons_svc:
-                    inv = self._seed_invoice(
+                    self._seed_invoice(
                         ctx, patient, enc, cons_svc, start_dt, seed_user, manifest
                     )
-                    op_invoices.append(inv)
 
         # --- INPATIENT ADMISSIONS ---
+        should_leave_active_admission = (
+            n_admissions > 0 and (
+                not ctx.has_seeded_active_admission or _rng.random() < 0.15
+            )
+        )
+        active_admission_idx = n_admissions - 1 if should_leave_active_admission else None
         for adm_idx in range(n_admissions):
-            days_ago = _rng.randint(30, days_span)
-            adm_dt = _past_dt(days_ago, max(0, days_ago - 10))
             los = _rng.randint(2, 14)  # length of stay in days
-            disch_dt = adm_dt + timedelta(days=los)
-            is_discharged = disch_dt < timezone.now()
+            is_active_admission = adm_idx == active_admission_idx
+            if is_active_admission:
+                max_hours_ago = max(6, los * 24 - 2)
+                adm_dt = now - timedelta(hours=_rng.randint(1, max_hours_ago))
+                disch_dt = None
+                expected_discharge_date = adm_dt + timedelta(days=los)
+                status = (
+                    "pending_discharge"
+                    if expected_discharge_date <= now + timedelta(hours=12) and _rng.random() < 0.5
+                    else "admitted"
+                )
+            else:
+                min_days_ago = max(los + 1, 2)
+                days_ago = _rng.randint(min_days_ago, max(min_days_ago, days_span))
+                adm_dt = _past_dt(days_ago, max(los, days_ago - 10))
+                disch_dt = adm_dt + timedelta(days=los)
+                expected_discharge_date = disch_dt
+                status = "discharged"
 
             # Pick a ward appropriate for this archetype
             ward_names = WARD_BY_ARCHETYPE.get(archetype, ["Medical Ward A"])
-            ward = None
-            for wn in ward_names:
-                w = ctx.wards.get(wn)
-                if w:
-                    ward = w
-                    break
-            if not ward:
-                ward = list(ctx.wards.values())[0]
-
-            # Find a free bed (during seeding, use round-robin by index)
-            ward_beds = [b for b in ctx.beds if b.ward_id == ward.pk]
-            if not ward_beds:
-                continue
-            bed = ward_beds[adm_idx % len(ward_beds)]
+            if is_active_admission:
+                ward, bed = self._pick_active_bed(ctx, ward_names)
+            else:
+                ward = next((ctx.wards[name] for name in ward_names if name in ctx.wards), None)
+                if ward is None and ctx.wards:
+                    ward = next(iter(ctx.wards.values()))
+                ward_beds = [bed for bed in ctx.beds if ward and bed.ward_id == ward.pk]
+                bed = _rng.choice(ward_beds) if ward_beds else None
 
             admission_type = "maternity" if archetype == "maternity" else (
                 "emergency" if archetype in ("infectious", "respiratory", "chronic_complex") and _rng.random() < 0.4
@@ -1086,19 +1366,23 @@ class Command(BaseCommand):
                 bed=bed,
                 facility=facility,
                 admission_date=adm_dt,
-                status="discharged" if is_discharged else "admitted",
+                status=status,
                 admission_type=admission_type,
                 admitting_doctor=doctor,
-                daily_rate=Decimal(ward.base_rate_per_night),
+                daily_rate=Decimal(ward.base_rate_per_night if ward else "0.00"),
                 admission_notes=f"Admitted with {_rng.choice(ARCHETYPE_COMPLAINTS[archetype])}",
-                discharge_notes="Condition improved. Discharged in stable condition." if is_discharged else None,
-                actual_discharge_date=disch_dt if is_discharged else None,
-                expected_discharge_date=adm_dt + timedelta(days=los),
+                discharge_notes="Condition improved. Discharged in stable condition." if status == "discharged" else None,
+                actual_discharge_date=disch_dt if status == "discharged" else None,
+                expected_discharge_date=expected_discharge_date,
                 primary_team=_rng.choice(list(ctx.clinical_units.values())) if ctx.clinical_units else None,
                 created_by=seed_user,
             )
             adm.save()
             manifest.add("Admission", adm.pk)
+            if is_active_admission and bed:
+                ctx.occupied_bed_ids.add(bed.pk)
+            if is_active_admission:
+                ctx.has_seeded_active_admission = True
 
             # Inpatient Encounter linked to admission
             inpat_enc = Encounter(
@@ -1107,12 +1391,12 @@ class Command(BaseCommand):
                 practitioner=doctor,
                 admission=adm,
                 encounter_type="inpatient",
-                status="finished" if is_discharged else "in-progress",
+                status="finished" if status == "discharged" else "in-progress",
                 start_time=adm_dt,
-                end_time=disch_dt if is_discharged else None,
+                end_time=disch_dt if status == "discharged" else None,
                 reason=_rng.choice(ARCHETYPE_COMPLAINTS[archetype]),
                 admission_source="emergency" if admission_type == "emergency" else "referral",
-                discharge_disposition="home" if is_discharged else None,
+                discharge_disposition="home" if status == "discharged" else None,
                 primary_team=adm.primary_team,
                 admitted_by_team=adm.primary_team,
                 created_by=seed_user,
@@ -1121,18 +1405,30 @@ class Command(BaseCommand):
             manifest.add("Encounter", inpat_enc.pk)
 
             # Bed allocation log
-            if is_discharged:
-                bal = BedAllocationLog(
+            if bed:
+                self._create_bed_allocation_log(
                     bed=bed,
                     facility=facility,
+                    admission=adm,
                     previous_status="available",
                     new_status="occupied",
-                    admission=adm,
                     notes="Patient admitted",
-                    created_by=seed_user,
+                    actor=seed_user,
+                    timestamp=adm_dt,
+                    manifest=manifest,
                 )
-                bal.save()
-                manifest.add("BedAllocationLog", bal.pk)
+                if status == "discharged" and disch_dt is not None:
+                    self._create_bed_allocation_log(
+                        bed=bed,
+                        facility=facility,
+                        admission=adm,
+                        previous_status="occupied",
+                        new_status="available",
+                        notes="Patient discharged",
+                        actor=seed_user,
+                        timestamp=disch_dt,
+                        manifest=manifest,
+                    )
 
             # Daily vitals during admission
             for day in range(min(los, 5)):
@@ -1175,11 +1471,22 @@ class Command(BaseCommand):
                 )
 
             # Inpatient billing
-            if ctx.services and is_discharged:
-                ward_svc = ctx.services.get("WARD-GEN") or ctx.services.get("WARD-ICU")
+            if ctx.services and status == "discharged":
+                ward_svc = self._get_ward_charge_service(ctx, ward)
                 if ward_svc:
-                    self._seed_invoice(ctx, patient, inpat_enc, ward_svc, disch_dt, seed_user, manifest,
-                                       quantity=los, is_admission=True)
+                    self._seed_invoice(
+                        ctx,
+                        patient,
+                        inpat_enc,
+                        ward_svc,
+                        disch_dt,
+                        seed_user,
+                        manifest,
+                        quantity=los,
+                        is_admission=True,
+                        admission=adm,
+                        unit_price_override=adm.daily_rate,
+                    )
 
     # ------------------------------------------------------------------
     # LAB ORDER
@@ -1196,12 +1503,8 @@ class Command(BaseCommand):
         # Select 1-3 tests
         selected = _rng.sample(available, min(len(available), _rng.randint(1, 3)))
 
-        # Generate order number (bypass save() auto-gen)
         order_date = order_dt.date() if hasattr(order_dt, "date") else order_dt
-        seq, _ = LabOrderSequence.objects.get_or_create(date=order_date, defaults={"last_number": 0})
-        seq.last_number += len(selected)
-        seq.save(update_fields=["last_number"])
-        order_num = f"LAB-{order_date.strftime('%Y%m%d')}-{seq.last_number:04d}"
+        order_num = self._reserve_lab_order_number(order_date)
 
         lab_order = LabOrder(
             order_number=order_num,
@@ -1275,9 +1578,11 @@ class Command(BaseCommand):
 
     def _seed_invoice(self, ctx: FacilityContext, patient, enc, service,
                       invoice_dt, seed_user, manifest: SeedManifest,
-                      quantity: int = 1, is_admission: bool = False) -> Optional[Invoice]:
+                      quantity: int = 1, is_admission: bool = False,
+                      admission: Optional[Admission] = None,
+                      unit_price_override: Optional[Decimal] = None) -> Optional[Invoice]:
         inv_num = f"SED-{_rng.randint(100000000000, 999999999999)}"
-        unit_price = service.base_price
+        unit_price = unit_price_override if unit_price_override is not None else service.base_price
         total = unit_price * quantity
 
         # 80% paid, 15% pending, 5% overdue
@@ -1291,6 +1596,7 @@ class Command(BaseCommand):
             patient=patient,
             facility=ctx.facility,
             encounter=enc,
+            admission=admission if is_admission else None,
             invoice_date=dt,
             due_date=dt + timedelta(days=30),
             subtotal=total,
@@ -1343,6 +1649,8 @@ class Command(BaseCommand):
         if not manifest.path.exists():
             raise CommandError(f"Manifest file not found: {manifest.path}")
 
+        self._reconcile_pending_batches(manifest)
+
         self.stdout.write(self.style.WARNING(
             f"\nRolling back {manifest.total():,} records from {manifest.path}...\n"
         ))
@@ -1363,8 +1671,8 @@ class Command(BaseCommand):
             ("Encounter",         Encounter),
             ("Admission",         Admission),
             ("Appointment",       Appointment),
-            ("PatientProfile",    PatientProfile),
             ("PatientSearchIndex",PatientSearchIndex),
+            ("PatientProfile",    PatientProfile),
             ("PractitionerProfile", PractitionerProfile),
             ("Staff",             Staff),
             ("Bed",               Bed),
