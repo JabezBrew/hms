@@ -6,21 +6,34 @@ import format from "date-fns/format";
 import { useChartAssignment, useChartEntries } from "@/features/charts/hooks";
 import { formatBodyMapValue } from "./bodyMapUtils";
 
-const ChartBodyMapReview = ({ assignmentId }) => {
-  const { data: assignment, isLoading: assignmentLoading } = useChartAssignment(assignmentId);
+const ChartBodyMapReview = ({
+  assignmentId,
+  assignment: assignmentProp = null,
+  entriesData: entriesDataProp = null,
+  entriesLoading: entriesLoadingProp = false,
+}) => {
+  const shouldFetchAssignment = !assignmentProp && !!assignmentId;
+  const shouldFetchEntries = !entriesDataProp && !!assignmentId;
+  const { data: assignmentQueryData, isLoading: assignmentLoading } = useChartAssignment(
+    shouldFetchAssignment ? assignmentId : null,
+  );
   const { data: entriesData, isLoading: entriesLoading } = useChartEntries({
     assignment: assignmentId,
     include_data: true,
     ordering: '-observation_datetime',
+  }, {
+    enabled: shouldFetchEntries,
   });
 
+  const assignment = assignmentProp || assignmentQueryData;
+  const resolvedEntriesData = entriesDataProp || entriesData;
   const bodyMapFields = useMemo(
     () => (assignment?.template?.fields || []).filter((field) => field.field_type === 'body_map'),
     [assignment?.template?.fields],
   );
-  const entries = entriesData?.results || entriesData || [];
+  const entries = resolvedEntriesData?.results || resolvedEntriesData || [];
 
-  if (assignmentLoading || entriesLoading) {
+  if ((shouldFetchAssignment && assignmentLoading) || entriesLoadingProp || (shouldFetchEntries && entriesLoading)) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

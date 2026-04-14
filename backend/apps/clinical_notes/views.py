@@ -3755,7 +3755,6 @@ def _format_chart_entry_v2(chart_entry, event):
         'assignment_id': str(assignment.id) if assignment else None,
         'encounter': _format_encounter_details(assignment.encounter if assignment else None),
         'encounter_id': str(assignment.encounter_id) if assignment and assignment.encounter_id else None,
-        'data': chart_entry.data,
         'notes': chart_entry.notes,
         'created_at': chart_entry.created_at.isoformat(),
         'updated_at': chart_entry.updated_at.isoformat(),

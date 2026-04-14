@@ -242,8 +242,8 @@ export function useChartTemplates(filters = {}) {
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
     queryKey: keyWith('charts', 'templates', 'list', category, visibility, search, is_active),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/templates/?${params.toString()}`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/templates/?${params.toString()}`, { signal });
     },
     enabled,
     staleTime: 60000, // 1 minute - templates don't change often
@@ -257,8 +257,8 @@ export function useChartTemplates(filters = {}) {
 export function useChartTemplate(templateId) {
   return useQuery({
     queryKey: chartKeys.templateDetail(templateId),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/templates/${templateId}/`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/templates/${templateId}/`, { signal });
     },
     enabled: !!templateId,
   });
@@ -273,8 +273,8 @@ export function useChartCategories(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: chartKeys.categories(),
-    queryFn: async () => {
-      const response = await apiClient.get('/charts/templates/categories/');
+    queryFn: async ({ signal }) => {
+      const response = await apiClient.get('/charts/templates/categories/', { signal });
       return response.categories;
     },
     enabled,
@@ -291,8 +291,8 @@ export function useChartIntervals(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: chartKeys.intervals(),
-    queryFn: async () => {
-      const response = await apiClient.get('/charts/templates/intervals/');
+    queryFn: async ({ signal }) => {
+      const response = await apiClient.get('/charts/templates/intervals/', { signal });
       return response.intervals;
     },
     enabled,
@@ -513,8 +513,8 @@ export function useChartAssignments(filters = {}, options = {}) {
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
     queryKey: keyWith('charts', 'assignments', 'list', patient, admission, encounter_id, template, status, scope_type, all_history, page_size, ordering),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/assignments/?${params.toString()}`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/assignments/?${params.toString()}`, { signal });
     },
     enabled,
     staleTime: 30000, // 30 seconds
@@ -562,8 +562,8 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
       page,
       page_size,
     ),
-    queryFn: async () => {
-      const response = await apiClient.getWithPagination(`/charts/assignments/?${params.toString()}`);
+    queryFn: async ({ signal }) => {
+      const response = await apiClient.getWithPagination(`/charts/assignments/?${params.toString()}`, { signal });
 
       if (Array.isArray(response)) {
         return {
@@ -605,8 +605,8 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
 export function useChartAssignment(assignmentId) {
   return useQuery({
     queryKey: chartKeys.assignmentDetail(assignmentId),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/assignments/${assignmentId}/`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/assignments/${assignmentId}/`, { signal });
     },
     enabled: !!assignmentId,
   });
@@ -625,7 +625,7 @@ export function usePatientChartAssignments(patientId, status = 'active', filters
       filters.scope_type,
       filters.all_history,
     ),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ patient_id: patientId });
       if (status) params.append('status', status);
       if (filters.admission_id) params.append('admission_id', filters.admission_id);
@@ -633,7 +633,7 @@ export function usePatientChartAssignments(patientId, status = 'active', filters
       if (filters.scope_type) params.append('scope_type', filters.scope_type);
       if (filters.all_history) params.append('all_history', 'true');
 
-      return await apiClient.get(`/charts/assignments/by-patient/?${params.toString()}`);
+      return await apiClient.get(`/charts/assignments/by-patient/?${params.toString()}`, { signal });
     },
     enabled: !!patientId,
   });
@@ -820,8 +820,9 @@ export function useDiscontinueChartAssignment() {
 /**
  * Fetch chart entries with optional filters
  */
-export function useChartEntries(filters = {}) {
+export function useChartEntries(filters = {}, options = {}) {
   const params = new URLSearchParams();
+  const { enabled = true } = options;
 
   if (filters.assignment) params.append('assignment', filters.assignment);
   if (filters.start_date) params.append('start_date', filters.start_date);
@@ -839,10 +840,10 @@ export function useChartEntries(filters = {}) {
 
   return useQuery({
     queryKey: chartKeys.entryList(filters),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/entries/?${params.toString()}`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/entries/?${params.toString()}`, { signal });
     },
-    enabled: !!filters.assignment,
+    enabled: !!filters.assignment && enabled,
   });
 }
 
@@ -852,8 +853,8 @@ export function useChartEntries(filters = {}) {
 export function useChartEntry(entryId) {
   return useQuery({
     queryKey: chartKeys.entryDetail(entryId),
-    queryFn: async () => {
-      return await apiClient.get(`/charts/entries/${entryId}/`);
+    queryFn: async ({ signal }) => {
+      return await apiClient.get(`/charts/entries/${entryId}/`, { signal });
     },
     enabled: !!entryId,
   });
@@ -865,12 +866,12 @@ export function useChartEntry(entryId) {
 export function useChartEntrySummary(assignmentId, dateRange = {}) {
   return useQuery({
     queryKey: chartKeys.entrySummary(assignmentId, dateRange.start_date, dateRange.end_date),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ assignment_id: assignmentId });
       if (dateRange.start_date) params.append('start_date', dateRange.start_date);
       if (dateRange.end_date) params.append('end_date', dateRange.end_date);
 
-      return await apiClient.get(`/charts/entries/summary/?${params.toString()}`);
+      return await apiClient.get(`/charts/entries/summary/?${params.toString()}`, { signal });
     },
     enabled: !!assignmentId,
   });
@@ -888,7 +889,7 @@ export function useChartEntryTrends(assignmentId, fieldKey, options = {}) {
   } = options;
   return useQuery({
     queryKey: chartKeys.entryTrends(assignmentId, fieldKey, component, start_date, end_date, limit),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         assignment_id: assignmentId,
         field_key: fieldKey,
@@ -898,7 +899,7 @@ export function useChartEntryTrends(assignmentId, fieldKey, options = {}) {
       if (start_date) params.append('start_date', start_date);
       if (end_date) params.append('end_date', end_date);
 
-      return await apiClient.get(`/charts/entries/trends/?${params.toString()}`);
+      return await apiClient.get(`/charts/entries/trends/?${params.toString()}`, { signal });
     },
     enabled: !!assignmentId && !!fieldKey,
   });
@@ -916,7 +917,7 @@ export function usePatientChartEntries(patientId, filters = {}) {
       filters.encounter_id,
       filters.all_history,
     ),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ patient_id: patientId });
       if (filters.template_id) params.append('template_id', filters.template_id);
       if (filters.admission_id) params.append('admission_id', filters.admission_id);
@@ -924,7 +925,7 @@ export function usePatientChartEntries(patientId, filters = {}) {
       if (filters.all_history) params.append('all_history', 'true');
       if (filters.limit) params.append('limit', filters.limit.toString());
 
-      return await apiClient.get(`/charts/entries/by-patient/?${params.toString()}`);
+      return await apiClient.get(`/charts/entries/by-patient/?${params.toString()}`, { signal });
     },
     enabled: !!patientId,
   });

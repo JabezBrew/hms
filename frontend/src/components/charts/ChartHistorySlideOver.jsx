@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useChartAssignment, usePaginatedChartAssignments } from '@/features/charts/hooks';
+import { useChartAssignment, useChartEntries, usePaginatedChartAssignments } from '@/features/charts/hooks';
 import { ChartDataGrid } from './ChartDataGrid';
 import { LazyChartTrendGraph } from './LazyChartTrendGraph';
 import { ChartBodyMapReview } from './ChartBodyMapReview';
@@ -92,6 +92,16 @@ const ChartHistorySlideOver = ({
   );
 
   const { data: selectedAssignment, isLoading: selectedAssignmentLoading } = useChartAssignment(selectedAssignmentId);
+  const { data: selectedEntriesData, isLoading: selectedEntriesLoading } = useChartEntries(
+    {
+      assignment: selectedAssignmentId,
+      include_data: true,
+      ordering: '-observation_datetime',
+    },
+    {
+      enabled: open && !!selectedAssignmentId,
+    },
+  );
 
   const assignments = useMemo(() => data?.results ?? [], [data]);
   const chartContextLabel = allHistory
@@ -232,8 +242,18 @@ const ChartHistorySlideOver = ({
                   fieldKey={selectedTrendField}
                   onFieldChange={setSelectedTrendField}
                 />
-                <ChartDataGrid assignmentId={selectedAssignmentId} />
-                <ChartBodyMapReview assignmentId={selectedAssignmentId} />
+                <ChartDataGrid
+                  assignmentId={selectedAssignmentId}
+                  assignment={selectedAssignment}
+                  entriesData={selectedEntriesData}
+                  entriesLoading={selectedEntriesLoading}
+                />
+                <ChartBodyMapReview
+                  assignmentId={selectedAssignmentId}
+                  assignment={selectedAssignment}
+                  entriesData={selectedEntriesData}
+                  entriesLoading={selectedEntriesLoading}
+                />
               </div>
             )}
           </ScrollArea>

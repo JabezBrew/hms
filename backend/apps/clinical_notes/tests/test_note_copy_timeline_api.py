@@ -447,4 +447,69 @@ class TestNoteCopyAndTimelineApi:
         assert chart_entry['template_system_key'] == 'vital_signs'
         assert chart_entry['scope_type'] == 'encounter'
         assert chart_entry['assignment_id'] == str(assignment.id)
-        assert chart_entry['data']['blood_pressure']['systolic'] == 124
+        assert 'data' not in chart_entry
+        assert chart_entry['notes'] == 'Pain improved after analgesia'
+
+    def test_soft_deleted_chart_entries_are_removed_from_timeline(
+        self,
+        doctor_client,
+        doctor_user,
+        doctor_practitioner,
+        patient_profile_factory,
+        default_facility,
+        django_capture_on_commit_callbacks,
+    ):
+        patient = patient_profile_factory(facility=default_facility)
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=doctor_practitioner,
+            created_by=doctor_user,
+            status='in-progress',
+        )
+        template = ChartTemplate.objects.create(
+            facility=default_facility,
+            name='Pain Assessment Chart',
+            description='Encounter pain monitoring',
+            icon='activity',
+            visibility='facility',
+            category='pain',
+            scope_type='encounter',
+            system_key='pain_assessment',
+            default_interval='4hourly',
+            created_by=doctor_user,
+        )
+        ChartField.objects.create(
+            template=template,
+            name='Pain Score',
+            field_key='pain_score',
+            field_type='scale',
+            display_order=1,
+            config={'min': 0, 'max': 10},
+        )
+        assignment = ChartAssignment.objects.create(
+            template=template,
+            patient=patient,
+            encounter=encounter,
+            start_datetime=encounter.start_time,
+            status='active',
+            ordered_by=doctor_practitioner,
+            created_by=doctor_user,
+        )
+
+        with django_capture_on_commit_callbacks(execute=True):
+            entry = ChartEntry.objects.create(
+                assignment=assignment,
+                observation_datetime=encounter.start_time,
+                data={'pain_score': 6},
+                recorded_by=doctor_practitioner,
+                created_by=doctor_user,
+            )
+
+        with django_capture_on_commit_callbacks(execute=True):
+            entry.soft_delete(user=doctor_user, reason='Entered in error')
+
+        response = doctor_client.get(f'/api/clinical-notes/chronicle/{patient.id}/timeline/')
+
+        assert response.status_code == 200
+        assert all(item['id'] != str(entry.id) for item in response.data['results'])

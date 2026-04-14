@@ -173,7 +173,6 @@ function normalizeTimelineEntry(entry) {
         template_system_key: entry.template_system_key,
         scope_type: entry.scope_type,
         notes: entry.notes,
-        ...entry.data,
       },
     };
   }
