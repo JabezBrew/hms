@@ -306,6 +306,16 @@ const PatientIdentityHero = ({
               </span>
             )}
 
+            {activeAdmission && onStartDischarge && (
+              <button
+                onClick={onStartDischarge}
+                className="flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded-md transition-colors hover:bg-muted cursor-pointer border text-rose-600 border-rose-300 bg-rose-50 dark:text-rose-400 dark:border-rose-700 dark:bg-rose-950"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Discharge
+              </button>
+            )}
+
             {/* Active Visit Status */}
             {activeVisit && (
               <div className="flex items-center gap-2">
@@ -421,17 +431,18 @@ const PatientIdentityHero = ({
             </Button>
           )}
 
-          {activeAdmission && onViewTreatmentSheet && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              onClick={onViewTreatmentSheet}
-            >
-              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-              Treatment Sheet
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {activeAdmission && onViewTreatmentSheet && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs"
+                onClick={onViewTreatmentSheet}
+              >
+                <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+                Treatment Sheet
+              </Button>
+            )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -444,13 +455,11 @@ const PatientIdentityHero = ({
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('medicationHistory');
-                  prefetchAction('discharge');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('medicationHistory');
-                  prefetchAction('discharge');
                 }}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -492,29 +501,17 @@ const PatientIdentityHero = ({
                   Fluid Balance
                 </DropdownMenuItem>
               )}
-              {activeAdmission && (
+              {activeAdmission && onStartWardRound && (
                 <>
                   <DropdownMenuSeparator />
-                  {onStartWardRound && (
-                    <DropdownMenuItem
-                      onClick={onStartWardRound}
-                      onPointerEnter={() => prefetchAction('wardRound')}
-                      onFocus={() => prefetchAction('wardRound')}
-                    >
-                      <Stethoscope className="h-4 w-4 mr-2" />
-                      Ward Round
-                    </DropdownMenuItem>
-                  )}
-                  {onStartDischarge && (
-                    <DropdownMenuItem
-                      onClick={onStartDischarge}
-                      onPointerEnter={() => prefetchAction('discharge')}
-                      onFocus={() => prefetchAction('discharge')}
-                    >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Medical Discharge
-                    </DropdownMenuItem>
-                  )}
+                  <DropdownMenuItem
+                    onClick={onStartWardRound}
+                    onPointerEnter={() => prefetchAction('wardRound')}
+                    onFocus={() => prefetchAction('wardRound')}
+                  >
+                    <Stethoscope className="h-4 w-4 mr-2" />
+                    Ward Round
+                  </DropdownMenuItem>
                 </>
               )}
               <DropdownMenuSeparator />
@@ -541,6 +538,7 @@ const PatientIdentityHero = ({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
       </div>
     </header>

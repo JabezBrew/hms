@@ -286,8 +286,8 @@ const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
 
   return (
     <section>
-      <header className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <header className="mb-4 space-y-1">
+        <div className="flex items-center justify-between">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             Recent Vitals
           </h3>
@@ -303,7 +303,7 @@ const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
             </Button>
           ) : null}
         </div>
-        <time className="font-mono text-xs text-muted-foreground/70">
+        <time className="block font-mono text-[10px] text-muted-foreground/70">
           {results.length ? latestDate : 'No vitals'}
         </time>
       </header>
