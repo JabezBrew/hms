@@ -341,6 +341,7 @@ class MedicationAdministrationListSerializer(serializers.ModelSerializer):
             'id', 'patient', 'patient_name', 'patient_mrn',
             'medication_name', 'dosage', 'route', 'frequency',
             'scheduled_time', 'status', 'status_display',
+            'administered_time',
             'prescriber_name', 'prescription', 'is_dispensed'
         ]
 

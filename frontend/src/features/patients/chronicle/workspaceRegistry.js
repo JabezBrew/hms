@@ -16,9 +16,11 @@ export const chronicleWorkspaceIds = Object.freeze([
   'referral',
   'crossFacility',
   'receiveRecord',
+  'medicationHistory',
   'fluids',
   'charts',
   'chartEntry',
+  'chartHistory',
   'insurance',
   'wardRound',
   'consultation',
@@ -34,9 +36,11 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   referral: () => import('@/components/referrals/ReferralForm'),
   crossFacility: () => import('@/components/consent/CrossFacilitySharePanel'),
   receiveRecord: () => import('@/components/interop/ReceiveRecordPanel'),
+  medicationHistory: () => import('@/components/chronicle/MedicationHistorySlideOver'),
   fluids: () => import('@/components/chronicle/AddFluidBalanceSlideOver'),
   charts: () => import('@/components/charts/AddChartSlideOver'),
   chartEntry: () => import('@/components/charts/ChartEntryForm'),
+  chartHistory: () => import('@/components/charts/ChartHistorySlideOver'),
   insurance: () => import('@/components/chronicle/PatientInsuranceSlideOver'),
   wardRound: () => import('@/components/chronicle/WardRoundSlideOver'),
   consultation: () => import('@/components/chronicle/ConsultationSlideOver'),
@@ -126,6 +130,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     copyForwardData,
     editNoteData,
     activeChartAssignment,
+    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     onClose,
     onChartWorkspaceClose,
@@ -207,12 +212,19 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         onClose,
         patient,
       };
+    case 'medicationHistory':
+      return {
+        open: true,
+        onClose,
+        patient,
+      };
     case 'fluids':
       return {
         open: true,
         onClose,
         patient,
         admission: getChronicleAdmissionReference(patient),
+        allowEntry: Boolean(activeEncounter?.id || getChronicleAdmissionReference(patient)),
         onFluidRecorded,
       };
     case 'charts':
@@ -230,6 +242,13 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         assignmentId: activeChartAssignment?.id,
         patient,
         onEntryRecorded: onChartEntryRecorded,
+      };
+    case 'chartHistory':
+      return {
+        open: true,
+        onClose: onChartWorkspaceClose,
+        patient,
+        initialAssignmentId: selectedChartHistoryAssignmentId || null,
       };
     case 'insurance':
       return {

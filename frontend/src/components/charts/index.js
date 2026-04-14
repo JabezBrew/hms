@@ -19,3 +19,4 @@ export { LazyChartTrendGraph } from './LazyChartTrendGraph';
 // Assignment Management
 export { ChartAssignmentCard } from './ChartAssignmentCard';
 export { AddChartSlideOver } from './AddChartSlideOver';
+export { ChartHistorySlideOver } from './ChartHistorySlideOver';

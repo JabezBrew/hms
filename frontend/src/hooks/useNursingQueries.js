@@ -25,6 +25,8 @@ export const nursingKeys = {
   medicationAdministrationsAll: () => keyWith('medication-administrations'),
   medicationsDueNow: () => keyWith('medications-due-now'),
   medicationsOverdue: () => keyWith('medications-overdue'),
+  medicationAdministrationHistory: (patient, status, startDate, endDate, ordering, page, pageSize) =>
+    keyWith('medication-administration-history', patient, status, startDate, endDate, ordering, page, pageSize),
   patientMar: (patientId, date) => keyWith('patient-mar', patientId, date),
   patientMarAll: () => keyWith('patient-mar'),
   marGrid: (admissionId, startDate, days) => keyWith('mar-grid', admissionId, startDate, days),
@@ -356,6 +358,74 @@ export const useMedicationAdministrations = (filters = {}) => {
       return Array.isArray(data) ? data : [];
     },
     placeholderData: [],
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
+  });
+};
+
+export const useMedicationAdministrationHistory = (filters = {}, options = {}) => {
+  const {
+    patient,
+    status,
+    start_date,
+    end_date,
+    ordering = '-scheduled_time',
+    page = 1,
+    page_size = 20,
+  } = filters;
+  const { enabled = true } = options;
+
+  return useQuery({
+    queryKey: nursingKeys.medicationAdministrationHistory(
+      patient,
+      status,
+      start_date,
+      end_date,
+      ordering,
+      page,
+      page_size,
+    ),
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (patient) params.append('patient', patient);
+      if (status && status !== 'all') params.append('status', status);
+      if (start_date) params.append('start_date', start_date);
+      if (end_date) params.append('end_date', end_date);
+      if (ordering) params.append('ordering', ordering);
+      params.append('page', String(page));
+      params.append('page_size', String(page_size));
+
+      const response = await apiClient.getWithPagination(`/nursing/medications/?${params.toString()}`);
+
+      if (Array.isArray(response)) {
+        return {
+          count: response.length,
+          results: response,
+          page,
+          total_pages: 1,
+          has_next: false,
+          has_previous: false,
+        };
+      }
+
+      return response ?? {
+        count: 0,
+        results: [],
+        page,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      };
+    },
+    enabled: !!patient && enabled,
+    placeholderData: {
+      count: 0,
+      results: [],
+      page,
+      total_pages: 1,
+      has_next: false,
+      has_previous: false,
+    },
     staleTime: 30000,
     refetchOnWindowFocus: false,
   });

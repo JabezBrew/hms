@@ -37,6 +37,8 @@ export const chartKeys = {
   assignmentList: (filters) => keyWith('charts', 'assignments', 'list', filters),
   assignmentListParams: (patient, admission, template, status) =>
     keyWith('charts', 'assignments', 'list', patient, admission, template, status),
+  assignmentPaginatedList: (patient, admission, template, status, ordering, page, pageSize) =>
+    keyWith('charts', 'assignments', 'paginated-list', patient, admission, template, status, ordering, page, pageSize),
   assignmentDetail: (id) => keyWith('charts', 'assignments', 'detail', id),
   assignmentsByPatient: (patientId, status) => keyWith('charts', 'assignments', 'patient', patientId, status),
 
@@ -491,7 +493,7 @@ export function useReorderChartFields() {
  */
 export function useChartAssignments(filters = {}, options = {}) {
   // Extract filter values to use as stable primitives in query key
-  const { patient, admission, template, status } = filters;
+  const { patient, admission, template, status, page_size, ordering } = filters;
   const { enabled = true } = options;
   const params = new URLSearchParams();
 
@@ -499,15 +501,85 @@ export function useChartAssignments(filters = {}, options = {}) {
   if (admission) params.append('admission', admission);
   if (template) params.append('template', template);
   if (status) params.append('status', status);
+  if (page_size) params.append('page_size', page_size);
+  if (ordering) params.append('ordering', ordering);
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: chartKeys.assignmentListParams(patient, admission, template, status),
+    queryKey: keyWith('charts', 'assignments', 'list', patient, admission, template, status, page_size, ordering),
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },
     enabled,
     staleTime: 30000, // 30 seconds
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function usePaginatedChartAssignments(filters = {}, options = {}) {
+  const {
+    patient,
+    admission,
+    template,
+    status,
+    ordering = '-created_at',
+    page = 1,
+    page_size = 12,
+  } = filters;
+  const { enabled = true } = options;
+  const params = new URLSearchParams();
+
+  if (patient) params.append('patient', patient);
+  if (admission) params.append('admission', admission);
+  if (template) params.append('template', template);
+  if (status && status !== 'all') params.append('status', status);
+  if (ordering) params.append('ordering', ordering);
+  params.append('page', String(page));
+  params.append('page_size', String(page_size));
+
+  return useQuery({
+    queryKey: chartKeys.assignmentPaginatedList(
+      patient,
+      admission,
+      template,
+      status,
+      ordering,
+      page,
+      page_size,
+    ),
+    queryFn: async () => {
+      const response = await apiClient.getWithPagination(`/charts/assignments/?${params.toString()}`);
+
+      if (Array.isArray(response)) {
+        return {
+          count: response.length,
+          results: response,
+          page,
+          total_pages: 1,
+          has_next: false,
+          has_previous: false,
+        };
+      }
+
+      return response ?? {
+        count: 0,
+        results: [],
+        page,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      };
+    },
+    enabled: !!patient && enabled,
+    placeholderData: {
+      count: 0,
+      results: [],
+      page,
+      total_pages: 1,
+      has_next: false,
+      has_previous: false,
+    },
+    staleTime: 30000,
     refetchOnWindowFocus: false,
   });
 }

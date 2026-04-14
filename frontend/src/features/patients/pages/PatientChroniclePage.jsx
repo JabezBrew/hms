@@ -13,6 +13,7 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
@@ -184,6 +185,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Chart entry state - which assignment is being recorded
   const [activeChartAssignment, setActiveChartAssignment] = useState(null);
+  const [selectedChartHistoryAssignmentId, setSelectedChartHistoryAssignmentId] = useState(null);
 
   // Fetch patient data (includes access flags for conditional fetching)
   const { data: patient, isLoading, error, refetch } = usePatient(id);
@@ -978,6 +980,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
     setRequestedDischargeAdmissionId(null);
   }, [refreshData, slideOvers]);
 
+  const handleViewMedicationHistory = useCallback(() => {
+    openChronicleWorkspace('medicationHistory');
+  }, [openChronicleWorkspace]);
+
   // Chart handlers
   const handleAssignChart = useCallback(() => {
     openChronicleWorkspace('charts');
@@ -993,6 +999,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('chartEntry');
   }, [openChronicleWorkspace]);
 
+  const handleViewChartHistory = useCallback((assignment = null) => {
+    setSelectedChartHistoryAssignmentId(assignment?.id || null);
+    openChronicleWorkspace('chartHistory');
+  }, [openChronicleWorkspace]);
+
   const handleChartEntryRecorded = useCallback(() => {
     refetchCharts();
     refreshData();
@@ -1003,6 +1014,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const handleChartSlideOverClose = useCallback(() => {
     slideOvers.close();
     setActiveChartAssignment(null);
+    setSelectedChartHistoryAssignmentId(null);
   }, [slideOvers]);
 
   const handleManageInsurance = useCallback(() => {
@@ -1046,6 +1058,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     activeChartAssignment,
+    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     onClose: handleSlideOverClose,
     onChartWorkspaceClose: handleChartSlideOverClose,
@@ -1070,6 +1083,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     activeChartAssignment,
+    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     handleSlideOverClose,
     handleChartSlideOverClose,
@@ -1309,8 +1323,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onReceiveRecord={handleReceiveRecord}
         onScheduleFollowUp={handleScheduleFollowUp}
         onViewTreatmentSheet={handleViewTreatmentSheet}
+        onViewMedicationHistory={handleViewMedicationHistory}
         onRecordFluids={handleRecordFluids}
         onAssignChart={handleAssignChart}
+        onViewChartHistory={handleViewChartHistory}
         onStartWardRound={handleStartWardRound}
         onStartDischarge={handleStartDischarge}
         onManageInsurance={handleManageInsurance}
@@ -1379,6 +1395,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       assignment={assignment}
                       index={index}
                       onRecordEntry={handleRecordChartEntry}
+                      onViewDetails={handleViewChartHistory}
                       compact
                     />
                   ))}
@@ -1629,9 +1646,50 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         </div>
                       </div>
 
-                      <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                        {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="hidden xl:flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 font-mono text-[10px]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleViewMedicationHistory();
+                            }}
+                          >
+                            <Pill className="h-3.5 w-3.5 mr-1" />
+                            Meds
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 font-mono text-[10px]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleViewChartHistory();
+                            }}
+                          >
+                            <ClipboardList className="h-3.5 w-3.5 mr-1" />
+                            Charts
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 font-mono text-[10px]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRecordFluids();
+                            }}
+                          >
+                            <Droplets className="h-3.5 w-3.5 mr-1" />
+                            Fluids
+                          </Button>
+                        </div>
+
+                        <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                        </span>
+                      </div>
                     </button>
 
                     {/* Encounter Entries */}

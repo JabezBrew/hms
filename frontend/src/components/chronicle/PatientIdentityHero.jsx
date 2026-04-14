@@ -50,8 +50,10 @@ const PatientIdentityHero = ({
   onActionIntent,
   onScheduleFollowUp,
   onViewTreatmentSheet,
+  onViewMedicationHistory,
   onRecordFluids,
   onAssignChart,
+  onViewChartHistory,
   onStartWardRound,
   onStartDischarge,
   onManageInsurance,
@@ -445,12 +447,16 @@ const PatientIdentityHero = ({
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('charts');
+                  prefetchAction('chartHistory');
+                  prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
                   prefetchAction('charts');
+                  prefetchAction('chartHistory');
+                  prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
               >
@@ -472,6 +478,16 @@ const PatientIdentityHero = ({
               >
                 Request Consult
               </DropdownMenuItem>
+              {onViewMedicationHistory && (
+                <DropdownMenuItem
+                  onClick={onViewMedicationHistory}
+                  onPointerEnter={() => prefetchAction('medicationHistory')}
+                  onFocus={() => prefetchAction('medicationHistory')}
+                >
+                  <Pill className="h-4 w-4 mr-2" />
+                  Medication History
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
               {onAssignChart && (
                 <DropdownMenuItem
@@ -481,6 +497,26 @@ const PatientIdentityHero = ({
                 >
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Assign Chart
+                </DropdownMenuItem>
+              )}
+              {onViewChartHistory && (
+                <DropdownMenuItem
+                  onClick={() => onViewChartHistory()}
+                  onPointerEnter={() => prefetchAction('chartHistory')}
+                  onFocus={() => prefetchAction('chartHistory')}
+                >
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Chart History
+                </DropdownMenuItem>
+              )}
+              {onRecordFluids && (
+                <DropdownMenuItem
+                  onClick={onRecordFluids}
+                  onPointerEnter={() => prefetchAction('fluids')}
+                  onFocus={() => prefetchAction('fluids')}
+                >
+                  <Droplets className="h-4 w-4 mr-2" />
+                  Fluid Balance
                 </DropdownMenuItem>
               )}
               {activeAdmission && (
@@ -504,16 +540,6 @@ const PatientIdentityHero = ({
                     >
                       <LogOut className="h-4 w-4 mr-2" />
                       Medical Discharge
-                    </DropdownMenuItem>
-                  )}
-                  {onRecordFluids && (
-                    <DropdownMenuItem
-                      onClick={onRecordFluids}
-                      onPointerEnter={() => prefetchAction('fluids')}
-                      onFocus={() => prefetchAction('fluids')}
-                    >
-                      <Droplets className="h-4 w-4 mr-2" />
-                      Record Fluids
                     </DropdownMenuItem>
                   )}
                 </>

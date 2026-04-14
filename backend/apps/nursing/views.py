@@ -1,8 +1,9 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch, Count, Case, When, Sum
 from django.db import transaction
 from django.utils import timezone
@@ -423,7 +424,10 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         'patient', 'patient__user', 'administered_by', 'prescribed_by', 'created_by'
     ).all()
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsNurseOrDoctor]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['patient', 'status', 'administered_by']
+    ordering_fields = ['scheduled_time', 'administered_time', 'created_at']
+    ordering = ['-scheduled_time']
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):

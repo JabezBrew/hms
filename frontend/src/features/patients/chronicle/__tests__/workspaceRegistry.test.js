@@ -23,9 +23,11 @@ describe('chronicle workspace registry', () => {
       'referral',
       'crossFacility',
       'receiveRecord',
+      'medicationHistory',
       'fluids',
       'charts',
       'chartEntry',
+      'chartHistory',
       'insurance',
       'wardRound',
       'consultation',
@@ -69,6 +71,43 @@ describe('chronicle workspace registry', () => {
     });
 
     expect(props.admission).toEqual({ id: 'admission-requested' });
+  });
+
+  it('builds historical medication workspace props without requiring an admission', () => {
+    const props = buildChronicleWorkspaceProps('medicationHistory', {
+      patient: { id: 'patient-1' },
+      onClose: vi.fn(),
+    });
+
+    expect(props).toMatchObject({
+      open: true,
+      patient: { id: 'patient-1' },
+    });
+  });
+
+  it('builds fluid workspace props as history-only when no active admission or encounter exists', () => {
+    const props = buildChronicleWorkspaceProps('fluids', {
+      patient: { id: 'patient-1' },
+      activeEncounter: null,
+      onClose: vi.fn(),
+      onFluidRecorded: vi.fn(),
+    });
+
+    expect(props.allowEntry).toBe(false);
+    expect(props.admission).toBeNull();
+  });
+
+  it('passes the selected chart assignment into chart history workspace props', () => {
+    const props = buildChronicleWorkspaceProps('chartHistory', {
+      patient: { id: 'patient-1' },
+      selectedChartHistoryAssignmentId: 'assignment-1',
+      onChartWorkspaceClose: vi.fn(),
+    });
+
+    expect(props).toMatchObject({
+      open: true,
+      initialAssignmentId: 'assignment-1',
+    });
   });
 
   it('prefetches prescription workspace dependencies with patient-scoped allergy data', () => {
