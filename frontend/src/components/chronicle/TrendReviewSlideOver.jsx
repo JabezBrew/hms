@@ -95,13 +95,15 @@ export default function TrendReviewSlideOver({
 }) {
   const patientId = getPatientId(patient);
   const patientName = getPatientName(patient);
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const showFluidTab = allHistory || Boolean(admissionId);
+  const resolvedInitialTab = showFluidTab ? initialTab : 'vitals';
+  const [activeTab, setActiveTab] = useState(resolvedInitialTab);
 
   useEffect(() => {
     if (open) {
-      setActiveTab(initialTab);
+      setActiveTab(resolvedInitialTab);
     }
-  }, [initialTab, open]);
+  }, [open, resolvedInitialTab]);
 
   const vitalsFilters = useMemo(() => {
     if (allHistory) {
@@ -246,15 +248,17 @@ export default function TrendReviewSlideOver({
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 chronicle-scrollbar">
         <div className="space-y-6 pb-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 bg-muted/50">
+            <TabsList className={cn('grid w-full bg-muted/50', showFluidTab ? 'grid-cols-2' : 'grid-cols-1')}>
               <TabsTrigger value="vitals" className="font-mono text-xs">
                 <Activity className="mr-1.5 h-3.5 w-3.5" />
                 Vitals
               </TabsTrigger>
-              <TabsTrigger value="fluids" className="font-mono text-xs">
-                <Droplets className="mr-1.5 h-3.5 w-3.5" />
-                Fluid Balance
-              </TabsTrigger>
+              {showFluidTab ? (
+                <TabsTrigger value="fluids" className="font-mono text-xs">
+                  <Droplets className="mr-1.5 h-3.5 w-3.5" />
+                  Fluid Balance
+                </TabsTrigger>
+              ) : null}
             </TabsList>
 
             <TabsContent value="vitals" className="space-y-6">
@@ -263,7 +267,7 @@ export default function TrendReviewSlideOver({
               ) : formattedVitals.length === 0 ? (
                 <EmptyState
                   title="No vitals in this scope"
-                  body="No vital-sign observations were found for the current visit scope. Record vitals first, then return here to review the trend."
+                  body={`No vital-sign observations were found for ${scopeLabel.toLowerCase()}. Record vitals in the chronicle, then return here to review the trend.`}
                 />
               ) : (
                 <>
@@ -301,6 +305,7 @@ export default function TrendReviewSlideOver({
                           series={[{ key: 'temperature', label: 'Temperature', color: '#dc2626' }]}
                           unit="°C"
                           yDomain={[35, 41]}
+                          yAxisLabel="Temperature (°C)"
                           referenceLines={[
                             { value: 36, label: 'Low', color: '#f59e0b' },
                             { value: 39, label: 'High', color: '#dc2626' },
@@ -323,6 +328,7 @@ export default function TrendReviewSlideOver({
                           ]}
                           unit="mmHg"
                           yDomain={[40, 220]}
+                          yAxisLabel="Blood Pressure (mmHg)"
                           referenceLines={[
                             { value: 90, label: 'Low', color: '#f59e0b' },
                             { value: 180, label: 'High', color: '#dc2626' },
@@ -346,6 +352,7 @@ export default function TrendReviewSlideOver({
                             series={[{ key: 'heartRate', label: 'Heart Rate', color: '#be123c' }]}
                             unit="bpm"
                             yDomain={[20, 220]}
+                            yAxisLabel="Heart Rate (bpm)"
                           />
                         </div>
                         <div>
@@ -357,6 +364,7 @@ export default function TrendReviewSlideOver({
                             series={[{ key: 'respiratoryRate', label: 'Respiratory Rate', color: '#9333ea' }]}
                             unit="/min"
                             yDomain={[0, 60]}
+                            yAxisLabel="Respiratory Rate (/min)"
                           />
                         </div>
                       </CardContent>
@@ -377,6 +385,7 @@ export default function TrendReviewSlideOver({
                             series={[{ key: 'oxygenSaturation', label: 'SpO2', color: '#0f766e' }]}
                             unit="%"
                             yDomain={[80, 100]}
+                            yAxisLabel="SpO2 (%)"
                             referenceLines={[
                               { value: 92, label: 'Low', color: '#dc2626' },
                             ]}
@@ -391,6 +400,7 @@ export default function TrendReviewSlideOver({
                             series={[{ key: 'painLevel', label: 'Pain', color: '#ea580c' }]}
                             unit="/10"
                             yDomain={[0, 10]}
+                            yAxisLabel="Pain (/10)"
                           />
                         </div>
                       </CardContent>
@@ -400,18 +410,14 @@ export default function TrendReviewSlideOver({
               )}
             </TabsContent>
 
-            <TabsContent value="fluids" className="space-y-6">
-              {!allHistory && !admissionId ? (
-                <EmptyState
-                  title="Fluid balance is admission scoped"
-                  body="This patient does not have an active admission in the current visit context, so there is no fluid-balance trend to review here."
-                />
-              ) : fluidLoading ? (
+            {showFluidTab ? (
+              <TabsContent value="fluids" className="space-y-6">
+                {fluidLoading ? (
                 <LoadingState label="Loading fluid-balance trends..." />
               ) : formattedFluidTrendData.length === 0 ? (
                 <EmptyState
                   title="No fluid-balance data in this scope"
-                  body="No intake or output records were found for the current scope. Record fluid balance first, then return here to review the trend."
+                  body={`No intake or output records were found for ${scopeLabel.toLowerCase()}. Record fluid balance in the chronicle, then return here to review the trend.`}
                 />
               ) : (
                 <>
@@ -455,7 +461,8 @@ export default function TrendReviewSlideOver({
                   </Card>
                 </>
               )}
-            </TabsContent>
+              </TabsContent>
+            ) : null}
           </Tabs>
         </div>
       </div>

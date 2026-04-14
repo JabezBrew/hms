@@ -63,6 +63,8 @@ export default function ClinicalTrendLineChart({
   yDomain = null,
   referenceLines = [],
   height = 220,
+  xAxisLabel = 'Recorded time',
+  yAxisLabel = null,
 }) {
   const normalizedData = useMemo(() => (
     data
@@ -98,7 +100,7 @@ export default function ClinicalTrendLineChart({
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={normalizedData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+        <LineChart data={normalizedData} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted/70" />
           <XAxis
             type="number"
@@ -107,12 +109,25 @@ export default function ClinicalTrendLineChart({
             tick={{ fontSize: 10 }}
             tickFormatter={(value) => format(new Date(value), sameDay ? 'HH:mm' : 'MMM d')}
             className="text-muted-foreground"
+            label={xAxisLabel ? {
+              value: xAxisLabel,
+              position: 'insideBottom',
+              offset: -12,
+              fontSize: 10,
+            } : undefined}
           />
           <YAxis
             domain={resolvedYDomain}
             tick={{ fontSize: 10 }}
             className="text-muted-foreground"
-            width={44}
+            width={56}
+            label={yAxisLabel ? {
+              value: yAxisLabel,
+              angle: -90,
+              position: 'insideLeft',
+              fontSize: 10,
+              offset: 2,
+            } : undefined}
           />
           <Tooltip
             contentStyle={{
