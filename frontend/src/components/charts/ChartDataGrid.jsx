@@ -31,7 +31,7 @@ const ChartDataGrid = ({
     shouldFetchAssignment ? assignmentId : null,
   );
   const { data: entriesData, isLoading: entriesLoading } = useChartEntries({
-    assignment: assignmentId,
+    assignment: shouldFetchEntries ? assignmentId : null,
     ...dateRange,
     include_data: true,
     ordering: '-observation_datetime',

@@ -4,7 +4,6 @@ from django.dispatch import receiver
 
 from apps.charts.models import ChartEntry
 from apps.charts.seeding import ensure_system_templates_for_facility
-from apps.charts.tasks import sync_chart_entry_timeline_event
 from apps.core.models import Facility
 
 @receiver(post_save, sender=Facility)
@@ -20,7 +19,11 @@ def seed_system_chart_templates(sender, instance, created, raw=False, **kwargs):
 
 @receiver(post_save, sender=ChartEntry)
 def sync_chart_entry_to_timeline(sender, instance, created, **kwargs):
-    transaction.on_commit(lambda: sync_chart_entry_timeline_event.delay(str(instance.id)))
+    def _dispatch():
+        from apps.charts.tasks import sync_chart_entry_timeline_event
+        sync_chart_entry_timeline_event.delay(str(instance.id))
+
+    transaction.on_commit(_dispatch)
 
 
 @receiver(post_delete, sender=ChartEntry)

@@ -70,6 +70,7 @@ def _apply_scope_filters(queryset, request):
         visit_scope_q |= Q(template__scope_type='admission', admission_id=admission_id)
 
     if visit_scope_q:
+        visit_scope_q |= Q(template__scope_type='patient')
         return queryset.filter(visit_scope_q)
 
     return queryset
@@ -662,7 +663,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            assignment = ChartAssignment.objects.get(id=assignment_id)
+            assignment = ChartAssignment.objects.select_related(
+                'template', 'patient'
+            ).prefetch_related('template__fields').get(id=assignment_id)
         except ChartAssignment.DoesNotExist:
             return Response(
                 {"error": "Assignment not found"},
@@ -701,7 +704,9 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            assignment = ChartAssignment.objects.get(id=assignment_id)
+            assignment = ChartAssignment.objects.select_related(
+                'template', 'patient'
+            ).prefetch_related('template__fields').get(id=assignment_id)
         except ChartAssignment.DoesNotExist:
             return Response(
                 {"error": "Assignment not found"},

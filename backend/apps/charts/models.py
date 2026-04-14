@@ -438,6 +438,18 @@ class ChartAssignment(models.Model):
             self.encounter = None
             self.admission = None
 
+    def save(self, **kwargs):
+        if self.template_id:
+            scope = self.template.scope_type
+            if scope == 'encounter':
+                self.admission = None
+            elif scope == 'admission':
+                self.encounter = None
+            elif scope == 'patient':
+                self.encounter = None
+                self.admission = None
+        super().save(**kwargs)
+
     @property
     def effective_interval(self):
         """Return the monitoring interval to use (override or template default)."""

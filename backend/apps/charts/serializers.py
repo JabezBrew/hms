@@ -430,7 +430,7 @@ class ChartAssignmentCreateSerializer(serializers.ModelSerializer):
         admission = data.get('admission')
         encounter = data.get('encounter')
 
-        if admission and admission.patient != patient:
+        if admission and admission.patient_id != patient.id:
             raise serializers.ValidationError(
                 {"admission": "Admission does not belong to selected patient"}
             )

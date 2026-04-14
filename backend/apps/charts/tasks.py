@@ -54,7 +54,13 @@ def _summarize_chart_entry(entry):
     return " | ".join(display_parts)
 
 
-@shared_task(bind=True, ignore_result=True)
+@shared_task(
+    bind=True,
+    ignore_result=True,
+    autoretry_for=(Exception,),
+    max_retries=3,
+    default_retry_delay=30,
+)
 def sync_chart_entry_timeline_event(self, chart_entry_id):
     from apps.charts.models import ChartEntry
     from apps.clinical_notes.models import TimelineEvent

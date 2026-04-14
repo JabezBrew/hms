@@ -2,10 +2,13 @@
 Helpers for seeding facility-scoped system chart templates.
 """
 
+from django.db import transaction
+
 from apps.charts.models import ChartTemplate, ChartField
 from apps.charts.system_templates import SYSTEM_TEMPLATE_DEFINITIONS
 
 
+@transaction.atomic
 def ensure_system_templates_for_facility(facility):
     if not facility:
         return []

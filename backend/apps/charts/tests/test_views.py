@@ -367,7 +367,7 @@ class TestChartAssignmentViewSet:
             admission=admission_two,
             encounter=None,
         )
-        ChartAssignmentFactory(
+        expected_patient = ChartAssignmentFactory(
             patient=patient,
             template=patient_template,
             encounter=None,
@@ -387,7 +387,8 @@ class TestChartAssignmentViewSet:
         ids = {item['id'] for item in response.data['results']}
         assert str(expected_encounter.id) in ids
         assert str(expected_admission.id) in ids
-        assert len(ids) == 2
+        assert str(expected_patient.id) in ids
+        assert len(ids) == 3
 
     def test_list_assignments_all_history_keeps_patient_scope_records(self, api_client, authenticated_user):
         patient = PatientProfileFactory(facility=authenticated_user.primary_facility)
