@@ -1,7 +1,6 @@
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
-import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { useNavigate } from 'react-router-dom';
 import { useState } from "react";
 
@@ -11,14 +10,10 @@ import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 import { notifications } from "../../lib/notifications"
 import { MFAChallenge } from "./MFAChallenge"
-import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "@/lib/runtime-config"
 
 export function LoginForm() {
-  const defaultFacilityCode = getDefaultFacilityCode() || ""
-  const multiFacilityMode = isMultiFacilityModeEnabled()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [facilityCode, setFacilityCode] = useState(defaultFacilityCode)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const { login, mfaSession } = useAuth()
@@ -33,7 +28,7 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      const response = await login(email, password, facilityCode);
+      const response = await login(email.trim(), password);
       if (response?.mfaRequired) {
         return;
       }
@@ -84,31 +79,6 @@ export function LoginForm() {
               className="h-11"
             />
           </div>
-
-          {multiFacilityMode && (
-            <div className="space-y-2">
-              <Label htmlFor="facility-code" className="text-sm font-medium">
-                Facility Code
-              </Label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  id="facility-code"
-                  placeholder="MAIN"
-                  autoCapitalize="characters"
-                  autoComplete="organization"
-                  disabled={isLoading}
-                  value={facilityCode}
-                  onChange={(e) => setFacilityCode(e.target.value.toUpperCase())}
-                  className="h-11 pl-9 font-mono tracking-wider"
-                  required={multiFacilityMode}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Required for multi-facility deployments
-              </p>
-            </div>
-          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

@@ -294,6 +294,37 @@ describe('AuthProvider', () => {
       })
     })
 
+    it('stores the inferred facility code returned by the server', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+      authApi.login.mockResolvedValue({
+        access: 'access-token-123',
+        user: {
+          id: 'user-123',
+          email: 'doctor@test.com',
+          user_type: 'doctor',
+          facility_code: 'SATELLITE',
+        },
+      })
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      await user.click(screen.getByText('Login'))
+
+      await waitFor(() => {
+        const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
+        expect(storedUser.facilityCode).toBe('SATELLITE')
+      })
+    })
+
     it('stores first-login password change requirement in auth state', async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 

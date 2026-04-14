@@ -20,6 +20,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.audit.models import AuditAction
+from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.models import PasswordResetToken
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -192,6 +193,63 @@ class TestLogin:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['access_context']['offsite_mode'] == 'readonly'
         assert response.data['access_context']['is_offsite'] is True
+
+    def test_login_infers_primary_facility_for_multi_facility_user(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='LOGINA')
+        facility_b = DefaultFacilityFactory(code='LOGINB')
+        user = DoctorUserFactory(
+            email='multifacility@test.com',
+            password='testpass',
+            primary_facility=facility_b,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['facility_code'] == facility_b.code
+
+    def test_login_infers_primary_facility_for_multi_facility_admin(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='ADMINA')
+        facility_b = DefaultFacilityFactory(code='ADMINB')
+        user = AdminUserFactory(
+            email='multiadmin@test.com',
+            password='testpass',
+            primary_facility=facility_a,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['facility_code'] == facility_a.code
+
+    def test_login_requires_facility_when_multi_facility_user_has_no_primary(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='NOPRIMA')
+        facility_b = DefaultFacilityFactory(code='NOPRIMB')
+        user = DoctorUserFactory(
+            email='noprimary@test.com',
+            password='testpass',
+            primary_facility=None,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data['code'] == 'facility_required'
 
     @patch('apps.core.models.OffSiteAccessSettings.get_settings', side_effect=Exception("settings unavailable"))
     @patch('apps.core.models.SiteNetwork.is_ip_on_site', side_effect=Exception("network lookup unavailable"))

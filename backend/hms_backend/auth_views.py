@@ -13,10 +13,10 @@ from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
-from .jwt_serializers import resolve_user_facility_code
+from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
 from .tenancy import facility_context, set_current_facility_code
 from .auth_utils import build_auth_response, get_access_context
-from apps.core.security import get_user_facility_codes, normalize_facility_code
+from apps.core.security import normalize_facility_code
 from apps.core.models import Facility
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction
@@ -91,19 +91,12 @@ class CookieTokenRefreshView(APIView):
 
         facility_code = requested_facility or token_facility
         if not facility_code and settings.FACILITY_CONTEXT_REQUIRED and not settings.DEFAULT_FACILITY_CODE:
-            if getattr(settings, 'MULTI_FACILITY_MODE', False) and token_user_id:
+            if token_user_id:
                 from django.contrib.auth import get_user_model
 
                 User = get_user_model()
                 user = User.objects.filter(id=token_user_id).first()
-                allowed_codes = get_user_facility_codes(user) if user else set()
-                if len(allowed_codes) > 1:
-                    return Response(
-                        {'detail': 'Facility code is required.', 'code': 'facility_required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                if len(allowed_codes) == 1:
-                    facility_code = next(iter(allowed_codes))
+                facility_code = resolve_user_facility_code(user)
             if not facility_code:
                 return Response(
                     {'detail': 'Facility code is required.', 'code': 'facility_required'},
@@ -121,6 +114,20 @@ class CookieTokenRefreshView(APIView):
         try:
             serializer.is_valid(raise_exception=True)
             response_data = serializer.validated_data
+
+            if token_user_id and getattr(request, 'facility_code', None):
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+                user = User.objects.filter(id=token_user_id).first()
+                if user:
+                    rotated_tokens = get_tokens_for_user(
+                        user,
+                        facility_code=request.facility_code,
+                    )
+                    response_data['access'] = rotated_tokens['access']
+                    if 'refresh' in response_data:
+                        response_data['refresh'] = rotated_tokens['refresh']
 
             response = Response({
                 'access': response_data['access']
@@ -350,58 +357,12 @@ class LoginView(APIView):
                 {"password": ["This field is required."]},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if settings.FACILITY_CONTEXT_REQUIRED and not requested_facility and not settings.DEFAULT_FACILITY_CODE:
-            self._log_login_failure(
-                request,
-                email=email,
-                details="Facility code required.",
-            )
-            return Response(
-                {'detail': 'Facility code is required.', 'code': 'facility_required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         user = authenticate(request, username=email, password=password)
 
         if user is not None:
-            allowed_codes = get_user_facility_codes(user)
-            allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
-            default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
-            if requested_facility:
-                is_admin = user.user_type == 'admin'
-                if allowed_codes:
-                    requested_allowed = requested_facility in allowed_codes
-                else:
-                    requested_allowed = bool(
-                        default_facility_code and requested_facility == default_facility_code
-                    )
-                if not requested_allowed and not (allow_cross_facility and is_admin):
-                    self._log_login_failure(
-                        request,
-                        email=email,
-                        user=user,
-                        details=f"Facility access denied for {requested_facility}.",
-                        facility_code=requested_facility,
-                    )
-                    return Response(
-                        {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            if (not requested_facility and allowed_codes and len(allowed_codes) > 1
-                    and getattr(settings, 'MULTI_FACILITY_MODE', False)):
-                self._log_login_failure(
-                    request,
-                    email=email,
-                    user=user,
-                    details="Facility code required for multi-facility user.",
-                )
-                return Response(
-                    {'detail': 'Facility code is required.', 'code': 'facility_required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
             facility_code = resolve_user_facility_code(user, requested_facility)
-            if requested_facility and facility_code != requested_facility:
+
+            if requested_facility and not facility_code:
                 self._log_login_failure(
                     request,
                     email=email,
@@ -412,6 +373,18 @@ class LoginView(APIView):
                 return Response(
                     {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
                     status=status.HTTP_403_FORBIDDEN
+                )
+
+            if settings.FACILITY_CONTEXT_REQUIRED and not facility_code:
+                self._log_login_failure(
+                    request,
+                    email=email,
+                    user=user,
+                    details="Facility code required because no primary facility could be resolved.",
+                )
+                return Response(
+                    {'detail': 'Facility code is required.', 'code': 'facility_required'},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
             if facility_code:
                 set_current_facility_code(facility_code)
