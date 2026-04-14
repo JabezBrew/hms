@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import { format } from 'date-fns';
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -25,11 +27,7 @@ function deriveXDomain(data) {
   return ['dataMin', 'dataMax'];
 }
 
-function deriveYDomain(data, series, explicitDomain) {
-  if (explicitDomain) {
-    return explicitDomain;
-  }
-
+function deriveYDomain(data, series, normalRange) {
   const values = [];
   data.forEach((point) => {
     series.forEach(({ key }) => {
@@ -39,6 +37,11 @@ function deriveYDomain(data, series, explicitDomain) {
       }
     });
   });
+
+  // Include normal range bounds so the band is always visible
+  if (normalRange) {
+    values.push(normalRange.low, normalRange.high);
+  }
 
   if (!values.length) {
     return ['auto', 'auto'];
@@ -53,18 +56,24 @@ function deriveYDomain(data, series, explicitDomain) {
 
   const range = max - min;
   const pad = Math.max(range * 0.12, 1);
-  return [min - pad, max + pad];
+  return [
+    Math.floor(min - pad),
+    Math.ceil(max + pad),
+  ];
 }
+
+const DENSE_THRESHOLD = 15;
 
 export default function ClinicalTrendLineChart({
   data = [],
   series = [],
   unit = '',
-  yDomain = null,
+  normalRange = null,
   referenceLines = [],
   height = 220,
   xAxisLabel = 'Recorded time',
   yAxisLabel = null,
+  showLegend = false,
 }) {
   const normalizedData = useMemo(() => (
     data
@@ -73,6 +82,7 @@ export default function ClinicalTrendLineChart({
   ), [data]);
 
   const hasData = normalizedData.length > 0 && series.length > 0;
+  const isDense = normalizedData.length >= DENSE_THRESHOLD;
 
   const sameDay = useMemo(() => {
     if (normalizedData.length < 2) {
@@ -85,8 +95,8 @@ export default function ClinicalTrendLineChart({
 
   const xDomain = useMemo(() => deriveXDomain(normalizedData), [normalizedData]);
   const resolvedYDomain = useMemo(
-    () => deriveYDomain(normalizedData, series, yDomain),
-    [normalizedData, series, yDomain],
+    () => deriveYDomain(normalizedData, series, normalRange),
+    [normalizedData, series, normalRange],
   );
 
   if (!hasData) {
@@ -100,7 +110,7 @@ export default function ClinicalTrendLineChart({
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={normalizedData} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}>
+        <LineChart data={normalizedData} margin={{ top: 8, right: 12, left: 0, bottom: showLegend ? 8 : 24 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted/70" />
           <XAxis
             type="number"
@@ -139,6 +149,25 @@ export default function ClinicalTrendLineChart({
             labelFormatter={(value) => format(new Date(value), 'MMM d, yyyy HH:mm')}
             formatter={(value, name) => [`${value}${unit ? ` ${unit}` : ''}`, name]}
           />
+          {showLegend && (
+            <Legend
+              verticalAlign="top"
+              height={28}
+              iconType="line"
+              wrapperStyle={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}
+            />
+          )}
+          {normalRange && (
+            <ReferenceArea
+              y1={normalRange.low}
+              y2={normalRange.high}
+              fill="#10b981"
+              fillOpacity={0.08}
+              stroke="#10b981"
+              strokeOpacity={0.15}
+              strokeDasharray="3 3"
+            />
+          )}
           {referenceLines.map((line) => (
             <ReferenceLine
               key={`${line.label}-${line.value}`}
@@ -151,12 +180,12 @@ export default function ClinicalTrendLineChart({
           {series.map((entry) => (
             <Line
               key={entry.key}
-              type="linear"
+              type="monotoneX"
               dataKey={entry.key}
               name={entry.label}
               stroke={entry.color}
               strokeWidth={2}
-              dot={{ r: 3 }}
+              dot={isDense ? false : { r: 3 }}
               activeDot={{ r: 5 }}
               connectNulls={false}
             />

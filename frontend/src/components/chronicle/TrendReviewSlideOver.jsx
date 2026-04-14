@@ -293,23 +293,19 @@ export default function TrendReviewSlideOver({
                     />
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="space-y-4">
                     <Card>
                       <CardHeader>
                         <CardTitle className="font-heading text-base">Temperature</CardTitle>
-                        <CardDescription>Spot fever and hypothermia changes over time.</CardDescription>
+                        <CardDescription>Normal range 36.1 – 38.0 °C</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <ClinicalTrendLineChart
                           data={formattedVitals}
                           series={[{ key: 'temperature', label: 'Temperature', color: '#dc2626' }]}
                           unit="°C"
-                          yDomain={[35, 41]}
-                          yAxisLabel="Temperature (°C)"
-                          referenceLines={[
-                            { value: 36, label: 'Low', color: '#f59e0b' },
-                            { value: 39, label: 'High', color: '#dc2626' },
-                          ]}
+                          yAxisLabel="°C"
+                          normalRange={{ low: 36.1, high: 38.0 }}
                         />
                       </CardContent>
                     </Card>
@@ -317,7 +313,7 @@ export default function TrendReviewSlideOver({
                     <Card>
                       <CardHeader>
                         <CardTitle className="font-heading text-base">Blood Pressure</CardTitle>
-                        <CardDescription>Systolic and diastolic are plotted separately.</CardDescription>
+                        <CardDescription>Systolic normal 90 – 140 mmHg · Diastolic normal 60 – 90 mmHg</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <ClinicalTrendLineChart
@@ -327,82 +323,73 @@ export default function TrendReviewSlideOver({
                             { key: 'diastolic', label: 'Diastolic', color: '#60a5fa' },
                           ]}
                           unit="mmHg"
-                          yDomain={[40, 220]}
-                          yAxisLabel="Blood Pressure (mmHg)"
-                          referenceLines={[
-                            { value: 90, label: 'Low', color: '#f59e0b' },
-                            { value: 180, label: 'High', color: '#dc2626' },
-                          ]}
+                          yAxisLabel="mmHg"
+                          normalRange={{ low: 60, high: 140 }}
+                          showLegend
                         />
                       </CardContent>
                     </Card>
 
                     <Card>
                       <CardHeader>
-                        <CardTitle className="font-heading text-base">Cardiorespiratory</CardTitle>
-                        <CardDescription>Heart rate and respiratory rate trends.</CardDescription>
+                        <CardTitle className="font-heading text-base">Heart Rate</CardTitle>
+                        <CardDescription>Normal range 60 – 100 bpm</CardDescription>
                       </CardHeader>
-                      <CardContent className="space-y-5">
-                        <div>
-                          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                            Heart Rate
-                          </p>
-                          <ClinicalTrendLineChart
-                            data={formattedVitals}
-                            series={[{ key: 'heartRate', label: 'Heart Rate', color: '#be123c' }]}
-                            unit="bpm"
-                            yDomain={[20, 220]}
-                            yAxisLabel="Heart Rate (bpm)"
-                          />
-                        </div>
-                        <div>
-                          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                            Respiratory Rate
-                          </p>
-                          <ClinicalTrendLineChart
-                            data={formattedVitals}
-                            series={[{ key: 'respiratoryRate', label: 'Respiratory Rate', color: '#9333ea' }]}
-                            unit="/min"
-                            yDomain={[0, 60]}
-                            yAxisLabel="Respiratory Rate (/min)"
-                          />
-                        </div>
+                      <CardContent>
+                        <ClinicalTrendLineChart
+                          data={formattedVitals}
+                          series={[{ key: 'heartRate', label: 'Heart Rate', color: '#be123c' }]}
+                          unit="bpm"
+                          yAxisLabel="bpm"
+                          normalRange={{ low: 60, high: 100 }}
+                        />
                       </CardContent>
                     </Card>
 
                     <Card>
                       <CardHeader>
-                        <CardTitle className="font-heading text-base">Oxygenation and Pain</CardTitle>
-                        <CardDescription>SpO2 and pain scale over the same clinical window.</CardDescription>
+                        <CardTitle className="font-heading text-base">Respiratory Rate</CardTitle>
+                        <CardDescription>Normal range 12 – 20 /min</CardDescription>
                       </CardHeader>
-                      <CardContent className="space-y-5">
-                        <div>
-                          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                            Oxygen Saturation
-                          </p>
-                          <ClinicalTrendLineChart
-                            data={formattedVitals}
-                            series={[{ key: 'oxygenSaturation', label: 'SpO2', color: '#0f766e' }]}
-                            unit="%"
-                            yDomain={[80, 100]}
-                            yAxisLabel="SpO2 (%)"
-                            referenceLines={[
-                              { value: 92, label: 'Low', color: '#dc2626' },
-                            ]}
-                          />
-                        </div>
-                        <div>
-                          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                            Pain Score
-                          </p>
-                          <ClinicalTrendLineChart
-                            data={formattedVitals}
-                            series={[{ key: 'painLevel', label: 'Pain', color: '#ea580c' }]}
-                            unit="/10"
-                            yDomain={[0, 10]}
-                            yAxisLabel="Pain (/10)"
-                          />
-                        </div>
+                      <CardContent>
+                        <ClinicalTrendLineChart
+                          data={formattedVitals}
+                          series={[{ key: 'respiratoryRate', label: 'Respiratory Rate', color: '#9333ea' }]}
+                          unit="/min"
+                          yAxisLabel="/min"
+                          normalRange={{ low: 12, high: 20 }}
+                        />
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="font-heading text-base">Oxygen Saturation</CardTitle>
+                        <CardDescription>Normal range 94 – 100%</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ClinicalTrendLineChart
+                          data={formattedVitals}
+                          series={[{ key: 'oxygenSaturation', label: 'SpO2', color: '#0f766e' }]}
+                          unit="%"
+                          yAxisLabel="%"
+                          normalRange={{ low: 94, high: 100 }}
+                        />
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="font-heading text-base">Pain Score</CardTitle>
+                        <CardDescription>Subjective 0 – 10 scale</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ClinicalTrendLineChart
+                          data={formattedVitals}
+                          series={[{ key: 'painLevel', label: 'Pain', color: '#ea580c' }]}
+                          unit="/10"
+                          yAxisLabel="/10"
+                        />
                       </CardContent>
                     </Card>
                   </div>
