@@ -35,19 +35,22 @@ export const chartKeys = {
 
   assignments: () => keyWith('charts', 'assignments'),
   assignmentList: (filters) => keyWith('charts', 'assignments', 'list', filters),
-  assignmentListParams: (patient, admission, template, status) =>
-    keyWith('charts', 'assignments', 'list', patient, admission, template, status),
-  assignmentPaginatedList: (patient, admission, template, status, ordering, page, pageSize) =>
-    keyWith('charts', 'assignments', 'paginated-list', patient, admission, template, status, ordering, page, pageSize),
+  assignmentListParams: (patient, admission, encounterId, template, status, scopeType, allHistory) =>
+    keyWith('charts', 'assignments', 'list', patient, admission, encounterId, template, status, scopeType, allHistory),
+  assignmentPaginatedList: (patient, admission, encounterId, template, status, scopeType, allHistory, ordering, page, pageSize) =>
+    keyWith('charts', 'assignments', 'paginated-list', patient, admission, encounterId, template, status, scopeType, allHistory, ordering, page, pageSize),
   assignmentDetail: (id) => keyWith('charts', 'assignments', 'detail', id),
-  assignmentsByPatient: (patientId, status) => keyWith('charts', 'assignments', 'patient', patientId, status),
+  assignmentsByPatient: (patientId, status, admissionId, encounterId, scopeType, allHistory) =>
+    keyWith('charts', 'assignments', 'patient', patientId, status, admissionId, encounterId, scopeType, allHistory),
 
   entries: () => keyWith('charts', 'entries'),
   entryList: (filters) => keyWith('charts', 'entries', 'list', filters),
   entryDetail: (id) => keyWith('charts', 'entries', 'detail', id),
-  entrySummary: (assignmentId) => keyWith('charts', 'entries', 'summary', assignmentId),
-  entryTrends: (assignmentId, fieldKey) => keyWith('charts', 'entries', 'trends', assignmentId, fieldKey),
-  entriesByPatient: (patientId) => keyWith('charts', 'entries', 'patient', patientId),
+  entrySummary: (assignmentId, startDate, endDate) => keyWith('charts', 'entries', 'summary', assignmentId, startDate, endDate),
+  entryTrends: (assignmentId, fieldKey, component, startDate, endDate, limit) =>
+    keyWith('charts', 'entries', 'trends', assignmentId, fieldKey, component, startDate, endDate, limit),
+  entriesByPatient: (patientId, templateId, admissionId, encounterId, allHistory) =>
+    keyWith('charts', 'entries', 'patient', patientId, templateId, admissionId, encounterId, allHistory),
 };
 
 function normalizeIdentifier(value) {
@@ -493,20 +496,23 @@ export function useReorderChartFields() {
  */
 export function useChartAssignments(filters = {}, options = {}) {
   // Extract filter values to use as stable primitives in query key
-  const { patient, admission, template, status, page_size, ordering } = filters;
+  const { patient, admission, encounter_id, template, status, page_size, ordering, scope_type, all_history } = filters;
   const { enabled = true } = options;
   const params = new URLSearchParams();
 
   if (patient) params.append('patient', patient);
   if (admission) params.append('admission', admission);
+  if (encounter_id) params.append('encounter_id', encounter_id);
   if (template) params.append('template', template);
   if (status) params.append('status', status);
+  if (scope_type) params.append('scope_type', scope_type);
+  if (all_history) params.append('all_history', 'true');
   if (page_size) params.append('page_size', page_size);
   if (ordering) params.append('ordering', ordering);
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: keyWith('charts', 'assignments', 'list', patient, admission, template, status, page_size, ordering),
+    queryKey: keyWith('charts', 'assignments', 'list', patient, admission, encounter_id, template, status, scope_type, all_history, page_size, ordering),
     queryFn: async () => {
       return await apiClient.get(`/charts/assignments/?${params.toString()}`);
     },
@@ -520,8 +526,11 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
   const {
     patient,
     admission,
+    encounter_id,
     template,
     status,
+    scope_type,
+    all_history = false,
     ordering = '-created_at',
     page = 1,
     page_size = 12,
@@ -531,8 +540,11 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
 
   if (patient) params.append('patient', patient);
   if (admission) params.append('admission', admission);
+  if (encounter_id) params.append('encounter_id', encounter_id);
   if (template) params.append('template', template);
   if (status && status !== 'all') params.append('status', status);
+  if (scope_type) params.append('scope_type', scope_type);
+  if (all_history) params.append('all_history', 'true');
   if (ordering) params.append('ordering', ordering);
   params.append('page', String(page));
   params.append('page_size', String(page_size));
@@ -541,8 +553,11 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
     queryKey: chartKeys.assignmentPaginatedList(
       patient,
       admission,
+      encounter_id,
       template,
       status,
+      scope_type,
+      all_history,
       ordering,
       page,
       page_size,
@@ -600,12 +615,23 @@ export function useChartAssignment(assignmentId) {
 /**
  * Fetch all chart assignments for a patient
  */
-export function usePatientChartAssignments(patientId, status = 'active') {
+export function usePatientChartAssignments(patientId, status = 'active', filters = {}) {
   return useQuery({
-    queryKey: chartKeys.assignmentsByPatient(patientId, status),
+    queryKey: chartKeys.assignmentsByPatient(
+      patientId,
+      status,
+      filters.admission_id,
+      filters.encounter_id,
+      filters.scope_type,
+      filters.all_history,
+    ),
     queryFn: async () => {
       const params = new URLSearchParams({ patient_id: patientId });
       if (status) params.append('status', status);
+      if (filters.admission_id) params.append('admission_id', filters.admission_id);
+      if (filters.encounter_id) params.append('encounter_id', filters.encounter_id);
+      if (filters.scope_type) params.append('scope_type', filters.scope_type);
+      if (filters.all_history) params.append('all_history', 'true');
 
       return await apiClient.get(`/charts/assignments/by-patient/?${params.toString()}`);
     },
@@ -800,6 +826,8 @@ export function useChartEntries(filters = {}) {
   if (filters.assignment) params.append('assignment', filters.assignment);
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
+  if (filters.encounter_id) params.append('encounter_id', filters.encounter_id);
+  if (filters.admission_id) params.append('admission_id', filters.admission_id);
   if (filters.ordering) params.append('ordering', filters.ordering);
   if (filters.has_critical_values !== undefined) {
     params.append('has_critical_values', filters.has_critical_values);
@@ -836,7 +864,7 @@ export function useChartEntry(entryId) {
  */
 export function useChartEntrySummary(assignmentId, dateRange = {}) {
   return useQuery({
-    queryKey: chartKeys.entrySummary(assignmentId),
+    queryKey: chartKeys.entrySummary(assignmentId, dateRange.start_date, dateRange.end_date),
     queryFn: async () => {
       const params = new URLSearchParams({ assignment_id: assignmentId });
       if (dateRange.start_date) params.append('start_date', dateRange.start_date);
@@ -851,15 +879,24 @@ export function useChartEntrySummary(assignmentId, dateRange = {}) {
 /**
  * Fetch trend data for a specific field
  */
-export function useChartEntryTrends(assignmentId, fieldKey, limit = 50) {
+export function useChartEntryTrends(assignmentId, fieldKey, options = {}) {
+  const {
+    limit = 50,
+    component,
+    start_date,
+    end_date,
+  } = options;
   return useQuery({
-    queryKey: chartKeys.entryTrends(assignmentId, fieldKey),
+    queryKey: chartKeys.entryTrends(assignmentId, fieldKey, component, start_date, end_date, limit),
     queryFn: async () => {
       const params = new URLSearchParams({
         assignment_id: assignmentId,
         field_key: fieldKey,
         limit: limit.toString(),
       });
+      if (component) params.append('component', component);
+      if (start_date) params.append('start_date', start_date);
+      if (end_date) params.append('end_date', end_date);
 
       return await apiClient.get(`/charts/entries/trends/?${params.toString()}`);
     },
@@ -872,10 +909,19 @@ export function useChartEntryTrends(assignmentId, fieldKey, limit = 50) {
  */
 export function usePatientChartEntries(patientId, filters = {}) {
   return useQuery({
-    queryKey: chartKeys.entriesByPatient(patientId),
+    queryKey: chartKeys.entriesByPatient(
+      patientId,
+      filters.template_id,
+      filters.admission_id,
+      filters.encounter_id,
+      filters.all_history,
+    ),
     queryFn: async () => {
       const params = new URLSearchParams({ patient_id: patientId });
       if (filters.template_id) params.append('template_id', filters.template_id);
+      if (filters.admission_id) params.append('admission_id', filters.admission_id);
+      if (filters.encounter_id) params.append('encounter_id', filters.encounter_id);
+      if (filters.all_history) params.append('all_history', 'true');
       if (filters.limit) params.append('limit', filters.limit.toString());
 
       return await apiClient.get(`/charts/entries/by-patient/?${params.toString()}`);

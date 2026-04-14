@@ -15,6 +15,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
 import { useChartEntries, useChartAssignment } from "@/features/charts/hooks";
+import { formatBodyMapValue } from "./bodyMapUtils";
 
 const ChartDataGrid = ({
   assignmentId,
@@ -83,6 +84,9 @@ const ChartDataGrid = ({
 
       case 'boolean':
         return value ? 'Yes' : 'No';
+
+      case 'body_map':
+        return formatBodyMapValue(value);
 
       case 'select':
       case 'scale':

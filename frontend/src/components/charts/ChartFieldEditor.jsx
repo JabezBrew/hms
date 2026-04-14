@@ -14,6 +14,7 @@ import Columns2 from 'lucide-react/dist/esm/icons/columns-2.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import ToggleLeft from 'lucide-react/dist/esm/icons/toggle-left.js';
 import Gauge from 'lucide-react/dist/esm/icons/gauge.js';
+import MapPinned from 'lucide-react/dist/esm/icons/map-pinned.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
@@ -56,6 +57,7 @@ const FIELD_TYPES = [
   { value: 'paired', label: 'Paired', icon: Columns2, description: 'Two linked values (e.g., BP)' },
   { value: 'time', label: 'Time', icon: Clock, description: 'Time picker' },
   { value: 'boolean', label: 'Yes/No', icon: ToggleLeft, description: 'Toggle switch' },
+  { value: 'body_map', label: 'Body Map', icon: MapPinned, description: 'Structured body location selector' },
 ];
 
 const ChartFieldEditor = ({
@@ -315,6 +317,9 @@ const ChartFieldEditor = ({
                 <p className="text-sm text-muted-foreground">
                   No additional configuration needed for Yes/No fields.
                 </p>
+              )}
+              {formData.field_type === 'body_map' && (
+                <BodyMapConfig config={formData.config} updateConfig={updateConfig} />
               )}
               {formData.field_type === 'time' && (
                 <p className="text-sm text-muted-foreground">
@@ -698,6 +703,31 @@ const PairedConfig = ({ config, updateConfig }) => {
     </div>
   );
 };
+
+const BodyMapConfig = ({ config, updateConfig }) => (
+  <div className="space-y-4">
+    <div className="space-y-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Mode
+      </Label>
+      <Select
+        value={config.mode || 'pain'}
+        onValueChange={(value) => updateConfig('mode', value)}
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="z-[200]">
+          <SelectItem value="pain" className="font-mono">Pain Mapping</SelectItem>
+          <SelectItem value="wound" className="font-mono">Wound Mapping</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    <p className="text-sm text-muted-foreground">
+      Body-map fields store a structured surface, side, region, and free-text marker label for review workflows.
+    </p>
+  </div>
+);
 
 const CriticalRangeConfig = ({ config, updateConfig }) => (
   <div className="space-y-4">

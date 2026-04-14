@@ -21,6 +21,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useChartAssignment, usePaginatedChartAssignments } from '@/features/charts/hooks';
 import { ChartDataGrid } from './ChartDataGrid';
+import { LazyChartTrendGraph } from './LazyChartTrendGraph';
+import { ChartBodyMapReview } from './ChartBodyMapReview';
 
 const STATUS_BADGE_CLASS = {
   active: 'bg-emerald-600 text-white',
@@ -43,6 +45,9 @@ const ChartHistorySlideOver = ({
   onClose,
   patient,
   initialAssignmentId = null,
+  encounterId = null,
+  admissionId = null,
+  allHistory = false,
 }) => {
   const patientId = patient?.local_data?.id || patient?.id;
   const patientName = patient?.local_data?.user_details
@@ -52,6 +57,7 @@ const ChartHistorySlideOver = ({
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(initialAssignmentId);
+  const [selectedTrendField, setSelectedTrendField] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -62,6 +68,7 @@ const ChartHistorySlideOver = ({
     setStatusFilter('all');
     setPage(1);
     setSelectedAssignmentId(null);
+    setSelectedTrendField('');
   }, [initialAssignmentId, open]);
 
   useEffect(() => {
@@ -72,6 +79,9 @@ const ChartHistorySlideOver = ({
     {
       patient: patientId,
       status: statusFilter,
+      encounter_id: encounterId,
+      admission: admissionId,
+      all_history: allHistory,
       page,
       page_size: 12,
       ordering: '-created_at',
@@ -84,6 +94,32 @@ const ChartHistorySlideOver = ({
   const { data: selectedAssignment, isLoading: selectedAssignmentLoading } = useChartAssignment(selectedAssignmentId);
 
   const assignments = useMemo(() => data?.results ?? [], [data]);
+  const chartContextLabel = allHistory
+    ? 'All history'
+    : encounterId
+      ? 'Selected visit'
+      : admissionId
+        ? 'Selected admission'
+        : 'Patient scope';
+
+  useEffect(() => {
+    const fields = selectedAssignment?.template?.fields || [];
+    const firstTrendField = fields.find((field) => ['numeric', 'scale', 'calculated'].includes(field.field_type))
+      || fields.find((field) => field.field_type === 'paired');
+
+    if (!selectedAssignmentId || !firstTrendField) {
+      setSelectedTrendField('');
+      return;
+    }
+
+    if (firstTrendField.field_type === 'paired') {
+      const defaultComponent = firstTrendField.config?.fields?.[0]?.key;
+      setSelectedTrendField(defaultComponent ? `${firstTrendField.field_key}:${defaultComponent}` : '');
+      return;
+    }
+
+    setSelectedTrendField(firstTrendField.field_key);
+  }, [selectedAssignment?.template?.fields, selectedAssignmentId]);
 
   return (
     <div
@@ -191,7 +227,13 @@ const ChartHistorySlideOver = ({
                   </div>
                 </article>
 
+                <LazyChartTrendGraph
+                  assignmentId={selectedAssignmentId}
+                  fieldKey={selectedTrendField}
+                  onFieldChange={setSelectedTrendField}
+                />
                 <ChartDataGrid assignmentId={selectedAssignmentId} />
+                <ChartBodyMapReview assignmentId={selectedAssignmentId} />
               </div>
             )}
           </ScrollArea>
@@ -205,7 +247,7 @@ const ChartHistorySlideOver = ({
                   Monitoring Records
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Review active and historical monitoring charts recorded for this patient.
+                  Review monitoring charts recorded for this patient. Current context: {chartContextLabel}.
                 </p>
               </div>
 

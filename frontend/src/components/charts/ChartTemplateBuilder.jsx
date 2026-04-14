@@ -89,6 +89,12 @@ const CATEGORY_ICONS = {
   custom: MoreHorizontal,
 };
 
+const SCOPE_OPTIONS = [
+  { value: 'encounter', label: 'Encounter', description: 'Scoped to a single clinical visit' },
+  { value: 'admission', label: 'Admission', description: 'Scoped to an inpatient admission' },
+  { value: 'patient', label: 'Patient', description: 'Longitudinal across all visits' },
+];
+
 // Visibility options
 const VISIBILITY_OPTIONS = [
   { value: "private", label: "Private", description: "Only you can see" },
@@ -225,6 +231,7 @@ const ChartTemplateBuilder = ({
     name: "",
     description: "",
     category: "custom",
+    scope_type: "patient",
     visibility: "private",
     default_interval: "hourly",
     display_mode: "table",
@@ -246,6 +253,7 @@ const ChartTemplateBuilder = ({
         name: existingTemplate.name || "",
         description: existingTemplate.description || "",
         category: existingTemplate.category || "custom",
+        scope_type: existingTemplate.scope_type || "patient",
         visibility: existingTemplate.visibility || "private",
         default_interval: existingTemplate.default_interval || "hourly",
         display_mode: existingTemplate.display_mode || "table",
@@ -370,8 +378,8 @@ const ChartTemplateBuilder = ({
       if (templateId && existingTemplate) {
         // Update existing template
         await updateMutation.mutateAsync({
-          id: templateId,
-          ...formData,
+          templateId,
+          data: formData,
         });
 
         // Handle field changes
@@ -395,14 +403,14 @@ const ChartTemplateBuilder = ({
             await updateFieldMutation.mutateAsync({
               templateId,
               fieldId: field.id,
-              ...field,
+              fieldData: field,
             });
           } else if (!field.id) {
             // Add new field
             const { temp_id, ...fieldData } = field;
             await addFieldMutation.mutateAsync({
               templateId,
-              ...fieldData,
+              fieldData,
             });
           }
         }
@@ -412,7 +420,10 @@ const ChartTemplateBuilder = ({
         if (fieldIds.length > 0) {
           await reorderFieldsMutation.mutateAsync({
             templateId,
-            fieldIds,
+            fields: fields.filter((field) => field.id).map((field, index) => ({
+              id: field.id,
+              display_order: index,
+            })),
           });
         }
 
@@ -634,6 +645,31 @@ const ChartTemplateBuilder = ({
                             className={cn(
                               "p-3 rounded-lg border text-left transition-all",
                               formData.visibility === opt.value
+                                ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                : "border-border hover:border-primary/30"
+                            )}
+                          >
+                            <p className="font-mono text-sm font-medium">{opt.label}</p>
+                            <p className="font-mono text-[10px] text-muted-foreground">
+                              {opt.description}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Scope
+                      </Label>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {SCOPE_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => updateFormField("scope_type", opt.value)}
+                            className={cn(
+                              "p-3 rounded-lg border text-left transition-all",
+                              formData.scope_type === opt.value
                                 ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                                 : "border-border hover:border-primary/30"
                             )}

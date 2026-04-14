@@ -7,6 +7,7 @@ Tests for ChartTemplate, ChartField, ChartAssignment, and ChartEntry models.
 import pytest
 from django.utils import timezone
 from datetime import timedelta
+from django.core.exceptions import ValidationError
 
 from apps.charts.models import ChartTemplate, ChartField, ChartAssignment, ChartEntry
 from apps.charts.tests.factories import (
@@ -14,6 +15,9 @@ from apps.charts.tests.factories import (
     NumericFieldFactory, SelectFieldFactory, ScaleFieldFactory, CalculatedFieldFactory,
     PairedFieldFactory, GCSTemplateFactory,
 )
+from apps.encounters.tests.factories import EncounterFactory
+from apps.users.tests.factories import PatientProfileFactory
+from apps.wards.tests.factories import AdmissionFactory
 
 
 @pytest.mark.django_db
@@ -74,6 +78,13 @@ class TestChartTemplate:
         for visibility, _ in ChartTemplate.VISIBILITY_CHOICES:
             template = ChartTemplateFactory(visibility=visibility)
             assert template.visibility == visibility
+
+    def test_scope_defaults_follow_category_and_system_key(self):
+        assert ChartTemplate.resolve_default_scope_type(system_key='vital_signs') == 'encounter'
+        assert ChartTemplate.resolve_default_scope_type(system_key='fluid_balance') == 'admission'
+        assert ChartTemplate.resolve_default_scope_type(category='pain') == 'encounter'
+        assert ChartTemplate.resolve_default_scope_type(category='neurological') == 'admission'
+        assert ChartTemplate.resolve_default_scope_type(category='custom') == 'patient'
 
 
 @pytest.mark.django_db
@@ -283,6 +294,59 @@ class TestChartAssignment:
         assignment = ChartAssignmentFactory()
         expected = f"{assignment.template.name} for {assignment.patient}"
         assert str(assignment) == expected
+
+    def test_encounter_scoped_assignment_requires_encounter(self):
+        patient = PatientProfileFactory()
+        template = ChartTemplateFactory(scope_type='encounter')
+        assignment = ChartAssignmentFactory.build(
+            template=template,
+            patient=patient,
+            admission=None,
+            encounter=None,
+            ordered_by=None,
+            created_by=None,
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            assignment.full_clean()
+
+        assert 'encounter' in exc.value.message_dict
+
+    def test_admission_scoped_assignment_requires_admission(self):
+        patient = PatientProfileFactory()
+        template = ChartTemplateFactory(scope_type='admission')
+        assignment = ChartAssignmentFactory.build(
+            template=template,
+            patient=patient,
+            admission=None,
+            encounter=None,
+            ordered_by=None,
+            created_by=None,
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            assignment.full_clean()
+
+        assert 'admission' in exc.value.message_dict
+
+    def test_patient_scoped_assignment_clears_visit_context(self):
+        patient = PatientProfileFactory()
+        encounter = EncounterFactory(patient=patient, facility=patient.facility)
+        admission = AdmissionFactory(patient=patient, facility=patient.facility)
+        template = ChartTemplateFactory(scope_type='patient')
+        assignment = ChartAssignmentFactory.build(
+            template=template,
+            patient=patient,
+            encounter=encounter,
+            admission=admission,
+            ordered_by=encounter.practitioner,
+            created_by=patient.created_by,
+        )
+
+        assignment.full_clean()
+
+        assert assignment.encounter is None
+        assert assignment.admission is None
 
 
 @pytest.mark.django_db

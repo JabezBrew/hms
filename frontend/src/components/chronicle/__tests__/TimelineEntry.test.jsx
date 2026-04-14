@@ -39,6 +39,20 @@ const noteEntry = {
   template: { id: 'template-1', title: 'Progress Note' },
 };
 
+const chartEntry = {
+  id: 'chart-1',
+  type: 'chart',
+  title: 'Vital Signs Trend Chart',
+  timestamp: '2026-04-13T11:00:00Z',
+  author: 'Nurse Ada',
+  data: {
+    template_name: 'Vital Signs Trend Chart',
+    scope_type: 'encounter',
+    notes: 'Pain improved after analgesia',
+  },
+  content: 'Blood Pressure: 124/82 | Pain Score: 3',
+};
+
 describe('TimelineEntry note expansion', () => {
   it('shows inline note controls for expandable notes', () => {
     render(
@@ -82,5 +96,14 @@ describe('TimelineEntry note expansion', () => {
     expect(onToggleNoteExpanded).toHaveBeenCalledWith('note-1');
     expect(screen.getByRole('button', { name: 'Open note' })).toBeInTheDocument();
     expect(document.getElementById('chronicle-note-body-note-1')).not.toBeInTheDocument();
+  });
+
+  it('renders chart summary entries with scope and summary content', () => {
+    render(<TimelineEntry entry={chartEntry} />);
+
+    expect(screen.getByText('Vital Signs Trend Chart')).toBeInTheDocument();
+    expect(screen.getByText('encounter')).toBeInTheDocument();
+    expect(screen.getByText('Blood Pressure: 124/82 | Pain Score: 3')).toBeInTheDocument();
+    expect(screen.getByText('Pain improved after analgesia')).toBeInTheDocument();
   });
 });

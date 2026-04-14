@@ -101,12 +101,37 @@ describe('chronicle workspace registry', () => {
     const props = buildChronicleWorkspaceProps('chartHistory', {
       patient: { id: 'patient-1' },
       selectedChartHistoryAssignmentId: 'assignment-1',
+      selectedEncounterId: 'enc-1',
+      selectedAdmissionId: 'adm-1',
+      chartsAllHistory: false,
       onChartWorkspaceClose: vi.fn(),
     });
 
     expect(props).toMatchObject({
       open: true,
       initialAssignmentId: 'assignment-1',
+      encounterId: 'enc-1',
+      admissionId: 'adm-1',
+      allHistory: false,
+    });
+  });
+
+  it('passes scoped chart context into the chart assignment workspace', () => {
+    const props = buildChronicleWorkspaceProps('charts', {
+      patient: { id: 'patient-1', local_data: { current_admission_id: 'adm-fallback' } },
+      activeEncounter: { id: 'enc-active' },
+      selectedEncounter: { id: 'enc-selected' },
+      selectedAdmissionId: 'adm-selected',
+      chartsAllHistory: true,
+      onChartWorkspaceClose: vi.fn(),
+      onChartAssigned: vi.fn(),
+    });
+
+    expect(props).toMatchObject({
+      open: true,
+      encounter: { id: 'enc-selected' },
+      admission: { id: 'adm-selected' },
+      allHistory: true,
     });
   });
 

@@ -3554,6 +3554,20 @@ def _get_patient_timeline_payload_v2(request, patient_id):
         for ref in referrals:
             source_data[('Referral', str(ref.id))] = ref
 
+    if 'ChartEntry' in events_by_model:
+        from apps.charts.models import ChartEntry
+
+        chart_entries = ChartEntry.objects.filter(
+            id__in=events_by_model['ChartEntry']
+        ).select_related(
+            'assignment__template',
+            'assignment__encounter',
+            'assignment__admission',
+            'recorded_by__staff__user',
+        )
+        for chart_entry in chart_entries:
+            source_data[('ChartEntry', str(chart_entry.id))] = chart_entry
+
     # Build response entries with full details
     results = []
     for event in paginated_events:
@@ -3605,6 +3619,8 @@ def _build_timeline_entry_v2(event, source_obj):
         return _format_lab_entry_v2(source_obj, event)
     elif event.source_model == 'Referral':
         return _format_referral_entry_v2(source_obj, event)
+    elif event.source_model == 'ChartEntry':
+        return _format_chart_entry_v2(source_obj, event)
 
     return None
 
@@ -3718,6 +3734,31 @@ def _format_vitals_entry_v2(v, event):
         'encounter_id': str(v.encounter_id) if v.encounter_id else None,
         'recorded_at': v.recorded_at.isoformat(),
         'created_at': v.created_at.isoformat(),
+    }
+
+
+def _format_chart_entry_v2(chart_entry, event):
+    assignment = chart_entry.assignment
+    template = assignment.template if assignment else None
+    return {
+        'id': str(chart_entry.id),
+        'type': 'chart',
+        'timestamp': chart_entry.observation_datetime.isoformat(),
+        'title': template.name if template else event.title,
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'is_critical': chart_entry.has_critical_values,
+        'template_name': template.name if template else event.template_title,
+        'template_system_key': getattr(template, 'system_key', ''),
+        'scope_type': getattr(template, 'scope_type', 'patient'),
+        'assignment_id': str(assignment.id) if assignment else None,
+        'encounter': _format_encounter_details(assignment.encounter if assignment else None),
+        'encounter_id': str(assignment.encounter_id) if assignment and assignment.encounter_id else None,
+        'data': chart_entry.data,
+        'notes': chart_entry.notes,
+        'created_at': chart_entry.created_at.isoformat(),
+        'updated_at': chart_entry.updated_at.isoformat(),
     }
 
 

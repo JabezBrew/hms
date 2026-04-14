@@ -124,6 +124,10 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     patientId,
     patient,
     activeEncounter,
+    selectedEncounter,
+    selectedEncounterId,
+    selectedAdmissionId,
+    chartsAllHistory,
     patientIdentityId,
     referralId,
     copilotPatientName,
@@ -232,7 +236,9 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         open: true,
         onClose: onChartWorkspaceClose,
         patient,
-        admission: getChronicleAdmissionReference(patient),
+        encounter: selectedEncounter || activeEncounter || null,
+        admission: selectedAdmissionId ? { id: String(selectedAdmissionId) } : getChronicleAdmissionReference(patient),
+        allHistory: chartsAllHistory,
         onChartAssigned,
       };
     case 'chartEntry':
@@ -249,6 +255,9 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         onClose: onChartWorkspaceClose,
         patient,
         initialAssignmentId: selectedChartHistoryAssignmentId || null,
+        encounterId: selectedEncounterId || null,
+        admissionId: selectedAdmissionId || null,
+        allHistory: chartsAllHistory,
       };
     case 'insurance':
       return {

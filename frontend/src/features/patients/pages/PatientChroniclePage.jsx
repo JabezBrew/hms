@@ -340,6 +340,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
     () => encounters?.find((encounter) => String(encounter.id) === String(selectedEncounterId)) || null,
     [encounters, selectedEncounterId]
   );
+  const chartContextEncounter = useMemo(() => {
+    if (isAllVisitsScope) {
+      return null;
+    }
+    return selectedEncounter || activeEncounter || null;
+  }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
+  const chartContextAdmissionId = chartContextEncounter?.admission_id
+    || chartContextEncounter?.admission?.id
+    || null;
   const visitScopeOptions = useMemo(() => {
     const options = [{
       value: CHRONICLE_ALL_VISITS,
@@ -501,6 +510,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
     {
       patient: patientLocalId,
       status: 'active',
+      encounter_id: chartContextEncounter?.id || undefined,
+      admission: chartContextAdmissionId || undefined,
+      all_history: isAllVisitsScope,
     },
     {
       enabled: canFetchClinical,
@@ -1052,6 +1064,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
     patientId: id,
     patient,
     activeEncounter,
+    selectedEncounter: chartContextEncounter,
+    selectedEncounterId: chartContextEncounter?.id || null,
+    selectedAdmissionId: chartContextAdmissionId,
+    chartsAllHistory: isAllVisitsScope,
     patientIdentityId,
     referralId: referralIdParam,
     copilotPatientName,
@@ -1077,6 +1093,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
     id,
     patient,
     activeEncounter,
+    chartContextEncounter,
+    chartContextAdmissionId,
+    isAllVisitsScope,
     patientIdentityId,
     referralIdParam,
     copilotPatientName,

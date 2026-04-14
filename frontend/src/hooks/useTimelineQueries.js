@@ -162,6 +162,22 @@ function normalizeTimelineEntry(entry) {
     };
   }
 
+  if (entry.type === 'chart') {
+    return {
+      ...baseEntry,
+      type: 'chart',
+      entry_type: 'chart',
+      data: {
+        assignment_id: entry.assignment_id,
+        template_name: entry.template_name || entry.title,
+        template_system_key: entry.template_system_key,
+        scope_type: entry.scope_type,
+        notes: entry.notes,
+        ...entry.data,
+      },
+    };
+  }
+
   return baseEntry;
 }
 

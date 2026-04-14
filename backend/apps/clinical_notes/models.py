@@ -580,6 +580,7 @@ class TimelineEvent(models.Model):
         ('lab', 'Lab Order'),
         ('referral', 'Referral'),
         ('fluid', 'Fluid Balance'),
+        ('chart', 'Clinical Chart'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

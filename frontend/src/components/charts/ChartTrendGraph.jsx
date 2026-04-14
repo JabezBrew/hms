@@ -41,12 +41,16 @@ const ChartTrendGraph = ({
   limit = 50,
   className,
 }) => {
+  const [resolvedFieldKey, componentKey] = (fieldKey || '').split(':');
   // Fetch assignment for template info
   const { data: assignment, isLoading: assignmentLoading } = useChartAssignment(assignmentId);
   const { data: trendData, isLoading: trendLoading } = useChartEntryTrends(
     assignmentId,
-    fieldKey,
-    limit
+    resolvedFieldKey,
+    {
+      limit,
+      component: componentKey,
+    },
   );
 
   const template = assignment?.template;
@@ -55,14 +59,26 @@ const ChartTrendGraph = ({
   const graphableFields = useMemo(() => {
     if (!template?.fields) return [];
     return template.fields.filter((f) =>
-      ['numeric', 'scale', 'calculated'].includes(f.field_type)
+      ['numeric', 'scale', 'calculated', 'paired'].includes(f.field_type)
     );
   }, [template]);
 
   // Get current field config
   const currentField = useMemo(() => {
-    return graphableFields.find((f) => f.field_key === fieldKey);
-  }, [graphableFields, fieldKey]);
+    return graphableFields.find((f) => f.field_key === resolvedFieldKey);
+  }, [graphableFields, resolvedFieldKey]);
+  const fieldOptions = useMemo(() => (
+    graphableFields.flatMap((field) => {
+      if (field.field_type !== 'paired') {
+        return [{ value: field.field_key, label: field.name }];
+      }
+
+      return (field.config?.fields || []).map((part) => ({
+        value: `${field.field_key}:${part.key}`,
+        label: `${field.name} - ${part.label}`,
+      }));
+    })
+  ), [graphableFields]);
 
   // Format trend data for chart
   const chartData = useMemo(() => {
@@ -82,8 +98,15 @@ const ChartTrendGraph = ({
     if (!currentField?.config) return null;
 
     const { critical_low, critical_high } = currentField.config;
+    if (currentField.field_type === 'paired') {
+      return {
+        low: componentKey ? critical_low?.[componentKey] : undefined,
+        high: componentKey ? critical_high?.[componentKey] : undefined,
+      };
+    }
+
     return { low: critical_low, high: critical_high };
-  }, [currentField]);
+  }, [componentKey, currentField]);
 
   const isLoading = assignmentLoading || trendLoading;
 
@@ -157,9 +180,9 @@ const ChartTrendGraph = ({
               <SelectValue placeholder="Select field" />
             </SelectTrigger>
             <SelectContent className="z-[200]">
-              {graphableFields.map((field) => (
-                <SelectItem key={field.field_key} value={field.field_key} className="font-mono">
-                  {field.name}
+              {fieldOptions.map((field) => (
+                <SelectItem key={field.value} value={field.value} className="font-mono">
+                  {field.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -169,7 +192,7 @@ const ChartTrendGraph = ({
 
       {/* Chart */}
       <div className="p-4">
-        {!fieldKey ? (
+        {!resolvedFieldKey ? (
           <div className="text-center py-12 text-muted-foreground">
             <p>Select a field to view trends</p>
           </div>
@@ -273,6 +296,7 @@ const ChartTrendGraph = ({
               </p>
               <p className="font-mono text-sm text-foreground">
                 {chartData[chartData.length - 1]?.value ?? '—'}
+                {currentField?.config?.unit ? ` ${currentField.config.unit}` : ''}
               </p>
             </div>
             <div>

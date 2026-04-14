@@ -3,6 +3,7 @@ API regression tests for timeline note metadata and copy-forward section mapping
 """
 import pytest
 
+from apps.charts.models import ChartAssignment, ChartEntry, ChartField, ChartTemplate
 from apps.clinical_notes.models import NoteTemplate, NoteEntry
 from apps.clinical_notes.tests.factories import PrescriptionFactory
 from apps.encounters.tests.factories import EncounterFactory
@@ -370,3 +371,80 @@ class TestNoteCopyAndTimelineApi:
         assert lab_entry is not None
         assert lab_entry['type'] == 'lab'
         assert lab_entry['results'][0]['test_name'] == order_test.test.short_name
+
+    def test_patient_timeline_v2_includes_chart_entries(
+        self,
+        doctor_client,
+        doctor_user,
+        doctor_practitioner,
+        patient_profile_factory,
+        default_facility,
+        django_capture_on_commit_callbacks,
+    ):
+        patient = patient_profile_factory(facility=default_facility)
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=doctor_practitioner,
+            created_by=doctor_user,
+            status='in-progress',
+        )
+        template = ChartTemplate.objects.create(
+            facility=default_facility,
+            name='Vital Signs Trend Chart',
+            description='Encounter vitals monitoring',
+            icon='activity',
+            visibility='facility',
+            category='cardiovascular',
+            scope_type='encounter',
+            system_key='vital_signs',
+            default_interval='hourly',
+            created_by=doctor_user,
+        )
+        ChartField.objects.create(
+            template=template,
+            name='Blood Pressure',
+            field_key='blood_pressure',
+            field_type='paired',
+            display_order=1,
+            config={
+                'fields': [
+                    {'key': 'systolic', 'label': 'Systolic'},
+                    {'key': 'diastolic', 'label': 'Diastolic'},
+                ],
+                'separator': '/',
+            },
+        )
+        assignment = ChartAssignment.objects.create(
+            template=template,
+            patient=patient,
+            encounter=encounter,
+            start_datetime=encounter.start_time,
+            status='active',
+            ordered_by=doctor_practitioner,
+            created_by=doctor_user,
+        )
+
+        with django_capture_on_commit_callbacks(execute=True):
+            entry = ChartEntry.objects.create(
+                assignment=assignment,
+                observation_datetime=encounter.start_time,
+                data={'blood_pressure': {'systolic': 124, 'diastolic': 82}},
+                notes='Pain improved after analgesia',
+                recorded_by=doctor_practitioner,
+                created_by=doctor_user,
+            )
+
+        response = doctor_client.get(f'/api/clinical-notes/chronicle/{patient.id}/timeline/')
+
+        assert response.status_code == 200
+        chart_entry = next(
+            (item for item in response.data['results'] if item['id'] == str(entry.id)),
+            None,
+        )
+        assert chart_entry is not None
+        assert chart_entry['type'] == 'chart'
+        assert chart_entry['template_system_key'] == 'vital_signs'
+        assert chart_entry['scope_type'] == 'encounter'
+        assert chart_entry['assignment_id'] == str(assignment.id)
+        assert chart_entry['data']['blood_pressure']['systolic'] == 124

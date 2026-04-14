@@ -8,12 +8,7 @@ const ChartTemplateListPage = lazy(() => import('./pages/ChartTemplateListPage')
 const CHARTS_BREADCRUMB = { label: 'Charts', path: '/charts/templates' }
 const CHARTS_ROLES = [
   ROLES.ADMIN,
-  ROLES.DOCTOR,
-  ROLES.NURSE,
   ROLES.HEAD_NURSE,
-  ROLES.NURSE_PRACTITIONER,
-  ROLES.PHYSICIAN,
-  ROLES.PRACTITIONER,
 ]
 
 export const chartRoutes = [

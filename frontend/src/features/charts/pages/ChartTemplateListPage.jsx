@@ -117,8 +117,10 @@ const ChartTemplateListPage = () => {
   const handleToggleActive = async (template) => {
     try {
       await updateMutation.mutateAsync({
-        id: template.id,
-        is_active: !template.is_active,
+        templateId: template.id,
+        data: {
+          is_active: !template.is_active,
+        },
       });
       toast.success(
         template.is_active ? "Template deactivated" : "Template activated"
@@ -161,6 +163,16 @@ const ChartTemplateListPage = () => {
         <Badge variant="outline" className="text-xs">
           {categories.find((cat) => cat.value === template.category)?.label || template.category || "General"}
         </Badge>
+      ),
+    },
+    {
+      key: "scope",
+      header: "Scope",
+      width: "140px",
+      render: (template) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {template.scope_type_display || template.scope_type || "Patient"}
+        </span>
       ),
     },
     {

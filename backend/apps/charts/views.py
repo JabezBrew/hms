@@ -36,6 +36,44 @@ from apps.core.security import (
 )
 from apps.users.models import PatientProfile
 
+CLINICAL_CHART_ROLES = {
+    'admin',
+    'doctor',
+    'nurse',
+    'head_nurse',
+    'nurse_practitioner',
+    'inpatient_doctor',
+    'practitioner',
+    'physician',
+}
+
+
+def _is_all_history(request):
+    return request.query_params.get('all_history', '').lower() == 'true'
+
+
+def _apply_scope_filters(queryset, request):
+    scope_type = request.query_params.get('scope_type')
+    encounter_id = request.query_params.get('encounter_id') or request.query_params.get('encounter')
+    admission_id = request.query_params.get('admission_id') or request.query_params.get('admission')
+
+    if scope_type in {'encounter', 'admission', 'patient'}:
+        queryset = queryset.filter(template__scope_type=scope_type)
+
+    if _is_all_history(request):
+        return queryset
+
+    visit_scope_q = Q()
+    if encounter_id:
+        visit_scope_q |= Q(template__scope_type='encounter', encounter_id=encounter_id)
+    if admission_id:
+        visit_scope_q |= Q(template__scope_type='admission', admission_id=admission_id)
+
+    if visit_scope_q:
+        return queryset.filter(visit_scope_q)
+
+    return queryset
+
 
 class ChartTemplateViewSet(viewsets.ModelViewSet):
     """
@@ -53,7 +91,7 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, ChartTemplatePermission, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['category', 'visibility', 'is_active']
+    filterset_fields = ['category', 'visibility', 'is_active', 'scope_type', 'system_key']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'category', 'created_at']
     ordering = ['category', 'name']
@@ -157,6 +195,15 @@ class ChartTemplateViewSet(viewsets.ModelViewSet):
             'categories': [
                 {'value': value, 'label': label}
                 for value, label in ChartTemplate.CATEGORY_CHOICES
+            ]
+        })
+
+    @action(detail=False, methods=['get'])
+    def scopes(self, request):
+        return Response({
+            'scopes': [
+                {'value': value, 'label': label}
+                for value, label in ChartTemplate.SCOPE_TYPE_CHOICES
             ]
         })
 
@@ -302,9 +349,18 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, FacilityScopedPermission, ChartAssignmentPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['patient', 'admission', 'template', 'status']
+    filterset_fields = ['patient', 'template', 'status']
     ordering_fields = ['created_at', 'start_datetime', 'status']
     ordering = ['-created_at']
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        response_serializer = ChartAssignmentSerializer(serializer.instance, context=self.get_serializer_context())
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
@@ -312,7 +368,7 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
             return ChartAssignment.objects.none()
 
         queryset = ChartAssignment.objects.select_related(
-            'template', 'patient__user', 'admission', 'ordered_by__staff__user'
+            'template', 'patient__user', 'admission', 'encounter', 'ordered_by__staff__user'
         ).filter(patient__facility=facility)
 
         user = self.request.user
@@ -320,7 +376,7 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
             pass
         elif user.user_type == 'patient':
             queryset = queryset.filter(patient__user=user)
-        elif user.user_type in ['doctor', 'nurse']:
+        elif user.user_type in CLINICAL_CHART_ROLES:
             if settings.TEAM_ACCESS_STRICT:
                 accessible_patients = get_accessible_patients_for_clinician(user)
                 queryset = queryset.filter(patient__in=accessible_patients)
@@ -354,7 +410,7 @@ class ChartAssignmentViewSet(viewsets.ModelViewSet):
             check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
-        return queryset
+        return _apply_scope_filters(queryset, self.request)
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -525,7 +581,7 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             pass
         elif user.user_type == 'patient':
             queryset = queryset.filter(assignment__patient__user=user)
-        elif user.user_type in ['doctor', 'nurse']:
+        elif user.user_type in CLINICAL_CHART_ROLES:
             if settings.TEAM_ACCESS_STRICT:
                 accessible_patients = get_accessible_patients_for_clinician(user)
                 queryset = queryset.filter(assignment__patient__in=accessible_patients)
@@ -540,6 +596,13 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(observation_datetime__gte=start_date)
         if end_date:
             queryset = queryset.filter(observation_datetime__lte=end_date)
+
+        encounter_id = self.request.query_params.get('encounter_id')
+        admission_id = self.request.query_params.get('admission_id')
+        if encounter_id:
+            queryset = queryset.filter(assignment__template__scope_type='encounter', assignment__encounter_id=encounter_id)
+        if admission_id:
+            queryset = queryset.filter(assignment__template__scope_type='admission', assignment__admission_id=admission_id)
 
         return queryset
 
@@ -626,7 +689,10 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         """Get trend data for a specific field."""
         assignment_id = request.query_params.get('assignment_id')
         field_key = request.query_params.get('field_key')
+        component = request.query_params.get('component', '').strip() or None
         limit = int(request.query_params.get('limit', 50))
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
 
         if not assignment_id or not field_key:
             return Response(
@@ -648,7 +714,12 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Patient does not belong to the active facility.")
 
         trend_data = ChartEntryService.get_trend_data(
-            assignment, field_key=field_key, limit=limit
+            assignment,
+            field_key=field_key,
+            limit=limit,
+            component=component,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         serializer = ChartEntryTrendSerializer(trend_data, many=True)

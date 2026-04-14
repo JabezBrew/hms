@@ -5,6 +5,7 @@ Tests for formula evaluation, critical value detection, and entry processing.
 """
 
 import pytest
+from datetime import timedelta
 from django.utils import timezone
 
 from apps.charts.services import (
@@ -435,6 +436,33 @@ class TestChartEntryService:
         assert trend[0]['value'] == 37.0
         assert trend[1]['value'] == 37.5
         assert trend[2]['value'] == 38.0
+
+    def test_get_trend_data_for_paired_field_component(self):
+        """Paired fields should expose component-specific trend lines."""
+        template = ChartTemplateFactory()
+        PairedFieldFactory(template=template, field_key='blood_pressure')
+        assignment = ChartAssignmentFactory(template=template)
+        base_time = timezone.now()
+
+        ChartEntryFactory(
+            assignment=assignment,
+            observation_datetime=base_time,
+            data={'blood_pressure': {'systolic': 118, 'diastolic': 76}},
+        )
+        ChartEntryFactory(
+            assignment=assignment,
+            observation_datetime=base_time + timedelta(hours=1),
+            data={'blood_pressure': {'systolic': 124, 'diastolic': 82}},
+        )
+
+        trend = ChartEntryService.get_trend_data(
+            assignment,
+            'blood_pressure',
+            component='systolic',
+        )
+
+        assert [point['value'] for point in trend] == [118.0, 124.0]
+        assert all(point['component'] == 'systolic' for point in trend)
 
 
 class TestConditionalFieldChecker:
