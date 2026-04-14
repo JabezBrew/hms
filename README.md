@@ -96,6 +96,16 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    npm run dev
    ```
 
+### Railway Frontend Deployment
+
+This repo is a monorepo. When deploying the Railway `frontend` service, upload the `frontend/` directory as the deployment root instead of deploying from the repo root:
+
+```bash
+railway up frontend --path-as-root --service frontend --environment production
+```
+
+Deploying the repo root with a plain `railway up` can cause Railpack to inspect the monorepo root, miss the frontend app entrypoint, and fail build detection.
+
 ## Authentication
 
 The system uses JWT authentication with:

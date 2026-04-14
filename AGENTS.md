@@ -132,6 +132,13 @@ favor correctness, least privilege, and predictable performance.
 - Ensure Redis is available before launching Celery.
 - Document new dependencies or IAM needs in `docs/`.
 
+## Deployment Notes
+- HMS is a monorepo. Do not deploy the frontend Railway service with a plain repo-root `railway up`.
+- For the Railway `frontend` service, deploy the `frontend/` subdirectory as the archive root:
+  `railway up frontend --path-as-root --service frontend --environment production`
+- If you deploy from the repo root without `--path-as-root`, Railway/Railpack will inspect the monorepo root, fail to detect the frontend app correctly, and the deployment can fail with "could not determine how to build the app".
+- When deploying other Railway services, make sure the uploaded path matches the service root/config instead of assuming Railway will infer it from the monorepo layout.
+
 ## Design System (Frontend)
 - Use Chronicle design system (/Users/jebre/Desktop/hms/frontend/CHRONICLE_DESIGN_SYSTEM.md) patterns and components when building clinical UIs.
 - Fonts: Fraunces (display), DM Sans (headings), IBM Plex Mono (data).
