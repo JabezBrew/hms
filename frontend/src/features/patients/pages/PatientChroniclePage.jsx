@@ -703,14 +703,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
     `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
   ), [activeFilter, debouncedSearch, id, resolvedVisitScope]);
 
-  useEffect(() => {
-    const hasEncounterGroups = groupedByEncounter.encounters.length > 0;
-    const hasUnlinkedEntries = groupedByEncounter.unlinked.length > 0;
+  // Use stable length values instead of array references to avoid spurious re-runs.
+  // The seed key already captures meaningful changes (patient, visit scope, filter, search).
+  const encounterGroupCount = groupedByEncounter.encounters.length;
+  const unlinkedEntryCount = groupedByEncounter.unlinked.length;
 
-    if (hasEncounterGroups && areEncountersLoading) {
+  useEffect(() => {
+    if (encounterGroupCount > 0 && areEncountersLoading) {
       return;
     }
-    if (!hasEncounterGroups && !hasUnlinkedEntries) {
+    if (encounterGroupCount === 0 && unlinkedEntryCount === 0) {
       return;
     }
     if (encounterExpansionSeedRef.current === expansionSeedKey) {
@@ -727,8 +729,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     activeEncounter?.id,
     areEncountersLoading,
     expansionSeedKey,
-    groupedByEncounter.encounters,
-    groupedByEncounter.unlinked,
+    encounterGroupCount,
+    unlinkedEntryCount,
   ]);
 
   useEffect(() => {
@@ -1606,26 +1608,24 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       </div>
                     </button>
 
-                    {/* Encounter Entries */}
-                    {isExpanded && (
-                      <div className="space-y-3 border-t border-border px-4 py-3">
-                        {entries.map((entry, index) => (
-                          <TimelineEntry
-                            key={entry.id}
-                            entry={entry}
-                            index={index}
-                            currentUserId={user?.id}
-                            isNoteExpanded={entry.id !== null && entry.id !== undefined
-                              ? expandedNoteIds.has(String(entry.id))
-                              : false}
-                            onToggleNoteExpanded={toggleNoteExpanded}
-                            onCopyNote={handleCopyNote}
-                            onEditNote={handleEditNote}
-                            onNoteUpdated={refetchTimeline}
-                          />
-                        ))}
-                      </div>
-                    )}
+                    {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
+                    <div className={cn("space-y-3 border-t border-border px-4 py-3", !isExpanded && "hidden")}>
+                      {entries.map((entry, index) => (
+                        <TimelineEntry
+                          key={entry.id}
+                          entry={entry}
+                          index={index}
+                          currentUserId={user?.id}
+                          isNoteExpanded={entry.id !== null && entry.id !== undefined
+                            ? expandedNoteIds.has(String(entry.id))
+                            : false}
+                          onToggleNoteExpanded={toggleNoteExpanded}
+                          onCopyNote={handleCopyNote}
+                          onEditNote={handleEditNote}
+                          onNoteUpdated={refetchTimeline}
+                        />
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -1664,26 +1664,24 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     </span>
                   </button>
 
-                  {/* Unlinked Entries List */}
-                  {expandedEncounters.has('unlinked') && (
-                    <div className="space-y-3 border-t border-dashed border-border px-4 py-3">
-                      {groupedByEncounter.unlinked.map((entry, index) => (
-                        <TimelineEntry
-                          key={entry.id}
-                          entry={entry}
-                          index={index}
-                          currentUserId={user?.id}
-                          isNoteExpanded={entry.id !== null && entry.id !== undefined
-                            ? expandedNoteIds.has(String(entry.id))
-                            : false}
-                          onToggleNoteExpanded={toggleNoteExpanded}
-                          onCopyNote={handleCopyNote}
-                          onEditNote={handleEditNote}
-                          onNoteUpdated={refetchTimeline}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {/* Unlinked Entries List — CSS-hidden instead of unmount */}
+                  <div className={cn("space-y-3 border-t border-dashed border-border px-4 py-3", !expandedEncounters.has('unlinked') && "hidden")}>
+                    {groupedByEncounter.unlinked.map((entry, index) => (
+                      <TimelineEntry
+                        key={entry.id}
+                        entry={entry}
+                        index={index}
+                        currentUserId={user?.id}
+                        isNoteExpanded={entry.id !== null && entry.id !== undefined
+                          ? expandedNoteIds.has(String(entry.id))
+                          : false}
+                        onToggleNoteExpanded={toggleNoteExpanded}
+                        onCopyNote={handleCopyNote}
+                        onEditNote={handleEditNote}
+                        onNoteUpdated={refetchTimeline}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 

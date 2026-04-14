@@ -19,7 +19,7 @@ import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +70,10 @@ const TimelineEntry = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isFallbackNoteExpanded, setIsFallbackNoteExpanded] = useState(false);
+
+  // Only play the enter animation on initial mount, not on re-mounts
+  const hasAnimatedRef = useRef(false);
+  useEffect(() => { hasAnimatedRef.current = true; }, []);
 
   // ============================================
   // Entry type configuration
@@ -369,10 +373,10 @@ const TimelineEntry = ({
     <article
       className={cn(
         "relative pl-8 pb-8 last:pb-0",
-        "animate-chronicle-enter",
+        !hasAnimatedRef.current && "animate-chronicle-enter",
         className
       )}
-      style={{ animationDelay: `${index * 50}ms` }}
+      style={!hasAnimatedRef.current ? { animationDelay: `${index * 50}ms` } : undefined}
     >
       {/* Timeline spine */}
       <div className="timeline-spine" />
