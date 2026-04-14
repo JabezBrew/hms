@@ -98,13 +98,24 @@ The Hospital Management System is designed to integrate with Google Cloud Health
 
 ### Railway Frontend Deployment
 
-This repo is a monorepo. When deploying the Railway `frontend` service, upload the `frontend/` directory as the deployment root instead of deploying from the repo root:
+This repo is a monorepo. Deploy Railway services from the correct service root instead of deploying the repo root and expecting Railpack to infer the right app automatically.
+
+Known service roots:
+
+- `frontend` service -> `frontend/`
+- backend web/api service -> `backend/`
+- backend worker service -> `backend/`
+- backend beat service -> `backend/`
+
+For the Railway `frontend` service, upload the `frontend/` directory as the deployment root:
 
 ```bash
 railway up frontend --path-as-root --service frontend --environment production
 ```
 
-Deploying the repo root with a plain `railway up` can cause Railpack to inspect the monorepo root, miss the frontend app entrypoint, and fail build detection.
+The same pattern applies to backend-related Railway services: use the `backend/` directory as the deployment root and ensure the Railway service points at the matching config file such as `/backend/railway.toml`, `/backend/railway.worker.toml`, or `/backend/railway.beat.toml`.
+
+Deploying the repo root with a plain `railway up` can cause Railpack to inspect the monorepo root, miss the intended app entrypoint, and fail build detection.
 
 ## Authentication
 
