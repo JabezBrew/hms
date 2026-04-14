@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { chartKeys } from '@/features/charts/hooks';
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
 import { IMMUTABLE_METADATA_GC_TIME } from '@/lib/react-query';
-import { keyWith } from '@/shared/lib/queryKeys';
 import {
   buildChronicleWorkspaceProps,
   chronicleWorkspaceIds,
@@ -25,9 +23,7 @@ describe('chronicle workspace registry', () => {
       'receiveRecord',
       'medicationHistory',
       'fluids',
-      'charts',
-      'chartEntry',
-      'chartHistory',
+      'trends',
       'insurance',
       'wardRound',
       'consultation',
@@ -97,41 +93,20 @@ describe('chronicle workspace registry', () => {
     expect(props.admission).toBeNull();
   });
 
-  it('passes the selected chart assignment into chart history workspace props', () => {
-    const props = buildChronicleWorkspaceProps('chartHistory', {
+  it('passes scoped visit context into the trend review workspace', () => {
+    const props = buildChronicleWorkspaceProps('trends', {
       patient: { id: 'patient-1' },
-      selectedChartHistoryAssignmentId: 'assignment-1',
       selectedEncounterId: 'enc-1',
       selectedAdmissionId: 'adm-1',
-      chartsAllHistory: false,
-      onChartWorkspaceClose: vi.fn(),
+      chronicleAllHistory: false,
+      onClose: vi.fn(),
     });
 
     expect(props).toMatchObject({
       open: true,
-      initialAssignmentId: 'assignment-1',
       encounterId: 'enc-1',
       admissionId: 'adm-1',
       allHistory: false,
-    });
-  });
-
-  it('passes scoped chart context into the chart assignment workspace', () => {
-    const props = buildChronicleWorkspaceProps('charts', {
-      patient: { id: 'patient-1', local_data: { current_admission_id: 'adm-fallback' } },
-      activeEncounter: { id: 'enc-active' },
-      selectedEncounter: { id: 'enc-selected' },
-      selectedAdmissionId: 'adm-selected',
-      chartsAllHistory: true,
-      onChartWorkspaceClose: vi.fn(),
-      onChartAssigned: vi.fn(),
-    });
-
-    expect(props).toMatchObject({
-      open: true,
-      encounter: { id: 'enc-selected' },
-      admission: { id: 'adm-selected' },
-      allHistory: true,
     });
   });
 
@@ -157,45 +132,22 @@ describe('chronicle workspace registry', () => {
     );
   });
 
-  it('prefetches chart workspace metadata queries together', () => {
+  it('loads the trend review workspace without extra metadata prefetches', () => {
     const loaders = {
-      charts: vi.fn(),
+      trends: vi.fn(),
     };
     const queryClient = {
       prefetchQuery: vi.fn(),
     };
 
-    prefetchChronicleWorkspaceResources('charts', {
+    prefetchChronicleWorkspaceResources('trends', {
       patientLocalId: 'patient-1',
       queryClient,
       loaders,
     });
 
-    expect(loaders.charts).toHaveBeenCalledTimes(1);
-    expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
-        staleTime: Infinity,
-        gcTime: IMMUTABLE_METADATA_GC_TIME,
-      }),
-    );
-    expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        queryKey: chartKeys.categories(),
-        staleTime: Infinity,
-        gcTime: IMMUTABLE_METADATA_GC_TIME,
-      }),
-    );
-    expect(queryClient.prefetchQuery).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        queryKey: chartKeys.intervals(),
-        staleTime: Infinity,
-        gcTime: IMMUTABLE_METADATA_GC_TIME,
-      }),
-    );
+    expect(loaders.trends).toHaveBeenCalledTimes(1);
+    expect(queryClient.prefetchQuery).not.toHaveBeenCalled();
   });
 
   it('normalizes admission references to the current patient admission when no override is provided', () => {

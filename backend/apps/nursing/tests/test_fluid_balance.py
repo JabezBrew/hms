@@ -477,6 +477,86 @@ class TestFluidBalanceSummaryAPI:
 
 
 @pytest.mark.tier1
+class TestFluidBalanceTrendAPI:
+    @pytest.fixture
+    def nurse_client(self, db):
+        nurse_user = NurseUserFactory()
+        client = APIClient()
+        client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
+        return client
+
+    def test_trends_aggregates_daily_intake_and_output(self, nurse_client):
+        client = nurse_client
+        patient = PatientProfileFactory()
+        admission = AdmissionFactory(patient=patient)
+        today = timezone.now()
+        yesterday = today - timedelta(days=1)
+
+        FluidBalanceIntakeFactory(
+            patient=patient,
+            admission=admission,
+            volume_ml=500,
+            recorded_at=yesterday,
+        )
+        FluidBalanceOutputFactory(
+            patient=patient,
+            admission=admission,
+            volume_ml=250,
+            recorded_at=yesterday,
+        )
+        FluidBalanceIntakeFactory(
+            patient=patient,
+            admission=admission,
+            volume_ml=900,
+            recorded_at=today,
+        )
+
+        response = client.get(
+            f'/api/nursing/fluid-balance/trends/?patient={patient.id}&admission_id={admission.id}'
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        assert response.data[0]['intake'] == 500
+        assert response.data[0]['output'] == 250
+        assert response.data[0]['balance'] == 250
+        assert response.data[1]['intake'] == 900
+        assert response.data[1]['output'] == 0
+        assert response.data[1]['balance'] == 900
+
+    def test_trends_respects_explicit_date_range(self, nurse_client):
+        client = nurse_client
+        patient = PatientProfileFactory()
+        admission = AdmissionFactory(patient=patient)
+        today = timezone.now()
+        previous_week = today - timedelta(days=7)
+
+        FluidBalanceIntakeFactory(
+            patient=patient,
+            admission=admission,
+            volume_ml=300,
+            recorded_at=previous_week,
+        )
+        recent = FluidBalanceOutputFactory(
+            patient=patient,
+            admission=admission,
+            volume_ml=150,
+            recorded_at=today,
+        )
+
+        response = client.get(
+            f'/api/nursing/fluid-balance/trends/?patient={patient.id}'
+            f'&start_date={today.date().isoformat()}&end_date={today.date().isoformat()}'
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['date'] == recent.recorded_at.date().isoformat()
+        assert response.data[0]['output'] == 150
+
+
+@pytest.mark.tier1
 class TestFluidBalancePermissions:
     """Tests for FluidBalance API permissions."""
 

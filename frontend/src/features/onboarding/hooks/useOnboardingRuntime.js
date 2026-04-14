@@ -17,6 +17,12 @@ const SUPPORTED_ROLES = new Set([
   'practitioner',
 ])
 
+const REMOVED_STEP_IDS = new Set([
+  'tpl_04_open_chart_templates',
+  'tpl_05_create_chart_template',
+  'tpl_06_use_chart_template',
+])
+
 const FLOW_COPY = {
   doctor_core_v1: {
     title: 'Doctor Essentials',
@@ -24,7 +30,7 @@ const FLOW_COPY = {
   },
   doctor_templates_v1: {
     title: 'Template Quickstart',
-    description: 'Create and apply note/chart templates for faster documentation.',
+    description: 'Create and apply note templates for faster documentation.',
   },
 }
 
@@ -198,7 +204,10 @@ function getRole(user) {
 
 function normalizeSteps(flow) {
   const steps = flow?.definition?.steps
-  return Array.isArray(steps) ? steps : []
+  if (!Array.isArray(steps)) {
+    return []
+  }
+  return steps.filter((step) => !REMOVED_STEP_IDS.has(step?.id))
 }
 
 function canAutoStartFlow(flow, progressByKey) {

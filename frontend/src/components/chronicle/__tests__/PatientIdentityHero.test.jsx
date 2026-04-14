@@ -31,6 +31,17 @@ function renderHero(props = {}) {
 }
 
 describe('PatientIdentityHero', () => {
+  it('renders Trends as a quick action and triggers the callback', async () => {
+    const user = userEvent.setup()
+    const onViewTrends = vi.fn()
+
+    renderHero({ onViewTrends })
+
+    await user.click(screen.getByRole('button', { name: /trends/i }))
+
+    expect(onViewTrends).toHaveBeenCalledTimes(1)
+  })
+
   it('renders Ask Chronicle as a quick action and triggers the callback', async () => {
     const user = userEvent.setup()
     const onAskChronicle = vi.fn()

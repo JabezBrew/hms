@@ -11,7 +11,6 @@ import { nursingRoutes } from '@/features/nursing/routes'
 import { dashboardRoutes } from '@/features/dashboards/routes'
 import { adminRoutes } from '@/features/admin/routes'
 import { settingsRoutes } from '@/features/settings/routes'
-import { chartRoutes } from '@/features/charts/routes'
 import { clinicRoutes } from '@/features/clinics/routes'
 import { triageRoutes } from '@/features/triage/routes'
 import { referralRoutes } from '@/features/referrals/routes'
@@ -35,7 +34,6 @@ export const featureRoutes = [
   ...dashboardRoutes,
   ...adminRoutes,
   ...settingsRoutes,
-  ...chartRoutes,
   ...clinicRoutes,
   ...triageRoutes,
   ...referralRoutes,

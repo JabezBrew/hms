@@ -8,11 +8,12 @@ export const nursingKeys = {
   patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
   patientMonitoringAll: () => keyWith('patient-monitoring'),
   patientDetail: (patientId) => keyWith('patient-detail', patientId),
-  vitalSigns: (patient, admission, date, startDate, endDate) =>
-    keyWith('vital-signs', patient, admission, date, startDate, endDate),
+  vitalSigns: (patient, admission, encounter, date, startDate, endDate) =>
+    keyWith('vital-signs', patient, admission, encounter, date, startDate, endDate),
   vitalSignsWindow: (patientId, window) => keyWith('vital-signs', patientId, window),
   vitalSignsAll: () => keyWith('vital-signs'),
-  vitalSignsTrends: (patientId, days) => keyWith('vital-signs-trends', patientId, days),
+  vitalSignsTrends: (patientId, days, encounterId, admissionId, startDate, endDate) =>
+    keyWith('vital-signs-trends', patientId, days, encounterId, admissionId, startDate, endDate),
   vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
   nursingTasks: (patient, status, ward, date) => keyWith('nursing-tasks', patient, status, ward, date),
   nursingTasksAll: () => keyWith('nursing-tasks'),
@@ -46,9 +47,11 @@ export const nursingKeys = {
   supplyRequests: (status) => keyWith('supply-requests', status),
   supplyRequestsAll: () => keyWith('supply-requests'),
   supplyRequest: (requestId) => keyWith('supply-request', requestId),
-  fluidBalance: (patientId, entryType, date, startDate, endDate) =>
-    keyWith('fluid-balance', patientId, entryType, date, startDate, endDate),
+  fluidBalance: (patientId, admissionId, entryType, date, startDate, endDate) =>
+    keyWith('fluid-balance', patientId, admissionId, entryType, date, startDate, endDate),
   fluidBalanceAll: () => keyWith('fluid-balance'),
+  fluidBalanceTrends: (patientId, admissionId, startDate, endDate) =>
+    keyWith('fluid-balance-trends', patientId, admissionId, startDate, endDate),
   fluidBalanceSummary: (patientId, date) => keyWith('fluid-balance-summary', patientId, date),
   fluidBalanceSummaryAll: () => keyWith('fluid-balance-summary'),
   fluidBalanceToday: (patientId) => keyWith('fluid-balance-today', patientId),
@@ -142,14 +145,29 @@ export const usePatientDetail = (patientId) => {
 
 export const useVitalSigns = (filters = {}) => {
   // Extract filter values to use as stable primitives in query key
-  const { patient, admission, date, start_date, end_date } = filters;
+  const {
+    patient,
+    admission,
+    encounter,
+    encounter_id,
+    date,
+    start_date,
+    end_date,
+  } = filters;
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.vitalSigns(patient, admission, date, start_date, end_date),
-    queryFn: async () => {
+    queryKey: nursingKeys.vitalSigns(
+      patient,
+      admission,
+      encounter_id || encounter,
+      date,
+      start_date,
+      end_date,
+    ),
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams(filters);
-      const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`);
+      const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       return data ?? [];
@@ -160,16 +178,39 @@ export const useVitalSigns = (filters = {}) => {
   });
 };
 
-export const useVitalSignsTrends = (patientId, days = 7) => {
+export const useVitalSignsTrends = (patientId, filters = {}, options = {}) => {
+  const { enabled = true } = options;
+  const {
+    days,
+    encounter_id,
+    admission_id,
+    start_date,
+    end_date,
+  } = filters;
+
   return useQuery({
-    queryKey: nursingKeys.vitalSignsTrends(patientId, days),
-    queryFn: async () => {
-      const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`);
+    queryKey: nursingKeys.vitalSignsTrends(
+      patientId,
+      days,
+      encounter_id,
+      admission_id,
+      start_date,
+      end_date,
+    ),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      params.append('patient', patientId);
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value);
+        }
+      });
+      const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?${params.toString()}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       return data ?? [];
     },
-    enabled: !!patientId,
+    enabled: !!patientId && enabled,
     placeholderData: [],
   });
 };
@@ -899,18 +940,25 @@ export const useBulkDispenseSupply = () => {
 export const useFluidBalance = (patientId, filters = {}, options = {}) => {
   const { enabled = true } = options;
   // Extract filter values to use as stable primitives in query key
-  const { entry_type, date, start_date, end_date } = filters;
+  const { admission, admission_id, entry_type, date, start_date, end_date } = filters;
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls from object reference changes
-    queryKey: nursingKeys.fluidBalance(patientId, entry_type, date, start_date, end_date),
-    queryFn: async () => {
+    queryKey: nursingKeys.fluidBalance(
+      patientId,
+      admission_id || admission,
+      entry_type,
+      date,
+      start_date,
+      end_date,
+    ),
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (patientId) params.append('patient', patientId);
       Object.entries(filters).forEach(([key, value]) => {
         if (value) params.append(key, value);
       });
-      const response = await apiClient.get(`/nursing/fluid-balance/?${params.toString()}`);
+      const response = await apiClient.get(`/nursing/fluid-balance/?${params.toString()}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       // Handle paginated response (results array) or direct array
@@ -934,11 +982,11 @@ export const useFluidBalanceSummary = (patientId, date = null, options = {}) => 
   const { enabled = true } = options;
   return useQuery({
     queryKey: nursingKeys.fluidBalanceSummary(patientId, date),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       params.append('patient', patientId);
       if (date) params.append('date', date);
-      const response = await apiClient.get(`/nursing/fluid-balance/patient_summary/?${params.toString()}`);
+      const response = await apiClient.get(`/nursing/fluid-balance/patient_summary/?${params.toString()}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       return data ?? { total_intake: 0, total_output: 0, balance: 0 };
@@ -966,8 +1014,8 @@ export const useTodayFluidBalance = (patientId, options = {}) => {
   const { enabled = true } = options;
   return useQuery({
     queryKey: nursingKeys.fluidBalanceToday(patientId),
-    queryFn: async () => {
-      const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`);
+    queryFn: async ({ signal }) => {
+      const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       return data ?? { total_intake: 0, total_output: 0, balance: 0 };
@@ -981,6 +1029,43 @@ export const useTodayFluidBalance = (patientId, options = {}) => {
       total_output: 0,
       balance: 0,
     },
+  });
+};
+
+/**
+ * Get aggregated fluid-balance trend points for a patient.
+ * @param {string} patientId - Patient ID
+ * @param {Object} filters - Optional filters (admission_id, start_date, end_date)
+ * @param {Object} options - Query options including enabled
+ */
+export const useFluidBalanceTrends = (patientId, filters = {}, options = {}) => {
+  const { enabled = true } = options;
+  const { admission, admission_id, start_date, end_date } = filters;
+
+  return useQuery({
+    queryKey: nursingKeys.fluidBalanceTrends(
+      patientId,
+      admission_id || admission,
+      start_date,
+      end_date,
+    ),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      params.append('patient', patientId);
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value);
+        }
+      });
+      const response = await apiClient.get(`/nursing/fluid-balance/trends/?${params.toString()}`, { signal });
+      const data = response?.data ?? response;
+      return data ?? [];
+    },
+    enabled: !!patientId && enabled,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
+    placeholderData: [],
   });
 };
 

@@ -1,10 +1,11 @@
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch, Count, Case, When, Sum
+from django.db.models.functions import TruncDate
 from django.db import transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -24,6 +25,7 @@ from .models import (
 )
 from .serializers import (
     VitalSignsSerializer, VitalSignsCreateSerializer, VitalSignsListSerializer,
+    VitalSignsTrendSerializer,
     NursingTaskSerializer, NursingTaskCreateSerializer, NursingTaskUpdateSerializer,
     NursingTaskListSerializer,
     NursingAlertSerializer, NursingAlertAcknowledgeSerializer, NursingAlertListSerializer,
@@ -35,7 +37,7 @@ from .serializers import (
     TreatmentSheetEntryCreateSerializer,
     SupplyRequestSerializer, SupplyRequestListSerializer, SupplyRequestCreateSerializer,
     FluidBalanceSerializer, FluidBalanceListSerializer, FluidBalanceCreateSerializer,
-    FluidBalanceSummarySerializer
+    FluidBalanceSummarySerializer, FluidBalanceTrendPointSerializer,
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
@@ -84,6 +86,40 @@ def _scope_nursing_patient_queryset(request, queryset, *, patient_lookup='patien
 def _get_request_practitioner(user):
     """Resolve the caller's practitioner profile through the staff relation."""
     return PractitionerProfile.objects.filter(staff__user=user).first()
+
+
+def _parse_datetime_range(request):
+    """
+    Parse optional start/end date query params into an aware [start, end) range.
+    """
+
+    tz = timezone.get_current_timezone()
+    start_dt = None
+    end_dt = None
+
+    start_date = request.query_params.get('start_date')
+    if start_date:
+        try:
+            parsed_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValidationError({'start_date': 'Invalid date format. Use YYYY-MM-DD'}) from exc
+        start_dt = timezone.make_aware(datetime.combine(parsed_start, datetime.min.time()), tz)
+
+    end_date = request.query_params.get('end_date')
+    if end_date:
+        try:
+            parsed_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValidationError({'end_date': 'Invalid date format. Use YYYY-MM-DD'}) from exc
+        end_dt = timezone.make_aware(
+            datetime.combine(parsed_end + timedelta(days=1), datetime.min.time()),
+            tz,
+        )
+
+    if start_dt and end_dt and end_dt <= start_dt:
+        raise ValidationError({'end_date': 'end_date must be after start_date'})
+
+    return start_dt, end_dt
 
 
 class VitalSignsViewSet(viewsets.ModelViewSet):
@@ -236,15 +272,49 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
         if patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
 
-        days = int(request.query_params.get('days', 7))
-        start_date = timezone.now() - timedelta(days=days)
-
         vitals = VitalSigns.objects.filter(
             patient=patient,
-            recorded_at__gte=start_date
+            facility=facility,
         ).order_by('recorded_at')
 
-        serializer = VitalSignsSerializer(vitals, many=True)
+        encounter_id = request.query_params.get('encounter_id') or request.query_params.get('encounter')
+        admission_id = request.query_params.get('admission_id') or request.query_params.get('admission')
+        if encounter_id:
+            vitals = vitals.filter(encounter_id=encounter_id)
+        elif admission_id:
+            vitals = vitals.filter(encounter__admission_id=admission_id)
+
+        start_dt, end_dt = _parse_datetime_range(request)
+        if start_dt:
+            vitals = vitals.filter(recorded_at__gte=start_dt)
+        if end_dt:
+            vitals = vitals.filter(recorded_at__lt=end_dt)
+
+        days = request.query_params.get('days')
+        if days not in (None, ''):
+            try:
+                day_window = int(days)
+            except ValueError as exc:
+                raise ValidationError({'days': 'days must be an integer'}) from exc
+            if day_window < 0:
+                raise ValidationError({'days': 'days must be 0 or greater'})
+            if day_window > 0:
+                vitals = vitals.filter(recorded_at__gte=timezone.now() - timedelta(days=day_window))
+
+        vitals = vitals.only(
+            'id',
+            'encounter_id',
+            'recorded_at',
+            'temperature',
+            'heart_rate',
+            'blood_pressure_systolic',
+            'blood_pressure_diastolic',
+            'respiratory_rate',
+            'oxygen_saturation',
+            'pain_level',
+        )
+
+        serializer = VitalSignsTrendSerializer(vitals, many=True)
         return Response(serializer.data)
 
 
@@ -2201,6 +2271,69 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
             'total_output': total_output,
             'balance': balance
         })
+
+    @action(detail=False, methods=['get'])
+    def trends(self, request):
+        """
+        Get aggregated fluid-balance trend points for a patient.
+
+        Query params:
+        - patient (required): Patient ID
+        - admission_id / admission (optional): Scope to a single admission
+        - start_date / end_date (optional): Inclusive date range
+        """
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        check_clinical_access(request.user, patient_id)
+        patient = PatientProfile.objects.get(id=patient_id)
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+
+        entries = FluidBalance.objects.filter(
+            patient=patient,
+            facility=facility,
+            is_deleted=False,
+        )
+
+        admission_id = request.query_params.get('admission_id') or request.query_params.get('admission')
+        if admission_id:
+            entries = entries.filter(admission_id=admission_id)
+
+        start_dt, end_dt = _parse_datetime_range(request)
+        if start_dt:
+            entries = entries.filter(recorded_at__gte=start_dt)
+        if end_dt:
+            entries = entries.filter(recorded_at__lt=end_dt)
+
+        rows = entries.annotate(
+            bucket_date=TruncDate('recorded_at', tzinfo=timezone.get_current_timezone())
+        ).values('bucket_date').annotate(
+            intake=Sum(Case(When(entry_type='intake', then='volume_ml'))),
+            output=Sum(Case(When(entry_type='output', then='volume_ml'))),
+        ).order_by('bucket_date')
+
+        trend_points = []
+        for row in rows:
+            intake = row['intake'] or 0
+            output = row['output'] or 0
+            trend_points.append({
+                'date': row['bucket_date'],
+                'intake': intake,
+                'output': output,
+                'balance': intake - output,
+            })
+
+        serializer = FluidBalanceTrendPointSerializer(trend_points, many=True)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def check_alerts(self, request):

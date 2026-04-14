@@ -502,17 +502,6 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.chartTemplates) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            href="/charts/templates"
-                            data-onboarding="nav-chart-templates"
-                          >
-                            <BarChart3 className="h-4 w-4" />
-                            <span>Chart Builder</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
                     </SidebarMenuSub>
                   </CollapsibleContent>
                 </SidebarMenuItem>

@@ -4,7 +4,6 @@ import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries'
 import { encountersApi } from '@/features/encounters/api'
 import { chronicleKeys } from '@/hooks/useChronicleContext'
 import { fetchTimelinePage, timelineKeys } from '@/hooks/useTimelineQueries'
-import { chartKeys } from '@/hooks/useChartQueries'
 import { apiClient } from '@/lib/api-client'
 
 const PREFETCH_MODE = {
@@ -127,14 +126,6 @@ function prefetchTimelineFirstPage(queryClient, patientId) {
   })
 }
 
-function prefetchChartAssignments(queryClient, patientId) {
-  return queryClient.prefetchQuery({
-    queryKey: chartKeys.assignmentListParams(patientId, undefined, undefined, 'active'),
-    queryFn: () => apiClient.get(`/charts/assignments/?patient=${patientId}&status=active`),
-    staleTime: 30 * 1000,
-  })
-}
-
 export function prefetchPatientChronicleData(queryClient, patientId, options = {}) {
   if (!queryClient || !patientId) {
     return
@@ -169,16 +160,14 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
 
   void prefetchChronicleContext(queryClient, patientId)
 
-  // Hover prefetch intentionally excludes heavy timeline/charts/encounters to avoid
+  // Hover prefetch intentionally excludes heavy timeline/encounter detail to avoid
   // accidental request storms while cursoring through table rows.
   if (mode === PREFETCH_MODE.HOVER) {
     return
   }
 
-  // Navigation-intent prefetch warms tier-2 data for faster chart open.
+  // Navigation-intent prefetch warms tier-2 chronicle data for faster patient open.
   void prefetchTimelineFirstPage(queryClient, patientId)
-  void prefetchChartAssignments(queryClient, patientId)
-
   void queryClient.prefetchQuery({
     queryKey: encounterKeys.forPatient(patientId),
     queryFn: () => encountersApi.getEncountersForPatient(patientId),

@@ -52,8 +52,7 @@ const PatientIdentityHero = ({
   onViewTreatmentSheet,
   onViewMedicationHistory,
   onRecordFluids,
-  onAssignChart,
-  onViewChartHistory,
+  onViewTrends,
   onStartWardRound,
   onStartDischarge,
   onManageInsurance,
@@ -436,6 +435,20 @@ const PatientIdentityHero = ({
             </Button>
           )}
 
+          {onViewTrends && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="font-mono text-xs"
+              onClick={onViewTrends}
+              onPointerEnter={() => prefetchAction('trends')}
+              onFocus={() => prefetchAction('trends')}
+            >
+              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+              Trends
+            </Button>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -446,16 +459,14 @@ const PatientIdentityHero = ({
                 onPointerEnter={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('charts');
-                  prefetchAction('chartHistory');
+                  prefetchAction('trends');
                   prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('charts');
-                  prefetchAction('chartHistory');
+                  prefetchAction('trends');
                   prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
@@ -489,24 +500,14 @@ const PatientIdentityHero = ({
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
-              {onAssignChart && (
+              {onViewTrends && (
                 <DropdownMenuItem
-                  onClick={onAssignChart}
-                  onPointerEnter={() => prefetchAction('charts')}
-                  onFocus={() => prefetchAction('charts')}
+                  onClick={onViewTrends}
+                  onPointerEnter={() => prefetchAction('trends')}
+                  onFocus={() => prefetchAction('trends')}
                 >
                   <BarChart3 className="h-4 w-4 mr-2" />
-                  Assign Chart
-                </DropdownMenuItem>
-              )}
-              {onViewChartHistory && (
-                <DropdownMenuItem
-                  onClick={() => onViewChartHistory()}
-                  onPointerEnter={() => prefetchAction('chartHistory')}
-                  onFocus={() => prefetchAction('chartHistory')}
-                >
-                  <ClipboardList className="h-4 w-4 mr-2" />
-                  Chart History
+                  Trend Review
                 </DropdownMenuItem>
               )}
               {onRecordFluids && (

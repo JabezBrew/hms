@@ -1,10 +1,7 @@
-import { chartKeys } from '@/features/charts/hooks';
 import { laboratoryApi } from '@/features/laboratory/api';
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
-import { apiClient } from '@/lib/api-client';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
-import { keyWith } from '@/shared/lib/queryKeys';
 import { drugSafetyApi } from '@/shared/api/drugSafety';
 
 export const chronicleWorkspaceIds = Object.freeze([
@@ -18,9 +15,7 @@ export const chronicleWorkspaceIds = Object.freeze([
   'receiveRecord',
   'medicationHistory',
   'fluids',
-  'charts',
-  'chartEntry',
-  'chartHistory',
+  'trends',
   'insurance',
   'wardRound',
   'consultation',
@@ -38,9 +33,7 @@ export const chronicleWorkspaceLoaders = Object.freeze({
   receiveRecord: () => import('@/components/interop/ReceiveRecordPanel'),
   medicationHistory: () => import('@/components/chronicle/MedicationHistorySlideOver'),
   fluids: () => import('@/components/chronicle/AddFluidBalanceSlideOver'),
-  charts: () => import('@/components/charts/AddChartSlideOver'),
-  chartEntry: () => import('@/components/charts/ChartEntryForm'),
-  chartHistory: () => import('@/components/charts/ChartHistorySlideOver'),
+  trends: () => import('@/components/chronicle/TrendReviewSlideOver'),
   insurance: () => import('@/components/chronicle/PatientInsuranceSlideOver'),
   wardRound: () => import('@/components/chronicle/WardRoundSlideOver'),
   consultation: () => import('@/components/chronicle/ConsultationSlideOver'),
@@ -96,22 +89,8 @@ export function prefetchChronicleWorkspaceResources(
     return;
   }
 
-  if (workspaceId === 'charts') {
-    void queryClient.prefetchQuery({
-      queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
-      queryFn: () => apiClient.get('/charts/templates/?is_active=true'),
-      ...immutableMetadataQueryOptions(),
-    });
-    void queryClient.prefetchQuery({
-      queryKey: chartKeys.categories(),
-      queryFn: () => apiClient.get('/charts/templates/categories/').then((response) => response.categories),
-      ...immutableMetadataQueryOptions(),
-    });
-    void queryClient.prefetchQuery({
-      queryKey: chartKeys.intervals(),
-      queryFn: () => apiClient.get('/charts/templates/intervals/').then((response) => response.intervals),
-      ...immutableMetadataQueryOptions(),
-    });
+  if (workspaceId === 'trends') {
+    return;
   }
 }
 
@@ -124,28 +103,22 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     patientId,
     patient,
     activeEncounter,
-    selectedEncounter,
     selectedEncounterId,
     selectedAdmissionId,
-    chartsAllHistory,
+    chronicleAllHistory,
     patientIdentityId,
     referralId,
     copilotPatientName,
     copyForwardData,
     editNoteData,
-    activeChartAssignment,
-    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     onClose,
-    onChartWorkspaceClose,
     onNoteCreated,
     onVitalsRecorded,
     onPrescriptionCreated,
     onLabOrderCreated,
     onReferralCreated,
     onFluidRecorded,
-    onChartAssigned,
-    onChartEntryRecorded,
     onWardRoundCompleted,
     onConsultationCompleted,
     onDischargeCompleted,
@@ -231,33 +204,14 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         allowEntry: Boolean(activeEncounter?.id || getChronicleAdmissionReference(patient)),
         onFluidRecorded,
       };
-    case 'charts':
+    case 'trends':
       return {
         open: true,
-        onClose: onChartWorkspaceClose,
+        onClose,
         patient,
-        encounter: selectedEncounter || activeEncounter || null,
-        admission: selectedAdmissionId ? { id: String(selectedAdmissionId) } : getChronicleAdmissionReference(patient),
-        allHistory: chartsAllHistory,
-        onChartAssigned,
-      };
-    case 'chartEntry':
-      return {
-        open: true,
-        onClose: onChartWorkspaceClose,
-        assignmentId: activeChartAssignment?.id,
-        patient,
-        onEntryRecorded: onChartEntryRecorded,
-      };
-    case 'chartHistory':
-      return {
-        open: true,
-        onClose: onChartWorkspaceClose,
-        patient,
-        initialAssignmentId: selectedChartHistoryAssignmentId || null,
         encounterId: selectedEncounterId || null,
         admissionId: selectedAdmissionId || null,
-        allHistory: chartsAllHistory,
+        allHistory: chronicleAllHistory,
       };
     case 'insurance':
       return {

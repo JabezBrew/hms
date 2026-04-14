@@ -12,8 +12,8 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
@@ -42,8 +42,6 @@ import TimelineEntry from "@/components/chronicle/TimelineEntry";
 import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
-import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
-import { useChartAssignments } from "@/features/charts/hooks";
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
 import {
@@ -182,10 +180,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
   const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
-
-  // Chart entry state - which assignment is being recorded
-  const [activeChartAssignment, setActiveChartAssignment] = useState(null);
-  const [selectedChartHistoryAssignmentId, setSelectedChartHistoryAssignmentId] = useState(null);
 
   // Fetch patient data (includes access flags for conditional fetching)
   const { data: patient, isLoading, error, refetch } = usePatient(id);
@@ -504,20 +498,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return results;
     // Use primitive vitalsId as dependency - will only re-run when vitals actually change
   }, [vitalsId, vitalsRecordedAt, latestVitals]);
-
-  // Fetch active chart assignments for this patient
-  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(
-    {
-      patient: patientLocalId,
-      status: 'active',
-      encounter_id: chartContextEncounter?.id || undefined,
-      admission: chartContextAdmissionId || undefined,
-      all_history: isAllVisitsScope,
-    },
-    {
-      enabled: canFetchClinical,
-    }
-  );
 
   // Map filter to API type
   const typeMapping = {
@@ -996,38 +976,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('medicationHistory');
   }, [openChronicleWorkspace]);
 
-  // Chart handlers
-  const handleAssignChart = useCallback(() => {
-    openChronicleWorkspace('charts');
+  const handleViewTrends = useCallback(() => {
+    openChronicleWorkspace('trends');
   }, [openChronicleWorkspace]);
-
-  const handleChartAssigned = useCallback(() => {
-    refetchCharts();
-    slideOvers.close();
-  }, [refetchCharts, slideOvers]);
-
-  const handleRecordChartEntry = useCallback((assignment) => {
-    setActiveChartAssignment(assignment);
-    openChronicleWorkspace('chartEntry');
-  }, [openChronicleWorkspace]);
-
-  const handleViewChartHistory = useCallback((assignment = null) => {
-    setSelectedChartHistoryAssignmentId(assignment?.id || null);
-    openChronicleWorkspace('chartHistory');
-  }, [openChronicleWorkspace]);
-
-  const handleChartEntryRecorded = useCallback(() => {
-    refetchCharts();
-    refreshData();
-    slideOvers.close();
-    setActiveChartAssignment(null);
-  }, [refetchCharts, refreshData, slideOvers]);
-
-  const handleChartSlideOverClose = useCallback(() => {
-    slideOvers.close();
-    setActiveChartAssignment(null);
-    setSelectedChartHistoryAssignmentId(null);
-  }, [slideOvers]);
 
   const handleManageInsurance = useCallback(() => {
     openChronicleWorkspace('insurance');
@@ -1067,25 +1018,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
     selectedEncounter: chartContextEncounter,
     selectedEncounterId: chartContextEncounter?.id || null,
     selectedAdmissionId: chartContextAdmissionId,
-    chartsAllHistory: isAllVisitsScope,
+    chronicleAllHistory: isAllVisitsScope,
     patientIdentityId,
     referralId: referralIdParam,
     copilotPatientName,
     copyForwardData,
     editNoteData,
-    activeChartAssignment,
-    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     onClose: handleSlideOverClose,
-    onChartWorkspaceClose: handleChartSlideOverClose,
     onNoteCreated: handleNoteCreated,
     onVitalsRecorded: handleVitalsRecorded,
     onPrescriptionCreated: handlePrescriptionCreated,
     onLabOrderCreated: handleLabOrderCreated,
     onReferralCreated: handleReferralCreated,
     onFluidRecorded: refreshData,
-    onChartAssigned: handleChartAssigned,
-    onChartEntryRecorded: handleChartEntryRecorded,
     onWardRoundCompleted: handleWardRoundCompleted,
     onConsultationCompleted: handleConsultationCompleted,
     onDischargeCompleted: handleDischargeCompleted,
@@ -1101,19 +1047,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copilotPatientName,
     copyForwardData,
     editNoteData,
-    activeChartAssignment,
-    selectedChartHistoryAssignmentId,
     requestedDischargeAdmissionId,
     handleSlideOverClose,
-    handleChartSlideOverClose,
     handleNoteCreated,
     handleVitalsRecorded,
     handlePrescriptionCreated,
     handleLabOrderCreated,
     handleReferralCreated,
     refreshData,
-    handleChartAssigned,
-    handleChartEntryRecorded,
     handleWardRoundCompleted,
     handleConsultationCompleted,
     handleDischargeCompleted,
@@ -1344,8 +1285,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onViewMedicationHistory={handleViewMedicationHistory}
         onRecordFluids={handleRecordFluids}
-        onAssignChart={handleAssignChart}
-        onViewChartHistory={handleViewChartHistory}
+        onViewTrends={handleViewTrends}
         onStartWardRound={handleStartWardRound}
         onStartDischarge={handleStartDischarge}
         onManageInsurance={handleManageInsurance}
@@ -1385,42 +1325,31 @@ const PatientChroniclePage = ({ defaultAction }) => {
         {/* Timeline Chronicle */}
         <main className="flex-1 p-6 transition-all duration-300">
           <div className="min-w-0">
-            {/* Active Charts Section - Show if patient has assigned charts */}
-            {chartAssignments?.length > 0 && (
-              <div className="mb-6">
-                <div className="mb-3 flex items-center justify-between">
+            <div className="mb-6 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-amber-600" />
+                    <BarChart3 className="h-4 w-4 text-amber-600" />
                     <h3 className="font-mono text-sm font-medium text-foreground">
-                      Active Charts
+                      Trend Review
                     </h3>
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                      {chartAssignments.length}
-                    </span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAssignChart}
-                    className="font-mono text-xs"
-                  >
-                    + Assign Chart
-                  </Button>
+                  <p className="max-w-2xl text-sm text-muted-foreground">
+                    Review vitals and fluid balance directly from existing observations. The selected visit stays
+                    the default scope, with admission-aware fluid balance when applicable.
+                  </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {chartAssignments.slice(0, 6).map((assignment, index) => (
-                    <ChartAssignmentCard
-                      key={assignment.id}
-                      assignment={assignment}
-                      index={index}
-                      onRecordEntry={handleRecordChartEntry}
-                      onViewDetails={handleViewChartHistory}
-                      compact
-                    />
-                  ))}
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleViewTrends}
+                  className="font-mono text-xs"
+                >
+                  <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+                  Open Trends
+                </Button>
               </div>
-            )}
+            </div>
 
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
@@ -1685,11 +1614,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
                             className="h-7 px-2 font-mono text-[10px]"
                             onClick={(event) => {
                               event.stopPropagation();
-                              handleViewChartHistory();
+                              handleViewTrends();
                             }}
                           >
-                            <ClipboardList className="h-3.5 w-3.5 mr-1" />
-                            Charts
+                            <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                            Trends
                           </Button>
                           <Button
                             variant="ghost"
