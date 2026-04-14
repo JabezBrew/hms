@@ -18,9 +18,11 @@ export default function FluidBalanceTrendsChart({ data = [] }) {
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
+            <XAxis dataKey="dateLabel" />
             <YAxis />
-            <Tooltip />
+            <Tooltip
+              labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDateLabel || ''}
+            />
             <Legend />
             <Bar dataKey="intake" name="Intake (ml)" fill="#3b82f6" />
             <Bar dataKey="output" name="Output (ml)" fill="#f59e0b" />
@@ -33,9 +35,11 @@ export default function FluidBalanceTrendsChart({ data = [] }) {
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
+            <XAxis dataKey="dateLabel" />
             <YAxis />
-            <Tooltip />
+            <Tooltip
+              labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDateLabel || ''}
+            />
             <Legend />
             <ReferenceLine y={0} stroke="#000" />
             <Bar dataKey="balance" name="Balance (ml)" fill="#10b981" />

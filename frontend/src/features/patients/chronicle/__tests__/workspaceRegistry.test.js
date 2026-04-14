@@ -99,6 +99,7 @@ describe('chronicle workspace registry', () => {
       selectedEncounterId: 'enc-1',
       selectedAdmissionId: 'adm-1',
       chronicleAllHistory: false,
+      initialTrendTab: 'fluids',
       onClose: vi.fn(),
     });
 
@@ -107,6 +108,7 @@ describe('chronicle workspace registry', () => {
       encounterId: 'enc-1',
       admissionId: 'adm-1',
       allHistory: false,
+      initialTab: 'fluids',
     });
   });
 

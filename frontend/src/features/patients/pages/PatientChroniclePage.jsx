@@ -13,7 +13,6 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
-import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
@@ -180,6 +179,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
   const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
+  const [trendReviewTab, setTrendReviewTab] = useState('vitals');
 
   // Fetch patient data (includes access flags for conditional fetching)
   const { data: patient, isLoading, error, refetch } = usePatient(id);
@@ -976,7 +976,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('medicationHistory');
   }, [openChronicleWorkspace]);
 
-  const handleViewTrends = useCallback(() => {
+  const handleViewTrends = useCallback((tab = 'vitals') => {
+    setTrendReviewTab(tab);
     openChronicleWorkspace('trends');
   }, [openChronicleWorkspace]);
 
@@ -1019,6 +1020,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     selectedEncounterId: chartContextEncounter?.id || null,
     selectedAdmissionId: chartContextAdmissionId,
     chronicleAllHistory: isAllVisitsScope,
+    initialTrendTab: trendReviewTab,
     patientIdentityId,
     referralId: referralIdParam,
     copilotPatientName,
@@ -1042,6 +1044,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     chartContextEncounter,
     chartContextAdmissionId,
     isAllVisitsScope,
+    trendReviewTab,
     patientIdentityId,
     referralIdParam,
     copilotPatientName,
@@ -1285,7 +1288,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
         onViewTreatmentSheet={handleViewTreatmentSheet}
         onViewMedicationHistory={handleViewMedicationHistory}
         onRecordFluids={handleRecordFluids}
-        onViewTrends={handleViewTrends}
         onStartWardRound={handleStartWardRound}
         onStartDischarge={handleStartDischarge}
         onManageInsurance={handleManageInsurance}
@@ -1316,6 +1318,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
           medications={medications}
           allergies={allergies}
           labResults={labResults}
+          onViewVitalsTrends={() => handleViewTrends('vitals')}
+          onViewFluidTrends={() => handleViewTrends('fluids')}
           className={cn(
             "hidden lg:block",
             isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
@@ -1325,32 +1329,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
         {/* Timeline Chronicle */}
         <main className="flex-1 p-6 transition-all duration-300">
           <div className="min-w-0">
-            <div className="mb-6 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-amber-600" />
-                    <h3 className="font-mono text-sm font-medium text-foreground">
-                      Trend Review
-                    </h3>
-                  </div>
-                  <p className="max-w-2xl text-sm text-muted-foreground">
-                    Review vitals and fluid balance directly from existing observations. The selected visit stays
-                    the default scope, with admission-aware fluid balance when applicable.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleViewTrends}
-                  className="font-mono text-xs"
-                >
-                  <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
-                  Open Trends
-                </Button>
-              </div>
-            </div>
-
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
               {/* Title and count */}
@@ -1607,18 +1585,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
                           >
                             <Pill className="h-3.5 w-3.5 mr-1" />
                             Meds
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 font-mono text-[10px]"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleViewTrends();
-                            }}
-                          >
-                            <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                            Trends
                           </Button>
                           <Button
                             variant="ghost"

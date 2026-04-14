@@ -7,8 +7,10 @@ import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
 import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
+import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import { cn } from "@/lib/utils";
 
+import { Button } from "@/components/ui/button";
 import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { InvoiceChronicleCard } from "@/components/billing";
 
@@ -26,6 +28,8 @@ const ClinicalSummarySidebar = ({
   problems = [],
   medications = [],
   labResults = [],
+  onViewVitalsTrends,
+  onViewFluidTrends,
   className
 }) => {
   // Check if patient is admitted (has active admission)
@@ -48,13 +52,13 @@ const ClinicalSummarySidebar = ({
       className
     )}>
       {/* Section: Recent Vitals */}
-      <LabResultsSection results={labResults} />
+      <LabResultsSection results={labResults} onViewTrends={onViewVitalsTrends} />
 
       {/* Section: Fluid Balance - Only for admitted patients */}
       {isAdmitted && patientId && (
         <>
           <div className="divider-gradient" />
-          <FluidBalanceSection patientId={patientId} />
+          <FluidBalanceSection patientId={patientId} onViewTrends={onViewFluidTrends} />
         </>
       )}
 
@@ -267,12 +271,8 @@ const AllergiesSection = ({ allergies }) => {
 /**
  * LabResultsSection - Recent lab results with abnormal highlighting
  */
-const LabResultsSection = ({ results, maxVisible = 4 }) => {
+const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
   const visibleResults = results.slice(0, maxVisible);
-
-  if (!results || results.length === 0) {
-    return null;
-  }
 
   // Get the most recent timestamp
   const latestDate = results[0]?.timestamp
@@ -287,42 +287,59 @@ const LabResultsSection = ({ results, maxVisible = 4 }) => {
   return (
     <section>
       <header className="flex items-center justify-between mb-4">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Recent Vitals
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Recent Vitals
+          </h3>
+          {onViewTrends ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onViewTrends}
+              className="h-6 px-2 font-mono text-[10px]"
+            >
+              <BarChart3 className="mr-1 h-3 w-3" />
+              Trends
+            </Button>
+          ) : null}
+        </div>
         <time className="font-mono text-xs text-muted-foreground/70">
-          {latestDate}
+          {results.length ? latestDate : 'No vitals'}
         </time>
       </header>
 
-      <div className="grid grid-cols-2 gap-2">
-        {visibleResults.map((result, i) => (
-          <div
-            key={result.id || i}
-            className={cn(
-              "p-3 rounded-lg border",
-              result.is_abnormal
-                ? "bg-primary/5 border-primary/30"
-                : "bg-card/50 border-border"
-            )}
-          >
-            <div className={cn(
-              "font-mono text-lg",
-              result.is_abnormal ? "text-primary" : "text-foreground"
-            )}>
-              {result.value}
-              {result.is_abnormal && (
-                <span className="text-xs ml-1">
-                  {result.abnormal_direction === 'high' ? '↑' : '↓'}
-                </span>
+      {visibleResults.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2">
+          {visibleResults.map((result, i) => (
+            <div
+              key={result.id || i}
+              className={cn(
+                "p-3 rounded-lg border",
+                result.is_abnormal
+                  ? "bg-primary/5 border-primary/30"
+                  : "bg-card/50 border-border"
               )}
+            >
+              <div className={cn(
+                "font-mono text-lg",
+                result.is_abnormal ? "text-primary" : "text-foreground"
+              )}>
+                {result.value}
+                {result.is_abnormal && (
+                  <span className="text-xs ml-1">
+                    {result.abnormal_direction === 'high' ? '↑' : '↓'}
+                  </span>
+                )}
+              </div>
+              <div className="font-mono text-[10px] text-muted-foreground">
+                {result.name} {result.unit && `(${result.unit})`}
+              </div>
             </div>
-            <div className="font-mono text-[10px] text-muted-foreground">
-              {result.name} {result.unit && `(${result.unit})`}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No vitals recorded yet.</p>
+      )}
 
     </section>
   );
@@ -331,16 +348,29 @@ const LabResultsSection = ({ results, maxVisible = 4 }) => {
 /**
  * FluidBalanceSection - Today's fluid balance for admitted patients
  */
-const FluidBalanceSection = ({ patientId }) => {
+const FluidBalanceSection = ({ patientId, onViewTrends }) => {
   const { data: fluidData, isLoading } = useTodayFluidBalance(patientId);
 
   if (isLoading) {
     return (
       <section>
         <header className="flex items-center justify-between mb-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            Fluid Balance
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              Fluid Balance
+            </h3>
+            {onViewTrends ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onViewTrends}
+                className="h-6 px-2 font-mono text-[10px]"
+              >
+                <BarChart3 className="mr-1 h-3 w-3" />
+                Trends
+              </Button>
+            ) : null}
+          </div>
         </header>
         <div className="animate-pulse space-y-2">
           <div className="h-16 bg-muted rounded-lg" />
@@ -356,9 +386,22 @@ const FluidBalanceSection = ({ patientId }) => {
   return (
     <section>
       <header className="flex items-center justify-between mb-4">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          Fluid Balance (Today)
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Fluid Balance (Today)
+          </h3>
+          {onViewTrends ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onViewTrends}
+              className="h-6 px-2 font-mono text-[10px]"
+            >
+              <BarChart3 className="mr-1 h-3 w-3" />
+              Trends
+            </Button>
+          ) : null}
+        </div>
         <Droplet className="h-3.5 w-3.5 text-sky-500" />
       </header>
 

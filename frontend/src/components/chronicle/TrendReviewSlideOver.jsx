@@ -1,20 +1,19 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js';
 import CircleAlert from 'lucide-react/dist/esm/icons/circle-alert.js';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFluidBalanceTrends, useVitalSignsTrends } from '@/features/nursing/hooks';
-import VitalsChart from '@/components/chronicle/ward-round-steps/ClinicalAssessmentVitalsChart';
+import ClinicalTrendLineChart from '@/components/chronicle/ClinicalTrendLineChart';
 import FluidBalanceTrendsChart from '@/components/nursing/FluidBalanceTrendsChart';
 
 function getPatientId(patient) {
@@ -92,9 +91,17 @@ export default function TrendReviewSlideOver({
   encounterId = null,
   admissionId = null,
   allHistory = false,
+  initialTab = 'vitals',
 }) {
   const patientId = getPatientId(patient);
   const patientName = getPatientName(patient);
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, open]);
 
   const vitalsFilters = useMemo(() => {
     if (allHistory) {
@@ -131,33 +138,64 @@ export default function TrendReviewSlideOver({
   });
 
   const formattedVitals = useMemo(() => (
-    vitalsData.map((entry) => {
-      const recordedAt = entry.recorded_at ? new Date(entry.recorded_at) : null;
-      return {
-        time: recordedAt ? format(recordedAt, 'HH:mm') : '',
-        date: recordedAt ? format(recordedAt, 'MMM d') : '',
-        temperature: entry.temperature == null ? null : Number(entry.temperature),
-        heartRate: entry.heart_rate == null ? null : Number(entry.heart_rate),
-        systolic: entry.blood_pressure_systolic == null ? null : Number(entry.blood_pressure_systolic),
-        diastolic: entry.blood_pressure_diastolic == null ? null : Number(entry.blood_pressure_diastolic),
-        respiratoryRate: entry.respiratory_rate == null ? null : Number(entry.respiratory_rate),
-        oxygenSaturation: entry.oxygen_saturation == null ? null : Number(entry.oxygen_saturation),
-        painLevel: entry.pain_level == null ? null : Number(entry.pain_level),
-      };
-    })
+    vitalsData
+      .map((entry) => {
+        const recordedAt = entry.recorded_at ? new Date(entry.recorded_at) : null;
+        const timestamp = recordedAt ? recordedAt.getTime() : Number.NaN;
+
+        if (!Number.isFinite(timestamp)) {
+          return null;
+        }
+
+        return {
+          timestamp,
+          time: format(recordedAt, 'HH:mm'),
+          date: format(recordedAt, 'MMM d'),
+          temperature: entry.temperature == null ? null : Number(entry.temperature),
+          heartRate: entry.heart_rate == null ? null : Number(entry.heart_rate),
+          systolic: entry.blood_pressure_systolic == null ? null : Number(entry.blood_pressure_systolic),
+          diastolic: entry.blood_pressure_diastolic == null ? null : Number(entry.blood_pressure_diastolic),
+          respiratoryRate: entry.respiratory_rate == null ? null : Number(entry.respiratory_rate),
+          oxygenSaturation: entry.oxygen_saturation == null ? null : Number(entry.oxygen_saturation),
+          painLevel: entry.pain_level == null ? null : Number(entry.pain_level),
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.timestamp - right.timestamp)
   ), [vitalsData]);
 
   const latestVitals = formattedVitals[formattedVitals.length - 1] || null;
 
+  const formattedFluidTrendData = useMemo(() => (
+    fluidTrendData
+      .map((point) => {
+        const parsedDate = typeof point.date === 'string' ? parseISO(point.date) : new Date(point.date);
+        const timestamp = parsedDate?.getTime?.() ?? Number.NaN;
+
+        if (!Number.isFinite(timestamp)) {
+          return null;
+        }
+
+        return {
+          ...point,
+          timestamp,
+          dateLabel: format(parsedDate, 'MMM d'),
+          fullDateLabel: format(parsedDate, 'MMM d, yyyy'),
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.timestamp - right.timestamp)
+  ), [fluidTrendData]);
+
   const fluidSummary = useMemo(() => (
-    fluidTrendData.reduce((acc, point) => ({
+    formattedFluidTrendData.reduce((acc, point) => ({
       totalIntake: acc.totalIntake + Number(point.intake || 0),
       totalOutput: acc.totalOutput + Number(point.output || 0),
       totalBalance: acc.totalBalance + Number(point.balance || 0),
     }), { totalIntake: 0, totalOutput: 0, totalBalance: 0 })
-  ), [fluidTrendData]);
+  ), [formattedFluidTrendData]);
 
-  const latestFluidPoint = fluidTrendData[fluidTrendData.length - 1] || null;
+  const latestFluidPoint = formattedFluidTrendData[formattedFluidTrendData.length - 1] || null;
   const scopeLabel = formatScopeLabel({ allHistory, encounterId, admissionId });
 
   return (
@@ -205,9 +243,9 @@ export default function TrendReviewSlideOver({
         </div>
       </header>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-6 p-6">
-          <Tabs defaultValue="vitals" className="space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 chronicle-scrollbar">
+        <div className="space-y-6 pb-8">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-2 bg-muted/50">
               <TabsTrigger value="vitals" className="font-mono text-xs">
                 <Activity className="mr-1.5 h-3.5 w-3.5" />
@@ -258,13 +296,11 @@ export default function TrendReviewSlideOver({
                         <CardDescription>Spot fever and hypothermia changes over time.</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <VitalsChart
+                        <ClinicalTrendLineChart
                           data={formattedVitals}
-                          dataKey="temperature"
-                          title="Temperature"
-                          color="#dc2626"
+                          series={[{ key: 'temperature', label: 'Temperature', color: '#dc2626' }]}
                           unit="°C"
-                          domain={['dataMin - 0.5', 'dataMax + 0.5']}
+                          yDomain={[35, 41]}
                           referenceLines={[
                             { value: 36, label: 'Low', color: '#f59e0b' },
                             { value: 39, label: 'High', color: '#dc2626' },
@@ -279,15 +315,14 @@ export default function TrendReviewSlideOver({
                         <CardDescription>Systolic and diastolic are plotted separately.</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <VitalsChart
+                        <ClinicalTrendLineChart
                           data={formattedVitals}
-                          dataKey="systolic"
-                          secondaryKey="diastolic"
-                          title="Systolic"
-                          color="#1d4ed8"
-                          secondaryColor="#60a5fa"
+                          series={[
+                            { key: 'systolic', label: 'Systolic', color: '#1d4ed8' },
+                            { key: 'diastolic', label: 'Diastolic', color: '#60a5fa' },
+                          ]}
                           unit="mmHg"
-                          domain={[40, 220]}
+                          yDomain={[40, 220]}
                           referenceLines={[
                             { value: 90, label: 'Low', color: '#f59e0b' },
                             { value: 180, label: 'High', color: '#dc2626' },
@@ -306,26 +341,22 @@ export default function TrendReviewSlideOver({
                           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                             Heart Rate
                           </p>
-                          <VitalsChart
+                          <ClinicalTrendLineChart
                             data={formattedVitals}
-                            dataKey="heartRate"
-                            title="Heart Rate"
-                            color="#be123c"
+                            series={[{ key: 'heartRate', label: 'Heart Rate', color: '#be123c' }]}
                             unit="bpm"
-                            domain={[20, 220]}
+                            yDomain={[20, 220]}
                           />
                         </div>
                         <div>
                           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                             Respiratory Rate
                           </p>
-                          <VitalsChart
+                          <ClinicalTrendLineChart
                             data={formattedVitals}
-                            dataKey="respiratoryRate"
-                            title="Respiratory Rate"
-                            color="#9333ea"
+                            series={[{ key: 'respiratoryRate', label: 'Respiratory Rate', color: '#9333ea' }]}
                             unit="/min"
-                            domain={[0, 60]}
+                            yDomain={[0, 60]}
                           />
                         </div>
                       </CardContent>
@@ -341,13 +372,11 @@ export default function TrendReviewSlideOver({
                           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                             Oxygen Saturation
                           </p>
-                          <VitalsChart
+                          <ClinicalTrendLineChart
                             data={formattedVitals}
-                            dataKey="oxygenSaturation"
-                            title="SpO2"
-                            color="#0f766e"
+                            series={[{ key: 'oxygenSaturation', label: 'SpO2', color: '#0f766e' }]}
                             unit="%"
-                            domain={[50, 100]}
+                            yDomain={[80, 100]}
                             referenceLines={[
                               { value: 92, label: 'Low', color: '#dc2626' },
                             ]}
@@ -357,13 +386,11 @@ export default function TrendReviewSlideOver({
                           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                             Pain Score
                           </p>
-                          <VitalsChart
+                          <ClinicalTrendLineChart
                             data={formattedVitals}
-                            dataKey="painLevel"
-                            title="Pain"
-                            color="#ea580c"
+                            series={[{ key: 'painLevel', label: 'Pain', color: '#ea580c' }]}
                             unit="/10"
-                            domain={[0, 10]}
+                            yDomain={[0, 10]}
                           />
                         </div>
                       </CardContent>
@@ -381,7 +408,7 @@ export default function TrendReviewSlideOver({
                 />
               ) : fluidLoading ? (
                 <LoadingState label="Loading fluid-balance trends..." />
-              ) : fluidTrendData.length === 0 ? (
+              ) : formattedFluidTrendData.length === 0 ? (
                 <EmptyState
                   title="No fluid-balance data in this scope"
                   body="No intake or output records were found for the current scope. Record fluid balance first, then return here to review the trend."
@@ -406,7 +433,7 @@ export default function TrendReviewSlideOver({
                     />
                     <TrendStatCard
                       label="Latest Day"
-                      value={latestFluidPoint?.date ? format(new Date(latestFluidPoint.date), 'MMM d') : '—'}
+                      value={latestFluidPoint?.fullDateLabel || '—'}
                       meta={latestFluidPoint ? `Intake ${latestFluidPoint.intake} mL • Output ${latestFluidPoint.output} mL` : null}
                     />
                   </div>
@@ -423,7 +450,7 @@ export default function TrendReviewSlideOver({
                         <Clock3 className="h-4 w-4" />
                         Daily totals are aggregated from recorded intake and output entries.
                       </div>
-                      <FluidBalanceTrendsChart data={fluidTrendData} />
+                      <FluidBalanceTrendsChart data={formattedFluidTrendData} />
                     </CardContent>
                   </Card>
                 </>
@@ -431,7 +458,7 @@ export default function TrendReviewSlideOver({
             </TabsContent>
           </Tabs>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

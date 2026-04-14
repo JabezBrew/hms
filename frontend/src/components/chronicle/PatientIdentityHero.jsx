@@ -8,7 +8,6 @@ import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
-import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
@@ -52,7 +51,6 @@ const PatientIdentityHero = ({
   onViewTreatmentSheet,
   onViewMedicationHistory,
   onRecordFluids,
-  onViewTrends,
   onStartWardRound,
   onStartDischarge,
   onManageInsurance,
@@ -435,20 +433,6 @@ const PatientIdentityHero = ({
             </Button>
           )}
 
-          {onViewTrends && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              onClick={onViewTrends}
-              onPointerEnter={() => prefetchAction('trends')}
-              onFocus={() => prefetchAction('trends')}
-            >
-              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
-              Trends
-            </Button>
-          )}
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -459,14 +443,12 @@ const PatientIdentityHero = ({
                 onPointerEnter={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('trends');
                   prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('trends');
                   prefetchAction('medicationHistory');
                   prefetchAction('discharge');
                 }}
@@ -500,16 +482,6 @@ const PatientIdentityHero = ({
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
-              {onViewTrends && (
-                <DropdownMenuItem
-                  onClick={onViewTrends}
-                  onPointerEnter={() => prefetchAction('trends')}
-                  onFocus={() => prefetchAction('trends')}
-                >
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Trend Review
-                </DropdownMenuItem>
-              )}
               {onRecordFluids && (
                 <DropdownMenuItem
                   onClick={onRecordFluids}

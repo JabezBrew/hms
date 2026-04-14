@@ -106,6 +106,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     selectedEncounterId,
     selectedAdmissionId,
     chronicleAllHistory,
+    initialTrendTab,
     patientIdentityId,
     referralId,
     copilotPatientName,
@@ -212,6 +213,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         encounterId: selectedEncounterId || null,
         admissionId: selectedAdmissionId || null,
         allHistory: chronicleAllHistory,
+        initialTab: initialTrendTab || 'vitals',
       };
     case 'insurance':
       return {
