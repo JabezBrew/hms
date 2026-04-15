@@ -1,13 +1,4 @@
-import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
-import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
-import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Expand from 'lucide-react/dist/esm/icons/expand.js';
-import Send from 'lucide-react/dist/esm/icons/send.js';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
@@ -34,6 +25,7 @@ import {
   isInlineExpandableNoteEntry,
   normalizeExpansionId,
 } from "./chronicleNoteUtils";
+import { getEntryConfig, getBadgeClass } from "./entryConfig";
 
 const NoteDetailModal = lazy(() => import("./NoteDetailModal"));
 const PrescriptionActionsDialog = lazy(() => import("./PrescriptionActionsDialog"));
@@ -79,112 +71,7 @@ const TimelineEntry = ({
   // Entry type configuration
   // ============================================
 
-  const entryConfig = {
-    progress_note: {
-      icon: FileText,
-      label: 'Progress Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    soap_note: {
-      icon: FileText,
-      label: 'SOAP Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    vitals: {
-      icon: Activity,
-      label: 'Vitals',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    medication: {
-      icon: Pill,
-      label: 'Medication',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    prescription: {
-      icon: Pill,
-      label: 'Prescription',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    lab_result: {
-      icon: TestTube,
-      label: 'Lab Result',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    order: {
-      icon: ClipboardList,
-      label: 'Order',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    consult: {
-      icon: Stethoscope,
-      label: 'Consultation',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    consult_note: {
-      icon: Stethoscope,
-      label: 'Consult Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    admission: {
-      icon: UserPlus,
-      label: 'Admission',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    admission_note: {
-      icon: UserPlus,
-      label: 'Admission Note',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    discharge: {
-      icon: LogOut,
-      label: 'Discharge',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    discharge_note: {
-      icon: LogOut,
-      label: 'Discharge Note',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    nursing_note: {
-      icon: FileText,
-      label: 'Nursing Note',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    procedure: {
-      icon: Activity,
-      label: 'Procedure',
-      color: 'rose',
-      nodeClass: 'timeline-node-rose'
-    },
-    referral: {
-      icon: Send,
-      label: 'Referral',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    chart: {
-      icon: ClipboardList,
-      label: 'Chart',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    }
-  };
-
-  const config = entryConfig[entry.type] || entryConfig.progress_note;
+  const config = getEntryConfig(entry.type);
   const Icon = config.icon;
 
   // ============================================
@@ -234,19 +121,7 @@ const TimelineEntry = ({
     }
   };
 
-  // ============================================
-  // Badge color mapping
-  // ============================================
-
-  const getBadgeClass = (color) => {
-    const badges = {
-      amber: 'badge-chronicle-amber',
-      emerald: 'badge-chronicle-emerald',
-      rose: 'badge-chronicle-rose',
-      sky: 'badge-chronicle-sky'
-    };
-    return badges[color] || badges.amber;
-  };
+  // Badge color mapping imported from entryConfig
 
   // ============================================
   // Check if entry has viewable detail content
@@ -1254,4 +1129,14 @@ const TimelineGroup = ({ date, entries, startIndex = 0 }) => {
 };
 
 export default TimelineEntry;
-export { TimelineEntry, TimelineGroup, VitalsContent, LabResultContent, MedicationContent, ReferralContent, NotePreview };
+export {
+  TimelineEntry,
+  TimelineGroup,
+  VitalsContent,
+  LabResultContent,
+  MedicationContent,
+  ReferralContent,
+  NotePreview,
+  ExpandedNoteContent,
+  ChartSummaryContent,
+};

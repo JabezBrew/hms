@@ -38,7 +38,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import PatientIdentityHero from "@/components/chronicle/PatientIdentityHero";
 import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySidebar";
 import TimelineEntry from "@/components/chronicle/TimelineEntry";
+import TimelineIndex from "@/components/chronicle/TimelineIndex";
+import TimelineDetailPanel from "@/components/chronicle/TimelineDetailPanel";
 import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
+import { useTimelineSelection } from "@/hooks/useTimelineSelection";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
@@ -803,6 +811,31 @@ const PatientChroniclePage = ({ defaultAction }) => {
     setExpandedEncounters(new Set());
   }, []);
 
+  // Master-detail selection state (desktop split view)
+  const {
+    selectedEntryId,
+    selectedEntry,
+    selectEntry,
+    selectNext,
+    selectPrevious,
+  } = useTimelineSelection({
+    groupedByEncounter,
+    expandedEncounters,
+    setExpandedEncounters,
+  });
+
+  // Keyboard navigation for master-detail index
+  useEffect(() => {
+    const handleNext = () => selectNext();
+    const handlePrev = () => selectPrevious();
+    window.addEventListener('chronicle:selectNext', handleNext);
+    window.addEventListener('chronicle:selectPrevious', handlePrev);
+    return () => {
+      window.removeEventListener('chronicle:selectNext', handleNext);
+      window.removeEventListener('chronicle:selectPrevious', handlePrev);
+    };
+  }, [selectNext, selectPrevious]);
+
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
 
@@ -1328,176 +1361,208 @@ const PatientChroniclePage = ({ defaultAction }) => {
           )}
         />
 
-        {/* Timeline Chronicle */}
-        <main className="flex-1 p-6 transition-all duration-300">
-          <div className="min-w-0">
-            {/* Timeline Header with Search and Filters */}
-            <div className="mb-6 space-y-4">
-              {/* Title and count */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="font-display text-2xl text-foreground">
-                    Clinical Chronicle
-                  </h2>
-                  {totalCount > 0 && (
-                    <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                      {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
-                    </span>
-                  )}
-                  {selectedEncounter && !isAllVisitsScope && (
-                    <span className="font-mono text-xs text-muted-foreground/80">
-                      Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
-                    </span>
-                  )}
-                  {/* Show encounter count hint when some encounters have no documentation */}
-                  {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
-                    <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
-                      • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
-                    </span>
-                  )}
-                </div>
+        {/* Timeline Chronicle — Master-Detail Split */}
+        <main className="flex-1 min-w-0 flex flex-col transition-all duration-300">
+          {/* Timeline Header — shared between desktop split and mobile */}
+          <div className="px-6 pt-6 pb-4 space-y-4">
+            {/* Title and count */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <h2 className="font-display text-2xl text-foreground">
+                  Clinical Chronicle
+                </h2>
+                {totalCount > 0 && (
+                  <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                    {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                  </span>
+                )}
+                {selectedEncounter && !isAllVisitsScope && (
+                  <span className="font-mono text-xs text-muted-foreground/80">
+                    Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
+                  </span>
+                )}
+                {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                  <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                    • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
+                  </span>
+                )}
+              </div>
 
-                {/* Refresh button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => refetchTimeline()}
+                className="font-mono text-xs"
+              >
+                <RefreshCw className={cn(
+                  "h-3.5 w-3.5 mr-1.5",
+                  isTimelineLoading && "animate-spin"
+                )} />
+                Refresh
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Visit focus
+                </span>
+              </div>
+              <Select
+                value={resolvedVisitScope || CHRONICLE_ALL_VISITS}
+                onValueChange={handleVisitScopeChange}
+              >
+                <SelectTrigger className="min-w-[260px] max-w-[420px] font-mono text-xs">
+                  <SelectValue placeholder="Select visit" />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {visitScopeOptions.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      className="font-mono text-xs"
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!isAllVisitsScope && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => refetchTimeline()}
-                  className="font-mono text-xs"
+                  onClick={handleViewAllHistory}
+                  className="h-8 px-2 font-mono text-xs"
                 >
-                  <RefreshCw className={cn(
-                    "h-3.5 w-3.5 mr-1.5",
-                    isTimelineLoading && "animate-spin"
-                  )} />
-                  Refresh
+                  All history
                 </Button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Visit focus
-                  </span>
-                </div>
-                <Select
-                  value={resolvedVisitScope || CHRONICLE_ALL_VISITS}
-                  onValueChange={handleVisitScopeChange}
+              )}
+              {activeEncounter?.id && selectedEncounterId !== String(activeEncounter.id) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleViewCurrentVisit}
+                  className="h-8 px-2 font-mono text-xs"
                 >
-                  <SelectTrigger className="min-w-[260px] max-w-[420px] font-mono text-xs">
-                    <SelectValue placeholder="Select visit" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {visitScopeOptions.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value}
-                        className="font-mono text-xs"
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!isAllVisitsScope && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleViewAllHistory}
-                    className="h-8 px-2 font-mono text-xs"
-                  >
-                    All history
-                  </Button>
-                )}
-                {activeEncounter?.id && selectedEncounterId !== String(activeEncounter.id) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleViewCurrentVisit}
-                    className="h-8 px-2 font-mono text-xs"
-                  >
-                    Current visit
-                  </Button>
-                )}
-              </div>
-
-              {/* Search and Filter row */}
-              <div className="flex flex-wrap items-center gap-4">
-                {/* Search Input */}
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="Search notes, prescriptions..."
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    className="pl-9 font-mono text-sm"
-                  />
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex rounded-lg bg-muted p-1" data-onboarding="chronicle-filter-group">
-                    {[
-                      { key: 'all', label: 'All', icon: null },
-                      { key: 'progress_note', label: 'Notes', icon: FileText },
-                      { key: 'vitals', label: 'Vitals', icon: Activity },
-                      { key: 'medication', label: 'Meds', icon: Pill },
-                      { key: 'lab_result', label: 'Labs', icon: TestTube }
-                    ].map(filter => (
-                      <button
-                        key={filter.key}
-                        onClick={() => setActiveFilter(filter.key)}
-                        data-onboarding={
-                          filter.key === 'all'
-                            ? 'chronicle-filter-all'
-                            : filter.key === 'progress_note'
-                              ? 'chronicle-filter-notes'
-                              : undefined
-                        }
-                        className={cn(
-                          "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
-                          "flex items-center gap-1.5",
-                          activeFilter === filter.key
-                            ? "bg-background text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {filter.icon && <filter.icon className="h-3 w-3" />}
-                        {filter.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Expand/Collapse All */}
-                {isAllVisitsScope && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={expandAll}
-                      className="h-8 px-2 font-mono text-xs"
-                    >
-                      Expand visits
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={collapseAll}
-                      className="h-8 px-2 font-mono text-xs"
-                    >
-                      Collapse visits
-                    </Button>
-                  </div>
-                )}
-              </div>
+                  Current visit
+                </Button>
+              )}
             </div>
 
-            {/* Timeline Entries Grouped by Encounter */}
+            {/* Search and Filter row */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search notes, prescriptions..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-9 font-mono text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <div className="flex rounded-lg bg-muted p-1" data-onboarding="chronicle-filter-group">
+                  {[
+                    { key: 'all', label: 'All', icon: null },
+                    { key: 'progress_note', label: 'Notes', icon: FileText },
+                    { key: 'vitals', label: 'Vitals', icon: Activity },
+                    { key: 'medication', label: 'Meds', icon: Pill },
+                    { key: 'lab_result', label: 'Labs', icon: TestTube }
+                  ].map(filter => (
+                    <button
+                      key={filter.key}
+                      onClick={() => setActiveFilter(filter.key)}
+                      data-onboarding={
+                        filter.key === 'all'
+                          ? 'chronicle-filter-all'
+                          : filter.key === 'progress_note'
+                            ? 'chronicle-filter-notes'
+                            : undefined
+                      }
+                      className={cn(
+                        "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
+                        "flex items-center gap-1.5",
+                        activeFilter === filter.key
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {filter.icon && <filter.icon className="h-3 w-3" />}
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {isAllVisitsScope && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={expandAll}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    Expand visits
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={collapseAll}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    Collapse visits
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop: Master-Detail split with resizable panels */}
+          <div className="hidden lg:flex flex-1 min-h-0 border-t border-border">
+            <ResizablePanelGroup
+              direction="horizontal"
+              autoSaveId="chronicle-timeline-split"
+            >
+              <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+                <TimelineIndex
+                  groupedByEncounter={groupedByEncounter}
+                  expandedEncounters={expandedEncounters}
+                  toggleEncounter={toggleEncounter}
+                  selectedEntryId={selectedEntryId}
+                  onSelectEntry={selectEntry}
+                  formatEncounterDateRange={formatEncounterDateRange}
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                  isLoading={(isTimelineLoading || isVisitScopePending) && filteredEntries.length === 0}
+                  isEmpty={!isTimelineLoading && filteredEntries.length === 0}
+                  searchInput={searchInput}
+                  onClearSearch={() => setSearchInput('')}
+                  onViewAllHistory={handleViewAllHistory}
+                  selectedEncounterId={selectedEncounterId}
+                />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={65} minSize={40}>
+                <TimelineDetailPanel
+                  entry={selectedEntry}
+                  currentUserId={user?.id}
+                  onCopyNote={handleCopyNote}
+                  onEditNote={handleEditNote}
+                  onNoteUpdated={refetchTimeline}
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
+
+          {/* Mobile: Full-content inline layout (unchanged) */}
+          <div className="lg:hidden p-6">
             <div className="relative space-y-4">
-              {/* Loading state for initial load */}
               {(isTimelineLoading || isVisitScopePending) && filteredEntries.length === 0 && (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -1508,7 +1573,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
               )}
 
-              {/* Encounter Groups */}
               {groupedByEncounter.encounters.map(({ encounter, entries }) => {
                 const normalizedEncounterId = normalizeExpansionId(encounter.id);
                 const isExpanded = normalizedEncounterId
@@ -1516,12 +1580,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   : false;
                 const dateRange = formatEncounterDateRange(encounter);
                 const encounterKind = getEncounterKind(encounter);
-                const typeIcon = encounterKind === 'inpatient' ? Building2 : Calendar;
-                const TypeIcon = typeIcon;
+                const TypeIcon = encounterKind === 'inpatient' ? Building2 : Calendar;
 
                 return (
                   <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
-                    {/* Encounter Header */}
                     <button
                       onClick={() => toggleEncounter(normalizedEncounterId)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
@@ -1574,41 +1636,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="hidden xl:flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 font-mono text-[10px]"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleViewMedicationHistory();
-                            }}
-                          >
-                            <Pill className="h-3.5 w-3.5 mr-1" />
-                            Meds
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 font-mono text-[10px]"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRecordFluids();
-                            }}
-                          >
-                            <Droplets className="h-3.5 w-3.5 mr-1" />
-                            Fluids
-                          </Button>
-                        </div>
-
-                        <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                        </span>
-                      </div>
+                      <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                        {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                      </span>
                     </button>
 
-                    {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
                     <div className={cn("space-y-3 border-t border-border px-4 py-3", !isExpanded && "hidden")}>
                       {entries.map((entry, index) => (
                         <TimelineEntry
@@ -1630,10 +1662,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 );
               })}
 
-              {/* Unlinked Entries */}
               {groupedByEncounter.unlinked.length > 0 && (
                 <div className="overflow-hidden rounded-lg border border-dashed border-border bg-card/50">
-                  {/* Unlinked Header */}
                   <button
                     onClick={() => toggleEncounter('unlinked')}
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
@@ -1643,28 +1673,21 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     ) : (
                       <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                     )}
-
                     <div className="rounded-lg bg-muted p-2">
                       <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </div>
-
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          Unlinked Entries
-                        </span>
-                      </div>
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Unlinked Entries
+                      </span>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         Legacy data without encounter context
                       </div>
                     </div>
-
                     <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
                       {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
                     </span>
                   </button>
-
-                  {/* Unlinked Entries List — CSS-hidden instead of unmount */}
                   <div className={cn("space-y-3 border-t border-dashed border-border px-4 py-3", !expandedEncounters.has('unlinked') && "hidden")}>
                     {groupedByEncounter.unlinked.map((entry, index) => (
                       <TimelineEntry
@@ -1685,7 +1708,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
               )}
 
-              {/* Empty state */}
               {!isTimelineLoading && filteredEntries.length === 0 && (
                 <div className="py-12 text-center text-muted-foreground">
                   <p className="font-mono text-sm">
@@ -1718,7 +1740,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
               )}
 
-              {/* Infinite scroll trigger */}
               {hasNextPage && (
                 <div
                   ref={loadMoreRef}
@@ -1742,7 +1763,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
               )}
 
-              {/* End of timeline indicator */}
               {!hasNextPage && filteredEntries.length > 0 && (
                 <div className="py-8 text-center text-muted-foreground">
                   <div className="mx-auto mb-2 h-px w-12 bg-border" />
