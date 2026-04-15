@@ -3,7 +3,6 @@ import Expand from 'lucide-react/dist/esm/icons/expand.js';
 import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import MousePointerClick from 'lucide-react/dist/esm/icons/mouse-pointer-click.js';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getEntryConfig, getBadgeClass } from './entryConfig';
@@ -95,6 +94,25 @@ const TimelineDetailPanel = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
 
+  const handleEditClick = useCallback(() => {
+    if (!entry || !onEditNote) return;
+    onEditNote({
+      noteId: entry.id,
+      template: entry.template,
+      templateId: entry.template?.id || entry.template_id,
+      templateTitle: entry.template?.title || entry.template_title || entry.title,
+      data: entry.data,
+      title: entry.title,
+    });
+  }, [entry, onEditNote]);
+
+  const handleCopyConfirm = useCallback(
+    (copyData) => {
+      if (onCopyNote) onCopyNote(copyData);
+    },
+    [onCopyNote]
+  );
+
   if (!entry) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -131,25 +149,6 @@ const TimelineDetailPanel = ({
     currentUserId &&
     entry.author_id &&
     String(currentUserId) === String(entry.author_id);
-
-  const handleEditClick = useCallback(() => {
-    if (!onEditNote) return;
-    onEditNote({
-      noteId: entry.id,
-      template: entry.template,
-      templateId: entry.template?.id || entry.template_id,
-      templateTitle: entry.template?.title || entry.template_title || entry.title,
-      data: entry.data,
-      title: entry.title,
-    });
-  }, [entry, onEditNote]);
-
-  const handleCopyConfirm = useCallback(
-    (copyData) => {
-      if (onCopyNote) onCopyNote(copyData);
-    },
-    [onCopyNote]
-  );
 
   // Render the full content for the entry type.
   // Notes always render expanded in the detail panel.
