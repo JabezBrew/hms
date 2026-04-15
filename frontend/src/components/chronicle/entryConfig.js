@@ -220,12 +220,16 @@ export function getEntryIndexSummary(entry) {
       // Notes: use title, or extract first meaningful line from content/data
       if (entry.title) return entry.title;
       if (entry.content) return entry.content.slice(0, 80);
-      // Try to extract from data
+      // Try to extract from data, skipping IDs, status codes, and short tokens
       if (entry.data && typeof entry.data === 'object') {
-        const firstVal = Object.values(entry.data).find(
-          (v) => typeof v === 'string' && v.length > 0
+        const SKIP_KEYS = new Set([
+          'id', 'uuid', 'status', 'type', 'created_at', 'updated_at',
+          'author_id', 'patient_id', 'encounter_id', 'template_id',
+        ]);
+        const firstVal = Object.entries(entry.data).find(
+          ([k, v]) => typeof v === 'string' && v.length >= 4 && !SKIP_KEYS.has(k)
         );
-        if (firstVal) return firstVal.slice(0, 80);
+        if (firstVal) return firstVal[1].slice(0, 80);
       }
       return getEntryConfig(entry.type).label;
     }

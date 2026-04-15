@@ -466,14 +466,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
     if (latestVitals.blood_pressure) {
       const parts = latestVitals.blood_pressure.split('/');
       const systolic = parts.length > 0 ? Number(parts[0]) : null;
+      const bpAbnormal = systolic != null && !isNaN(systolic) && (systolic > 140 || systolic < 90);
       results.push({
         id: `bp-${vitalsId}`,
         name: 'BP',
         value: latestVitals.blood_pressure,
         unit: 'mmHg',
         timestamp,
-        is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
-        abnormal_direction: systolic > 140 ? 'high' : 'low',
+        is_abnormal: bpAbnormal,
+        abnormal_direction: bpAbnormal ? (systolic > 140 ? 'high' : 'low') : null,
       });
     }
 
@@ -539,8 +540,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Infinite scroll ref
   const loadMoreRef = useRef(null);
 
-  // Set up intersection observer for infinite scroll
+  // Set up intersection observer for mobile infinite scroll
   useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
@@ -550,10 +554,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       { threshold: 0.1 }
     );
 
-    if (loadMoreRef.current) {
-      observer.observe(loadMoreRef.current);
-    }
-
+    observer.observe(el);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
@@ -823,18 +824,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     expandedEncounters,
     setExpandedEncounters,
   });
-
-  // Keyboard navigation for master-detail index
-  useEffect(() => {
-    const handleNext = () => selectNext();
-    const handlePrev = () => selectPrevious();
-    window.addEventListener('chronicle:selectNext', handleNext);
-    window.addEventListener('chronicle:selectPrevious', handlePrev);
-    return () => {
-      window.removeEventListener('chronicle:selectNext', handleNext);
-      window.removeEventListener('chronicle:selectPrevious', handlePrev);
-    };
-  }, [selectNext, selectPrevious]);
 
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
@@ -1535,6 +1524,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   toggleEncounter={toggleEncounter}
                   selectedEntryId={selectedEntryId}
                   onSelectEntry={selectEntry}
+                  onSelectNext={selectNext}
+                  onSelectPrevious={selectPrevious}
                   formatEncounterDateRange={formatEncounterDateRange}
                   hasNextPage={hasNextPage}
                   isFetchingNextPage={isFetchingNextPage}

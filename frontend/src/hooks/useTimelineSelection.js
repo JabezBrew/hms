@@ -44,27 +44,32 @@ export function useTimelineSelection({
     return visibleEntries.find((e) => String(e.id) === String(selectedEntryId)) || null;
   }, [selectedEntryId, visibleEntries]);
 
-  // Auto-select first entry on initial data load
+  // Single effect handles both initial auto-select and re-select when selection disappears.
+  // This avoids a race condition between two separate effects that could both try to
+  // setSelectedEntryId in the same render cycle.
   useEffect(() => {
-    if (hasAutoSelected.current) return;
-    if (visibleEntries.length > 0) {
+    if (visibleEntries.length === 0) return;
+
+    // Initial auto-select: pick first entry on first data load
+    if (!hasAutoSelected.current) {
       setSelectedEntryId(String(visibleEntries[0].id));
       hasAutoSelected.current = true;
+      return;
     }
-  }, [visibleEntries]);
 
-  // If the selected entry disappears from visible entries (filter change, etc.),
-  // re-select the first visible entry
-  useEffect(() => {
-    if (!selectedEntryId) return;
-    const stillVisible = visibleEntries.some(
-      (e) => String(e.id) === String(selectedEntryId)
-    );
-    if (!stillVisible && visibleEntries.length > 0) {
-      setSelectedEntryId(String(visibleEntries[0].id));
+    // Re-select: if current selection is no longer visible, pick first visible entry
+    if (selectedEntryId) {
+      const stillVisible = visibleEntries.some(
+        (e) => String(e.id) === String(selectedEntryId)
+      );
+      if (!stillVisible) {
+        setSelectedEntryId(String(visibleEntries[0].id));
+      }
     }
   }, [selectedEntryId, visibleEntries]);
 
+  // Select an entry by ID. Uses functional updater for setExpandedEncounters
+  // to avoid needing expandedEncounters in the dependency array.
   const selectEntry = useCallback(
     (entryId) => {
       setSelectedEntryId(String(entryId));
@@ -76,8 +81,9 @@ export function useTimelineSelection({
           const hasEntry = group.entries.some(
             (e) => String(e.id) === String(entryId)
           );
-          if (hasEntry && !expandedEncounters.has(encId)) {
+          if (hasEntry) {
             setExpandedEncounters((prev) => {
+              if (prev.has(encId)) return prev;
               const next = new Set(prev);
               next.add(encId);
               return next;
@@ -87,7 +93,7 @@ export function useTimelineSelection({
         }
       }
     },
-    [groupedByEncounter, expandedEncounters, setExpandedEncounters]
+    [groupedByEncounter, setExpandedEncounters]
   );
 
   const clearSelection = useCallback(() => {

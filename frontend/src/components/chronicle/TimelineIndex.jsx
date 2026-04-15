@@ -67,12 +67,14 @@ const TimelineIndexEntry = ({ entry, isSelected, onSelect }) => {
   const Icon = config.icon;
   const summary = getEntryIndexSummary(entry);
   const ref = useRef(null);
+  const wasSelectedRef = useRef(isSelected);
 
-  // Scroll selected entry into view
+  // Scroll selected entry into view only on false→true transitions
   useEffect(() => {
-    if (isSelected && ref.current) {
+    if (isSelected && !wasSelectedRef.current && ref.current) {
       ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
+    wasSelectedRef.current = isSelected;
   }, [isSelected]);
 
   return (
@@ -132,6 +134,8 @@ const TimelineIndex = ({
   toggleEncounter,
   selectedEntryId,
   onSelectEntry,
+  onSelectNext,
+  onSelectPrevious,
   formatEncounterDateRange,
   // Infinite scroll
   hasNextPage,
@@ -166,22 +170,18 @@ const TimelineIndex = ({
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Keyboard navigation
+  // Keyboard navigation via prop callbacks
   const handleKeyDown = useCallback(
     (e) => {
-      // Only handle when focus is within the index
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        // Find next entry — handled by parent via selectNext
-        const event = new CustomEvent('chronicle:selectNext');
-        window.dispatchEvent(event);
+        onSelectNext?.();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const event = new CustomEvent('chronicle:selectPrevious');
-        window.dispatchEvent(event);
+        onSelectPrevious?.();
       }
     },
-    []
+    [onSelectNext, onSelectPrevious]
   );
 
   return (

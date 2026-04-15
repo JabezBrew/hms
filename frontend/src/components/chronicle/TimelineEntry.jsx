@@ -27,6 +27,62 @@ import {
 } from "./chronicleNoteUtils";
 import { getEntryConfig, getBadgeClass } from "./entryConfig";
 
+/**
+ * Format a timestamp to a full display string.
+ */
+function formatTime(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return '';
+  }
+}
+
+function formatRelativeTime(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '';
+  }
+}
+
+const COPYABLE_TYPES = new Set([
+  'progress_note', 'soap_note', 'nursing_note', 'admission_note',
+  'discharge_note', 'consult_note', 'procedure',
+]);
+
+const EDITABLE_TYPES = new Set([
+  'progress_note', 'soap_note', 'nursing_note', 'admission_note',
+  'discharge_note', 'consult_note', 'procedure',
+]);
+
 const NoteDetailModal = lazy(() => import("./NoteDetailModal"));
 const PrescriptionActionsDialog = lazy(() => import("./PrescriptionActionsDialog"));
 const CopyNoteModal = lazy(() => import("./CopyNoteModal"));
@@ -74,59 +130,6 @@ const TimelineEntry = ({
   const config = getEntryConfig(entry.type);
   const Icon = config.icon;
 
-  // ============================================
-  // Time formatting
-  // ============================================
-
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  const formatRelativeTime = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
-      if (diffMins < 1) return 'just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
-
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  // Badge color mapping imported from entryConfig
-
-  // ============================================
-  // Check if entry has viewable detail content
-  // ============================================
-
   const hasDetailContent = hasEntryDetailContent(entry);
   const canInlineExpand = isInlineExpandableNoteEntry(entry);
   const noteBodyId = normalizeExpansionId(entry?.id)
@@ -136,48 +139,21 @@ const TimelineEntry = ({
     ? isNoteExpanded
     : isFallbackNoteExpanded;
 
-  // ============================================
-  // Check if entry is a copyable clinical note
-  // ============================================
+  const isCopyable =
+    COPYABLE_TYPES.has(entry.type) &&
+    !!entry.id &&
+    !!entry.data &&
+    typeof entry.data === 'object';
 
-  const isCopyableNote = () => {
-    // Note types that can be copied
-    const copyableTypes = [
-      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
-      'discharge_note', 'consult_note', 'procedure'
-    ];
-    // Must have an id and be a note type with data
-    return copyableTypes.includes(entry.type) &&
-           entry.id &&
-           entry.data &&
-           typeof entry.data === 'object';
-  };
-
-  // ============================================
-  // Check if entry is an editable clinical note
-  // ============================================
-
-  const isEditableNote = () => {
-    // Note types that can be edited (same as copyable)
-    const editableTypes = [
-      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
-      'discharge_note', 'consult_note', 'procedure'
-    ];
-    // Must have an id, template info, and be a note type with data
-    const isEditableType = editableTypes.includes(entry.type) &&
-           entry.id &&
-           entry.template &&
-           entry.data &&
-           typeof entry.data === 'object';
-
-    if (!isEditableType) return false;
-
-    // Only the author can edit their own notes
-    // Compare current user ID with the entry's author_id
-    if (!currentUserId || !entry.author_id) return false;
-
-    return String(currentUserId) === String(entry.author_id);
-  };
+  const isEditable =
+    EDITABLE_TYPES.has(entry.type) &&
+    !!entry.id &&
+    !!entry.template &&
+    !!entry.data &&
+    typeof entry.data === 'object' &&
+    !!currentUserId &&
+    !!entry.author_id &&
+    String(currentUserId) === String(entry.author_id);
 
   // ============================================
   // Handle edit note click
@@ -302,7 +278,7 @@ const TimelineEntry = ({
         {renderContent()}
 
         {/* Action buttons */}
-        {(hasDetailContent || isCopyableNote() || isEditableNote() || canInlineExpand) && (
+        {(hasDetailContent || isCopyable || isEditable || canInlineExpand) && (
           <div className="mt-3 flex items-center gap-3">
             {canInlineExpand && (
               <Button
@@ -332,7 +308,7 @@ const TimelineEntry = ({
                 {canInlineExpand ? 'Focus view' : 'View details'}
               </Button>
             )}
-            {isEditableNote() && onEditNote && (
+            {isEditable && onEditNote && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -343,7 +319,7 @@ const TimelineEntry = ({
                 Edit
               </Button>
             )}
-            {isCopyableNote() && (
+            {isCopyable && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -373,7 +349,7 @@ const TimelineEntry = ({
       )}
 
       {/* Copy note modal */}
-      {isCopyableNote() && isCopyModalOpen && (
+      {isCopyable && isCopyModalOpen && (
         <Suspense fallback={null}>
           <CopyNoteModal
             open={isCopyModalOpen}
