@@ -13,6 +13,9 @@ export function useTimelineSelection({
 }) {
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const hasAutoSelected = useRef(false);
+  // Track selectedEntryId in a ref so the effect can read it without depending on it
+  const selectedEntryIdRef = useRef(selectedEntryId);
+  selectedEntryIdRef.current = selectedEntryId;
 
   // Build a flat list of all visible (expanded) entries for navigation
   const visibleEntries = useMemo(() => {
@@ -44,9 +47,8 @@ export function useTimelineSelection({
     return visibleEntries.find((e) => String(e.id) === String(selectedEntryId)) || null;
   }, [selectedEntryId, visibleEntries]);
 
-  // Single effect handles both initial auto-select and re-select when selection disappears.
-  // This avoids a race condition between two separate effects that could both try to
-  // setSelectedEntryId in the same render cycle.
+  // Handle auto-select and re-select when visibleEntries change.
+  // Uses ref for selectedEntryId to avoid re-triggering on selection changes.
   useEffect(() => {
     if (visibleEntries.length === 0) return;
 
@@ -58,15 +60,16 @@ export function useTimelineSelection({
     }
 
     // Re-select: if current selection is no longer visible, pick first visible entry
-    if (selectedEntryId) {
+    const currentId = selectedEntryIdRef.current;
+    if (currentId) {
       const stillVisible = visibleEntries.some(
-        (e) => String(e.id) === String(selectedEntryId)
+        (e) => String(e.id) === String(currentId)
       );
       if (!stillVisible) {
         setSelectedEntryId(String(visibleEntries[0].id));
       }
     }
-  }, [selectedEntryId, visibleEntries]);
+  }, [visibleEntries]);
 
   // Select an entry by ID. Uses functional updater for setExpandedEncounters
   // to avoid needing expandedEncounters in the dependency array.
@@ -104,21 +107,21 @@ export function useTimelineSelection({
   const selectNext = useCallback(() => {
     if (visibleEntries.length === 0) return;
     const currentIndex = visibleEntries.findIndex(
-      (e) => String(e.id) === String(selectedEntryId)
+      (e) => String(e.id) === String(selectedEntryIdRef.current)
     );
     const nextIndex =
       currentIndex < 0 ? 0 : Math.min(currentIndex + 1, visibleEntries.length - 1);
     setSelectedEntryId(String(visibleEntries[nextIndex].id));
-  }, [selectedEntryId, visibleEntries]);
+  }, [visibleEntries]);
 
   const selectPrevious = useCallback(() => {
     if (visibleEntries.length === 0) return;
     const currentIndex = visibleEntries.findIndex(
-      (e) => String(e.id) === String(selectedEntryId)
+      (e) => String(e.id) === String(selectedEntryIdRef.current)
     );
     const prevIndex = currentIndex < 0 ? 0 : Math.max(currentIndex - 1, 0);
     setSelectedEntryId(String(visibleEntries[prevIndex].id));
-  }, [selectedEntryId, visibleEntries]);
+  }, [visibleEntries]);
 
   return {
     selectedEntryId,
