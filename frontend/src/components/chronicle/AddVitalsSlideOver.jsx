@@ -8,6 +8,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -200,14 +201,7 @@ const AddVitalsSlideOver = ({
     : patient?.name || 'Patient';
 
   return (
-    <div
-      className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
-        "transform transition-transform duration-300 ease-in-out",
-        "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
-      )}
-    >
+    <WorkspaceShell open={open}>
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -499,7 +493,7 @@ const AddVitalsSlideOver = ({
           </Button>
         </div>
       </footer>
-    </div>
+    </WorkspaceShell>
   );
 };
 

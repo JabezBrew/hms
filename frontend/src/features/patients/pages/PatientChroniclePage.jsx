@@ -43,6 +43,8 @@ import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { useIsDesktop } from "@/hooks/useIsDesktop";
 import {
   getInitialExpandedEncounterIds,
   getInitialExpandedNoteIds,
@@ -62,6 +64,50 @@ import {
 import { emitOnboardingEvent } from "@/features/onboarding";
 
 import { useDebounce } from "@/hooks/use-debounce";
+
+/**
+ * Wrapper that provides either a resizable split (desktop) or plain layout (mobile)
+ * for the timeline + workspace panel. Children are the timeline content.
+ */
+function TimelineWorkspaceLayout({ isDesktop, activeWorkspace, workspaceContext, children }) {
+  if (isDesktop) {
+    return (
+      <ResizablePanelGroup
+        direction="horizontal"
+        autoSaveId="chronicle-workspace"
+        className="flex-1 min-h-0"
+      >
+        <ResizablePanel defaultSize={55} minSize={30} className="min-h-0 overflow-hidden">
+          <main className="h-full overflow-y-auto p-6">
+            {children}
+          </main>
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel defaultSize={45} minSize={25} className="min-h-0 overflow-hidden">
+          <ChronicleWorkspaceHost
+            activeWorkspace={activeWorkspace}
+            workspaceContext={workspaceContext}
+            variant="inline"
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    );
+  }
+
+  return (
+    <>
+      <main className="flex-1 min-h-0 overflow-y-auto p-6">
+        {children}
+      </main>
+      <ChronicleWorkspaceHost
+        activeWorkspace={activeWorkspace}
+        workspaceContext={workspaceContext}
+        variant="overlay"
+      />
+    </>
+  );
+}
+
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
   'doctor',
@@ -177,8 +223,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
   }, [location.pathname, location.search, navigate]);
 
-  // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
+  // Desktop detection for inline workspace panel
+  const isDesktop = useIsDesktop();
+
+  // Slide-over management - skips sidebar collapse on desktop (workspace is inline)
+  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds, { isDesktop });
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
 
   // Fetch patient data (includes access flags for conditional fetching)
@@ -250,8 +299,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const debouncedSearch = useDebounce(searchInput, 300);
 
   // Check if any slide-over is open (for timeline compression)
-  const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
-  const isCopilotSlideOverOpen = slideOvers.isOpen('copilot');
+  // Note: sidebar collapse/show is now handled by useIsDesktop + WorkspaceShell context
 
   // ====== TIER 1: Chronicle Context (optimized single-call) ======
   // Only fetch if user has clinical access - prevents wasted 403 requests
@@ -1030,6 +1078,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     requestedDischargeAdmissionId,
+    openWorkspace: openChronicleWorkspace,
     onClose: handleSlideOverClose,
     onNoteCreated: handleNoteCreated,
     onVitalsRecorded: handleVitalsRecorded,
@@ -1054,6 +1103,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     requestedDischargeAdmissionId,
+    openChronicleWorkspace,
     handleSlideOverClose,
     handleNoteCreated,
     handleVitalsRecorded,
@@ -1274,7 +1324,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background">
       {/* Patient Identity Hero */}
       <PatientIdentityHero
         patient={patient}
@@ -1307,14 +1357,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
         </div>
       )}
 
-      {/* Main Content: Sidebar + Timeline */}
-      <div className={cn(
-        "flex transition-all duration-300",
-        isCopilotSlideOverOpen
-          ? "lg:mr-[34rem]"
-          : isAnySlideOverOpen && "lg:mr-[50%]"
-      )}>
-        {/* Clinical Summary Sidebar */}
+      {/* Main Content: Sidebar + Timeline + Workspace */}
+      <div className="flex flex-1 min-h-0">
+        {/* Clinical Summary Sidebar — always visible on desktop */}
         <ClinicalSummarySidebar
           patient={patient}
           problems={problems}
@@ -1323,14 +1368,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
           labResults={labResults}
           onViewVitalsTrends={() => handleViewTrends('vitals')}
           onViewFluidTrends={() => handleViewTrends('fluids')}
-          className={cn(
-            "hidden lg:block",
-            isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
-          )}
+          className="hidden lg:block"
         />
 
-        {/* Timeline Chronicle */}
-        <main className="flex-1 p-6 transition-all duration-300">
+        {/* Timeline + Workspace */}
+        <TimelineWorkspaceLayout
+          isDesktop={isDesktop}
+          activeWorkspace={slideOvers.activeSlideOver}
+          workspaceContext={workspaceContext}
+        >
           <div className="min-w-0 max-w-4xl mx-auto">
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
@@ -1752,12 +1798,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               )}
             </div>
           </div>
-        </main>
-
-        <ChronicleWorkspaceHost
-          activeWorkspace={slideOvers.activeSlideOver}
-          workspaceContext={workspaceContext}
-        />
+        </TimelineWorkspaceLayout>
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
@@ -121,14 +122,7 @@ export default function PatientInsuranceSlideOver({
 
   return (
     <>
-      <div
-        className={cn(
-          'fixed inset-y-0 right-0 z-[100] w-full lg:w-[480px] bg-background border-l border-border',
-          'transform transition-transform duration-300 ease-in-out',
-          'flex flex-col shadow-2xl',
-          open ? 'translate-x-0' : 'translate-x-full'
-        )}
-      >
+      <WorkspaceShell open={open} overlayClassName="lg:w-[480px]">
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <div className="flex items-center gap-3">
@@ -296,7 +290,7 @@ export default function PatientInsuranceSlideOver({
             </Button>
           </footer>
         )}
-      </div>
+      </WorkspaceShell>
 
       {/* Form Slide-Over for Add/Edit */}
       {canManageInsurance && (
