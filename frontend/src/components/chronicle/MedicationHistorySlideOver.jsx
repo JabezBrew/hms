@@ -18,7 +18,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { useMedicationAdministrationHistory } from '@/features/nursing/hooks';
 
 const STATUS_BADGE_CLASS = {
@@ -79,7 +78,14 @@ const MedicationHistorySlideOver = ({
   const records = useMemo(() => data?.results ?? [], [data]);
 
   return (
-    <WorkspaceShell open={open}>
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border',
+        'transform transition-transform duration-300 ease-in-out',
+        'flex flex-col shadow-2xl',
+        open ? 'translate-x-0' : 'translate-x-full',
+      )}
+    >
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
@@ -232,7 +238,7 @@ const MedicationHistorySlideOver = ({
           </div>
         </div>
       </footer>
-    </WorkspaceShell>
+    </div>
   );
 };
 

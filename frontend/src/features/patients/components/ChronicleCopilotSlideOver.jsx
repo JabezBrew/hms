@@ -2,8 +2,8 @@ import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
-import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell'
 import ChronicleCopilotPanel from '@/features/patients/components/ChronicleCopilotPanel'
 
 export default function ChronicleCopilotSlideOver({
@@ -14,7 +14,14 @@ export default function ChronicleCopilotSlideOver({
   patientName = 'Patient',
 }) {
   return (
-    <WorkspaceShell open={open} overlayClassName="lg:w-[34rem]">
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[100] w-full border-l border-border bg-background shadow-2xl',
+        'transform transition-transform duration-300 ease-in-out',
+        'flex flex-col lg:w-[34rem]',
+        open ? 'translate-x-0' : 'translate-x-full'
+      )}
+    >
       <header className="border-b border-border bg-card px-6 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -51,6 +58,6 @@ export default function ChronicleCopilotSlideOver({
           showHeading={false}
         />
       </div>
-    </WorkspaceShell>
+    </div>
   )
 }

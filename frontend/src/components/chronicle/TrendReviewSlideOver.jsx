@@ -8,7 +8,6 @@ import CircleAlert from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { format, parseISO } from 'date-fns';
 
 import { cn } from '@/lib/utils';
-import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -202,7 +201,13 @@ export default function TrendReviewSlideOver({
   const scopeLabel = formatScopeLabel({ allHistory, encounterId, admissionId });
 
   return (
-    <WorkspaceShell open={open}>
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[100] w-full border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-in-out lg:w-1/2',
+        'flex flex-col',
+        open ? 'translate-x-0' : 'translate-x-full',
+      )}
+    >
       <header className="border-b border-border bg-card px-6 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
@@ -448,6 +453,6 @@ export default function TrendReviewSlideOver({
           </Tabs>
         </div>
       </div>
-    </WorkspaceShell>
+    </div>
   );
 }

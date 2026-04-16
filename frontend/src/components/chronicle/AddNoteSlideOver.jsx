@@ -10,7 +10,6 @@ import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -393,7 +392,14 @@ const AddNoteSlideOver = ({
     : patient?.name || 'Patient';
 
   return (
-    <WorkspaceShell open={open}>
+    <div
+      className={cn(
+        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "transform transition-transform duration-300 ease-in-out",
+        "flex flex-col shadow-2xl",
+        open ? "translate-x-0" : "translate-x-full"
+      )}
+    >
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -791,7 +797,7 @@ const AddNoteSlideOver = ({
           </div>
         </footer>
       )}
-    </WorkspaceShell>
+    </div>
   );
 };
 

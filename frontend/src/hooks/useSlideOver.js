@@ -70,13 +70,11 @@ export function useSlideOver(initialState = false) {
  * // Close the active slide-over
  * <NoteForm open={slideOvers.isOpen('note')} onClose={slideOvers.close} />
  */
-export function useMultipleSlideOvers(slideOverNames = [], { isDesktop = false } = {}) {
+export function useMultipleSlideOvers(slideOverNames = []) {
   const [activeSlideOver, setActiveSlideOver] = useState(null);
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const previousSidebarState = useRef(sidebarOpen);
   const sidebarOpenRef = useRef(sidebarOpen);
-  const isDesktopRef = useRef(isDesktop);
-  isDesktopRef.current = isDesktop;
 
   // Keep the ref updated with the current sidebar state
   useEffect(() => {
@@ -95,19 +93,15 @@ export function useMultipleSlideOvers(slideOverNames = [], { isDesktop = false }
       }
       return name;
     });
-    // On desktop, workspace is inline — don't collapse sidebar
-    if (!isDesktopRef.current) {
-      setSidebarOpen(false);
-    }
+    // Collapse the sidebar
+    setSidebarOpen(false);
   }, [slideOverNames, setSidebarOpen]);
 
   const close = useCallback(() => {
     // Close the slide-over
     setActiveSlideOver(null);
-    // Only restore sidebar on mobile/tablet (overlay mode)
-    if (!isDesktopRef.current) {
-      setSidebarOpen(previousSidebarState.current);
-    }
+    // Restore the sidebar to its previous state
+    setSidebarOpen(previousSidebarState.current);
   }, [setSidebarOpen]);
 
   const isOpen = useCallback((name) => {

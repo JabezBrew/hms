@@ -8,7 +8,6 @@ import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import { useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { WorkspaceShell } from '@/components/chronicle/WorkspaceShell';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   WorkflowSteps,
@@ -128,7 +127,14 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
 
   if (open && !admissionId) {
     return (
-      <WorkspaceShell open={open}>
+      <div
+        className={cn(
+          'fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border',
+          'transform transition-transform duration-300 ease-in-out',
+          'flex flex-col shadow-2xl',
+          open ? 'translate-x-0' : 'translate-x-full'
+        )}
+      >
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <h2 className="font-display text-xl text-foreground">Medical Discharge</h2>
           <Button
@@ -152,12 +158,19 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
             </AlertDescription>
           </Alert>
         </div>
-      </WorkspaceShell>
+      </div>
     );
   }
 
   return (
-    <WorkspaceShell open={open}>
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border',
+        'transform transition-transform duration-300 ease-in-out',
+        'flex flex-col shadow-2xl',
+        open ? 'translate-x-0' : 'translate-x-full'
+      )}
+    >
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div>
           <div className="flex items-center gap-2">
@@ -302,7 +315,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
           </div>
         </footer>
       )}
-    </WorkspaceShell>
+    </div>
   );
 };
 
