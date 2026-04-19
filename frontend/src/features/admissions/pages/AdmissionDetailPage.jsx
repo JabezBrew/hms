@@ -29,6 +29,14 @@ const DISCHARGE_CASE_ROLES = new Set([
   'billing',
 ]);
 
+const getNested = (obj, path) => path.reduce((acc, key) => acc?.[key], obj);
+
+const getNameFromUser = (user) => {
+  if (!user) return null;
+  const fullName = user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+  return fullName || null;
+};
+
 export default function AdmissionDetailPage() {
   const { admissionId } = useParams();
   const navigate = useNavigate();
@@ -81,18 +89,61 @@ export default function AdmissionDetailPage() {
     }
   };
 
-  const ward = admission?.bed?.ward;
-  const patientName = admission?.patient?.user?.full_name;
+  const patientId = (typeof admission?.patient === 'object' && admission?.patient?.id)
+    || admission?.patient_details?.id
+    || admission?.patient
+    || null;
+
+  const patientName = admission?.patient_name
+    || getNameFromUser(admission?.patient_details?.user_details)
+    || getNameFromUser(admission?.patient?.user_details)
+    || getNameFromUser(admission?.patient?.user)
+    || admission?.patient?.full_name
+    || null;
+
+  const bedDetails = admission?.bed_details;
+  const wardDetails = bedDetails?.ward_details;
+
+  const wardId = wardDetails?.id
+    || getNested(admission, ['bed', 'ward', 'id'])
+    || null;
+
+  const wardName = wardDetails?.name
+    || getNested(admission, ['bed', 'ward', 'name'])
+    || null;
+
+  const bedNumber = bedDetails?.bed_number
+    || getNested(admission, ['bed', 'bed_number'])
+    || null;
+
+  const bedLocationLabel = wardName && bedNumber
+    ? `${wardName} - Bed ${bedNumber}`
+    : wardName || (bedNumber ? `Bed ${bedNumber}` : 'Not assigned');
+
+  const doctorUser = admission?.admitting_doctor_details?.staff_details?.user_details
+    || admission?.admitting_doctor?.staff?.user_details
+    || admission?.admitting_doctor?.user
+    || null;
+  const admittingDoctorName = getNameFromUser(doctorUser) || admission?.admitting_doctor_name || 'Not assigned';
+
+  const admissionTypeLabel = admission?.admission_type
+    ? admission.admission_type.replace('_', ' ')
+    : 'Not specified';
+
+  const dailyRateLabel = admission?.daily_rate != null ? `$${admission.daily_rate}/night` : 'N/A';
+  const totalCostLabel = admission?.total_cost != null ? `$${admission.total_cost}` : 'N/A';
+  const lengthOfStayLabel = admission?.length_of_stay != null ? `${admission.length_of_stay} days` : 'N/A';
+
   const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
-  const backToWardPath = ward ? `/wards/${ward.id}` : '/wards';
-  const backLabel = ward ? 'Back to Ward' : 'Back to Wards';
+  const backToWardPath = wardId ? `/wards/${wardId}` : '/wards';
+  const backLabel = wardId ? 'Back to Ward' : 'Back to Wards';
   const pageMeta = usePageMeta({
     title: patientName
       ? `${patientName} Admission | Hospital Management System`
       : 'Admission | Hospital Management System',
     breadcrumbs: [
       { label: 'Wards', path: '/wards' },
-      ...(ward ? [{ label: ward.name, path: `/wards/${ward.id}` }] : []),
+      ...(wardId && wardName ? [{ label: wardName, path: `/wards/${wardId}` }] : []),
       { label: 'Admission', path: `/admissions/${admissionId}` },
     ],
   });
@@ -142,7 +193,7 @@ export default function AdmissionDetailPage() {
       {pageMeta}
       <PageHeader
         title={patientName || 'Admission'}
-        description={admission?.patient?.id ? `Patient ID: ${admission.patient.id}` : undefined}
+        description={patientId ? `Patient ID: ${patientId}` : undefined}
         actions={(
           <div className="flex flex-wrap gap-2">
             <Button
@@ -165,9 +216,9 @@ export default function AdmissionDetailPage() {
             {['admitted', 'pending_discharge'].includes(admission.status) && (
               <Button
                 size="sm"
-                disabled={!admission?.patient?.id}
+                disabled={!patientId}
                 onClick={() => navigate(
-                  `/patients/${admission.patient.id}?action=discharge&admission=${admission.id}&source=admission-detail`
+                  `/patients/${patientId}?action=discharge&admission=${admission.id}&source=admission-detail`
                 )}
               >
                 {admission.status === 'pending_discharge' ? 'Review Medical Discharge' : 'Medical Discharge'}
@@ -210,27 +261,27 @@ export default function AdmissionDetailPage() {
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Admission Type</h3>
-              <p className="capitalize">{admission.admission_type.replace('_', ' ')}</p>
+              <p className="capitalize">{admissionTypeLabel}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Ward & Bed</h3>
-              <p>{admission.bed.ward.name} - Bed {admission.bed.bed_number}</p>
+              <p>{bedLocationLabel}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Daily Rate</h3>
-              <p>${admission.daily_rate}/night</p>
+              <p>{dailyRateLabel}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Length of Stay</h3>
-              <p>{admission.length_of_stay} days</p>
+              <p>{lengthOfStayLabel}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Total Cost</h3>
-              <p>${admission.total_cost}</p>
+              <p>{totalCostLabel}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Admitting Doctor</h3>
-              <p>{admission.admitting_doctor?.user.full_name || 'Not assigned'}</p>
+              <p>{admittingDoctorName}</p>
             </div>
           </div>
         </CardContent>
@@ -314,15 +365,15 @@ export default function AdmissionDetailPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground">Daily Rate</h3>
-                      <p className="text-lg font-medium">${admission.daily_rate}/night</p>
+                      <p className="text-lg font-medium">{dailyRateLabel}</p>
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground">Length of Stay</h3>
-                      <p className="text-lg font-medium">{admission.length_of_stay} days</p>
+                      <p className="text-lg font-medium">{lengthOfStayLabel}</p>
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground">Total Room Cost</h3>
-                      <p className="text-lg font-medium">${admission.total_cost}</p>
+                      <p className="text-lg font-medium">{totalCostLabel}</p>
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground">Billing Status</h3>
