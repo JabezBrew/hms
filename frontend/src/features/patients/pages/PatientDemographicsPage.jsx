@@ -12,7 +12,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CalendarPlus from 'lucide-react/dist/esm/icons/calendar-plus.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -45,6 +45,8 @@ import {
 import { DatePicker } from '@/components/ui/date-picker';
 import WalkInCheckInDialog from '@/features/clinics/components/WalkInCheckInDialog';
 import { useAuth } from '@/lib/auth';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { resolvePatientDisplayName } from '@/features/patients/utils/resolvePatientDisplayName';
 
 // Edit form validation schema
 const demographicsSchema = z.object({
@@ -192,9 +194,15 @@ const PatientDemographicsPage = () => {
   };
 
   // Extract display data
-  const fullName = patient
-    ? `${patient.user_details?.first_name || patient.user?.first_name || ''} ${patient.user_details?.last_name || patient.user?.last_name || ''}`.trim()
-    : '';
+  const fullName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
+  const patientPath = id ? `/patients/${id}` : '/patients';
+  const pageMeta = usePageMeta({
+    title: fullName ? `${fullName} | Hospital Management System` : 'Patient | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: fullName || 'Patient', path: patientPath },
+    ],
+  });
   const mrn = patient?.medical_record_number || 'N/A';
   const email = patient?.user_details?.email || patient?.user?.email;
   const phone = patient?.user_details?.phone_number || patient?.user?.phone_number;
@@ -204,43 +212,51 @@ const PatientDemographicsPage = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <header className="bg-card border-b border-border">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
-            <Skeleton className="h-8 w-32 mb-4" />
-            <div className="flex items-start gap-4">
-              <Skeleton className="w-16 h-16 rounded-xl" />
-              <div>
-                <Skeleton className="h-8 w-48 mb-2" />
-                <Skeleton className="h-4 w-32" />
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background">
+          <header className="bg-card border-b border-border">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+              <Skeleton className="h-8 w-32 mb-4" />
+              <div className="flex items-start gap-4">
+                <Skeleton className="w-16 h-16 rounded-xl" />
+                <div>
+                  <Skeleton className="h-8 w-48 mb-2" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
               </div>
             </div>
-          </div>
-        </header>
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-32 w-full rounded-xl" />
-        </main>
-      </div>
+          </header>
+          <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <Skeleton className="h-48 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </main>
+        </div>
+      </>
     );
   }
 
   // Error state
   if (isError) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Failed to load patient</h2>
-          <p className="text-muted-foreground mb-4">{error?.message}</p>
-          <Button onClick={() => navigate(-1)}>Go Back</Button>
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <h2 className="text-lg font-semibold mb-2">Failed to load patient</h2>
+            <p className="text-muted-foreground mb-4">{error?.message}</p>
+            <Button onClick={() => navigate(-1)}>Go Back</Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="bg-card border-b border-border">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
@@ -693,17 +709,18 @@ const PatientDemographicsPage = () => {
         </section>
       </main>
 
-      <WalkInCheckInDialog
-        open={walkInOpen}
-        onOpenChange={setWalkInOpen}
-        patientId={id}
-        onSuccess={(_result, context) => {
-          if (context?.clinicId) {
-            navigate(`/clinics/${context.clinicId}/waiting-room`);
-          }
-        }}
-      />
-    </div>
+        <WalkInCheckInDialog
+          open={walkInOpen}
+          onOpenChange={setWalkInOpen}
+          patientId={id}
+          onSuccess={(_result, context) => {
+            if (context?.clinicId) {
+              navigate(`/clinics/${context.clinicId}/waiting-room`);
+            }
+          }}
+        />
+      </div>
+    </>
   );
 };
 

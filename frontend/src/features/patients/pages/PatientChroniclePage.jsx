@@ -60,6 +60,8 @@ import {
   stripTransientChronicleParams,
 } from "@/features/patients/chronicle/visitScopeUtils";
 import { emitOnboardingEvent } from "@/features/onboarding";
+import { usePageMeta } from "@/shared/hooks/usePageMeta";
+import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
 
 import { useDebounce } from "@/hooks/use-debounce";
 const DISCHARGE_CASE_ROLES = new Set([
@@ -183,6 +185,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Fetch patient data (includes access flags for conditional fetching)
   const { data: patient, isLoading, error, refetch } = usePatient(id);
+  const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
+  const patientPath = id ? `/patients/${id}` : '/patients';
+  const pageMeta = usePageMeta({
+    title: patientName ? `${patientName} | Hospital Management System` : 'Patient | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: patientName || 'Patient', path: patientPath },
+    ],
+  });
 
   // Check if user has clinical access (from patient endpoint response)
   const hasClinicalAccess = patient?.access?.clinical === true;
@@ -1137,109 +1148,112 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   if (accessDenied) {
     const patientDetails = patient?.local_data || patient;
-    const patientName = patientDetails?.user_details
-      ? `${patientDetails.user_details.first_name || ''} ${patientDetails.user_details.last_name || ''}`.trim()
-      : patientDetails?.name;
     const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
 
     return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
-          <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-center gap-2">
-                <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
-                  Access Restricted
-                </span>
-                {breakGlassExpiresAt && (
-                  <span className="badge-chronicle-amber text-[10px]">
-                    Break-glass active
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background">
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+            <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-2">
+                  <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
+                    Access Restricted
                   </span>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <h2 className="font-display text-2xl text-foreground">
-                  Team-based access required
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  This patient record is protected by team-based access controls.
-                  Request break-glass only for urgent clinical need. All access is audited.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-background/60 p-4">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Patient
-                </p>
-                <p className="text-sm text-foreground">
-                  {patientName || "Unknown Patient"}
-                </p>
-                {patientMrn && (
-                  <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
-                )}
-              </div>
-
-              {canRequestBreakGlass ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    onClick={() => setBreakGlassOpen(true)}
-                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
-                  >
-                    Request Break-Glass Access
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Provide a reason to unlock this record for a limited time.
-                  </span>
+                  {breakGlassExpiresAt && (
+                    <span className="badge-chronicle-amber text-[10px]">
+                      Break-glass active
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Break-glass access is available to clinical staff only.
-                </p>
-              )}
+
+                <div className="space-y-2">
+                  <h2 className="font-display text-2xl text-foreground">
+                    Team-based access required
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    This patient record is protected by team-based access controls.
+                    Request break-glass only for urgent clinical need. All access is audited.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Patient
+                  </p>
+                  <p className="text-sm text-foreground">
+                    {patientName || "Unknown Patient"}
+                  </p>
+                  {patientMrn && (
+                    <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
+                  )}
+                </div>
+
+                {canRequestBreakGlass ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      onClick={() => setBreakGlassOpen(true)}
+                      className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                    >
+                      Request Break-Glass Access
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Provide a reason to unlock this record for a limited time.
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Break-glass access is available to clinical staff only.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        <BreakGlassDialog
-          open={isBreakGlassOpen}
-          onOpenChange={setBreakGlassOpen}
-          patientName={patientName}
-          patientMrn={patientMrn}
-          reason={breakGlassReason}
-          onReasonChange={setBreakGlassReason}
-          onSubmit={handleBreakGlassSubmit}
-          isSubmitting={breakGlassMutation.isPending}
-          ttlMinutes={30}
-        />
-      </div>
+          <BreakGlassDialog
+            open={isBreakGlassOpen}
+            onOpenChange={setBreakGlassOpen}
+            patientName={patientName}
+            patientMrn={patientMrn}
+            reason={breakGlassReason}
+            onReasonChange={setBreakGlassReason}
+            onSubmit={handleBreakGlassSubmit}
+            isSubmitting={breakGlassMutation.isPending}
+            ttlMinutes={30}
+          />
+        </div>
+      </>
     );
   }
 
   if (isLoading || isContextLoading || authLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        {/* Hero skeleton */}
-        <div className="bg-card border-b border-border px-6 py-8">
-          <Skeleton className="h-12 w-64 mb-4" />
-          <Skeleton className="h-4 w-96 mb-2" />
-          <Skeleton className="h-4 w-48" />
-        </div>
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background">
+          {/* Hero skeleton */}
+          <div className="bg-card border-b border-border px-6 py-8">
+            <Skeleton className="h-12 w-64 mb-4" />
+            <Skeleton className="h-4 w-96 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
 
-        {/* Content skeleton */}
-        <div className="flex">
-          <div className="w-80 border-r border-border p-6 space-y-6">
-            <Skeleton className="h-40 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-          <div className="flex-1 p-6 space-y-4">
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
+          {/* Content skeleton */}
+          <div className="flex">
+            <div className="w-80 border-r border-border p-6 space-y-6">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+            <div className="flex-1 p-6 space-y-4">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -1249,23 +1263,26 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   if (hasGateError) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-display text-foreground">
-            Unable to load patient record
-          </h2>
-          <p className="text-muted-foreground">
-            {gateError?.message || 'An error occurred while fetching patient data.'}
-          </p>
-          <Button onClick={() => {
-            refetch();
-            refetchContext();
-          }}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <h2 className="text-2xl font-display text-foreground">
+              Unable to load patient record
+            </h2>
+            <p className="text-muted-foreground">
+              {gateError?.message || 'An error occurred while fetching patient data.'}
+            </p>
+            <Button onClick={() => {
+              refetch();
+              refetchContext();
+            }}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -1274,63 +1291,65 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Patient Identity Hero */}
-      <PatientIdentityHero
-        patient={patient}
-        onActionIntent={prefetchActionResources}
-        onAskChronicle={handleAskChronicle}
-        onAddNote={handleAddNote}
-        onRecordVitals={handleRecordVitals}
-        onPrescribe={handlePrescribe}
-        onOrderLabs={handleOrderLabs}
-        onRequestConsult={handleRequestConsult}
-        onShareRecord={handleShareRecord}
-        onReceiveRecord={handleReceiveRecord}
-        onScheduleFollowUp={handleScheduleFollowUp}
-        onViewTreatmentSheet={handleViewTreatmentSheet}
-        onViewMedicationHistory={handleViewMedicationHistory}
-        onRecordFluids={handleRecordFluids}
-        onStartWardRound={handleStartWardRound}
-        onStartDischarge={handleStartDischarge}
-        onManageInsurance={handleManageInsurance}
-        insurance={patientInsurance}
-        activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
-      />
-
-      {canViewDischargeCase && dischargeCaseAdmissionId && (
-        <div className="px-6 pt-6">
-          <DischargeCasePanel
-            admissionId={dischargeCaseAdmissionId}
-            title="Discharge Clearance"
-          />
-        </div>
-      )}
-
-      {/* Main Content: Sidebar + Timeline */}
-      <div className={cn(
-        "flex transition-all duration-300",
-        isCopilotSlideOverOpen
-          ? "lg:mr-[34rem]"
-          : isAnySlideOverOpen && "lg:mr-[50%]"
-      )}>
-        {/* Clinical Summary Sidebar */}
-        <ClinicalSummarySidebar
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background">
+        {/* Patient Identity Hero */}
+        <PatientIdentityHero
           patient={patient}
-          problems={problems}
-          medications={medications}
-          allergies={allergies}
-          labResults={labResults}
-          onViewVitalsTrends={() => handleViewTrends('vitals')}
-          onViewFluidTrends={() => handleViewTrends('fluids')}
-          className={cn(
-            "hidden lg:block",
-            isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
-          )}
+          onActionIntent={prefetchActionResources}
+          onAskChronicle={handleAskChronicle}
+          onAddNote={handleAddNote}
+          onRecordVitals={handleRecordVitals}
+          onPrescribe={handlePrescribe}
+          onOrderLabs={handleOrderLabs}
+          onRequestConsult={handleRequestConsult}
+          onShareRecord={handleShareRecord}
+          onReceiveRecord={handleReceiveRecord}
+          onScheduleFollowUp={handleScheduleFollowUp}
+          onViewTreatmentSheet={handleViewTreatmentSheet}
+          onViewMedicationHistory={handleViewMedicationHistory}
+          onRecordFluids={handleRecordFluids}
+          onStartWardRound={handleStartWardRound}
+          onStartDischarge={handleStartDischarge}
+          onManageInsurance={handleManageInsurance}
+          insurance={patientInsurance}
+          activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
         />
 
-        {/* Timeline Chronicle */}
-        <main className="flex-1 p-6 transition-all duration-300">
+        {canViewDischargeCase && dischargeCaseAdmissionId && (
+          <div className="px-6 pt-6">
+            <DischargeCasePanel
+              admissionId={dischargeCaseAdmissionId}
+              title="Discharge Clearance"
+            />
+          </div>
+        )}
+
+        {/* Main Content: Sidebar + Timeline */}
+        <div className={cn(
+          "flex transition-all duration-300",
+          isCopilotSlideOverOpen
+            ? "lg:mr-[34rem]"
+            : isAnySlideOverOpen && "lg:mr-[50%]"
+        )}>
+          {/* Clinical Summary Sidebar */}
+          <ClinicalSummarySidebar
+            patient={patient}
+            problems={problems}
+            medications={medications}
+            allergies={allergies}
+            labResults={labResults}
+            onViewVitalsTrends={() => handleViewTrends('vitals')}
+            onViewFluidTrends={() => handleViewTrends('fluids')}
+            className={cn(
+              "hidden lg:block",
+              isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
+            )}
+          />
+
+          {/* Timeline Chronicle */}
+          <main className="flex-1 p-6 transition-all duration-300">
           <div className="min-w-0 max-w-4xl mx-auto">
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
@@ -1752,14 +1771,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
               )}
             </div>
           </div>
-        </main>
+          </main>
 
-        <ChronicleWorkspaceHost
-          activeWorkspace={slideOvers.activeSlideOver}
-          workspaceContext={workspaceContext}
-        />
+          <ChronicleWorkspaceHost
+            activeWorkspace={slideOvers.activeSlideOver}
+            workspaceContext={workspaceContext}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
