@@ -83,12 +83,15 @@ export function WardBedLayout({ beds, admissions, onBedClick, wardId, viewMode =
   // Get patient info for a bed
   const getPatientInfo = (bedId) => {
     const activeAdmission = admissions.find(
-      admission => admission.bed?.id === bedId && admission.status === 'admitted'
+      (admission) => {
+        const admissionBedId = admission?.bed?.id || admission?.bed;
+        return admissionBedId === bedId && admission.status === 'admitted';
+      }
     );
 
     if (activeAdmission) {
       return {
-        name: activeAdmission.patient?.user?.full_name || activeAdmission.patient?.full_name || 'Patient',
+        name: activeAdmission.patient_name || activeAdmission.patient?.user?.full_name || activeAdmission.patient?.full_name || 'Patient',
         admissionDate: activeAdmission.admission_date,
         admissionId: activeAdmission.id,
         diagnosis: activeAdmission.diagnosis || activeAdmission.reason_for_admission,

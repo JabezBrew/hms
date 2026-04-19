@@ -29,7 +29,7 @@ export const referralKeys = {
 export function useReferrals(filters = {}) {
   return useQuery({
     queryKey: referralKeys.list(filters),
-    queryFn: () => referralsApi.getReferrals(filters),
+    queryFn: ({ signal }) => referralsApi.getReferrals(filters, { signal }),
   });
 }
 
@@ -285,7 +285,7 @@ export function useReferralNotifications(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: [...referralKeys.notifications(), params],
-    queryFn: () => referralsApi.getNotifications(params),
+    queryFn: ({ signal }) => referralsApi.getNotifications(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds
     enabled,
   });

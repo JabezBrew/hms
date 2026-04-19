@@ -21,7 +21,7 @@ export const laboratoryApi = {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/tests/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint, options);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab tests'));
@@ -109,7 +109,7 @@ export const laboratoryApi = {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/panels/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint, options);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab panels'));
@@ -197,7 +197,7 @@ export const laboratoryApi = {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/orders/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint, options);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab orders'));
@@ -295,7 +295,7 @@ export const laboratoryApi = {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/specimens/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint, options);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch specimens'));
@@ -332,7 +332,7 @@ export const laboratoryApi = {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/results/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint, options);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab results'));

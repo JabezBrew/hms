@@ -26,8 +26,8 @@ export default function PendingLabResultsWidget({ className, limit = 5 }) {
   const navigate = useNavigate();
 
   // Fetch orders that are processing or completed (may have results)
-  const { data: processingOrders } = useLabOrders({ status: 'processing' });
-  const { data: completedOrders } = useLabOrders({ status: 'completed' });
+  const { data: processingOrders } = useLabOrders({ status: 'processing', page_size: 25 });
+  const { data: completedOrders } = useLabOrders({ status: 'completed', page_size: 25 });
 
   // Combine and sort by priority and date
   const allOrders = [

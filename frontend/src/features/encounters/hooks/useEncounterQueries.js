@@ -116,7 +116,7 @@ export function useEncounter(id) {
 export function usePatientEncounters(patientId, options = {}) {
   return useQuery({
     queryKey: encounterKeys.forPatient(patientId),
-    queryFn: () => encountersApi.getEncountersForPatient(patientId),
+    queryFn: ({ signal }) => encountersApi.getEncountersForPatient(patientId, { signal }),
     enabled: !!patientId,
     staleTime: 60 * 1000, // 60 seconds
     ...options,

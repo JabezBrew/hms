@@ -1,5 +1,17 @@
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
+}
+
 /**
  * Wards API service
  */
@@ -205,12 +217,15 @@ export const wardsApi = {
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of admissions
    */
-  getAdmissions: async (params = {}) => {
+  getAdmissions: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/wards/admissions/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/wards/admissions/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch admissions'));
     }
   },

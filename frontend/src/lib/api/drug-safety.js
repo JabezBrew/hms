@@ -3,6 +3,18 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
+}
+
 export const drugSafetyApi = {
   /**
    * Perform comprehensive drug safety check
@@ -65,12 +77,15 @@ export const drugSafetyApi = {
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of allergies
    */
-  getAllergies: async (params = {}) => {
+  getAllergies: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/drug-safety/allergies/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/drug-safety/allergies/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch allergies'));
     }
   },
@@ -159,12 +174,15 @@ export const drugSafetyApi = {
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of safety alerts
    */
-  getAlerts: async (params = {}) => {
+  getAlerts: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/drug-safety/alerts/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/drug-safety/alerts/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch safety alerts'));
     }
   },

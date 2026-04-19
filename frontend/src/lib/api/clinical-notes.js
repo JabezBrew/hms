@@ -3,18 +3,33 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
+}
+
 export const clinicalNotesApi = {
   /**
    * Get all note templates with optional filtering
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of note templates
    */
-  getNoteTemplates: async (params = {}) => {
+  getNoteTemplates: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/clinical-notes/templates/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/clinical-notes/templates/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch note templates'));
     }
   },
@@ -77,12 +92,15 @@ export const clinicalNotesApi = {
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of note entries
    */
-  getNoteEntries: async (params = {}) => {
+  getNoteEntries: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/clinical-notes/entries/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/clinical-notes/entries/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch note entries'));
     }
   },
@@ -118,10 +136,18 @@ export const clinicalNotesApi = {
    * @param {string} encounterId - Encounter ID
    * @returns {Promise<Array>} List of note entries for the encounter
    */
-  getNoteEntriesForEncounter: async (encounterId) => {
+  getNoteEntriesForEncounter: async (encounterId, params = {}, options = {}) => {
     try {
-      return await apiClient.getAll(`/clinical-notes/entries/?encounter_id=${encounterId}`);
+      const response = await apiClient.getWithPagination('/clinical-notes/entries/', {
+        ...options,
+        params: {
+          ...params,
+          encounter_id: encounterId,
+        },
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch note entries for encounter'));
     }
   },
@@ -130,10 +156,18 @@ export const clinicalNotesApi = {
    * Get active note templates
    * @returns {Promise<Array>} List of active note templates
    */
-  getActiveNoteTemplates: async () => {
+  getActiveNoteTemplates: async (params = {}, options = {}) => {
     try {
-      return await apiClient.getAll('/clinical-notes/templates/?is_active=true');
+      const response = await apiClient.getWithPagination('/clinical-notes/templates/', {
+        ...options,
+        params: {
+          ...params,
+          is_active: true,
+        },
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch active note templates'));
     }
   },
@@ -143,10 +177,12 @@ export const clinicalNotesApi = {
    * Only returns active templates that the user can see
    * @returns {Promise<Array>} List of available note templates
    */
-  getAvailableTemplates: async () => {
+  getAvailableTemplates: async (options = {}) => {
     try {
-      return await apiClient.getAll('/clinical-notes/templates/available/');
+      const response = await apiClient.getWithPagination('/clinical-notes/templates/available/', options);
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch available templates'));
     }
   },
@@ -155,10 +191,12 @@ export const clinicalNotesApi = {
    * Get templates created by the current user
    * @returns {Promise<Array>} List of user's own templates
    */
-  getMyTemplates: async () => {
+  getMyTemplates: async (options = {}) => {
     try {
-      return await apiClient.getAll('/clinical-notes/templates/mine/');
+      const response = await apiClient.getWithPagination('/clinical-notes/templates/mine/', options);
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch your templates'));
     }
   },
@@ -193,10 +231,12 @@ export const clinicalNotesApi = {
    * @param {string} id - Template ID
    * @returns {Promise<Array>} Template revisions
    */
-  getTemplateRevisions: async (id) => {
+  getTemplateRevisions: async (id, options = {}) => {
     try {
-      return await apiClient.getAll(`/clinical-notes/templates/${id}/revisions/`);
+      const response = await apiClient.getWithPagination(`/clinical-notes/templates/${id}/revisions/`, options);
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch template revisions'));
     }
   },

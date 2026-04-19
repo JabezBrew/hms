@@ -87,7 +87,7 @@ export function usePatientAllergies(patientId, options = {}) {
 export function useAllergies(filters = {}) {
   return useQuery({
     queryKey: drugSafetyKeys.allergiesList(filters),
-    queryFn: () => drugSafetyApi.getAllergies(filters),
+    queryFn: ({ signal }) => drugSafetyApi.getAllergies(filters, { signal }),
   });
 }
 
@@ -257,7 +257,7 @@ export function useDeactivateAllergy() {
 export function useAlerts(filters = {}) {
   return useQuery({
     queryKey: drugSafetyKeys.alertsList(filters),
-    queryFn: () => drugSafetyApi.getAlerts(filters),
+    queryFn: ({ signal }) => drugSafetyApi.getAlerts(filters, { signal }),
   });
 }
 

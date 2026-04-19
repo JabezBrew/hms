@@ -82,12 +82,22 @@ const LabCatalogPage = () => {
     data: testsData,
     isLoading: testsLoading,
     refetch: refetchTests,
-  } = useLabTests({ include_inactive: true });
+  } = useLabTests({ include_inactive: true, page_size: 500 });
   const {
     data: panelsData,
     isLoading: panelsLoading,
     refetch: refetchPanels,
-  } = useLabPanels({ include_inactive: true });
+  } = useLabPanels({ include_inactive: true, page_size: 500 });
+
+  const tests = useMemo(() => {
+    const results = testsData?.results || [];
+    return Array.isArray(results) ? results : [];
+  }, [testsData]);
+
+  const panels = useMemo(() => {
+    const results = panelsData?.results || [];
+    return Array.isArray(results) ? results : [];
+  }, [panelsData]);
 
   // Delete mutations
   const deleteTestMutation = useDeleteLabTest();
@@ -123,12 +133,12 @@ const LabCatalogPage = () => {
 
   // Filter tests
   const filteredTests = useMemo(() => {
-    let tests = testsData || [];
+    let nextTests = tests;
 
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      tests = tests.filter(
+      nextTests = nextTests.filter(
         (test) =>
           test.name?.toLowerCase().includes(query) ||
           test.loinc_code?.toLowerCase().includes(query) ||
@@ -138,45 +148,45 @@ const LabCatalogPage = () => {
 
     // Category filter
     if (categoryFilter !== "all") {
-      tests = tests.filter((test) => test.category === categoryFilter);
+      nextTests = nextTests.filter((test) => test.category === categoryFilter);
     }
 
     // Status filter
     if (statusFilter !== "all") {
       switch (statusFilter) {
         case "system":
-          tests = tests.filter(
+          nextTests = nextTests.filter(
             (t) => t.is_system_default && !t.is_facility_modified
           );
           break;
         case "modified":
-          tests = tests.filter(
+          nextTests = nextTests.filter(
             (t) => t.is_system_default && t.is_facility_modified
           );
           break;
         case "custom":
-          tests = tests.filter((t) => !t.is_system_default);
+          nextTests = nextTests.filter((t) => !t.is_system_default);
           break;
         case "active":
-          tests = tests.filter((t) => t.is_active !== false);
+          nextTests = nextTests.filter((t) => t.is_active !== false);
           break;
         case "inactive":
-          tests = tests.filter((t) => t.is_active === false);
+          nextTests = nextTests.filter((t) => t.is_active === false);
           break;
       }
     }
 
-    return tests;
-  }, [testsData, searchQuery, categoryFilter, statusFilter]);
+    return nextTests;
+  }, [tests, searchQuery, categoryFilter, statusFilter]);
 
   // Filter panels
   const filteredPanels = useMemo(() => {
-    let panels = panelsData || [];
+    let nextPanels = panels;
 
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      panels = panels.filter(
+      nextPanels = nextPanels.filter(
         (panel) =>
           panel.name?.toLowerCase().includes(query) ||
           panel.code?.toLowerCase().includes(query) ||
@@ -188,29 +198,29 @@ const LabCatalogPage = () => {
     if (statusFilter !== "all") {
       switch (statusFilter) {
         case "system":
-          panels = panels.filter(
+          nextPanels = nextPanels.filter(
             (p) => p.is_system_default && !p.is_facility_modified
           );
           break;
         case "modified":
-          panels = panels.filter(
+          nextPanels = nextPanels.filter(
             (p) => p.is_system_default && p.is_facility_modified
           );
           break;
         case "custom":
-          panels = panels.filter((p) => !p.is_system_default);
+          nextPanels = nextPanels.filter((p) => !p.is_system_default);
           break;
         case "active":
-          panels = panels.filter((p) => p.is_active !== false);
+          nextPanels = nextPanels.filter((p) => p.is_active !== false);
           break;
         case "inactive":
-          panels = panels.filter((p) => p.is_active === false);
+          nextPanels = nextPanels.filter((p) => p.is_active === false);
           break;
       }
     }
 
-    return panels;
-  }, [panelsData, searchQuery, statusFilter]);
+    return nextPanels;
+  }, [panels, searchQuery, statusFilter]);
 
   // Handle customize
   const handleCustomize = (item, type) => {
@@ -601,7 +611,7 @@ const LabCatalogPage = () => {
             </span>
           </div>
           <span className="font-display text-2xl text-foreground">
-            {testsLoading ? "—" : testsData?.length || 0}
+            {testsLoading ? "—" : testsData?.count ?? tests.length}
           </span>
         </div>
         <div className="p-4 bg-card/30 rounded-xl border border-border/50">
@@ -612,7 +622,7 @@ const LabCatalogPage = () => {
             </span>
           </div>
           <span className="font-display text-2xl text-foreground">
-            {panelsLoading ? "—" : panelsData?.length || 0}
+            {panelsLoading ? "—" : panelsData?.count ?? panels.length}
           </span>
         </div>
         <div className="p-4 bg-card/30 rounded-xl border border-border/50">
@@ -625,8 +635,8 @@ const LabCatalogPage = () => {
           <span className="font-display text-2xl text-foreground">
             {testsLoading
               ? "—"
-              : (testsData?.filter((t) => t.is_facility_modified)?.length || 0) +
-                (panelsData?.filter((p) => p.is_facility_modified)?.length || 0)}
+              : tests.filter((t) => t.is_facility_modified).length +
+                panels.filter((p) => p.is_facility_modified).length}
           </span>
         </div>
         <div className="p-4 bg-card/30 rounded-xl border border-border/50">
@@ -639,8 +649,8 @@ const LabCatalogPage = () => {
           <span className="font-display text-2xl text-foreground">
             {testsLoading
               ? "—"
-              : (testsData?.filter((t) => !t.is_system_default)?.length || 0) +
-                (panelsData?.filter((p) => !p.is_system_default)?.length || 0)}
+              : tests.filter((t) => !t.is_system_default).length +
+                panels.filter((p) => !p.is_system_default).length}
           </span>
         </div>
       </div>

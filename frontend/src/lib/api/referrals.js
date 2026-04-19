@@ -3,18 +3,33 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
+}
+
 export const referralsApi = {
   /**
    * Get all referrals with optional filtering
    * @param {Object} params - Query parameters
    * @returns {Promise<Array>} List of referrals
    */
-  getReferrals: async (params = {}) => {
+  getReferrals: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/referrals/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/referrals/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referrals'));
     }
   },
@@ -219,12 +234,15 @@ export const referralsApi = {
   },
 
   // Notification endpoints
-  getNotifications: async (params = {}) => {
+  getNotifications: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/referrals/notifications/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/referrals/notifications/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referral notifications'));
     }
   },

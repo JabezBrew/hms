@@ -9,12 +9,13 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
 import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   useCollectLabOrder,
   useStartProcessingLabOrder,
 } from "@/features/laboratory/hooks";
+import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from "sonner";
 import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
 
@@ -46,8 +48,12 @@ import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
  * - Chronicle design system styling
  */
 const LabTechnicianDashboard = () => {
+  const PAGE_SIZE = 24;
   const [activeTab, setActiveTab] = useState("collected");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [collectedPage, setCollectedPage] = useState(1);
+  const [processingPage, setProcessingPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [currentAction, setCurrentAction] = useState(null);
@@ -57,40 +63,40 @@ const LabTechnicianDashboard = () => {
   const [specimenBarcode, setSpecimenBarcode] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
 
+  useEffect(() => {
+    setCollectedPage(1);
+    setProcessingPage(1);
+  }, [debouncedSearchQuery]);
+
   // API queries - Lab worklist only shows collected onwards (not submitted/ordered)
-  // Include expand=tests to get full order_tests array with test details
-  const { data: collectedOrders } = useLabOrders({ status: "collected", expand: "tests,specimens" });
-  const { data: processingOrders } = useLabOrders({ status: "processing", expand: "tests,specimens" });
+  // Include expand=tests to get full order_tests array with test details.
+  // Search and pagination are pushed to the backend to avoid client-side page walking.
+  const collectedFilters = {
+    status: "collected",
+    expand: "tests,specimens",
+    page: collectedPage,
+    page_size: PAGE_SIZE,
+    ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {}),
+  };
+  const processingFilters = {
+    status: "processing",
+    expand: "tests,specimens",
+    page: processingPage,
+    page_size: PAGE_SIZE,
+    ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {}),
+  };
+  const { data: collectedOrders, isLoading: isCollectedLoading } = useLabOrders(collectedFilters);
+  const { data: processingOrders, isLoading: isProcessingLoading } = useLabOrders(processingFilters);
 
   // Mutations
   const collectOrder = useCollectLabOrder();
   const startProcessing = useStartProcessingLabOrder();
 
-  // Get orders for active tab
-  const getActiveOrders = () => {
-    switch (activeTab) {
-      case "collected":
-        return collectedOrders?.results || collectedOrders || [];
-      case "processing":
-        return processingOrders?.results || processingOrders || [];
-      default:
-        return [];
-    }
-  };
-
-  // Filter orders by search
-  const filteredOrders = getActiveOrders().filter((order) => {
-    if (!searchQuery) return true;
-
-    const query = searchQuery.toLowerCase();
-    const patientName = order.patient_name?.toLowerCase() || "";
-    const mrn = order.patient_mrn?.toLowerCase() || "";
-    const orderNumber = order.order_number?.toLowerCase() || "";
-
-    return (
-      patientName.includes(query) || mrn.includes(query) || orderNumber.includes(query)
-    );
-  });
+  const activeOrdersResponse = activeTab === "collected" ? collectedOrders : processingOrders;
+  const filteredOrders = activeOrdersResponse?.results || [];
+  const activeTotalCount = activeOrdersResponse?.count || 0;
+  const activePage = activeTab === "collected" ? collectedPage : processingPage;
+  const isActiveLoading = activeTab === "collected" ? isCollectedLoading : isProcessingLoading;
 
   // Handle action click
   const handleActionClick = (order, action) => {
@@ -297,7 +303,13 @@ const LabTechnicianDashboard = () => {
         aria-labelledby={`tab-${activeTab}`}
         className="space-y-4"
       >
-        {filteredOrders.length === 0 ? (
+        {isActiveLoading ? (
+          <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
+            <div className="text-center">
+              <p className="font-mono text-xs text-muted-foreground">Loading worklist...</p>
+            </div>
+          </div>
+        ) : filteredOrders.length === 0 ? (
           <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
             <div className="text-center">
               <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
@@ -462,6 +474,23 @@ const LabTechnicianDashboard = () => {
             );
           })
         )}
+
+        <TablePagination
+          currentPage={activePage}
+          totalCount={activeTotalCount}
+          pageSize={PAGE_SIZE}
+          hasNextPage={Boolean(activeOrdersResponse?.next)}
+          hasPrevPage={Boolean(activeOrdersResponse?.previous)}
+          onPageChange={(newPage) => {
+            if (newPage < 1) return;
+            if (activeTab === "collected") {
+              setCollectedPage(newPage);
+            } else {
+              setProcessingPage(newPage);
+            }
+          }}
+          itemLabel="orders"
+        />
       </div>
 
       {/* Action Dialog - Chronicle styled */}

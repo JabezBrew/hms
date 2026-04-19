@@ -371,7 +371,7 @@ export function useCreateTransfer() {
 export function useAdmissions(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.admissionsList(filters),
-    queryFn: () => wardsApi.getAdmissions(filters),
+    queryFn: ({ signal }) => wardsApi.getAdmissions(filters, { signal }),
     ...options,
   });
 }

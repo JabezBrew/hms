@@ -29,7 +29,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
   const navigate = useNavigate();
 
   // Fetch results marked as critical
-  const { data: resultsData } = useLabResults({ is_critical: true });
+  const { data: resultsData } = useLabResults({ is_critical: true, page_size: 20 });
 
   // Sort by date and limit
   const criticalResults = (resultsData?.results || [])

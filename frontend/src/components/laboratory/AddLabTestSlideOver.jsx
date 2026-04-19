@@ -49,7 +49,7 @@ const AddLabTestSlideOver = ({
   const createPanel = useCreateLabPanel();
 
   // Get tests for panel creation
-  const { data: testsData } = useLabTests();
+  const { data: testsData } = useLabTests({ enabled: open, page_size: 500 });
   const tests = Array.isArray(testsData) ? testsData : (testsData?.results || []);
 
   // Form state for test

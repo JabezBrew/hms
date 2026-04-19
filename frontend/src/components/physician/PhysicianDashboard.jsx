@@ -59,7 +59,11 @@ export function PhysicianDashboard() {
       try {
         setLoading(true);
         // Get all admissions for the selected ward
-        const admissionsData = await admissionsApi.getAdmissions({ ward: selectedWard, status: 'admitted' });
+        const admissionsData = await admissionsApi.getAdmissions({
+          ward: selectedWard,
+          status: 'admitted',
+          page_size: 200,
+        });
 
         // Extract patient information from admissions
         const patientData = admissionsData.map(admission => ({

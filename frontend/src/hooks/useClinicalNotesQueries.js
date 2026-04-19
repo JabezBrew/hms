@@ -144,7 +144,7 @@ export function invalidateClinicalNoteMutationQueries(
 export function useNoteTemplates(filters = {}) {
   return useQuery({
     queryKey: keyWith('clinical-notes', 'templates', filters),
-    queryFn: () => clinicalNotesApi.getNoteTemplates(filters),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteTemplates(filters, { signal }),
   });
 }
 
@@ -152,10 +152,12 @@ export function useNoteTemplates(filters = {}) {
  * Get active note templates
  * @returns {Object} Query result
  */
-export function useActiveNoteTemplates() {
+export function useActiveNoteTemplates(options = {}) {
+  const { enabled = true, ...filters } = options;
   return useQuery({
-    queryKey: keyWith('clinical-notes', 'templates', { active: true }),
-    queryFn: () => clinicalNotesApi.getActiveNoteTemplates(),
+    queryKey: keyWith('clinical-notes', 'templates', { active: true, ...filters }),
+    queryFn: ({ signal }) => clinicalNotesApi.getActiveNoteTemplates(filters, { signal }),
+    enabled,
   });
 }
 
@@ -289,7 +291,7 @@ export function useAvailableNoteTemplates(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: clinicalNotesKeys.availableTemplates(),
-    queryFn: () => clinicalNotesApi.getAvailableTemplates(),
+    queryFn: ({ signal }) => clinicalNotesApi.getAvailableTemplates({ signal }),
     enabled,
   });
 }
@@ -301,7 +303,7 @@ export function useAvailableNoteTemplates(options = {}) {
 export function useMyNoteTemplates() {
   return useQuery({
     queryKey: clinicalNotesKeys.myTemplates(),
-    queryFn: () => clinicalNotesApi.getMyTemplates(),
+    queryFn: ({ signal }) => clinicalNotesApi.getMyTemplates({ signal }),
   });
 }
 
@@ -342,7 +344,7 @@ export function useDuplicateNoteTemplate() {
 export function useNoteEntries(filters = {}) {
   return useQuery({
     queryKey: clinicalNotesKeys.entriesList(filters),
-    queryFn: () => clinicalNotesApi.getNoteEntries(filters),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntries(filters, { signal }),
   });
 }
 
@@ -351,11 +353,12 @@ export function useNoteEntries(filters = {}) {
  * @param {string} encounterId - Encounter ID
  * @returns {Object} Query result
  */
-export function useNoteEntriesForEncounter(encounterId) {
+export function useNoteEntriesForEncounter(encounterId, options = {}) {
+  const { enabled = true, ...filters } = options;
   return useQuery({
-    queryKey: clinicalNotesKeys.entriesByEncounter(encounterId),
-    queryFn: () => clinicalNotesApi.getNoteEntriesForEncounter(encounterId),
-    enabled: !!encounterId, // Only run the query if we have an encounter ID
+    queryKey: keyWith('clinical-notes', 'entries', 'encounter', encounterId, { filters }),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntriesForEncounter(encounterId, filters, { signal }),
+    enabled: !!encounterId && enabled, // Only run the query if we have an encounter ID
   });
 }
 

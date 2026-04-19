@@ -53,7 +53,7 @@ export default function TemplateListPage() {
   const [viewMode, setViewMode] = useState('grid');
 
   // Fetch templates
-  const { data: templates = [], isLoading, isError, refetch } = useNoteTemplates();
+  const { data: templates = [], isLoading, isError, refetch } = useNoteTemplates({ page_size: 200 });
 
   // Delete template mutation
   const deleteTemplate = useDeleteNoteTemplate();

@@ -87,8 +87,14 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
   // Load all tests and panels when form opens (small catalog, ~200 items)
   // Uses lazy loading - only fetches when slide-over is open
-  const { data: testsData, isLoading: testsLoading } = useLabTests({ enabled: open });
-  const { data: panelsData, isLoading: panelsLoading } = useLabPanels({ enabled: open });
+  const { data: testsData, isLoading: testsLoading } = useLabTests({
+    enabled: open,
+    page_size: 500,
+  });
+  const { data: panelsData, isLoading: panelsLoading } = useLabPanels({
+    enabled: open,
+    page_size: 500,
+  });
   const createOrder = useCreateLabOrder();
   const submitOrder = useSubmitLabOrder();
 
