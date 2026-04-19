@@ -16,6 +16,9 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+WEB_ROLE_ALIASES = {"backend", "api", "web"}
+WORKER_ROLE_ALIASES = {"worker", "celery-worker"}
+BEAT_ROLE_ALIASES = {"beat", "celery-beat"}
 
 
 def log(msg):
@@ -26,6 +29,39 @@ def parse_bool(raw_value, default):
     if raw_value is None:
         return default
     return str(raw_value).strip().lower() in TRUE_VALUES
+
+
+def parse_positive_int(raw_value, default, env_name):
+    if raw_value is None:
+        return default
+
+    normalized = str(raw_value).strip()
+    if not normalized:
+        return default
+
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        log(f"WARNING: {env_name}={normalized!r} is not an integer. Using default {default}.")
+        return default
+
+    if parsed <= 0:
+        log(f"WARNING: {env_name} must be > 0. Using default {default}.")
+        return default
+
+    return parsed
+
+
+def determine_process_role():
+    raw_role = os.environ.get("PROCESS_ROLE") or os.environ.get("RAILWAY_SERVICE_NAME") or "backend"
+    normalized = str(raw_role).strip().lower()
+    if normalized in WORKER_ROLE_ALIASES:
+        return "worker"
+    if normalized in BEAT_ROLE_ALIASES:
+        return "beat"
+    if normalized in WEB_ROLE_ALIASES:
+        return "backend"
+    return "backend"
 
 
 def wait_for_database(db_connection, max_attempts=30, sleep_seconds=2):
@@ -204,6 +240,14 @@ log(f"PORT: {os.environ.get('PORT', 'NOT SET')}")
 log(f"PWD: {os.getcwd()}")
 log(f"USER: {os.getuid()}")
 
+process_role = determine_process_role()
+log(
+    "Process role resolved to "
+    f"{process_role!r} "
+    f"(PROCESS_ROLE={os.environ.get('PROCESS_ROLE')!r}, "
+    f"RAILWAY_SERVICE_NAME={os.environ.get('RAILWAY_SERVICE_NAME')!r})."
+)
+
 run_migrations_only = parse_bool(os.environ.get("RUN_MIGRATIONS_ONLY"), default=False)
 if run_migrations_only:
     log("RUN_MIGRATIONS_ONLY=True detected. Delegating to run_migrations.py and exiting.")
@@ -249,49 +293,106 @@ log(f"ALLOWED_HOSTS: {settings.ALLOWED_HOSTS}")
 
 wait_for_database(connection)
 
-migrate_on_startup = parse_bool(
-    os.environ.get("MIGRATE_ON_STARTUP"),
-    default=False,
-)
-fail_on_pending = parse_bool(
-    os.environ.get("FAIL_ON_PENDING_MIGRATIONS"),
-    default=not bool(settings.DEBUG),
-)
+if process_role == "backend":
+    migrate_on_startup = parse_bool(
+        os.environ.get("MIGRATE_ON_STARTUP"),
+        default=False,
+    )
+    fail_on_pending = parse_bool(
+        os.environ.get("FAIL_ON_PENDING_MIGRATIONS"),
+        default=not bool(settings.DEBUG),
+    )
 
-log(
-    "Startup migration mode: "
-    f"MIGRATE_ON_STARTUP={migrate_on_startup}, "
-    f"FAIL_ON_PENDING_MIGRATIONS={fail_on_pending}"
-)
+    log(
+        "Startup migration mode: "
+        f"MIGRATE_ON_STARTUP={migrate_on_startup}, "
+        f"FAIL_ON_PENDING_MIGRATIONS={fail_on_pending}"
+    )
 
-try:
-    if migrate_on_startup:
-        run_migrations_with_lock(
-            connection,
-            call_command,
-            getattr(settings, "DEFAULT_FACILITY_CODE", None),
-        )
-    else:
-        pending = get_pending_migrations(connection)
-        if pending:
-            preview = ", ".join(f"{app}.{name}" for app, name in pending[:5])
-            if len(pending) > 5:
-                preview = f"{preview}, ..."
-            message = (
-                f"{len(pending)} pending migration(s) detected while MIGRATE_ON_STARTUP is disabled: "
-                f"{preview}. Run a dedicated migrator job before serving this release."
+    try:
+        if migrate_on_startup:
+            run_migrations_with_lock(
+                connection,
+                call_command,
+                getattr(settings, "DEFAULT_FACILITY_CODE", None),
             )
-            if fail_on_pending:
-                log(f"ERROR: {message}")
-                sys.exit(1)
-            log(f"WARNING: {message}")
         else:
-            log("No pending migrations detected.")
-except Exception as e:
-    log(f"ERROR during startup migration stage: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+            pending = get_pending_migrations(connection)
+            if pending:
+                preview = ", ".join(f"{app}.{name}" for app, name in pending[:5])
+                if len(pending) > 5:
+                    preview = f"{preview}, ..."
+                message = (
+                    f"{len(pending)} pending migration(s) detected while MIGRATE_ON_STARTUP is disabled: "
+                    f"{preview}. Run a dedicated migrator job before serving this release."
+                )
+                if fail_on_pending:
+                    log(f"ERROR: {message}")
+                    sys.exit(1)
+                log(f"WARNING: {message}")
+            else:
+                log("No pending migrations detected.")
+    except Exception as e:
+        log(f"ERROR during startup migration stage: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+else:
+    log(f"Skipping startup migration checks for role {process_role!r}.")
+
+if process_role == "worker":
+    worker_concurrency = parse_positive_int(
+        os.environ.get("CELERY_WORKER_CONCURRENCY"),
+        default=2,
+        env_name="CELERY_WORKER_CONCURRENCY",
+    )
+    worker_prefetch = parse_positive_int(
+        os.environ.get("CELERY_WORKER_PREFETCH_MULTIPLIER"),
+        default=1,
+        env_name="CELERY_WORKER_PREFETCH_MULTIPLIER",
+    )
+    worker_max_tasks = parse_positive_int(
+        os.environ.get("CELERY_WORKER_MAX_TASKS_PER_CHILD"),
+        default=200,
+        env_name="CELERY_WORKER_MAX_TASKS_PER_CHILD",
+    )
+    worker_max_memory = parse_positive_int(
+        os.environ.get("CELERY_WORKER_MAX_MEMORY_PER_CHILD"),
+        default=262144,
+        env_name="CELERY_WORKER_MAX_MEMORY_PER_CHILD",
+    )
+    worker_command = [
+        "celery",
+        "-A",
+        "hms_backend",
+        "worker",
+        "--loglevel=info",
+        f"--concurrency={worker_concurrency}",
+        f"--prefetch-multiplier={worker_prefetch}",
+        f"--max-tasks-per-child={worker_max_tasks}",
+        f"--max-memory-per-child={worker_max_memory}",
+    ]
+    log(
+        "Starting Celery worker with "
+        f"concurrency={worker_concurrency}, "
+        f"prefetch={worker_prefetch}, "
+        f"max_tasks_per_child={worker_max_tasks}, "
+        f"max_memory_per_child={worker_max_memory}KB."
+    )
+    log("=" * 50)
+    os.execvp(worker_command[0], worker_command)
+
+if process_role == "beat":
+    beat_command = [
+        "celery",
+        "-A",
+        "hms_backend",
+        "beat",
+        "--loglevel=info",
+    ]
+    log("Starting Celery beat scheduler...")
+    log("=" * 50)
+    os.execvp(beat_command[0], beat_command)
 
 # Start Daphne (ASGI server for HTTP + WebSocket support)
 port = os.environ.get('PORT', '8000')

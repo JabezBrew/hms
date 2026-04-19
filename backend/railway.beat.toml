@@ -3,11 +3,10 @@
 
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile.celery"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "celery -A hms_backend beat --loglevel=info"
-preDeployCommand = "python /app/run_migrations.py"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5

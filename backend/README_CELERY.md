@@ -62,6 +62,17 @@ cd backend
 celery -A hms_backend worker --loglevel=info
 ```
 
+For production, always pin worker fan-out to avoid unbounded RAM growth:
+
+```bash
+cd backend
+CELERY_WORKER_CONCURRENCY=2 \
+CELERY_WORKER_PREFETCH_MULTIPLIER=1 \
+CELERY_WORKER_MAX_TASKS_PER_CHILD=200 \
+CELERY_WORKER_MAX_MEMORY_PER_CHILD=262144 \
+celery -A hms_backend worker --loglevel=info
+```
+
 #### Start Celery Beat (Scheduler)
 
 To start the Celery Beat scheduler that triggers periodic tasks:

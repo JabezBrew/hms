@@ -17,6 +17,11 @@ def log(msg):
     print(f"[migrator] {msg}", file=sys.stderr, flush=True)
 
 
+def should_skip_for_service(service_name):
+    normalized = (service_name or "").strip().lower()
+    return normalized in {"worker", "beat"}
+
+
 def wait_for_database(db_connection, max_attempts=30, sleep_seconds=2):
     log("Waiting for database...")
     for attempt in range(max_attempts):
@@ -127,6 +132,14 @@ def get_pending_migrations(db_connection):
 
 
 def main():
+    service_name = os.environ.get("RAILWAY_SERVICE_NAME")
+    if should_skip_for_service(service_name):
+        log(
+            f"Skipping migrations for service '{service_name}'. "
+            "Migrations should run from the backend web deployment only."
+        )
+        return 0
+
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hms_backend.settings")
 
     import django
