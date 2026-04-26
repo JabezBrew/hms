@@ -8,6 +8,13 @@ capability contract.
 
 from copy import deepcopy
 
+from hms_backend.feature_manifest import (
+    FEATURE_MANIFEST,
+    PROFILE_FEATURE_OVERRIDES,
+    api_feature_prefixes,
+    base_feature_defaults,
+)
+
 
 PROFILE_ALIASES = {
     'clinic': 'clinic',
@@ -19,38 +26,7 @@ PROFILE_ALIASES = {
 }
 
 
-BASE_FEATURES = {
-    # Tenancy and facility scope
-    'facility_context_required': True,
-    'multi_facility': False,
-    'facility_switcher': False,
-    'cross_facility_access': False,
-    'cross_facility_referrals': False,
-    'cross_facility_record_exchange': False,
-
-    # Care delivery
-    'patient_registration': True,
-    'patient_chronicle': True,
-    'outpatient_encounters': True,
-    'outpatient_active_clinic_required': True,
-    'department_rosters': True,
-    'inpatient_admissions': True,
-    'wards': True,
-    'bed_management': True,
-    'emergency_encounters': True,
-    'nursing_workflows': True,
-    'discharge_workflows': True,
-
-    # Operational modules
-    'appointments': True,
-    'billing': True,
-    'inventory': True,
-    'laboratory': True,
-    'pharmacy': True,
-    'referrals': True,
-    'clinical_notes': True,
-    'audit': True,
-}
+BASE_FEATURES = base_feature_defaults()
 
 
 DEPLOYMENT_PROFILES = {
@@ -58,65 +34,24 @@ DEPLOYMENT_PROFILES = {
         'label': 'Clinic',
         'facility_scope': 'single',
         'description': 'Lean single-site outpatient deployment.',
-        'features': {
-            'outpatient_active_clinic_required': False,
-            'department_rosters': False,
-            'inpatient_admissions': False,
-            'wards': False,
-            'bed_management': False,
-            'nursing_workflows': False,
-            'discharge_workflows': False,
-            'cross_facility_referrals': False,
-            'cross_facility_record_exchange': False,
-        },
+        'features': PROFILE_FEATURE_OVERRIDES['clinic'],
     },
     'hospital': {
         'label': 'Hospital',
         'facility_scope': 'single',
         'description': 'Single hospital deployment with full inpatient and outpatient workflows.',
-        'features': {},
+        'features': PROFILE_FEATURE_OVERRIDES['hospital'],
     },
     'hospital_network': {
         'label': 'Hospital Network',
         'facility_scope': 'network',
         'description': 'Multi-facility deployment with network-level sharing and administration.',
-        'features': {
-            'multi_facility': True,
-            'facility_switcher': True,
-            'cross_facility_access': True,
-            'cross_facility_referrals': True,
-            'cross_facility_record_exchange': True,
-        },
+        'features': PROFILE_FEATURE_OVERRIDES['hospital_network'],
     },
 }
 
 
-API_FEATURE_PREFIXES = (
-    ('/api/admissions/', 'inpatient_admissions'),
-    ('/api/admin/audit-logs/', 'audit'),
-    ('/api/appointments/', 'appointments'),
-    ('/api/billing/', 'billing'),
-    ('/api/charts/', 'clinical_notes'),
-    ('/api/clinical-notes/', 'clinical_notes'),
-    ('/api/consent/', 'cross_facility_referrals'),
-    ('/api/dashboards/inpatient/', 'inpatient_admissions'),
-    ('/api/dashboards/nurse/', 'nursing_workflows'),
-    ('/api/discharges/', 'discharge_workflows'),
-    ('/api/inventory/', 'inventory'),
-    ('/api/interop/', 'cross_facility_record_exchange'),
-    ('/api/laboratory/', 'laboratory'),
-    ('/api/nursing/', 'nursing_workflows'),
-    ('/api/organization/department-duty-types/', 'department_rosters'),
-    ('/api/organization/on-duty/', 'department_rosters'),
-    ('/api/organization/roster/', 'department_rosters'),
-    ('/api/organization/rotation-rules/', 'department_rosters'),
-    ('/api/organization/validation-rules/', 'department_rosters'),
-    ('/api/organization/ward-allocations/', 'wards'),
-    ('/api/pharmacy/', 'pharmacy'),
-    ('/api/wards/', 'wards'),
-    ('/api/workflows/discharge', 'discharge_workflows'),
-    ('/api/workflows/ward-round', 'wards'),
-)
+API_FEATURE_PREFIXES = api_feature_prefixes()
 
 
 TRUE_VALUES = {'1', 'true', 'yes', 'on'}
@@ -181,9 +116,9 @@ def build_deployment_config(profile, feature_overrides=None):
     }
 
 
-def feature_enabled(feature_key, django_settings=None, default=False):
+def setting_feature_default(feature_key, django_settings=None, default=False):
     """
-    Return the effective value for a feature.
+    Return the settings/profile default for a feature.
 
     Legacy setting names remain authoritative at runtime because tests and
     existing deployments already override them directly.
@@ -218,6 +153,44 @@ def feature_enabled(feature_key, django_settings=None, default=False):
     return bool(getattr(django_settings, 'DEPLOYMENT_FEATURES', {}).get(feature_key, default))
 
 
+def feature_enabled(
+    feature_key,
+    django_settings=None,
+    default=False,
+    *,
+    facility=None,
+    request=None,
+):
+    """
+    Return the effective value for a feature.
+
+    After Django apps are ready, DB entitlement overrides are applied by
+    apps.core.features. During settings initialization or migrations, fall back
+    to the import-safe deployment/settings default.
+    """
+    try:
+        from django.apps import apps
+
+        if apps.ready:
+            from apps.core.features import feature_enabled as resolve_feature_enabled
+
+            return resolve_feature_enabled(
+                feature_key,
+                facility=facility,
+                request=request,
+                django_settings=django_settings,
+                default=default,
+            )
+    except Exception:
+        pass
+
+    return setting_feature_default(feature_key, django_settings, default)
+
+
+def feature_manifest():
+    return deepcopy(FEATURE_MANIFEST)
+
+
 def feature_for_api_path(path):
     normalized_path = str(path or '')
     if normalized_path.startswith('/api/organization/departments/'):
@@ -236,8 +209,16 @@ def feature_for_api_path(path):
     return None
 
 
-def api_path_enabled(path, django_settings=None):
+def api_path_enabled(path, django_settings=None, *, facility=None, request=None):
     feature_key = feature_for_api_path(path)
     if not feature_key:
         return True, None
-    return feature_enabled(feature_key, django_settings=django_settings), feature_key
+    return (
+        feature_enabled(
+            feature_key,
+            django_settings=django_settings,
+            facility=facility,
+            request=request,
+        ),
+        feature_key,
+    )

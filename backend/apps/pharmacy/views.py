@@ -575,3 +575,8 @@ class SupplyRequestDispensingViewSet(viewsets.ViewSet):
             'dispensed_count': dispensed_count,
             'errors': errors
         })
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'pharmacy')

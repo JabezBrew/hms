@@ -75,17 +75,6 @@ class FacilityContextMiddleware(MiddlewareMixin):
         request.facility = None
         request.facility_code = None
 
-        feature_is_enabled, feature_key = api_path_enabled(request.path)
-        if not feature_is_enabled:
-            return JsonResponse(
-                {
-                    'detail': 'This feature is not enabled for the current deployment.',
-                    'code': 'feature_disabled',
-                    'feature': feature_key,
-                },
-                status=404,
-            )
-
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
         header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
         facility_code = normalize_facility_code(request.META.get(header_key))
@@ -162,6 +151,17 @@ class FacilityContextMiddleware(MiddlewareMixin):
                     {'detail': 'Facility not found.', 'code': 'facility_invalid'},
                     status=404
                 )
+
+        feature_is_enabled, feature_key = api_path_enabled(request.path, request=request)
+        if not feature_is_enabled:
+            return JsonResponse(
+                {
+                    'detail': 'This feature is not enabled for the current deployment.',
+                    'code': 'feature_disabled',
+                    'feature': feature_key,
+                },
+                status=404,
+            )
 
         if feature_enabled('facility_context_required'):
             skip_paths = [

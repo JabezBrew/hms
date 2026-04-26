@@ -10,6 +10,11 @@ app_name = 'core'
 
 router = DefaultRouter()
 router.register(r'facilities', views.FacilityViewSet, basename='facility')
+router.register(
+    r'settings/feature-entitlements',
+    views.FeatureEntitlementOverrideViewSet,
+    basename='feature-entitlement',
+)
 
 urlpatterns = [
     path(

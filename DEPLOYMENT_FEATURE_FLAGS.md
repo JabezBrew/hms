@@ -56,12 +56,34 @@ and check the returned `features` object.
 
 ## Enforcement
 
-Backend module prefixes are blocked in `FacilityContextMiddleware` using the
-`API_FEATURE_PREFIXES` map. For example, `DEPLOYMENT_PROFILE=clinic` disables
-`wards`, so `/api/wards/...` returns `404 feature_disabled` even if a user has
-the right role.
+Backend feature metadata is declared in `backend/hms_backend/feature_manifest.py`.
+Profile/env settings define the default feature matrix, then
+`FeatureEntitlementOverride` records can override features globally or for a
+single facility. Precedence is:
+
+1. facility DB override
+2. global DB override
+3. deployment profile/env default
+
+`FeatureRequiredPermission` enforces `required_feature` on tier-controlled DRF
+views. `FacilityContextMiddleware` also blocks known API prefixes as a
+defense-in-depth safety net. Disabled APIs return `404 feature_disabled`.
 
 Frontend route arrays are tagged with feature metadata in
 `frontend/src/app/routes/featureRoutes.js`, and `FeatureBasedRoute` redirects
 direct navigation to `/feature-unavailable` when a module is off. Sidebar groups
 also check the same capability response before rendering module links.
+
+Admins can inspect and manage runtime overrides at:
+
+```text
+/settings/feature-entitlements
+/api/settings/feature-entitlements/
+```
+
+The deployment capabilities endpoint includes effective features, feature
+sources, the active facility code, and the feature manifest:
+
+```text
+/api/settings/deployment-capabilities/
+```

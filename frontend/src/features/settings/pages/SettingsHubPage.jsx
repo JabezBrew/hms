@@ -6,6 +6,7 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Boxes from 'lucide-react/dist/esm/icons/boxes.js';
 import { useNavigate } from 'react-router-dom';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
@@ -85,6 +86,15 @@ const SettingsHubPage = () => {
       icon: FileText,
       color: 'sky',
       route: '/admin/audit-logs',
+      roles: ['admin'],
+    },
+    {
+      id: 'feature-entitlements',
+      title: 'Feature Entitlements',
+      description: 'Manage clinic, hospital, and network product modules',
+      icon: Boxes,
+      color: 'emerald',
+      route: '/settings/feature-entitlements',
       roles: ['admin'],
     },
   ];

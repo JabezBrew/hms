@@ -31,6 +31,7 @@ from apps.fhir_client.client import fhir_client
 from apps.fhir_client.utils import generate_fhir_id, create_reference
 from apps.interop.crypto import decrypt_payload, encrypt_payload
 from apps.billing.psp import get_psp_adapter
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ def create_fhir_claim_for_claim(self, claim_id: str) -> None:
     - Never block request threads on external I/O.
     - Do not log PHI; log claim IDs only.
     """
+    if not feature_enabled('fhir_claims'):
+        logger.info("FHIR claim task skipped: feature disabled (claim_id=%s)", claim_id)
+        return
+
     claim = Claim.objects.select_related(
         'invoice__patient',
         'invoice__patient_insurance__plan__provider',

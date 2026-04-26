@@ -21,10 +21,16 @@ from django.http import HttpResponse
 
 from redis import Redis
 
-from .models import Facility, FacilityFluidBalanceSettings
+from apps.users.rbac import IsAdmin
+from .features import effective_feature_state
+from .models import Facility, FeatureEntitlementOverride, FacilityFluidBalanceSettings
 from .metrics import render_prometheus_metrics, set_gauge
 from .pagination import StandardResultsSetPagination
-from .serializers import FacilityFluidBalanceSettingsSerializer, FacilityListSerializer
+from .serializers import (
+    FacilityFluidBalanceSettingsSerializer,
+    FacilityListSerializer,
+    FeatureEntitlementOverrideSerializer,
+)
 from .mixins import FacilityScopedCreateMixin
 from .security import (
     FacilityScopedPermission,
@@ -34,6 +40,7 @@ from .security import (
     get_user_facility_codes,
 )
 from hms_backend.deployment import feature_enabled
+from hms_backend.feature_manifest import FEATURE_MANIFEST
 from hms_backend.celery import app as celery_app
 
 
@@ -310,6 +317,78 @@ class FacilityViewSet(viewsets.ReadOnlyModelViewSet):
         return scoped
 
 
+class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = FeatureEntitlementOverrideSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        queryset = FeatureEntitlementOverride.objects.select_related(
+            'facility',
+            'created_by',
+            'updated_by',
+        ).order_by('scope', 'facility__code', 'feature_key')
+
+        scope = self.request.query_params.get('scope')
+        if scope in {
+            FeatureEntitlementOverride.SCOPE_GLOBAL,
+            FeatureEntitlementOverride.SCOPE_FACILITY,
+        }:
+            queryset = queryset.filter(scope=scope)
+
+        facility = self.request.query_params.get('facility')
+        if facility:
+            queryset = queryset.filter(facility__code__iexact=facility)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        instance = serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+        self._log_change(instance, action='CREATE')
+
+    def perform_update(self, serializer):
+        instance = serializer.save(updated_by=self.request.user)
+        self._log_change(instance, action='UPDATE')
+
+    def perform_destroy(self, instance):
+        feature_key = instance.feature_key
+        scope = instance.scope
+        facility_code = getattr(instance.facility, 'code', None)
+        instance.delete()
+        self._log_change_payload(feature_key, scope, facility_code, 'DELETE')
+
+    def _log_change(self, instance, action):
+        self._log_change_payload(
+            instance.feature_key,
+            instance.scope,
+            getattr(instance.facility, 'code', None),
+            action,
+        )
+
+    def _log_change_payload(self, feature_key, scope, facility_code, action):
+        from apps.audit.models import AuditAction, AuditCategory
+        from apps.audit.services import AuditService
+
+        action_map = {
+            'CREATE': AuditAction.CREATE,
+            'UPDATE': AuditAction.UPDATE,
+            'DELETE': AuditAction.DELETE,
+        }
+        scope_label = f"{scope}:{facility_code}" if facility_code else scope
+        AuditService.log(
+            request=self.request,
+            action=action_map[action],
+            category=AuditCategory.ADMIN,
+            resource_type='FeatureEntitlementOverride',
+            resource_id=feature_key,
+            resource_name=f"{feature_key}:{scope_label}",
+            description='Product feature entitlement override changed.',
+        )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def fluid_balance_settings(request):
@@ -355,13 +434,56 @@ def deployment_capabilities(request):
     Return deployment profile and capability flags for conditional UX logic.
     """
     deployment = getattr(settings, 'DEPLOYMENT', {})
+    facility = get_user_facility(request)
+    feature_state = effective_feature_state(facility=facility, request=request)
+    features = feature_state['features']
+
+    capabilities = dict(getattr(settings, 'DEPLOYMENT_CAPABILITIES', {}))
+    capabilities.update({
+        'practitioner_scheduling_mode': 'roster'
+        if features.get('department_rosters')
+        else 'simple',
+        'supports_department_rosters': features.get('department_rosters', False),
+        'outpatient_requires_active_clinic_schedule': features.get(
+            'outpatient_active_clinic_required',
+            False,
+        ),
+        'facility_context_required': features.get('facility_context_required', False),
+        'multi_facility_mode': features.get('multi_facility', False),
+        'facility_switcher': features.get('facility_switcher', False),
+        'cross_facility_access': features.get('cross_facility_access', False),
+        'cross_facility_referrals': features.get('cross_facility_referrals', False),
+        'cross_facility_record_exchange': features.get(
+            'cross_facility_record_exchange',
+            False,
+        ),
+        'inpatient_admissions': features.get('inpatient_admissions', False),
+        'wards': features.get('wards', False),
+        'bed_management': features.get('bed_management', False),
+    })
+
+    manifest = [
+        {
+            'key': key,
+            'label': value.get('label', key),
+            'kind': value.get('kind', 'module'),
+            'parent': value.get('parent'),
+        }
+        for key, value in FEATURE_MANIFEST.items()
+    ]
 
     return Response({
         'deployment_profile': getattr(settings, 'DEPLOYMENT_PROFILE', 'hospital'),
         'profile_label': deployment.get('profile_label'),
         'facility_scope': deployment.get('facility_scope'),
-        'features': getattr(settings, 'DEPLOYMENT_FEATURES', {}),
-        'capabilities': getattr(settings, 'DEPLOYMENT_CAPABILITIES', {}),
+        'facility_code': getattr(facility, 'code', None),
+        'features': features,
+        'feature_sources': feature_state['feature_sources'],
+        'capabilities': capabilities,
+        'available_profiles': list(getattr(settings, 'DEPLOYMENT_PROFILES', {}).keys())
+        if hasattr(settings, 'DEPLOYMENT_PROFILES')
+        else ['clinic', 'hospital', 'hospital_network'],
+        'feature_manifest': manifest,
     })
 
 

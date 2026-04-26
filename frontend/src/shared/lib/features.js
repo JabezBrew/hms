@@ -7,7 +7,7 @@ export function areFeaturesEnabled(requiredFeatures, enabledFeatures = {}) {
   const required = featureList(requiredFeatures)
   if (required.length === 0) return true
 
-  return required.every((feature) => enabledFeatures?.[feature] !== false)
+  return required.every((feature) => enabledFeatures?.[feature] === true)
 }
 
 export function withFeature(routes, features) {

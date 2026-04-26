@@ -768,3 +768,8 @@ class ChartEntryViewSet(viewsets.ModelViewSet):
         serializer_class = ChartEntryListWithDataSerializer if include_data else ChartEntryListSerializer
         serializer = serializer_class(queryset, many=True)
         return Response(serializer.data)
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'clinical_notes')

@@ -7,6 +7,7 @@ This module implements DATA-TYPE SPECIFIC access control with team-based enforce
 - Support staff can ONLY access their specific data domain
 """
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import BasePermission
 from django.conf import settings
 from django.db.models import Q
@@ -291,7 +292,12 @@ class FeatureRequiredPermission(BasePermission):
         required_feature = getattr(view, 'required_feature', None)
         if not required_feature:
             return True
-        return feature_enabled(required_feature)
+        if feature_enabled(required_feature, request=request):
+            return True
+        raise NotFound({
+            'detail': self.message,
+            'code': 'feature_disabled',
+        })
 
 
 def require_feature(feature_key):

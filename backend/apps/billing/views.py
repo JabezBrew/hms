@@ -55,6 +55,7 @@ from apps.core.security import FacilityScopedPermission, get_user_facility, chec
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 from apps.interop.crypto import encrypt_payload
+from hms_backend.deployment import feature_enabled
 
 from .psp import get_psp_adapter
 
@@ -522,7 +523,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
 
             # Never block request threads on external I/O (FHIR). Gate behind a feature flag.
-            if getattr(settings, 'BILLING_ENABLE_FHIR_CLAIMS', False) and getattr(invoice.patient, 'fhir_patient_id', None):
+            if (
+                getattr(settings, 'BILLING_ENABLE_FHIR_CLAIMS', False)
+                and feature_enabled('fhir_claims', request=request)
+                and getattr(invoice.patient, 'fhir_patient_id', None)
+            ):
                 from apps.billing.tasks import create_fhir_claim_for_claim
                 create_fhir_claim_for_claim.delay(str(claim.id))
 
@@ -2794,3 +2799,19 @@ class BillingDashboardViewSet(viewsets.ViewSet):
         payments = payments[:limit]
         serializer = RecentPaymentSerializer(payments, many=True)
         return Response(serializer.data)
+
+
+from apps.core.features import attach_required_feature, bind_required_feature
+
+bind_required_feature(globals(), 'billing')
+attach_required_feature(
+    [
+        ClaimViewSet,
+        NHISClaimBatchViewSet,
+        NHISClaimExportJobViewSet,
+        RemittanceImportJobViewSet,
+        PayerServiceCodeImportJobViewSet,
+        AccountsReceivableViewSet,
+    ],
+    'insurance_claims',
+)

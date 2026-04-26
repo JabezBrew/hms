@@ -2341,3 +2341,8 @@ class InventoryAnalyticsViewSet(viewsets.ViewSet):
 
         result = InventoryAnalyticsService.get_inventory_dashboard_kpis(facility)
         return Response(result)
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'inventory')

@@ -1437,3 +1437,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
             'verified_count': verified_count,
             'message': f'Successfully verified {verified_count} result(s)'
         })
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'laboratory')

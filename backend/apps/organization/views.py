@@ -2230,3 +2230,22 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
         result = RosterValidationService.validate_roster(entries, rules)
 
         return Response(result)
+
+
+from apps.core.features import attach_required_feature
+
+attach_required_feature(
+    [
+        UnitWardAllocationViewSet,
+    ],
+    'wards',
+)
+attach_required_feature(
+    [
+        DepartmentDutyTypeViewSet,
+        RotationRuleViewSet,
+        RosterEntryViewSet,
+        RosterValidationRuleViewSet,
+    ],
+    'department_rosters',
+)

@@ -2472,3 +2472,8 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
                 'balance': balance
             }
         })
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'nursing_workflows')

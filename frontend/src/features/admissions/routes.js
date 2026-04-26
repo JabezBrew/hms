@@ -46,6 +46,7 @@ export const admissionRoutes = [
     path: '/billing/admissions',
     component: BillingAdmissionQueuePage,
     roles: ROLE_GROUPS.BILLING,
+    features: ['billing'],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Billing Admission Queue | Hospital Management System',
     breadcrumbs: [
@@ -57,6 +58,7 @@ export const admissionRoutes = [
     path: '/nursing/admissions',
     component: NursingAdmissionQueuePage,
     roles: ROLE_GROUPS.NURSING_DASHBOARD,
+    features: ['nursing_workflows'],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Nursing Admission Queue | Hospital Management System',
     breadcrumbs: [

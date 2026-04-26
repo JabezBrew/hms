@@ -54,6 +54,7 @@ export const patientRoutes = [
     path: '/patients/:id/ward-round',
     component: PatientPage,
     roles: ROLE_GROUPS.CLINICAL,
+    features: ['wards'],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Ward Round | Hospital Management System',
     breadcrumbs: [

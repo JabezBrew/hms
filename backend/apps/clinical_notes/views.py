@@ -3886,3 +3886,8 @@ def _format_referral_entry_v2(ref, event):
         'encounter_id': str(ref.encounter_id) if ref.encounter_id else None,
         'created_at': ref.created_at.isoformat(),
     }
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'clinical_notes')

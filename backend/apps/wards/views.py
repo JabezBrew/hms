@@ -1247,3 +1247,8 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
 
         serializer = WardStaffAssignmentDetailSerializer(assignments, many=True)
         return Response(serializer.data)
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'wards')

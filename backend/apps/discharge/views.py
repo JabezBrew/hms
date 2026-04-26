@@ -240,3 +240,8 @@ class DischargeTaskViewSet(viewsets.ReadOnlyModelViewSet):
             notes=serializer.validated_data.get('notes', ''),
         )
         return Response(DischargeCaseDetailSerializer(case, context={'request': request}).data)
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'discharge_workflows')

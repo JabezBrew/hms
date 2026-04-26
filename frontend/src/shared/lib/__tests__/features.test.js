@@ -8,8 +8,9 @@ describe('feature helpers', () => {
     expect(featureList(['wards', 'billing'])).toEqual(['wards', 'billing'])
   })
 
-  it('treats missing feature keys as enabled for backward compatibility', () => {
-    expect(areFeaturesEnabled(['wards'], {})).toBe(true)
+  it('fails closed when feature keys are missing or disabled', () => {
+    expect(areFeaturesEnabled(['wards'], {})).toBe(false)
+    expect(areFeaturesEnabled(['wards'], { wards: true })).toBe(true)
     expect(areFeaturesEnabled(['wards'], { wards: false })).toBe(false)
     expect(areFeaturesEnabled(['wards', 'billing'], { wards: true, billing: false })).toBe(false)
   })

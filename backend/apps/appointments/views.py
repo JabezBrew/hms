@@ -1812,3 +1812,8 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
                 {"error": "Failed to create blocked times. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'appointments')
