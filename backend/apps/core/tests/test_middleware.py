@@ -50,6 +50,22 @@ def test_deployment_capabilities_endpoint_does_not_require_facility_context(sett
     assert request.facility_code is None
 
 
+def test_disabled_feature_api_prefix_is_blocked(settings):
+    settings.FACILITY_CONTEXT_REQUIRED = False
+    settings.DEPLOYMENT_FEATURES = {'wards': False}
+
+    request = RequestFactory().get('/api/wards/wards/')
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    response = middleware.process_request(request)
+
+    assert response is not None
+    assert response.status_code == 404
+    body = json.loads(response.content.decode('utf-8'))
+    assert body.get('code') == 'feature_disabled'
+    assert body.get('feature') == 'wards'
+
+
 @pytest.mark.django_db
 def test_facility_context_middleware_denies_authenticated_user_without_facility_assignments(
     monkeypatch, settings

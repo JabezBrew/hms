@@ -131,6 +131,7 @@ export const billingRoutes = [
     path: '/billing/discharges',
     component: BillingDischargesPage,
     roles: ROLE_GROUPS.BILLING,
+    features: ['discharge_workflows'],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Billing Discharges | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Discharges', path: '/billing/discharges' }],

@@ -21,5 +21,8 @@ export function validateRoutes(routes, { source = 'routes' } = {}) {
     if (route.roles === undefined) {
       throw new Error(`[${source}] Route ${route.path} must declare roles (use null for all)`)
     }
+    if (route.features !== undefined && !Array.isArray(route.features)) {
+      throw new Error(`[${source}] Route ${route.path} features must be an array`)
+    }
   })
 }

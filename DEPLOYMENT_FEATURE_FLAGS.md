@@ -53,3 +53,15 @@ branching, or declare `required_feature` with
 `apps.core.security.FeatureRequiredPermission` when an endpoint should be
 blocked for a deployment. New frontend code should use `useSystemCapabilities()`
 and check the returned `features` object.
+
+## Enforcement
+
+Backend module prefixes are blocked in `FacilityContextMiddleware` using the
+`API_FEATURE_PREFIXES` map. For example, `DEPLOYMENT_PROFILE=clinic` disables
+`wards`, so `/api/wards/...` returns `404 feature_disabled` even if a user has
+the right role.
+
+Frontend route arrays are tagged with feature metadata in
+`frontend/src/app/routes/featureRoutes.js`, and `FeatureBasedRoute` redirects
+direct navigation to `/feature-unavailable` when a module is off. Sidebar groups
+also check the same capability response before rendering module links.

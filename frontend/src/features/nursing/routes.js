@@ -47,6 +47,7 @@ export const nursingRoutes = [
     path: '/nursing/discharges',
     component: NursingDischargesPage,
     roles: ROLE_GROUPS.NURSING_DASHBOARD,
+    features: ['discharge_workflows'],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Nursing Discharges | Hospital Management System',
     breadcrumbs: [NURSING_BREADCRUMB, { label: 'Discharges', path: '/nursing/discharges' }],

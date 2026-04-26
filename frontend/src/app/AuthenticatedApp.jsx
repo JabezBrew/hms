@@ -14,6 +14,7 @@ import { featureRoutes } from './routes/featureRoutes'
 import { renderRoutes } from './routes/renderRoutes'
 
 const UnauthorizedPage = lazy(() => import('@/pages/UnauthorizedPage'))
+const FeatureUnavailablePage = lazy(() => import('@/pages/FeatureUnavailablePage'))
 const Toaster = lazy(() =>
   import('@/components/ui/sonner').then((module) => ({ default: module.Toaster }))
 )
@@ -32,6 +33,14 @@ export default function AuthenticatedApp() {
                 element={
                   <Layout>
                     <UnauthorizedPage />
+                  </Layout>
+                }
+              />
+              <Route
+                path="/feature-unavailable"
+                element={
+                  <Layout>
+                    <FeatureUnavailablePage />
                   </Layout>
                 }
               />

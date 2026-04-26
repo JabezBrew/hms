@@ -1,6 +1,8 @@
 from hms_backend.deployment import (
+    api_path_enabled,
     build_deployment_config,
     feature_enabled,
+    feature_for_api_path,
     normalize_deployment_profile,
 )
 from apps.core.security import FeatureRequiredPermission
@@ -55,3 +57,20 @@ def test_feature_required_permission_checks_declared_feature(settings):
     view = type('View', (), {'required_feature': 'laboratory'})()
 
     assert FeatureRequiredPermission().has_permission(None, view) is False
+
+
+def test_api_path_feature_mapping_supports_module_and_nested_roster_paths(settings):
+    settings.DEPLOYMENT_FEATURES = {
+        'laboratory': False,
+        'department_rosters': False,
+    }
+    settings.PRACTITIONER_SCHEDULING_MODE = 'simple'
+
+    assert feature_for_api_path('/api/laboratory/orders/') == 'laboratory'
+    assert api_path_enabled('/api/laboratory/orders/') == (False, 'laboratory')
+    assert feature_for_api_path(
+        '/api/organization/departments/00000000-0000-0000-0000-000000000000/roster/'
+    ) == 'department_rosters'
+    assert api_path_enabled(
+        '/api/organization/departments/00000000-0000-0000-0000-000000000000/roster/'
+    ) == (False, 'department_rosters')

@@ -9,7 +9,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework import status as http_status
-from hms_backend.deployment import feature_enabled
+from hms_backend.deployment import api_path_enabled, feature_enabled
 
 logger = logging.getLogger('django.request')
 
@@ -74,6 +74,17 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
         request.facility = None
         request.facility_code = None
+
+        feature_is_enabled, feature_key = api_path_enabled(request.path)
+        if not feature_is_enabled:
+            return JsonResponse(
+                {
+                    'detail': 'This feature is not enabled for the current deployment.',
+                    'code': 'feature_disabled',
+                    'feature': feature_key,
+                },
+                status=404,
+            )
 
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
         header_key = f'HTTP_{header_name.upper().replace("-", "_")}'

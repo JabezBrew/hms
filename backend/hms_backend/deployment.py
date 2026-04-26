@@ -91,6 +91,34 @@ DEPLOYMENT_PROFILES = {
 }
 
 
+API_FEATURE_PREFIXES = (
+    ('/api/admissions/', 'inpatient_admissions'),
+    ('/api/admin/audit-logs/', 'audit'),
+    ('/api/appointments/', 'appointments'),
+    ('/api/billing/', 'billing'),
+    ('/api/charts/', 'clinical_notes'),
+    ('/api/clinical-notes/', 'clinical_notes'),
+    ('/api/consent/', 'cross_facility_referrals'),
+    ('/api/dashboards/inpatient/', 'inpatient_admissions'),
+    ('/api/dashboards/nurse/', 'nursing_workflows'),
+    ('/api/discharges/', 'discharge_workflows'),
+    ('/api/inventory/', 'inventory'),
+    ('/api/interop/', 'cross_facility_record_exchange'),
+    ('/api/laboratory/', 'laboratory'),
+    ('/api/nursing/', 'nursing_workflows'),
+    ('/api/organization/department-duty-types/', 'department_rosters'),
+    ('/api/organization/on-duty/', 'department_rosters'),
+    ('/api/organization/roster/', 'department_rosters'),
+    ('/api/organization/rotation-rules/', 'department_rosters'),
+    ('/api/organization/validation-rules/', 'department_rosters'),
+    ('/api/organization/ward-allocations/', 'wards'),
+    ('/api/pharmacy/', 'pharmacy'),
+    ('/api/wards/', 'wards'),
+    ('/api/workflows/discharge', 'discharge_workflows'),
+    ('/api/workflows/ward-round', 'wards'),
+)
+
+
 TRUE_VALUES = {'1', 'true', 'yes', 'on'}
 FALSE_VALUES = {'0', 'false', 'no', 'off'}
 
@@ -188,3 +216,28 @@ def feature_enabled(feature_key, django_settings=None, default=False):
         return bool(django_settings.REQUIRE_OUTPATIENT_ACTIVE_CLINIC)
 
     return bool(getattr(django_settings, 'DEPLOYMENT_FEATURES', {}).get(feature_key, default))
+
+
+def feature_for_api_path(path):
+    normalized_path = str(path or '')
+    if normalized_path.startswith('/api/organization/departments/'):
+        roster_segments = (
+            '/on-duty/',
+            '/roster/',
+            '/rotation-rules/',
+            '/validation-rules/',
+        )
+        if any(segment in normalized_path for segment in roster_segments):
+            return 'department_rosters'
+
+    for prefix, feature_key in API_FEATURE_PREFIXES:
+        if normalized_path.startswith(prefix):
+            return feature_key
+    return None
+
+
+def api_path_enabled(path, django_settings=None):
+    feature_key = feature_for_api_path(path)
+    if not feature_key:
+        return True, None
+    return feature_enabled(feature_key, django_settings=django_settings), feature_key

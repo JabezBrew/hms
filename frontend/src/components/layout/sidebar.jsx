@@ -45,6 +45,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 
 import { useAuth } from "@/lib/auth"
 import { useInboxCount } from "@/features/inbox/hooks"
+import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 import { useSidebarState } from "@/hooks/useSidebarState"
 
@@ -116,6 +117,9 @@ export function AppSidebar() {
   const userRole = user?.role || ''
   const { count: inboxCount } = useInboxCount()
   const { getCollapsibleProps } = useSidebarState()
+  const { data: deploymentCapabilities } = useSystemCapabilities()
+  const enabledFeatures = deploymentCapabilities?.features || {}
+  const hasFeature = (feature) => enabledFeatures?.[feature] !== false
 
   // Get role-specific dashboard URL
   // Support staff are redirected to their workflow pages instead of a generic dashboard
@@ -176,12 +180,12 @@ export function AppSidebar() {
     },
   }
 
-  const showAppointments = hasAnyAccess(userRole, [
+  const showAppointments = hasFeature('appointments') && hasAnyAccess(userRole, [
     menuItems.primary.schedule,
     menuItems.primary.availability,
   ])
 
-  const showLaboratory = hasAnyAccess(userRole, [
+  const showLaboratory = hasFeature('laboratory') && hasAnyAccess(userRole, [
     menuItems.operations.labCatalog,
     menuItems.operations.labWorklist,
     menuItems.operations.labCollection,
@@ -189,7 +193,7 @@ export function AppSidebar() {
     menuItems.operations.labResults,
   ])
 
-  const showClinicalContent = hasAnyAccess(userRole, [
+  const showClinicalContent = hasFeature('clinical_notes') && hasAnyAccess(userRole, [
     menuItems.operations.noteTemplates,
     menuItems.operations.chartTemplates,
   ])
@@ -289,7 +293,7 @@ export function AppSidebar() {
         <SidebarGroupLabel>Operations</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {hasAccess(userRole, menuItems.operations.wards) && (
+            {hasFeature('wards') && hasAccess(userRole, menuItems.operations.wards) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Wards" href="/wards">
                   <Activity />
@@ -298,7 +302,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.operations.shiftHandoff) && (
+            {hasFeature('nursing_workflows') && hasAccess(userRole, menuItems.operations.shiftHandoff) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Shift Handoff" href="/nursing/shift-handoff">
                   <ArrowLeftRight />
@@ -365,7 +369,7 @@ export function AppSidebar() {
               </Collapsible>
             )}
 
-            {hasAccess(userRole, menuItems.operations.pharmacy) && (
+            {hasFeature('pharmacy') && hasAccess(userRole, menuItems.operations.pharmacy) && (
               <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('pharmacy')}>
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
@@ -395,7 +399,7 @@ export function AppSidebar() {
               </Collapsible>
             )}
 
-            {hasAccess(userRole, menuItems.operations.billing) && (
+            {hasFeature('billing') && hasAccess(userRole, menuItems.operations.billing) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Billing" href="/billing">
                   <CreditCard />
@@ -404,7 +408,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.operations.inventory) && (
+            {hasFeature('inventory') && hasAccess(userRole, menuItems.operations.inventory) && (
               <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('inventory')}>
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
@@ -536,7 +540,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.dutyRoster) && (
+                      {hasFeature('department_rosters') && hasAccess(userRole, menuItems.operations.dutyRoster) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/admin/organization/duty-roster">
                             <CalendarClock className="h-4 w-4" />
