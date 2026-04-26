@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
 import { useFacilities } from "@/hooks/useFacilityQueries";
+import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "@/lib/runtime-config";
 import { toast } from "sonner";
 
@@ -25,7 +26,12 @@ export function FacilitySwitcher() {
   const { facilityCode, setFacilityCode } = useAuth();
   const [draft, setDraft] = useState(facilityCode || DEFAULT_FACILITY_CODE);
   const [searchQuery, setSearchQuery] = useState("");
-  const multiFacilityMode = isMultiFacilityModeEnabled();
+  const { data: deploymentCapabilities } = useSystemCapabilities();
+  const backendFacilitySwitcher =
+    deploymentCapabilities?.features?.facility_switcher ??
+    deploymentCapabilities?.capabilities?.facility_switcher ??
+    deploymentCapabilities?.capabilities?.multi_facility_mode;
+  const multiFacilityMode = backendFacilitySwitcher ?? isMultiFacilityModeEnabled();
   const {
     data: facilities = [],
     isLoading,

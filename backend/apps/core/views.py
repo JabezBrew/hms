@@ -33,6 +33,7 @@ from .security import (
     get_user_facility,
     get_user_facility_codes,
 )
+from hms_backend.deployment import feature_enabled
 from hms_backend.celery import app as celery_app
 
 
@@ -293,8 +294,7 @@ class FacilityViewSet(viewsets.ReadOnlyModelViewSet):
 
         allow_cross = getattr(self.request, 'allow_cross_facility', None)
         if allow_cross is None:
-            from django.conf import settings
-            allow_cross = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+            allow_cross = feature_enabled('cross_facility_access')
 
         if allow_cross and user.user_type == 'admin':
             scoped = queryset
@@ -354,18 +354,14 @@ def deployment_capabilities(request):
     """
     Return deployment profile and capability flags for conditional UX logic.
     """
-    scheduling_mode = getattr(settings, 'PRACTITIONER_SCHEDULING_MODE', 'roster')
-    requires_outpatient_active_clinic = bool(
-        getattr(settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC', True)
-    )
+    deployment = getattr(settings, 'DEPLOYMENT', {})
 
     return Response({
         'deployment_profile': getattr(settings, 'DEPLOYMENT_PROFILE', 'hospital'),
-        'capabilities': {
-            'practitioner_scheduling_mode': scheduling_mode,
-            'supports_department_rosters': scheduling_mode == 'roster',
-            'outpatient_requires_active_clinic_schedule': requires_outpatient_active_clinic,
-        },
+        'profile_label': deployment.get('profile_label'),
+        'facility_scope': deployment.get('facility_scope'),
+        'features': getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        'capabilities': getattr(settings, 'DEPLOYMENT_CAPABILITIES', {}),
     })
 
 

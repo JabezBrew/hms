@@ -36,6 +36,20 @@ def test_facility_context_middleware_handles_authentication_failed(monkeypatch, 
     assert request.facility_code is None
 
 
+def test_deployment_capabilities_endpoint_does_not_require_facility_context(settings):
+    settings.FACILITY_CONTEXT_REQUIRED = True
+    settings.DEFAULT_FACILITY_CODE = None
+
+    request = RequestFactory().get('/api/settings/deployment-capabilities/')
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    response = middleware.process_request(request)
+
+    assert response is None
+    assert request.facility is None
+    assert request.facility_code is None
+
+
 @pytest.mark.django_db
 def test_facility_context_middleware_denies_authenticated_user_without_facility_assignments(
     monkeypatch, settings

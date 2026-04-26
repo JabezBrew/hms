@@ -5,11 +5,14 @@ Django settings for hms_backend project.
 import os
 import re
 import sys
+import json
 from pathlib import Path
 import environ
 import logging.config
 from urllib.parse import urlparse, parse_qs
 from kombu import Queue
+
+from hms_backend.deployment import build_deployment_config, coerce_feature_value
 
 
 
@@ -85,6 +88,43 @@ def _validated_origin_regexes(candidates):
             continue
         patterns.append(value)
     return patterns
+
+
+def _env_bool_override(var_name):
+    raw_value = env(var_name, default=None)
+    return coerce_feature_value(raw_value)
+
+
+def _parse_feature_flag_overrides(raw_value):
+    """
+    Parse feature flag overrides from JSON or comma-separated key=value pairs.
+    Unknown feature keys are ignored later by the deployment matrix.
+    """
+    if not raw_value:
+        return {}
+
+    value = str(raw_value).strip()
+    if not value:
+        return {}
+
+    if value.startswith('{'):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
+
+    overrides = {}
+    for item in value.split(','):
+        if '=' not in item:
+            continue
+        key, flag_value = item.split('=', 1)
+        key = key.strip()
+        if key:
+            overrides[key] = flag_value.strip()
+    return overrides
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
@@ -370,32 +410,57 @@ WEBAUTHN_ALLOWED_ORIGIN_REGEXES = _validated_origin_regexes(
     env.list('WEBAUTHN_ALLOWED_ORIGIN_REGEXES', default=[]),
 )
 WEBAUTHN_TIMEOUT_MS = env.int('WEBAUTHN_TIMEOUT_MS', default=60000)
-FACILITY_CONTEXT_REQUIRED = env.bool('FACILITY_CONTEXT_REQUIRED', default=True)
-MULTI_FACILITY_MODE = env.bool('MULTI_FACILITY_MODE', default=False)
-ALLOW_CROSS_FACILITY_ACCESS = env.bool('ALLOW_CROSS_FACILITY_ACCESS', default=False)
 
 # Deployment profile/capabilities.
-# Per-customer isolated deployments can set these independently without
-# introducing runtime feature toggles in the UI.
-DEPLOYMENT_PROFILE = env('DEPLOYMENT_PROFILE', default='hospital').strip().lower()
-if DEPLOYMENT_PROFILE not in {'hospital', 'small_clinic'}:
-    DEPLOYMENT_PROFILE = 'hospital'
-
-default_practitioner_scheduling_mode = (
-    'simple' if DEPLOYMENT_PROFILE == 'small_clinic' else 'roster'
+# DEPLOYMENT_PROFILE chooses the default matrix. FEATURE_FLAG_OVERRIDES and the
+# legacy env vars below can override specific flags per customer deployment.
+_deployment_feature_overrides = _parse_feature_flag_overrides(
+    env('FEATURE_FLAG_OVERRIDES', default='')
 )
-PRACTITIONER_SCHEDULING_MODE = env(
-    'PRACTITIONER_SCHEDULING_MODE',
-    default=default_practitioner_scheduling_mode,
-).strip().lower()
-if PRACTITIONER_SCHEDULING_MODE not in {'simple', 'roster'}:
-    PRACTITIONER_SCHEDULING_MODE = default_practitioner_scheduling_mode
 
-default_require_outpatient_active_clinic = DEPLOYMENT_PROFILE != 'small_clinic'
-REQUIRE_OUTPATIENT_ACTIVE_CLINIC = env.bool(
-    'REQUIRE_OUTPATIENT_ACTIVE_CLINIC',
-    default=default_require_outpatient_active_clinic,
+_facility_context_required_override = _env_bool_override('FACILITY_CONTEXT_REQUIRED')
+if _facility_context_required_override is not None:
+    _deployment_feature_overrides['facility_context_required'] = (
+        _facility_context_required_override
+    )
+
+_multi_facility_override = _env_bool_override('MULTI_FACILITY_MODE')
+if _multi_facility_override is not None:
+    _deployment_feature_overrides['multi_facility'] = _multi_facility_override
+    _deployment_feature_overrides['facility_switcher'] = _multi_facility_override
+
+_cross_facility_override = _env_bool_override('ALLOW_CROSS_FACILITY_ACCESS')
+if _cross_facility_override is not None:
+    _deployment_feature_overrides['cross_facility_access'] = _cross_facility_override
+
+_outpatient_clinic_override = _env_bool_override('REQUIRE_OUTPATIENT_ACTIVE_CLINIC')
+if _outpatient_clinic_override is not None:
+    _deployment_feature_overrides['outpatient_active_clinic_required'] = (
+        _outpatient_clinic_override
+    )
+
+_scheduling_mode_override = env('PRACTITIONER_SCHEDULING_MODE', default='').strip().lower()
+if _scheduling_mode_override in {'simple', 'roster'}:
+    _deployment_feature_overrides['department_rosters'] = (
+        _scheduling_mode_override == 'roster'
+    )
+
+DEPLOYMENT = build_deployment_config(
+    env('DEPLOYMENT_PROFILE', default='hospital'),
+    feature_overrides=_deployment_feature_overrides,
 )
+DEPLOYMENT_PROFILE = DEPLOYMENT['deployment_profile']
+DEPLOYMENT_FEATURES = DEPLOYMENT['features']
+DEPLOYMENT_CAPABILITIES = DEPLOYMENT['capabilities']
+
+# Backward-compatible settings used by existing modules and deployments.
+FACILITY_CONTEXT_REQUIRED = DEPLOYMENT_FEATURES['facility_context_required']
+MULTI_FACILITY_MODE = DEPLOYMENT_FEATURES['multi_facility']
+ALLOW_CROSS_FACILITY_ACCESS = DEPLOYMENT_FEATURES['cross_facility_access']
+PRACTITIONER_SCHEDULING_MODE = DEPLOYMENT_CAPABILITIES['practitioner_scheduling_mode']
+REQUIRE_OUTPATIENT_ACTIVE_CLINIC = DEPLOYMENT_FEATURES[
+    'outpatient_active_clinic_required'
+]
 
 # Record export security
 RECORD_EXPORT_FERNET_KEY = env('RECORD_EXPORT_FERNET_KEY', default='')

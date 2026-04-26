@@ -13,6 +13,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
+from hms_backend.deployment import feature_enabled
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
 from .tenancy import facility_context, set_current_facility_code
 from .auth_utils import build_auth_response, get_access_context
@@ -90,7 +91,7 @@ class CookieTokenRefreshView(APIView):
             token_facility = None
 
         facility_code = requested_facility or token_facility
-        if not facility_code and settings.FACILITY_CONTEXT_REQUIRED and not settings.DEFAULT_FACILITY_CODE:
+        if not facility_code and feature_enabled('facility_context_required') and not settings.DEFAULT_FACILITY_CODE:
             if token_user_id:
                 from django.contrib.auth import get_user_model
 
@@ -375,7 +376,7 @@ class LoginView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            if settings.FACILITY_CONTEXT_REQUIRED and not facility_code:
+            if feature_enabled('facility_context_required') and not facility_code:
                 self._log_login_failure(
                     request,
                     email=email,

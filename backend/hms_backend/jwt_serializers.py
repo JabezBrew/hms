@@ -1,6 +1,7 @@
 from django.conf import settings
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from hms_backend.deployment import feature_enabled
 
 
 def _normalize_facility_code(code):
@@ -41,7 +42,7 @@ def _get_user_facility_codes(user):
 def resolve_user_facility_code(user, requested_code=None):
     requested = _normalize_facility_code(requested_code)
     allowed_codes = _get_user_facility_codes(user)
-    allow_cross_facility = bool(getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False))
+    allow_cross_facility = feature_enabled('cross_facility_access')
     is_admin = bool(user and getattr(user, 'user_type', None) == 'admin')
     default_facility_code = _normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', ''))
 

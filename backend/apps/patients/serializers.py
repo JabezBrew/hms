@@ -10,10 +10,10 @@ from ..users.serializers import PatientProfileSerializer, UserSerializer, genera
 from ..users.identifiers import generate_unique_mrn
 from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
+from hms_backend.deployment import feature_enabled
 from hms_backend.tenancy import get_current_facility_code
 from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility, resolve_object_facility
 from apps.core.models import Facility
-from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
@@ -206,11 +206,10 @@ class PatientRegistrationSerializer(serializers.Serializer):
     admission_details = serializers.DictField(write_only=True)
 
     def _requires_active_outpatient_clinic(self):
-        return bool(getattr(settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC', True))
+        return feature_enabled('outpatient_active_clinic_required')
 
     def _uses_roster_for_initial_assignment(self):
-        scheduling_mode = getattr(settings, 'PRACTITIONER_SCHEDULING_MODE', 'roster')
-        return scheduling_mode == 'roster'
+        return feature_enabled('department_rosters')
 
     def _get_department_timezone(self, department, facility):
         tz_name = None

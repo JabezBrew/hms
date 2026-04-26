@@ -12,6 +12,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 import logging
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def get_user_facility(request):
     primary_facility = None
     primary_code = None
     if user and getattr(user, 'is_authenticated', False):
-        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        allow_cross_facility = feature_enabled('cross_facility_access')
         is_admin = bool(getattr(user, 'user_type', None) == 'admin')
         primary_facility = getattr(user, 'primary_facility', None)
         if primary_facility:
@@ -278,6 +279,27 @@ class FacilityScopedPermission(BasePermission):
             return normalize_facility_code(facility_code) == facility.code
 
         return False
+
+
+class FeatureRequiredPermission(BasePermission):
+    """
+    Allow endpoints to declare `required_feature = 'feature_key'`.
+    """
+    message = "This feature is not enabled for the current deployment."
+
+    def has_permission(self, request, view):
+        required_feature = getattr(view, 'required_feature', None)
+        if not required_feature:
+            return True
+        return feature_enabled(required_feature)
+
+
+def require_feature(feature_key):
+    if not feature_enabled(feature_key):
+        raise PermissionDenied(
+            "This feature is not enabled for the current deployment."
+        )
+
 
 def _get_patient_profile(patient_or_id):
     """Helper to get PatientProfile from ID or instance."""

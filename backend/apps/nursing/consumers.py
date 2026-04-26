@@ -15,10 +15,10 @@ from datetime import datetime
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from django.conf import settings
 from rest_framework.exceptions import PermissionDenied
 
 from apps.core.security import get_user_facility_codes, check_clinical_access
+from hms_backend.deployment import feature_enabled
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.wards.models import WardStaffAssignment
 
@@ -33,7 +33,7 @@ def _can_access_patient(user, patient_id):
     if not patient:
         return False
     allowed_codes = get_user_facility_codes(user)
-    allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+    allow_cross_facility = feature_enabled('cross_facility_access')
     if allowed_codes and patient.facility:
         if patient.facility.code not in allowed_codes and not (allow_cross_facility and user.user_type == 'admin'):
             return False

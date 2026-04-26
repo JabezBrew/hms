@@ -9,6 +9,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework import status as http_status
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger('django.request')
 
@@ -105,15 +106,15 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 allowed_codes = {primary_code}
             else:
                 allowed_codes = get_user_facility_codes(user)
-        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        allow_cross_facility = feature_enabled('cross_facility_access')
         default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
 
         if not facility_code and allowed_codes:
             if len(allowed_codes) == 1:
                 facility_code = next(iter(allowed_codes))
                 facility_code_source = 'user'
-            elif getattr(settings, 'MULTI_FACILITY_MODE', False):
-                if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
+            elif feature_enabled('multi_facility'):
+                if feature_enabled('facility_context_required'):
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
                         status=403
@@ -151,8 +152,15 @@ class FacilityContextMiddleware(MiddlewareMixin):
                     status=404
                 )
 
-        if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
-            skip_paths = ['/api/auth/', '/api/facilities/', '/admin/', '/static/', '/media/']
+        if feature_enabled('facility_context_required'):
+            skip_paths = [
+                '/api/auth/',
+                '/api/facilities/',
+                '/api/settings/deployment-capabilities/',
+                '/admin/',
+                '/static/',
+                '/media/',
+            ]
             if not any(request.path.startswith(path) for path in skip_paths):
                 if not request.facility_code:
                     return JsonResponse(

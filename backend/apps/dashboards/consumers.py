@@ -14,10 +14,10 @@ from typing import Optional
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 
 from apps.core.security import get_user_facility_codes, normalize_facility_code
+from hms_backend.deployment import feature_enabled
 from apps.users.models import PractitionerProfile
 from apps.wards.models import WardStaffAssignment
 from .realtime import (
@@ -80,7 +80,7 @@ def _preferred_subprotocol(scope) -> Optional[str]:
 @database_sync_to_async
 def _can_access_facility(user, facility_code: str) -> bool:
     allowed_codes = get_user_facility_codes(user)
-    allow_cross_facility = getattr(settings, "ALLOW_CROSS_FACILITY_ACCESS", False)
+    allow_cross_facility = feature_enabled('cross_facility_access')
     if allowed_codes and facility_code not in allowed_codes and not (
         allow_cross_facility and _user_role(user) == "admin"
     ):

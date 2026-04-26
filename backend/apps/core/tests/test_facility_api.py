@@ -4,6 +4,26 @@ from rest_framework.test import APIClient
 from django.test import override_settings
 
 from apps.core.tests.factories import FacilityFactory
+from hms_backend.deployment import build_deployment_config
+
+
+def _deployment_override(profile, feature_overrides=None):
+    deployment = build_deployment_config(profile, feature_overrides=feature_overrides)
+    return {
+        'DEPLOYMENT': deployment,
+        'DEPLOYMENT_PROFILE': deployment['deployment_profile'],
+        'DEPLOYMENT_FEATURES': deployment['features'],
+        'DEPLOYMENT_CAPABILITIES': deployment['capabilities'],
+        'FACILITY_CONTEXT_REQUIRED': deployment['features']['facility_context_required'],
+        'MULTI_FACILITY_MODE': deployment['features']['multi_facility'],
+        'ALLOW_CROSS_FACILITY_ACCESS': deployment['features']['cross_facility_access'],
+        'PRACTITIONER_SCHEDULING_MODE': deployment['capabilities'][
+            'practitioner_scheduling_mode'
+        ],
+        'REQUIRE_OUTPATIENT_ACTIVE_CLINIC': deployment['features'][
+            'outpatient_active_clinic_required'
+        ],
+    }
 
 
 @pytest.mark.django_db
@@ -78,11 +98,7 @@ def test_deployment_capabilities_endpoint_returns_defaults(django_user_model):
 
 
 @pytest.mark.django_db
-@override_settings(
-    DEPLOYMENT_PROFILE='small_clinic',
-    PRACTITIONER_SCHEDULING_MODE='simple',
-    REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False,
-)
+@override_settings(**_deployment_override('small_clinic'))
 def test_deployment_capabilities_endpoint_reflects_profile_overrides(django_user_model):
     facility = FacilityFactory(code='SMALL', name='Small Clinic')
     user = django_user_model.objects.create_user(
@@ -99,7 +115,36 @@ def test_deployment_capabilities_endpoint_reflects_profile_overrides(django_user
 
     response = client.get('/api/settings/deployment-capabilities/')
     assert response.status_code == status.HTTP_200_OK
-    assert response.data['deployment_profile'] == 'small_clinic'
+    assert response.data['deployment_profile'] == 'clinic'
+    assert response.data['facility_scope'] == 'single'
+    assert response.data['features']['inpatient_admissions'] is False
+    assert response.data['features']['wards'] is False
     assert response.data['capabilities']['practitioner_scheduling_mode'] == 'simple'
     assert response.data['capabilities']['supports_department_rosters'] is False
     assert response.data['capabilities']['outpatient_requires_active_clinic_schedule'] is False
+
+
+@pytest.mark.django_db
+@override_settings(**_deployment_override('hospital_network'))
+def test_deployment_capabilities_endpoint_reflects_network_profile(django_user_model):
+    facility = FacilityFactory(code='NET', name='Network Headquarters')
+    user = django_user_model.objects.create_user(
+        username='admin-net',
+        email='admin-net@example.com',
+        password='pass1234',
+        user_type='admin',
+        primary_facility=facility,
+    )
+    user.facilities.add(facility)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get('/api/settings/deployment-capabilities/')
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['deployment_profile'] == 'hospital_network'
+    assert response.data['facility_scope'] == 'network'
+    assert response.data['features']['multi_facility'] is True
+    assert response.data['features']['facility_switcher'] is True
+    assert response.data['features']['cross_facility_referrals'] is True
+    assert response.data['features']['cross_facility_record_exchange'] is True
