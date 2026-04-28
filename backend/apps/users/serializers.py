@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
 from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
 from .identifiers import generate_unique_employee_id
@@ -260,6 +261,152 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         if admission:
             return admission.admission_date
         return None
+
+
+class PatientDemographicsSerializer(serializers.ModelSerializer):
+    """
+    Demographics-only patient payload for administrative workflows.
+    Excludes clinical fields such as allergies, blood group, and FHIR IDs.
+    """
+    user_details = serializers.SerializerMethodField()
+    address_line1 = serializers.SerializerMethodField()
+    address_line2 = serializers.SerializerMethodField()
+    city = serializers.SerializerMethodField()
+    state = serializers.SerializerMethodField()
+    postal_code = serializers.SerializerMethodField()
+    country = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id',
+            'user',
+            'user_details',
+            'patient_identity_id',
+            'medical_record_number',
+            'nhis_id',
+            'emergency_contact_name',
+            'emergency_contact_phone',
+            'emergency_contact_relationship',
+            'address_line1',
+            'address_line2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_user_details(self, obj):
+        if not obj.user:
+            return None
+        return {
+            'id': str(obj.user.id),
+            'first_name': obj.user.first_name,
+            'last_name': obj.user.last_name,
+            'email': obj.user.email,
+            'phone_number': obj.user.phone_number,
+            'date_of_birth': obj.user.date_of_birth.isoformat() if obj.user.date_of_birth else None,
+            'gender': obj.user.gender,
+        }
+
+    def get_address_line1(self, obj):
+        return ''
+
+    def get_address_line2(self, obj):
+        return ''
+
+    def get_city(self, obj):
+        return ''
+
+    def get_state(self, obj):
+        return ''
+
+    def get_postal_code(self, obj):
+        return ''
+
+    def get_country(self, obj):
+        return ''
+
+
+class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
+    """
+    Update serializer for non-clinical demographic workflows.
+    """
+    user = serializers.DictField(required=False, write_only=True)
+    address_line1 = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    address_line2 = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    city = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    state = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    postal_code = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    country = serializers.CharField(required=False, allow_blank=True, write_only=True)
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'user',
+            'nhis_id',
+            'emergency_contact_name',
+            'emergency_contact_phone',
+            'emergency_contact_relationship',
+            'address_line1',
+            'address_line2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+        ]
+        extra_kwargs = {
+            'nhis_id': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_name': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_phone': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_relationship': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
+
+    def validate_user(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object.")
+        allowed = {'first_name', 'last_name', 'email', 'phone_number', 'date_of_birth'}
+        unknown = set(value) - allowed
+        if unknown:
+            raise serializers.ValidationError(f"Unsupported user field(s): {', '.join(sorted(unknown))}.")
+        email = value.get('email')
+        if email:
+            current_user = self.instance.user if self.instance else None
+            qs = User.objects.filter(email=str(email).lower())
+            if current_user:
+                qs = qs.exclude(id=current_user.id)
+            if qs.exists():
+                raise serializers.ValidationError({"email": "This email is already in use."})
+        return value
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', None) or {}
+        for field in ['address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country']:
+            validated_data.pop(field, None)
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+
+        if user_data and instance.user:
+            user = instance.user
+            user_update_fields = []
+            for field in ['first_name', 'last_name', 'email', 'phone_number', 'date_of_birth']:
+                if field in user_data:
+                    value = user_data[field]
+                    if field == 'email' and value:
+                        value = str(value).lower()
+                    if field == 'date_of_birth' and isinstance(value, str):
+                        value = parse_date(value)
+                    setattr(user, field, value)
+                    user_update_fields.append(field)
+            if user_update_fields:
+                user.save(update_fields=user_update_fields)
+
+        instance.save()
+        return instance
 
 
 class PatientSearchListSerializer(serializers.ModelSerializer):

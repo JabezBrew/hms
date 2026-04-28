@@ -27,14 +27,27 @@ def get_client_ip(request):
             trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
             if len(hops) > trusted_hops:
                 return hops[-(trusted_hops + 1)]
+            if hops:
+                return hops[0]
     return request.META.get('REMOTE_ADDR')
+
+
+def _scrub_path_segment(segment):
+    try:
+        UUID(segment)
+        return '<id>'
+    except (ValueError, AttributeError, TypeError):
+        pass
+    if segment.isdigit() and len(segment) >= 4:
+        return '<id>'
+    return segment
 
 
 def _scrub_path(path):
     if not path:
         return path
     if path.startswith('/api/'):
-        parts = [segment for segment in path.split('/') if segment]
+        parts = [_scrub_path_segment(segment) for segment in path.split('/') if segment]
         if len(parts) <= 3:
             return '/' + '/'.join(parts)
         return '/' + '/'.join(parts[:3] + ['<path>'])
@@ -43,16 +56,7 @@ def _scrub_path(path):
         if not segment:
             parts.append(segment)
             continue
-        try:
-            UUID(segment)
-            parts.append('<id>')
-            continue
-        except (ValueError, AttributeError, TypeError):
-            pass
-        if segment.isdigit() and len(segment) >= 4:
-            parts.append('<id>')
-            continue
-        parts.append(segment)
+        parts.append(_scrub_path_segment(segment))
     return '/'.join(parts)
 
 

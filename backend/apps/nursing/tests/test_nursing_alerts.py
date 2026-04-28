@@ -12,6 +12,7 @@ import pytest
 from django.utils import timezone
 
 from apps.nursing.models import NursingAlert, VitalSigns, NursingTask
+from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
 from .factories import (
     NursingAlertFactory, CriticalAlertFactory,
@@ -295,3 +296,46 @@ class TestAlertAudit:
 
         alert.refresh_from_db()
         assert alert.updated_at >= original_updated
+
+
+@pytest.mark.django_db
+def test_critical_alert_broadcast_uses_facility_scoped_group(monkeypatch):
+    calls = []
+
+    class _Layer:
+        async def group_send(self, group, message):
+            calls.append((group, message))
+
+    monkeypatch.setattr('apps.nursing.signals.get_channel_layer', lambda: _Layer())
+    monkeypatch.setattr('apps.nursing.signals.transaction.on_commit', lambda callback: callback())
+    facility = DefaultFacilityFactory()
+    patient = PatientProfileFactory(facility=facility)
+
+    CriticalAlertFactory(patient=patient, facility=facility)
+
+    groups = [group for group, _message in calls]
+    assert f'alerts_critical_{facility.code}' in groups
+    assert 'alerts_critical' not in groups
+
+
+@pytest.mark.django_db
+def test_critical_alert_ack_broadcast_uses_facility_scoped_group(monkeypatch):
+    calls = []
+
+    class _Layer:
+        async def group_send(self, group, message):
+            calls.append((group, message))
+
+    monkeypatch.setattr('apps.nursing.signals.get_channel_layer', lambda: _Layer())
+    monkeypatch.setattr('apps.nursing.signals.transaction.on_commit', lambda callback: callback())
+    facility = DefaultFacilityFactory()
+    patient = PatientProfileFactory(facility=facility)
+    alert = NursingAlertFactory(patient=patient, facility=facility, severity='critical')
+    calls.clear()
+
+    alert.is_acknowledged = True
+    alert.save(update_fields=['is_acknowledged', 'updated_at'])
+
+    groups = [group for group, _message in calls]
+    assert f'alerts_critical_{facility.code}' in groups
+    assert 'alerts_critical' not in groups

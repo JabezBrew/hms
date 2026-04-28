@@ -28,6 +28,8 @@ from .serializers import (
 )
 from apps.users.models import PatientProfile
 from apps.users.serializers import (
+    PatientDemographicsSerializer,
+    PatientDemographicsUpdateSerializer,
     PatientProfileListSerializer,
     PatientProfileSerializer,
     PatientSearchListSerializer,
@@ -441,7 +443,7 @@ class PatientViewSet(viewsets.ViewSet):
         if self.action == 'break_glass':
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor | IsNurse]
         elif self.action == 'update_patient':
-            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor | IsNurse]
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
         elif self.action == 'delete_patient':
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         else:
@@ -1263,7 +1265,7 @@ class PatientViewSet(viewsets.ViewSet):
             facility=patient_profile.facility
         )
 
-        return Response(PatientProfileListSerializer(patient_profile).data)
+        return Response(PatientDemographicsSerializer(patient_profile).data)
 
     @action(detail=True, methods=['post'], url_path='break-glass')
     def break_glass(self, request, pk=None):
@@ -1339,14 +1341,27 @@ class PatientViewSet(viewsets.ViewSet):
         try:
             patient_profile = self._get_facility_patient(request, pk)
 
-            # SECURITY: profile updates include clinical-adjacent fields such as
-            # allergies and blood group, so demographics access is not enough.
-            check_clinical_access(request.user, patient_profile)
+            local_data = request.data.get('local_data', {})
+            if not isinstance(local_data, dict):
+                return Response(
+                    {"error": "local_data must be an object."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            fhir_data = request.data.get('fhir_data')
+            clinical_profile_fields = {'blood_group', 'allergies', 'fhir_patient_id'}
+            requires_clinical_access = bool(fhir_data) or bool(clinical_profile_fields.intersection(local_data))
+
+            if requires_clinical_access:
+                check_clinical_access(request.user, patient_profile)
+                serializer_class = PatientProfileSerializer
+            else:
+                check_demographics_access(request.user, patient_profile)
+                serializer_class = PatientDemographicsUpdateSerializer
 
             # Update local patient profile
-            profile_serializer = PatientProfileSerializer(
+            profile_serializer = serializer_class(
                 patient_profile, 
-                data=request.data.get('local_data', {}),
+                data=local_data,
                 partial=True,
                 context={'request': request}
             )
@@ -1355,7 +1370,7 @@ class PatientViewSet(viewsets.ViewSet):
                 profile_serializer.save(updated_by=request.user)
 
                 # Queue FHIR update if requested
-                if patient_profile.fhir_patient_id and request.data.get('fhir_data'):
+                if patient_profile.fhir_patient_id and fhir_data:
                     if request.user.user_type not in ['admin', 'doctor', 'nurse']:
                         raise PermissionDenied("FHIR updates require clinical access.")
                     check_clinical_access(request.user, patient_profile)
@@ -1365,7 +1380,7 @@ class PatientViewSet(viewsets.ViewSet):
                             {"error": "FHIR mapping not found for patient."},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                    update_payload = self._filter_fhir_patient_update_payload(request.data.get('fhir_data', {}))
+                    update_payload = self._filter_fhir_patient_update_payload(fhir_data)
                     if not update_payload:
                         return Response(
                             {"error": "No allowed FHIR fields provided."},
@@ -1378,14 +1393,18 @@ class PatientViewSet(viewsets.ViewSet):
                     )
                     return Response({
                         "message": "Patient local data updated; FHIR update queued",
-                        "local_data": profile_serializer.data,
+                        "local_data": PatientProfileSerializer(patient_profile).data,
                         "fhir_status": "queued"
                     }, status=status.HTTP_202_ACCEPTED)
 
                 # If no FHIR data to update or no FHIR ID
                 return Response({
                     "message": "Patient local data updated successfully",
-                    "local_data": profile_serializer.data
+                    "local_data": (
+                        PatientProfileSerializer(patient_profile).data
+                        if requires_clinical_access
+                        else PatientDemographicsSerializer(patient_profile).data
+                    )
                 })
             else:
                 return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.conf import settings
-from datetime import timedelta, time, datetime
+from datetime import date, timedelta, time, datetime
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
 
@@ -1241,6 +1241,84 @@ class TestPatientViewSet:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_get_demographics_returns_editable_demographics_shape(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(
+            facility=facility,
+            nhis_id='NHIS-123',
+            emergency_contact_name='Emergency Contact',
+            emergency_contact_phone='233200000000',
+            emergency_contact_relationship='Sibling',
+        )
+        patient.user.phone_number = '233244000000'
+        patient.user.date_of_birth = date(1990, 1, 1)
+        patient.user.save(update_fields=['phone_number', 'date_of_birth'])
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.get(f'/api/patients/{patient.id}/demographics/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['nhis_id'] == 'NHIS-123'
+        assert response.data['emergency_contact_name'] == 'Emergency Contact'
+        assert response.data['emergency_contact_phone'] == '233200000000'
+        assert response.data['emergency_contact_relationship'] == 'Sibling'
+        assert response.data['user_details']['phone_number'] == '233244000000'
+        assert response.data['user_details']['date_of_birth'] == '1990-01-01'
+        assert 'allergies' not in response.data
+        assert 'blood_group' not in response.data
+        assert 'fhir_patient_id' not in response.data
+
+    def test_receptionist_can_update_demographics_without_clinical_fields(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {
+                'local_data': {
+                    'user': {
+                        'first_name': 'Updated',
+                        'last_name': 'Patient',
+                        'phone_number': '233200000001',
+                        'date_of_birth': '1988-05-10',
+                    },
+                    'nhis_id': 'NHIS-UPDATED',
+                    'emergency_contact_name': 'New Contact',
+                    'emergency_contact_phone': '233200000002',
+                    'emergency_contact_relationship': 'Parent',
+                }
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        patient.refresh_from_db()
+        patient.user.refresh_from_db()
+        assert patient.nhis_id == 'NHIS-UPDATED'
+        assert patient.emergency_contact_name == 'New Contact'
+        assert patient.user.first_name == 'Updated'
+        assert patient.user.phone_number == '233200000001'
+
+    def test_billing_can_update_demographics_for_invoiced_patient(self, db):
+        facility = DefaultFacilityFactory()
+        billing = UserFactory(user_type='billing', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+        InvoiceFactory(patient=patient, facility=facility)
+
+        client = get_authenticated_client(billing, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'emergency_contact_phone': '233200000003'}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        patient.refresh_from_db()
+        assert patient.emergency_contact_phone == '233200000003'
 
 
 # =============================================================================

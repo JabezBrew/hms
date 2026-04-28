@@ -12,6 +12,8 @@ from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from apps.core.security import normalize_facility_code
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,6 +72,10 @@ def get_patient_ward_id(patient):
     return None
 
 
+def get_patient_facility_code(patient):
+    return normalize_facility_code(getattr(getattr(patient, 'facility', None), 'code', None))
+
+
 @receiver(post_save, sender='nursing.NursingAlert')
 def broadcast_new_alert(sender, instance, created, **kwargs):
     """
@@ -103,14 +109,18 @@ def broadcast_new_alert(sender, instance, created, **kwargs):
                 logger.info(f"Alert {instance.id} broadcast to ward {ward_id}")
 
             if instance.severity in ['critical', 'high']:
+                facility_code = get_patient_facility_code(instance.patient)
+                if not facility_code:
+                    logger.warning("Skipped critical alert broadcast without facility context for alert %s", instance.id)
+                    return
                 async_to_sync(channel_layer.group_send)(
-                    'alerts_critical',
+                    f'alerts_critical_{facility_code}',
                     {
                         'type': 'alert.new',
                         'alert': alert_data,
                     }
                 )
-                logger.info(f"Critical alert {instance.id} broadcast to all subscribers")
+                logger.info(f"Critical alert {instance.id} broadcast to facility {facility_code}")
 
         transaction.on_commit(broadcast)
 
@@ -192,8 +202,12 @@ def broadcast_alert_acknowledged(sender, instance, created, **kwargs):
                 )
 
             if instance.severity in ['critical', 'high']:
+                facility_code = get_patient_facility_code(instance.patient)
+                if not facility_code:
+                    logger.warning("Skipped critical alert acknowledgment without facility context for alert %s", instance.id)
+                    return
                 async_to_sync(channel_layer.group_send)(
-                    'alerts_critical',
+                    f'alerts_critical_{facility_code}',
                     acknowledgment_data
                 )
 

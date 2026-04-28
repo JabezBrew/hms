@@ -6,6 +6,7 @@ import logging
 from django.conf import settings
 from rest_framework.response import Response
 
+from hms_backend.middleware import get_client_ip
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
 
 logger = logging.getLogger(__name__)
@@ -14,14 +15,7 @@ logger = logging.getLogger(__name__)
 def get_access_context(request):
     from apps.core.models import SiteNetwork, OffSiteAccessSettings
 
-    client_ip = request.META.get('REMOTE_ADDR')
-    if getattr(settings, 'TRUST_PROXY_HEADERS', False):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
-            trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
-            if len(hops) > trusted_hops:
-                client_ip = hops[-(trusted_hops + 1)]
+    client_ip = get_client_ip(request)
 
     try:
         is_offsite = not SiteNetwork.is_ip_on_site(client_ip)

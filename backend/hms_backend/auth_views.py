@@ -14,6 +14,7 @@ from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
 from hms_backend.deployment import feature_enabled
+from hms_backend.middleware import get_client_ip
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
 from .tenancy import facility_context, set_current_facility_code
 from .auth_utils import build_auth_response, get_access_context
@@ -292,12 +293,7 @@ class LoginView(APIView):
 
     def _get_client_ip(self, request):
         """Get the client's real IP address from the request."""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        return get_client_ip(request)
 
     def _extract_login_email(self, request):
         try:
