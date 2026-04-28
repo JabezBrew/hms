@@ -164,7 +164,7 @@ source .venv/bin/activate
 ## Debugging
 - When it comes to debugging, never stipulate what the cause "could be". Always investigate the codebase for the actual cause and provide a solution. The solution should be robust and not some quick patch.
 
-# CLAUDE.md
+# Agent Behaviour Guidelines
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
