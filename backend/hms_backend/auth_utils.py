@@ -14,11 +14,14 @@ logger = logging.getLogger(__name__)
 def get_access_context(request):
     from apps.core.models import SiteNetwork, OffSiteAccessSettings
 
-    client_ip = request.META.get('HTTP_X_FORWARDED_FOR')
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
-    else:
-        client_ip = request.META.get('REMOTE_ADDR')
+    client_ip = request.META.get('REMOTE_ADDR')
+    if getattr(settings, 'TRUST_PROXY_HEADERS', False):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
+            trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
+            if len(hops) > trusted_hops:
+                client_ip = hops[-(trusted_hops + 1)]
 
     try:
         is_offsite = not SiteNetwork.is_ip_on_site(client_ip)

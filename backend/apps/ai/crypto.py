@@ -1,7 +1,9 @@
 import base64
 import hashlib
+import sys
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 try:
     from cryptography.fernet import Fernet
@@ -16,6 +18,8 @@ def _derive_fernet_key(secret: str) -> bytes:
 
 def _normalize_secret_to_fernet_key(secret: str) -> bytes:
     if not secret:
+        if not settings.DEBUG and "pytest" not in sys.modules:
+            raise ImproperlyConfigured("A dedicated AI encryption key is required outside development/test.")
         return _derive_fernet_key(settings.SECRET_KEY)
 
     encoded = secret.encode('utf-8')
@@ -34,8 +38,7 @@ def get_ai_fernet() -> 'Fernet':
         raise RuntimeError('cryptography is required for AI payload encryption.')
 
     preferred = getattr(settings, 'AI_MESSAGE_ENCRYPTION_KEY', '')
-    fallback = getattr(settings, 'RECORD_EXPORT_FERNET_KEY', '')
-    key = _normalize_secret_to_fernet_key(preferred or fallback or settings.SECRET_KEY)
+    key = _normalize_secret_to_fernet_key(preferred)
     return Fernet(key)
 
 

@@ -1,4 +1,5 @@
 from rest_framework import permissions
+from apps.core.security import check_demographics_access
 
 
 def _is_admin_actor(user) -> bool:
@@ -116,8 +117,12 @@ class CanAccessPatient(permissions.BasePermission):
                 return obj.user == user
             return False
 
-        # Medical staff (doctor, nurse, etc.) can access patient data
+        # Staff access must still pass centralized facility and patient checks.
         if user.user_type in ['doctor', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']:
+            try:
+                check_demographics_access(user, obj)
+            except Exception:
+                return False
             return True
 
         return False

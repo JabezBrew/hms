@@ -228,7 +228,9 @@ def preview_omni_intent(intent: dict, *, user, facility) -> dict:
     requires_confirmation = policy.requires_confirmation(intent_type)
 
     allowed_scopes = _ALLOWED_ROUTE_SCOPES_BY_ROLE.get(user_type, {'settings'})
-    if route_scope and route_scope not in allowed_scopes:
+    if not route_scope:
+        denial_reasons.append('Target route is not an approved HMS route.')
+    elif route_scope not in allowed_scopes:
         denial_reasons.append(f"Role '{user_type}' cannot access route scope '{route_scope}'.")
 
     if intent_type.startswith(('role_change', 'admin_change')) and user_type != 'admin':

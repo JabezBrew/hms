@@ -209,16 +209,6 @@ def rotate_session(
     device_label = _get_device_label(request)
     resolved_facility_code = _resolve_facility_code(request, facility_code)
 
-    # If we couldn't find session by old JTI, try to find by fingerprint
-    if not session and request and hasattr(request, 'user') and request.user.is_authenticated:
-        # Look for the most recent active session with matching fingerprint
-        session = UserSession.objects.filter(
-            user=request.user,
-            ip_hash=ip_hash,
-            user_agent_hash=user_agent_hash,
-            revoked_at__isnull=True
-        ).order_by('-last_seen_at').first()
-
     if session:
         new_ip = _get_ip_address(request)
         ip_changed = new_ip != session.ip_address
@@ -293,27 +283,12 @@ def revoke_session(session: UserSession, revoked_by=None) -> UserSession:
 def revoke_session_by_refresh_token(refresh_token: str, revoked_by=None, request=None) -> Optional[UserSession]:
     """
     Revoke a session by its refresh token.
-    Falls back to fingerprint matching if JTI lookup fails.
     """
     claims = _extract_refresh_claims(refresh_token)
     if not claims:
         return None
 
-    # Try to find session by JTI first
     session = UserSession.objects.filter(refresh_jti=claims.jti).first()
-
-    # Fallback: find by user + fingerprint if JTI lookup fails
-    if not session and request:
-        ip_hash = _get_ip_hash(request)
-        user_agent_hash = _get_user_agent_hash(request)
-        user_id = claims.user_id
-
-        session = UserSession.objects.filter(
-            user_id=user_id,
-            ip_hash=ip_hash,
-            user_agent_hash=user_agent_hash,
-            revoked_at__isnull=True
-        ).order_by('-last_seen_at').first()
 
     if session:
         revoke_session(session, revoked_by=revoked_by)

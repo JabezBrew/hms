@@ -16,6 +16,7 @@ Faker==20.1.0
 # Mocking & Time Control
 freezegun==1.4.0
 responses==0.24.1
+locust>=2.15.0
 
 # Code Quality (already in requirements.txt, but ensuring latest)
 flake8==6.1.0

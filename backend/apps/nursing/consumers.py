@@ -17,7 +17,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.security import get_user_facility_codes, check_clinical_access
+from apps.core.security import get_user_facility_codes, check_clinical_access, normalize_facility_code
 from hms_backend.deployment import feature_enabled
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.wards.models import WardStaffAssignment
@@ -101,6 +101,11 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4003)
             return
 
+        self.facility_code = normalize_facility_code(self.scope.get('facility_code'))
+        if not self.facility_code:
+            await self.close(code=4003)
+            return
+
         # Get ward_id from URL if provided
         self.ward_id = self.scope['url_route']['kwargs'].get('ward_id')
 
@@ -122,8 +127,8 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             if user_type:
                 self.groups.append(f'alerts_role_{user_type}')
 
-        # Also subscribe to critical alerts (always delivered regardless of ward)
-        self.groups.append('alerts_critical')
+        # Critical alerts are facility-scoped; cross-facility global delivery leaks PHI.
+        self.groups.append(f'alerts_critical_{self.facility_code}')
 
         # Join all groups
         for group in self.groups:
@@ -322,7 +327,7 @@ def get_channel_layer():
     return _get_channel_layer()
 
 
-async def broadcast_alert(alert_data, ward_id=None, is_critical=False):
+async def broadcast_alert(alert_data, ward_id=None, is_critical=False, facility_code=None):
     """
     Broadcast an alert to relevant WebSocket groups.
 
@@ -344,9 +349,15 @@ async def broadcast_alert(alert_data, ward_id=None, is_critical=False):
         )
 
     if is_critical:
-        # Send to critical alerts group (all subscribers)
+        resolved_facility_code = normalize_facility_code(
+            facility_code or (alert_data or {}).get('facility_code')
+        )
+        if not resolved_facility_code:
+            logger.warning("Dropped critical alert broadcast without facility context.")
+            return
+        # Send to facility-scoped critical alerts group.
         await channel_layer.group_send(
-            'alerts_critical',
+            f'alerts_critical_{resolved_facility_code}',
             {
                 'type': 'alert.new',
                 'alert': alert_data,

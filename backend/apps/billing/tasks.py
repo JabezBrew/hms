@@ -249,8 +249,28 @@ def process_psp_webhook_event(self, webhook_event_id: str) -> None:
             next_status = 'pending'
 
         if next_status == 'succeeded':
+            parsed_currency = (getattr(parsed, 'currency', None) or intent.currency or '').upper()
+            intent_currency = (intent.currency or '').upper()
+            if parsed.paid_amount is None:
+                locked_event.processing_status = 'failed'
+                locked_event.error_message = 'Missing paid amount for succeeded PSP webhook.'
+                locked_event.processed_at = now
+                locked_event.save(update_fields=[
+                    'provider_reference', 'client_reference',
+                    'processing_status', 'error_message', 'processed_at', 'updated_at'
+                ])
+                return
+            if parsed.paid_amount != intent.amount or parsed_currency != intent_currency:
+                locked_event.processing_status = 'failed'
+                locked_event.error_message = 'PSP webhook amount or currency mismatch.'
+                locked_event.processed_at = now
+                locked_event.save(update_fields=[
+                    'provider_reference', 'client_reference',
+                    'processing_status', 'error_message', 'processed_at', 'updated_at'
+                ])
+                return
             if not intent.payment_id:
-                paid_amount = parsed.paid_amount or intent.amount
+                paid_amount = parsed.paid_amount
                 paid_at = parsed.paid_at or now
 
                 payment_date = getattr(paid_at, 'date', None)() if callable(getattr(paid_at, 'date', None)) else now.date()
@@ -288,7 +308,7 @@ def process_psp_webhook_event(self, webhook_event_id: str) -> None:
                 intent.payment = payment
 
             intent.status = 'succeeded'
-            intent.paid_amount = parsed.paid_amount or intent.paid_amount or intent.amount
+            intent.paid_amount = parsed.paid_amount
             intent.fee_amount = parsed.fee_amount or intent.fee_amount
             intent.paid_at = parsed.paid_at or intent.paid_at or now
             intent.save(update_fields=[

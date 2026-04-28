@@ -67,6 +67,29 @@ def get_user_facility_codes(user):
     return set(normalized_codes)
 
 
+def _ensure_user_can_reference_patient_facility(user, patient_profile):
+    if not user or not getattr(user, 'is_authenticated', False):
+        raise PermissionDenied("Authentication required.")
+
+    if getattr(user, 'user_type', None) == 'admin':
+        return
+
+    patient_facility = getattr(patient_profile, 'facility', None)
+    patient_facility_code = normalize_facility_code(getattr(patient_facility, 'code', None))
+    if not patient_facility_code:
+        raise PermissionDenied("Patient facility is required.")
+
+    allowed_codes = get_user_facility_codes(user)
+    if patient_facility_code in allowed_codes:
+        return
+
+    default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
+    if not allowed_codes and default_facility_code and patient_facility_code == default_facility_code:
+        return
+
+    raise PermissionDenied("Patient does not belong to an authorized facility.")
+
+
 def get_user_facility(request):
     if request is not None and getattr(request, '_cached_user_facility_resolved', False):
         return getattr(request, '_cached_user_facility', None)
@@ -510,6 +533,7 @@ def check_clinical_access(user, patient_or_id):
     Denied: Lab Tech, Pharmacist, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -542,6 +566,7 @@ def check_lab_access(user, patient_or_id):
     Denied: Pharmacist, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -558,6 +583,7 @@ def check_lab_access(user, patient_or_id):
         from apps.laboratory.models import LabOrder, LabOrderStatus
         if LabOrder.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status__in=[
                 LabOrderStatus.ORDERED,
                 LabOrderStatus.COLLECTED,
@@ -580,6 +606,7 @@ def check_prescription_access(user, patient_or_id):
     Denied: Lab Tech, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -596,6 +623,7 @@ def check_prescription_access(user, patient_or_id):
         from apps.clinical_notes.models import Prescription
         if Prescription.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status='active'
         ).exists():
             return True
@@ -612,6 +640,7 @@ def check_billing_access(user, patient_or_id):
     Denied: Doctor, Nurse, Lab Tech, Pharmacist, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -635,6 +664,7 @@ def check_demographics_access(user, patient_or_id):
     Denied: Lab Tech, Pharmacist, Billing (unless they have billing records)
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -650,17 +680,17 @@ def check_demographics_access(user, patient_or_id):
     # Support staff can see demographics only if they have relevant records
     if user.user_type == 'lab_technician':
         from apps.laboratory.models import LabOrder
-        if LabOrder.objects.filter(patient=patient_profile).exists():
+        if LabOrder.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     if user.user_type == 'pharmacist':
         from apps.clinical_notes.models import Prescription
-        if Prescription.objects.filter(patient=patient_profile).exists():
+        if Prescription.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     if user.user_type == 'billing':
         from apps.billing.models import Invoice
-        if Invoice.objects.filter(patient=patient_profile).exists():
+        if Invoice.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     raise PermissionDenied("You do not have access to this patient's data.")
@@ -689,6 +719,11 @@ def get_access_flags(user, patient_or_id):
         'billing': False,
         'demographics': False,
     }
+
+    try:
+        _ensure_user_can_reference_patient_facility(user, patient_profile)
+    except PermissionDenied:
+        return flags
 
     # Admin has full access
     if user.user_type == 'admin':
@@ -728,6 +763,7 @@ def get_access_flags(user, patient_or_id):
         from apps.laboratory.models import LabOrder, LabOrderStatus
         has_orders = LabOrder.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status__in=[
                 LabOrderStatus.ORDERED,
                 LabOrderStatus.COLLECTED,
@@ -737,7 +773,7 @@ def get_access_flags(user, patient_or_id):
             ]
         ).exists()
         flags['lab'] = has_orders
-        flags['demographics'] = LabOrder.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = LabOrder.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     # Pharmacist - check for prescriptions
@@ -745,16 +781,17 @@ def get_access_flags(user, patient_or_id):
         from apps.clinical_notes.models import Prescription
         flags['prescription'] = Prescription.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status='active'
         ).exists()
-        flags['demographics'] = Prescription.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = Prescription.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     # Billing staff
     if user.user_type == 'billing':
         from apps.billing.models import Invoice
         flags['billing'] = True
-        flags['demographics'] = Invoice.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = Invoice.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     return flags

@@ -1175,6 +1175,12 @@ class LabResultViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        if result.performed_by_id and result.performed_by_id == staff.id:
+            return Response(
+                {'error': 'Results must be verified by a different staff member.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         # Validate verification data
         verify_serializer = LabResultVerifySerializer(data=request.data)
         verify_serializer.is_valid(raise_exception=True)

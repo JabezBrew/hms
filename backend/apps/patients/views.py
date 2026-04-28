@@ -27,9 +27,13 @@ from .serializers import (
     PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
-from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
+from apps.users.serializers import (
+    PatientProfileListSerializer,
+    PatientProfileSerializer,
+    PatientSearchListSerializer,
+)
 from apps.users.permissions import IsAdminOrOwner
-from apps.users.rbac import IsAdmin
+from apps.users.rbac import IsAdmin, IsDoctor, IsNurse
 from apps.core.metrics import (
     inc_counter,
     measure_duration,
@@ -432,6 +436,27 @@ class PatientViewSet(viewsets.ViewSet):
     """
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = PatientSearchPagination
+
+    def get_permissions(self):
+        if self.action == 'break_glass':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor | IsNurse]
+        elif self.action == 'update_patient':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor | IsNurse]
+        elif self.action == 'delete_patient':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
+        else:
+            permission_classes = self.permission_classes
+        return [permission() for permission in permission_classes]
+
+    def _get_facility_patient(self, request, pk):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        return get_object_or_404(
+            PatientProfile.objects.select_related('user', 'facility'),
+            id=pk,
+            facility=facility,
+        )
 
     @action(detail=False, methods=['post'])
     def register(self, request):
@@ -1162,7 +1187,7 @@ class PatientViewSet(viewsets.ViewSet):
         Get a patient by ID.
         Returns full data for clinical access, demographics-only for non-clinical access.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
 
         # SECURITY: Check if user has permission to access this patient
         check_demographics_access(request.user, patient_profile)
@@ -1226,7 +1251,7 @@ class PatientViewSet(viewsets.ViewSet):
         Get patient demographics only (no FHIR, no clinical data).
         Lightweight endpoint for administrative views.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
 
         # SECURITY: Check if user has permission to access this patient
         check_demographics_access(request.user, patient_profile)
@@ -1238,14 +1263,14 @@ class PatientViewSet(viewsets.ViewSet):
             facility=patient_profile.facility
         )
 
-        return Response(PatientProfileSerializer(patient_profile).data)
+        return Response(PatientProfileListSerializer(patient_profile).data)
 
     @action(detail=True, methods=['post'], url_path='break-glass')
     def break_glass(self, request, pk=None):
         """
         Create a time-bound break-glass access event for clinical data.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
         serializer = BreakGlassRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1312,10 +1337,11 @@ class PatientViewSet(viewsets.ViewSet):
         Update a patient by ID.
         """
         try:
-            patient_profile = get_object_or_404(PatientProfile, id=pk)
+            patient_profile = self._get_facility_patient(request, pk)
 
-            # SECURITY: Check if user has permission to access this patient
-            check_demographics_access(request.user, patient_profile)
+            # SECURITY: profile updates include clinical-adjacent fields such as
+            # allergies and blood group, so demographics access is not enough.
+            check_clinical_access(request.user, patient_profile)
 
             # Update local patient profile
             profile_serializer = PatientProfileSerializer(
@@ -1379,7 +1405,7 @@ class PatientViewSet(viewsets.ViewSet):
         Delete a patient by ID.
         """
         try:
-            patient_profile = get_object_or_404(PatientProfile, id=pk)
+            patient_profile = self._get_facility_patient(request, pk)
 
             # SECURITY: Check if user has permission to access this patient
             check_demographics_access(request.user, patient_profile)

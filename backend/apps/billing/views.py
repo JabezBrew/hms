@@ -1,6 +1,7 @@
 import uuid
 import hashlib
 import logging
+import sys
 from rest_framework import viewsets, mixins, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -1657,6 +1658,11 @@ class PaymentIntentViewSet(
             public_base = public_base.rstrip('/')
             callback_url = f"{public_base}/api/billing/psp/webhooks/hubtel/"
         else:
+            if not settings.DEBUG and "pytest" not in sys.modules:
+                return Response(
+                    {"error": "psp_misconfigured", "detail": "PUBLIC_BASE_URL is required for PSP callbacks."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
             # Best-effort fallback. Prefer PUBLIC_BASE_URL in production behind proxies.
             callback_url = request.build_absolute_uri('/api/billing/psp/webhooks/hubtel/')
 

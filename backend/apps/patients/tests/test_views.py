@@ -26,7 +26,7 @@ from apps.patients.models import (
 )
 from apps.users.models import PatientProfile
 from apps.core.models import BreakGlassEvent
-from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory
+from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory, FacilityFactory
 from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -1216,6 +1216,32 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_get_patient_denies_cross_facility_idor(self, db):
+        """Patient custom actions must scope object lookup to the active facility."""
+        facility_a = DefaultFacilityFactory()
+        facility_b = FacilityFactory()
+        doctor = DoctorUserFactory(primary_facility=facility_a)
+        patient = PatientProfileFactory(facility=facility_b)
+
+        client = get_authenticated_client(doctor, facility=facility_a)
+        response = client.get(f'/api/patients/{patient.id}/get_patient/')
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_receptionist_cannot_update_clinical_profile_fields(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'allergies': 'Penicillin'}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 # =============================================================================
 # Authentication Tests
@@ -1315,6 +1341,21 @@ class TestBreakGlassAccess:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_break_glass_denies_cross_facility_patient(self, db):
+        facility_a = DefaultFacilityFactory()
+        facility_b = FacilityFactory()
+        doctor = DoctorUserFactory(primary_facility=facility_a)
+        patient = PatientProfileFactory(facility=facility_b)
+
+        client = get_authenticated_client(doctor, facility=facility_a)
+        response = client.post(
+            f'/api/patients/{patient.id}/break-glass/',
+            {'reason': 'Need access'},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 # =============================================================================

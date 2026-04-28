@@ -2,6 +2,7 @@ import logging
 import time
 import json
 from uuid import UUID
+from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -19,18 +20,24 @@ def get_client_ip(request):
     Get the client's real IP address from the request.
     Handles X-Forwarded-For header for reverse proxy setups.
     """
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        # X-Forwarded-For can contain multiple IPs; the first is the client's
-        ip = x_forwarded_for.split(',')[0].strip()
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
+    if getattr(settings, 'TRUST_PROXY_HEADERS', False):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
+            trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
+            if len(hops) > trusted_hops:
+                return hops[-(trusted_hops + 1)]
+    return request.META.get('REMOTE_ADDR')
 
 
 def _scrub_path(path):
     if not path:
         return path
+    if path.startswith('/api/'):
+        parts = [segment for segment in path.split('/') if segment]
+        if len(parts) <= 3:
+            return '/' + '/'.join(parts)
+        return '/' + '/'.join(parts[:3] + ['<path>'])
     parts = []
     for segment in path.split('/'):
         if not segment:
@@ -136,7 +143,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
             if not is_facility_allowed and not (allow_cross_facility and is_admin):
                 return JsonResponse(
-                    {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
+                    {'detail': 'Facility context is not available.', 'code': 'facility_unavailable'},
                     status=403
                 )
 
@@ -148,8 +155,8 @@ class FacilityContextMiddleware(MiddlewareMixin):
             request.facility = Facility.get_by_code(request.facility_code)
             if request.facility is None and facility_code_source in {'header', 'token', 'user'}:
                 return JsonResponse(
-                    {'detail': 'Facility not found.', 'code': 'facility_invalid'},
-                    status=404
+                    {'detail': 'Facility context is not available.', 'code': 'facility_unavailable'},
+                    status=403
                 )
 
         feature_is_enabled, feature_key = api_path_enabled(request.path, request=request)

@@ -1,7 +1,7 @@
 # Required for pkg_resources in Python 3.12+
 setuptools>=69.0.0
 
-Django==4.2.29
+Django==4.2.30
 djangorestframework==3.16.1
 django-filter==23.5
 dj-rest-auth==5.0.1
@@ -10,7 +10,7 @@ django-cors-headers==4.3.0
 django-mptt==0.15.0
 psycopg2-binary==2.9.9; python_version < "3.13"
 psycopg[binary]>=3.2,<4; python_version >= "3.13"
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 django-environ==0.11.2
 google-auth==2.27.0
 google-api-python-client==2.115.0
@@ -38,7 +38,6 @@ channels-redis>=4.2.0
 daphne>=4.0.0
 
 # Load testing
-locust>=2.15.0
 argon2-cffi==23.1.0
 cryptography>=46.0.5
 pyotp>=2.9.0

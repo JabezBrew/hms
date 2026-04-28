@@ -3,6 +3,10 @@
 .env
 .env.*
 !.env.example
+credentials/
+credentials.json
+*_credentials.json
+google_credentials.json
 .venv/
 .pytest_cache/
 __pycache__/

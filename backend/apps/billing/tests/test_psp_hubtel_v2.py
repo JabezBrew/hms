@@ -155,6 +155,53 @@ def test_hubtel_webhook_processing_posts_payment_exactly_once(client, facility, 
     assert Payment.objects.filter(invoice=invoice, payer="patient", status="posted").count() == 1
 
 
+def test_hubtel_webhook_processing_rejects_amount_mismatch(client, facility, monkeypatch):
+    patient = PatientProfileFactory(facility=facility)
+    invoice = InvoiceFactory(
+        patient=patient,
+        facility=facility,
+        status="pending",
+        patient_responsibility=Decimal("25.00"),
+        insurance_amount=Decimal("0.00"),
+        total_amount=Decimal("25.00"),
+    )
+    PaymentIntent.objects.create(
+        facility=facility,
+        invoice=invoice,
+        payer="patient",
+        amount=Decimal("25.00"),
+        currency="GHS",
+        payment_method="mobile_money",
+        status="pending",
+        provider="hubtel",
+        client_reference="HMS-MAIN-MISMATCH",
+        provider_reference="PAYLINK-MISMATCH",
+    )
+    payload = {
+        "data": {
+            "status": "Successful",
+            "amount": 1,
+            "currency": "GHS",
+            "paylinkId": "PAYLINK-MISMATCH",
+            "clientReference": "HMS-MAIN-MISMATCH",
+        },
+    }
+    event = PSPWebhookEvent.objects.create(
+        provider="hubtel",
+        payload_hash="y" * 64,
+        payload_encrypted=encrypt_payload(json.dumps(payload).encode("utf-8")),
+        processing_status="pending",
+    )
+    monkeypatch.setattr("apps.billing.tasks.get_psp_adapter", lambda provider: _StubAdapter())
+
+    from apps.billing.tasks import process_psp_webhook_event
+    process_psp_webhook_event(str(event.id))
+
+    assert not Payment.objects.filter(invoice=invoice, payer="patient", status="posted").exists()
+    event.refresh_from_db()
+    assert event.processing_status == "failed"
+
+
 def test_hubtel_webhook_requires_secret_token_when_configured(client, settings):
     settings.HUBTEL_WEBHOOK_SECRET = "secret-token"
 
@@ -167,7 +214,17 @@ def test_hubtel_webhook_requires_secret_token_when_configured(client, settings):
     assert r2.status_code == 200
 
 
-def test_hubtel_webhook_duplicate_payload_is_acknowledged(client, monkeypatch):
+def test_hubtel_webhook_rejects_missing_secret_outside_debug(client, settings):
+    settings.DEBUG = False
+    settings.HUBTEL_WEBHOOK_SECRET = ""
+
+    response = client.post("/api/billing/psp/webhooks/hubtel/", {"x": 1}, format="json")
+
+    assert response.status_code == 401
+
+
+def test_hubtel_webhook_duplicate_payload_is_acknowledged(client, monkeypatch, settings):
+    settings.HUBTEL_WEBHOOK_SECRET = "secret-token"
     monkeypatch.setattr("apps.billing.views.get_psp_adapter", lambda provider: _StubAdapter())
 
     payload = {
@@ -179,17 +236,18 @@ def test_hubtel_webhook_duplicate_payload_is_acknowledged(client, monkeypatch):
         }
     }
 
-    r1 = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
-    r2 = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
+    r1 = client.post("/api/billing/psp/webhooks/hubtel/?token=secret-token", payload, format="json")
+    r2 = client.post("/api/billing/psp/webhooks/hubtel/?token=secret-token", payload, format="json")
 
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert PSPWebhookEvent.objects.filter(provider='hubtel').count() == 1
 
 
-def test_hubtel_webhook_returns_retryable_error_on_non_idempotent_persistence_failure(client, monkeypatch):
+def test_hubtel_webhook_returns_retryable_error_on_non_idempotent_persistence_failure(client, monkeypatch, settings):
     from apps.billing import views as billing_views
 
+    settings.HUBTEL_WEBHOOK_SECRET = "secret-token"
     monkeypatch.setattr("apps.billing.views.get_psp_adapter", lambda provider: _StubAdapter())
 
     def _raise_failure(*args, **kwargs):
@@ -206,6 +264,6 @@ def test_hubtel_webhook_returns_retryable_error_on_non_idempotent_persistence_fa
             "status": "Successful",
         }
     }
-    response = client.post("/api/billing/psp/webhooks/hubtel/", payload, format="json")
+    response = client.post("/api/billing/psp/webhooks/hubtel/?token=secret-token", payload, format="json")
 
     assert response.status_code == 503

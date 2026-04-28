@@ -408,7 +408,7 @@ class AIOmniExecutePreviewView(APIView):
             'intent': {
                 'intent_type': intent_payload['intent_type'],
                 'entities': intent_payload['entities'],
-                'target_route': intent_payload['target_route'],
+                'target_route': intent_payload['target_route'] if preview['allowed'] else None,
                 'normalized_query': intent_payload['normalized_query'],
                 'requires_confirmation': intent_payload['requires_confirmation'],
                 'fallback_to_legacy': intent_payload['fallback_to_legacy'],

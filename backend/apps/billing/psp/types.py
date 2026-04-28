@@ -19,7 +19,7 @@ class PSPParsedWebhook:
     client_reference: Optional[str]
     status: str
     paid_amount: Optional[Decimal] = None
+    currency: Optional[str] = None
     fee_amount: Optional[Decimal] = None
     paid_at: Optional[datetime] = None
     event_type: Optional[str] = None
-

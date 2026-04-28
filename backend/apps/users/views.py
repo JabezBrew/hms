@@ -916,21 +916,21 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             from apps.laboratory.models import LabOrder
 
             return base_qs.annotate(
-                has_lab_orders=Exists(LabOrder.objects.filter(patient_id=OuterRef('pk')))
+                has_lab_orders=Exists(LabOrder.objects.filter(patient_id=OuterRef('pk'), facility=facility))
             ).filter(has_lab_orders=True)
 
         if user.user_type == 'pharmacist':
             from apps.clinical_notes.models import Prescription
 
             return base_qs.annotate(
-                has_prescriptions=Exists(Prescription.objects.filter(patient_id=OuterRef('pk')))
+                has_prescriptions=Exists(Prescription.objects.filter(patient_id=OuterRef('pk'), facility=facility))
             ).filter(has_prescriptions=True)
 
         if user.user_type == 'billing':
             from apps.billing.models import Invoice
 
             return base_qs.annotate(
-                has_invoices=Exists(Invoice.objects.filter(patient_id=OuterRef('pk')))
+                has_invoices=Exists(Invoice.objects.filter(patient_id=OuterRef('pk'), facility=facility))
             ).filter(has_invoices=True)
 
         return PatientProfile.objects.none()

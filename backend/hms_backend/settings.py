@@ -135,7 +135,6 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 _railway_hosts = [
     'backend-staging-8afc.up.railway.app',
     'backend-production-40e0.up.railway.app',
-    '.railway.app',  # Wildcard for any Railway subdomain
 ]
 for host in _railway_hosts:
     if host not in ALLOWED_HOSTS:
@@ -666,6 +665,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 # Trust X-Forwarded-Proto header from Railway/Heroku/etc load balancers
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+TRUST_PROXY_HEADERS = env.bool('TRUST_PROXY_HEADERS', default=False)
+TRUSTED_PROXY_HOPS = env.int('TRUSTED_PROXY_HOPS', default=1)
+LOAD_TEST_THROTTLE_BYPASS_ENABLED = env.bool('LOAD_TEST_THROTTLE_BYPASS_ENABLED', default=False)
 SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True if not DEBUG else False)
 SECURE_HSTS_PRELOAD = env.bool('SECURE_HSTS_PRELOAD', default=True if not DEBUG else False)

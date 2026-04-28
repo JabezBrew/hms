@@ -6,8 +6,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+import sys
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 try:
     import pyotp
@@ -28,7 +30,11 @@ def _derive_key(secret: str) -> bytes:
 def _get_fernet() -> Fernet:
     if Fernet is None:
         raise RuntimeError("cryptography is required for MFA secret storage.")
-    key = getattr(settings, 'MFA_ENCRYPTION_KEY', None) or settings.SECRET_KEY
+    key = getattr(settings, 'MFA_ENCRYPTION_KEY', None)
+    if not key:
+        if not settings.DEBUG and "pytest" not in sys.modules:
+            raise ImproperlyConfigured("MFA_ENCRYPTION_KEY is required outside development/test.")
+        key = settings.SECRET_KEY
     return Fernet(_derive_key(key))
 
 

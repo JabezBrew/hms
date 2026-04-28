@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import hmac
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -136,12 +137,12 @@ class HubtelAdapter(PSPAdapter):
         """
         Hubtel callbacks may not always include signatures. To make this safe:
         - If HUBTEL_WEBHOOK_SECRET is configured, require it as a query param token.
-        - Otherwise, accept the callback (for development only).
+        - Otherwise, accept the callback only when DEBUG=True.
         """
         if not self.webhook_secret:
-            return True
+            return bool(settings.DEBUG)
         token = (getattr(request, "query_params", {}) or {}).get("token") or request.GET.get("token")
-        return bool(token) and str(token) == str(self.webhook_secret)
+        return bool(token) and hmac.compare_digest(str(token), str(self.webhook_secret))
 
     def parse_webhook(self, *, body_bytes: bytes, headers: dict) -> PSPParsedWebhook:
         try:
@@ -171,6 +172,7 @@ class HubtelAdapter(PSPAdapter):
         client_reference = data.get("clientReference") or payload.get("clientReference")
 
         paid_amount = _to_decimal(data.get("amount") or payload.get("amount"))
+        currency = data.get("currency") or payload.get("currency")
         fee_amount = _to_decimal(data.get("fee") or data.get("fees") or payload.get("fee"))
 
         # Some payloads include dates, others do not. We don't assume a schema here.
@@ -183,6 +185,7 @@ class HubtelAdapter(PSPAdapter):
             client_reference=str(client_reference) if client_reference else None,
             status=status,
             paid_amount=paid_amount,
+            currency=str(currency).upper() if currency else None,
             fee_amount=fee_amount,
             paid_at=paid_at,
             event_type=str(event_type) if event_type else None,

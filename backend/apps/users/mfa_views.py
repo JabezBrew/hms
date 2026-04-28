@@ -365,6 +365,11 @@ class MFATOTPStartView(APIView):
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         profile = get_or_create_mfa_profile(user)
+        if profile.totp_confirmed_at and not session:
+            return Response(
+                {'detail': 'TOTP is already enrolled. Use an MFA reset flow to replace it.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         secret = generate_totp_secret()
         profile.totp_secret_encrypted = encrypt_secret(secret)
         profile.totp_confirmed_at = None
@@ -425,6 +430,13 @@ class MFARecoveryGenerateView(APIView):
 
     def post(self, request):
         user = request.user
+        current_password = request.data.get('current_password')
+        if user.has_usable_password() and not user.check_password(str(current_password or '')):
+            _log_mfa_failure(request, user=user, details="Current password required for recovery code generation.")
+            return Response(
+                {'detail': 'Current password is required.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         profile = get_or_create_mfa_profile(user)
 
         raw_codes = generate_recovery_codes()

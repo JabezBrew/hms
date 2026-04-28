@@ -449,6 +449,33 @@ class TestLabResultViewSet:
         assert result.is_verified is True
         assert result.verified_by is not None
 
+    def test_verify_result_denies_same_performer(self, api_client, db):
+        """The staff member who entered a result cannot verify it."""
+        result = LabResultFactory(is_verified=False, verified_by=None, verified_at=None)
+        lab_tech_staff = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=result.facility),
+            primary_facility=result.facility,
+        )
+        result.performed_by = lab_tech_staff
+        result.save(update_fields=['performed_by'])
+
+        from rest_framework_simplejwt.tokens import AccessToken
+        token = AccessToken.for_user(lab_tech_staff.user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=result.facility.code
+        )
+
+        response = api_client.post(
+            f'{BASE_URL}/results/{result.id}/verify/',
+            {},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        result.refresh_from_db()
+        assert result.is_verified is False
+
 
 @pytest.mark.tier1
 class TestLabOrderWorkflow:

@@ -128,3 +128,32 @@ def test_observability_summary_admin_only(default_facility):
     assert forbidden.status_code == status.HTTP_403_FORBIDDEN
     assert allowed.status_code == status.HTTP_200_OK
     assert 'sessions' in allowed.data
+
+
+@pytest.mark.django_db
+@override_settings(
+    AI_ENABLED=True,
+    AI_OMNI_NL_ENABLED=True,
+)
+def test_omni_execute_preview_rejects_unapproved_target_route(default_facility):
+    doctor = DoctorUserFactory(primary_facility=default_facility)
+    doctor.facilities.add(default_facility)
+    client = _auth_client(doctor, default_facility)
+
+    response = client.post(
+        '/api/ai/omni/execute-preview/',
+        {
+            'text': 'open admin',
+            'intent': {
+                'intent_type': 'navigate.unknown',
+                'target_route': {'path': '/admin/users', 'query': {}},
+                'confidence': 0.99,
+            },
+        },
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    result = response.data['result']
+    assert result['preview']['allowed'] is False
+    assert result['intent']['target_route'] is None

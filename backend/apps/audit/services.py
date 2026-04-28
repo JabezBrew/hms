@@ -6,6 +6,7 @@ from django.utils import timezone
 from .models import AuditLog, AuditAction, AuditCategory
 from .tasks import log_audit_async
 from apps.core.security import get_user_facility, resolve_object_facility
+from hms_backend.middleware import get_client_ip
 
 User = get_user_model()
 
@@ -132,12 +133,7 @@ class AuditService:
         user_agent = None
 
         if request:
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            if x_forwarded_for:
-                ip_address = x_forwarded_for.split(',')[0]
-            else:
-                ip_address = request.META.get('REMOTE_ADDR')
-
+            ip_address = get_client_ip(request)
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
         if facility_id is None:
@@ -229,12 +225,7 @@ class AuditService:
         user_agent = None
 
         if request:
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            if x_forwarded_for:
-                ip_address = x_forwarded_for.split(',')[0]
-            else:
-                ip_address = request.META.get('REMOTE_ADDR')
-
+            ip_address = get_client_ip(request)
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:255]
 
         # Get user details
@@ -334,12 +325,7 @@ class AuditService:
         if not request:
             return None
 
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        return get_client_ip(request)
 
     @classmethod
     def _build_description(cls, action, resource_type, resource_name, user_email=None):
